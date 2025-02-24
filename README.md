@@ -1,13 +1,12 @@
 <div align="center">
   <img src="./assets/banner.png" alt="banner" />
 
+  <a href="https://sigmaflow.gitbook.io/sigmaflow-docs"><img src="https://img.shields.io/static/v1?message=Docs&logo=gitbook&logoColor=ffffff&label=%20&labelColor=5c5c5c&color=3F89A1"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Open_Source-❤️-FDA599?"/></a>
+  <img src="https://komarev.com/ghpvc/?username=maokangkun&label=Views&color=0e75b6&style=flat" alt="访问量统计" />
   [![license](https://img.shields.io/github/license/maokangkun/SigmaFlow.svg)](https://github.com/maokangkun/SigmaFlow/tree/main/LICENSE)
   [![issue resolution](https://img.shields.io/github/issues-closed-raw/maokangkun/SigmaFlow)](https://github.com/maokangkun/SigmaFlow/issues)
   [![open issues](https://img.shields.io/github/issues-raw/maokangkun/SigmaFlow)](https://github.com/maokangkun/SigmaFlow/issues)
-
-  <a href="https://github.com/maokangkun"><img src="https://img.shields.io/badge/MKK-SigmaFlow-blue" /></a>
-    <!-- visitor statistics logo 访问量统计徽标 -->
-  <img src="https://komarev.com/ghpvc/?username=maokangkun&label=Views&color=0e75b6&style=flat" alt="访问量统计" />
 
   <p align="center">
     👋 join us on <a href="https://linluhe.github.io/group_qrcode.html" target="_blank">WeChat</a>
