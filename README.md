@@ -15,12 +15,12 @@
 </div>
 
 # SigmaFlow
-SigmaFlow is a Python package designed to optimize the performance of task-flow related to MLLMs.
+SigmaFlow is a Python package designed to optimize the performance of task-flow related to LLMs or MLLMs.
 
 ## Introduction
-SigmaFlow is a Python package designed to optimize the performance of task-flow related to Multimodal Large Language Models (MLLMs). It ensures efficient parallel execution of task-flow while maintaining dependency constraints, significantly enhancing the overall performance.
+SigmaFlow is a Python package designed to optimize the performance of task-flow related to Large Language Models (LLMs) or Multimodal Large Language Models (MLLMs). It ensures efficient parallel execution of task-flow while maintaining dependency constraints, significantly enhancing the overall performance.
 
-SigmaFlow 是一个 Python 包，旨在优化与多模态大语言模型 (MLLMs) 相关任务流的性能。在满足依赖关系的前提下，确保任务流的高效并行执行，从而显著提高整体性能。
+SigmaFlow 是一个 Python 包，旨在优化与大模型 (LLMs or MLLMs) 相关任务流的性能。在满足依赖关系的前提下，确保任务流的高效并行执行，从而显著提高整体性能。
 
 ## Features
 - Dependency Management: Handles task dependencies efficiently, ensuring correct execution order.
