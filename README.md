@@ -5,14 +5,9 @@
   [![issue resolution](https://img.shields.io/github/issues-closed-raw/maokangkun/SigmaFlow)](https://github.com/maokangkun/SigmaFlow/issues)
   [![open issues](https://img.shields.io/github/issues-raw/maokangkun/SigmaFlow)](https://github.com/maokangkun/SigmaFlow/issues)
 
-  <div>
-    <a href="https://github.com/maokangkun"><img src="https://img.shields.io/badge/MKK-SigmaFlow-blue" /></a>&emsp;
-    <a href="https://linluhe.github.io/qrcode.html"><img src="https://img.shields.io/badge/WeChat-微信-07c160" /></a>&emsp;
-    <a href="https://linluhe.github.io/group_qrcode.html"><img src="https://img.shields.io/badge/WeChat-微信群-07c160" /></a>&emsp;
-    <a href="https://space.bilibili.com/4557530/"><img src="https://img.shields.io/badge/Bilibili-B站-ff69b4" /></a>&emsp;
+  <a href="https://github.com/maokangkun"><img src="https://img.shields.io/badge/MKK-SigmaFlow-blue" /></a>
     <!-- visitor statistics logo 访问量统计徽标 -->
-    <img src="https://komarev.com/ghpvc/?username=maokangkun&label=Views&color=0e75b6&style=flat" alt="访问量统计" />
-  </div>
+  <img src="https://komarev.com/ghpvc/?username=maokangkun&label=Views&color=0e75b6&style=flat" alt="访问量统计" />
 
   <p align="center">
     👋 join us on <a href="https://linluhe.github.io/group_qrcode.html" target="_blank">WeChat</a>
