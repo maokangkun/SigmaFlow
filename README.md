@@ -17,6 +17,107 @@
 SigmaFlow is a Python package designed to optimize the performance of task-flow related to LLMs or MLLMs.
 ![comfyUI demo](./assets/comfyUI.png)
 
+```mermaid
+graph LR
+    %% ========================
+    %% Nodes definition section
+    %% ========================
+    计算BMI[/"计算BMI"/]
+    是否确诊{"是否确诊"}
+    推断最有可能疾病["推断最有可能疾病"]
+    身高(["身高"])
+    年龄(["年龄"])
+    提取症状["提取症状"]
+    患者信息(["患者信息"])
+    疾病列表(["疾病列表"])
+    获取出生日期["获取出生日期"]
+    治疗建议(["治疗建议"])
+    计算年龄[/"计算年龄"/]
+    体重(["体重"])
+    诊断["诊断"]
+    治疗推荐["治疗推荐"]
+    获取身高体重["获取身高体重"]
+    出生日期(["出生日期"])
+    exit[["exit"]]
+    症状(["症状"])
+    疾病(["疾病"])
+    BMI(["BMI"])
+    搜索疾病列表("搜索疾病列表")
+
+    %% ========================
+    %% Links definition section
+    %% ========================
+    症状 --> 每个症状
+    出生日期 ==> 计算年龄 ==> 年龄
+    治疗建议 ==o|total: 6.26s| exit
+    患者信息 ==> 提取症状 ==>|1.02s| 症状
+    患者信息 ==> 获取出生日期 ==>|1.05s| 出生日期
+    症状 ==> 搜索疾病列表 ==>|1.02s| 疾病列表
+    患者信息 ==> 诊断 ==>|1.01s| 疾病
+    身高 & 体重 ==> 计算BMI ==> BMI
+    患者信息 ==> 获取身高体重 ==>|1.06s| 身高 & 体重
+    疾病 ==>|1.02s| 是否确诊
+    患者信息 & 疾病列表 ==> 推断最有可能疾病 ==>|1.02s| 疾病
+    是否确诊 ==>|无法确定| 提取症状 & 获取出生日期 & 获取身高体重
+    患者信息 & 疾病 & 年龄 & BMI ==> 治疗推荐 ==>|1.02s| 治疗建议
+
+    %% ================
+    %% Subgraph section
+    %% ================
+    subgraph 每个症状
+        搜索疾病列表
+    end
+
+    %% ========================
+    %% Style definition section
+    %% ========================
+    classDef LLMNODE fill:#ECE4E2,color:black
+    class 获取出生日期,诊断,治疗推荐,提取症状,获取身高体重,推断最有可能疾病 LLMNODE
+    classDef DATA fill:#9BCFB8,color:black
+    class 疾病,症状,出生日期,BMI,体重,年龄,治疗建议,患者信息,身高,疾病列表 DATA
+    classDef BRANCHNODE fill:#445760,color:white
+    class 是否确诊 BRANCHNODE
+    classDef CODENODE fill:#FFFFAD,color:black
+    class 计算BMI,计算年龄 CODENODE
+    classDef LOOPNODE fill:none,stroke:#CC8A4D,stroke-dasharray:5 5,stroke-width:2px
+    class 每个症状 LOOPNODE
+    classDef RAGNODE fill:#FE929F,color:black
+    class 搜索疾病列表 RAGNODE
+    classDef EXITNODE fill:#3D3E3F,color:white
+    class exit EXITNODE
+    classDef INPUTDATA fill:#D64747,color:black
+    class 患者信息 INPUTDATA
+    linkStyle 0 fill:none,stroke:#CC8A4D,stroke-dasharray:5 5,stroke-width:2px
+```
+
+```mermaid
+gantt
+title Task Timeline
+dateFormat  x
+axisFormat  %M:%S.%L
+section pid_00
+诊断: 0, 1023ms
+获取身高体重: 2046, 1035ms
+每个症状: 3083, 12ms
+搜索疾病列表: 3095, 1024ms
+搜索疾病列表: 4119, 1023ms
+section pid_01
+获取出生日期: 2045, 1029ms
+计算BMI: 3076, 11ms
+治疗推荐: 3088, 1027ms
+搜索疾病列表: 4115, 1025ms
+推断最有可能疾病: 5141, 1025ms
+section pid_02
+提取症状: 2045, 1043ms
+搜索疾病列表: 3089, 1022ms
+搜索疾病列表: 4112, 1021ms
+section pid_03
+是否确诊: 1020, 1035ms
+计算年龄: 3071, 25ms
+搜索疾病列表: 3096, 1022ms
+搜索疾病列表: 4118, 1023ms
+```
+
 ## Introduction
 SigmaFlow is a Python package designed to optimize the performance of task-flow related to Large Language Models (LLMs) or Multimodal Large Language Models (MLLMs). It ensures efficient parallel execution of task-flow while maintaining dependency constraints, significantly enhancing the overall performance.
 
@@ -114,11 +215,11 @@ Logs are stored in the `logs` folder. If `save_pref` is `true`, you can see the 
 
 日志存储在logs文件夹下，如果save_pref为true，你可以看到相关的性能报告。
 
-<div align="center">
+<!-- <div align="center">
   <img src="./assets/pipe.png" alt="pipe" />
 
-  <!-- ![perf](./assets/perf.png) -->
-</div>
+  ![perf](./assets/perf.png)
+</div> -->
 
 ## Documentation
 For detailed documentation, please visit our official documentation page.

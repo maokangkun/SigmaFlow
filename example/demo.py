@@ -60,11 +60,12 @@ test_task = {
 }
 
 def mp_test():
-    pm = PipelineManager(llm_client, rag_client, is_async=False)
+    cur_dir = Path(__file__).parent
+    pm = PipelineManager(llm_client, rag_client, run_mode='mp', pipes_dir=cur_dir)
 
     for pipe_name, data_arr in test_task.items():
         for data in data_arr:
-            r, info = pm.pipes[pipe_name].run(data, save_pref=True)
+            r, info = pm.pipes[pipe_name].run(data, save_perf=True)
             if 'error_msg' in r: print(r['error_msg'].strip().split('\n')[-1])
 
 async def async_test():
