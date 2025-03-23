@@ -15,6 +15,7 @@
 
 # SigmaFlow
 SigmaFlow is a Python package designed to optimize the performance of task-flow related to LLMs or MLLMs.
+![comfyUI demo](./assets/comfyUI.png)
 
 ## Introduction
 SigmaFlow is a Python package designed to optimize the performance of task-flow related to Large Language Models (LLMs) or Multimodal Large Language Models (MLLMs). It ensures efficient parallel execution of task-flow while maintaining dependency constraints, significantly enhancing the overall performance.
