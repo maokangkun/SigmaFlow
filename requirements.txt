@@ -1,0 +1,5 @@
+rich
+fastapi
+openai
+dotenv
+Pillow

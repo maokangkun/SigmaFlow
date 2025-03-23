@@ -1,0 +1,1100 @@
+{
+  "version": "1.0.0",
+  "data": {
+    "nodes": [
+      {
+        "type": "custom",
+        "data": {
+          "id": "5",
+          "name": "EmptyLatentImage",
+          "type": "latent",
+          "nodeName": "EmptyLatentImage",
+          "displayName": "空图像",
+          "description": "",
+          "inputs": [
+            {
+              "id": "0",
+              "name": "width",
+              "type": "NUMBER:INT",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "options": {
+                "min": 16,
+                "max": 16384,
+                "step": 8,
+                "precision": 0
+              },
+              "varible": null,
+              "connection": {},
+              "_defaultValue": 512,
+              "_value": 512,
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            },
+            {
+              "id": "1",
+              "name": "height",
+              "type": "NUMBER:INT",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "options": {
+                "min": 16,
+                "max": 16384,
+                "step": 8,
+                "precision": 0
+              },
+              "varible": null,
+              "connection": {},
+              "_defaultValue": 512,
+              "_value": 512,
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            },
+            {
+              "id": "2",
+              "name": "batch_size",
+              "type": "NUMBER:INT",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "options": {
+                "min": 1,
+                "max": 4096,
+                "step": 10,
+                "precision": 0
+              },
+              "varible": null,
+              "connection": {},
+              "_defaultValue": 1,
+              "_value": 1,
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            }
+          ],
+          "outputs": [
+            {
+              "id": "0",
+              "name": "LATENT",
+              "type": "LATENT",
+              "isInput": false,
+              "hasForm": false,
+              "optional": false,
+              "connection": {},
+              "_value": null,
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            }
+          ],
+          "inputCount": 3,
+          "outputCount": 1,
+          "extra": {
+            "color": "Geekblue"
+          }
+        },
+        "events": {},
+        "id": "5",
+        "label": "EmptyLatentImage",
+        "position": {
+          "x": 260,
+          "y": 660
+        }
+      },
+      {
+        "type": "custom",
+        "data": {
+          "id": "4",
+          "name": "CheckpointLoaderSimple",
+          "type": "loaders",
+          "nodeName": "CheckpointLoaderSimple",
+          "displayName": "加载模型",
+          "description": "加载 CheckPoint 模型",
+          "inputs": [
+            {
+              "id": "0",
+              "name": "ckpt_name",
+              "type": "MODELSELECT",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "options": {
+                "values": []
+              },
+              "varible": null,
+              "connection": {},
+              "_defaultValue": null,
+              "_value": null,
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            }
+          ],
+          "outputs": [
+            {
+              "id": "0",
+              "name": "MODEL",
+              "type": "MODEL",
+              "isInput": false,
+              "hasForm": false,
+              "optional": false,
+              "connection": {},
+              "_value": null,
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            },
+            {
+              "id": "1",
+              "name": "CLIP",
+              "type": "CLIP",
+              "isInput": false,
+              "hasForm": false,
+              "optional": false,
+              "connection": {},
+              "_value": null,
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            },
+            {
+              "id": "2",
+              "name": "VAE",
+              "type": "VAE",
+              "isInput": false,
+              "hasForm": false,
+              "optional": false,
+              "connection": {},
+              "_value": null,
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            }
+          ],
+          "inputCount": 1,
+          "outputCount": 3,
+          "extra": {
+            "color": "Cyan"
+          }
+        },
+        "events": {},
+        "id": "4",
+        "label": "CheckpointLoaderSimple",
+        "position": {
+          "x": -370,
+          "y": 150
+        }
+      },
+      {
+        "type": "custom",
+        "data": {
+          "id": "9",
+          "name": "PreviewImage",
+          "type": "image",
+          "nodeName": "PreviewImage",
+          "displayName": "Preview Image",
+          "description": "Saves the input images to your ComfyUI output directory.",
+          "inputs": [
+            {
+              "id": "0",
+              "name": "images",
+              "type": "IMAGE",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "connection": {},
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            }
+          ],
+          "outputs": [],
+          "inputCount": 1,
+          "outputCount": 0,
+          "extra": {}
+        },
+        "events": {},
+        "id": "9",
+        "label": "PreviewImage",
+        "position": {
+          "x": 2000,
+          "y": 210
+        }
+      },
+      {
+        "type": "custom",
+        "data": {
+          "id": "10",
+          "name": "CLIPTextEncode",
+          "type": "conditioning",
+          "nodeName": "CLIPTextEncode",
+          "displayName": "CLIP Text Encode (Prompt)",
+          "description": "Encodes a text prompt using a CLIP model into an embedding that can be used to guide the diffusion model towards generating specific images.",
+          "inputs": [
+            {
+              "id": "0",
+              "name": "text",
+              "type": "STRING:PROMPT",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "connection": {},
+              "_defaultValue": "",
+              "_value": "beautiful scenery nature glass bottle landscape, purple galaxy bottle",
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            },
+            {
+              "id": "1",
+              "name": "clip",
+              "type": "CLIP",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "connection": {},
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            }
+          ],
+          "outputs": [
+            {
+              "id": "0",
+              "name": "CONDITIONING",
+              "type": "CONDITIONING",
+              "isInput": false,
+              "hasForm": false,
+              "optional": false,
+              "connection": {},
+              "_value": null,
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            }
+          ],
+          "inputCount": 2,
+          "outputCount": 1,
+          "extra": {}
+        },
+        "events": {},
+        "id": "10",
+        "label": "CLIPTextEncode",
+        "position": {
+          "x": 150,
+          "y": -40
+        }
+      },
+      {
+        "type": "custom",
+        "data": {
+          "id": "11",
+          "name": "CLIPTextEncode",
+          "type": "conditioning",
+          "nodeName": "CLIPTextEncode",
+          "displayName": "CLIP Text Encode (Prompt)",
+          "description": "Encodes a text prompt using a CLIP model into an embedding that can be used to guide the diffusion model towards generating specific images.",
+          "inputs": [
+            {
+              "id": "0",
+              "name": "text",
+              "type": "STRING:PROMPT",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "connection": {},
+              "_defaultValue": "",
+              "_value": "text, watermark",
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            },
+            {
+              "id": "1",
+              "name": "clip",
+              "type": "CLIP",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "connection": {},
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            }
+          ],
+          "outputs": [
+            {
+              "id": "0",
+              "name": "CONDITIONING",
+              "type": "CONDITIONING",
+              "isInput": false,
+              "hasForm": false,
+              "optional": false,
+              "connection": {},
+              "_value": null,
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            }
+          ],
+          "inputCount": 2,
+          "outputCount": 1,
+          "extra": {}
+        },
+        "events": {},
+        "id": "11",
+        "label": "CLIPTextEncode",
+        "position": {
+          "x": 150,
+          "y": 340
+        }
+      },
+      {
+        "type": "custom",
+        "data": {
+          "id": "12",
+          "name": "VAEDecode",
+          "type": "latent",
+          "nodeName": "VAEDecode",
+          "displayName": "VAE Decode",
+          "description": "Decodes latent images back into pixel space images.",
+          "inputs": [
+            {
+              "id": "0",
+              "name": "samples",
+              "type": "LATENT",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "connection": {},
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            },
+            {
+              "id": "1",
+              "name": "vae",
+              "type": "VAE",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "connection": {},
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            }
+          ],
+          "outputs": [
+            {
+              "id": "0",
+              "name": "IMAGE",
+              "type": "IMAGE",
+              "isInput": false,
+              "hasForm": false,
+              "optional": false,
+              "connection": {},
+              "_value": null,
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            }
+          ],
+          "inputCount": 2,
+          "outputCount": 1,
+          "extra": {}
+        },
+        "events": {},
+        "id": "12",
+        "label": "VAEDecode",
+        "position": {
+          "x": 1570,
+          "y": 200
+        }
+      },
+      {
+        "type": "custom",
+        "data": {
+          "id": "13",
+          "name": "KSampler",
+          "type": "sampling",
+          "nodeName": "KSampler",
+          "displayName": "KSampler",
+          "description": "Uses the provided model, positive and negative conditioning to denoise the latent image.",
+          "inputs": [
+            {
+              "id": "0",
+              "name": "model",
+              "type": "MODEL",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "connection": {},
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            },
+            {
+              "id": "1",
+              "name": "seed",
+              "type": "NUMBER:INT",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "options": {
+                "min": 0,
+                "max": 18446744073709552000,
+                "step": 10,
+                "precision": 0
+              },
+              "connection": {},
+              "_defaultValue": 0,
+              "_value": 892778010526156,
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            },
+            {
+              "id": "2",
+              "name": "control_after_generate",
+              "type": "SELECT",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "options": {
+                "values": [
+                  "fixed",
+                  "increment",
+                  "decrement",
+                  "randomize"
+                ],
+                "serialize": false
+              },
+              "connection": {},
+              "_defaultValue": "randomize",
+              "_value": "randomize",
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            },
+            {
+              "id": "3",
+              "name": "steps",
+              "type": "NUMBER:INT",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "options": {
+                "min": 1,
+                "max": 10000,
+                "step": 10,
+                "precision": 0
+              },
+              "connection": {},
+              "_defaultValue": 20,
+              "_value": 20,
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            },
+            {
+              "id": "4",
+              "name": "cfg",
+              "type": "NUMBER:FLOAT",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "options": {
+                "min": 0,
+                "max": 100,
+                "step": 0.1
+              },
+              "connection": {},
+              "_defaultValue": 8,
+              "_value": 8,
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            },
+            {
+              "id": "5",
+              "name": "sampler_name",
+              "type": "SELECT",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "options": {
+                "values": [
+                  "euler",
+                  "euler_cfg_pp",
+                  "euler_ancestral",
+                  "euler_ancestral_cfg_pp",
+                  "heun",
+                  "heunpp2",
+                  "dpm_2",
+                  "dpm_2_ancestral",
+                  "lms",
+                  "dpm_fast",
+                  "dpm_adaptive",
+                  "dpmpp_2s_ancestral",
+                  "dpmpp_sde",
+                  "dpmpp_sde_gpu",
+                  "dpmpp_2m",
+                  "dpmpp_2m_sde",
+                  "dpmpp_2m_sde_gpu",
+                  "dpmpp_3m_sde",
+                  "dpmpp_3m_sde_gpu",
+                  "ddpm",
+                  "lcm",
+                  "ipndm",
+                  "ipndm_v",
+                  "deis",
+                  "ddim",
+                  "uni_pc",
+                  "uni_pc_bh2"
+                ]
+              },
+              "connection": {},
+              "_defaultValue": "euler",
+              "_value": "euler",
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            },
+            {
+              "id": "6",
+              "name": "scheduler",
+              "type": "SELECT",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "options": {
+                "values": [
+                  "normal",
+                  "karras",
+                  "exponential",
+                  "sgm_uniform",
+                  "simple",
+                  "ddim_uniform",
+                  "beta"
+                ]
+              },
+              "connection": {},
+              "_defaultValue": "normal",
+              "_value": "normal",
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            },
+            {
+              "id": "7",
+              "name": "positive",
+              "type": "CONDITIONING",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "connection": {},
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            },
+            {
+              "id": "8",
+              "name": "negative",
+              "type": "CONDITIONING",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "connection": {},
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            },
+            {
+              "id": "9",
+              "name": "latent_image",
+              "type": "LATENT",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "connection": {},
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            },
+            {
+              "id": "10",
+              "name": "denoise",
+              "type": "NUMBER:FLOAT",
+              "isInput": true,
+              "hasForm": true,
+              "optional": false,
+              "options": {
+                "min": 0,
+                "max": 1,
+                "step": 0.01
+              },
+              "connection": {},
+              "_defaultValue": 1,
+              "_value": 1,
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            }
+          ],
+          "outputs": [
+            {
+              "id": "0",
+              "name": "LATENT",
+              "type": "LATENT",
+              "isInput": false,
+              "hasForm": false,
+              "optional": false,
+              "connection": {},
+              "_value": null,
+              "_hidden": false,
+              "events": {
+                "init": {
+                  "listeners": {}
+                },
+                "change": {
+                  "listeners": {}
+                },
+                "afterQueue": {
+                  "listeners": {}
+                }
+              }
+            }
+          ],
+          "inputCount": 11,
+          "outputCount": 1,
+          "extra": {}
+        },
+        "events": {},
+        "id": "13",
+        "label": "KSampler",
+        "position": {
+          "x": 1020,
+          "y": 150
+        }
+      }
+    ],
+    "edges": [
+      {
+        "sourceHandle": "1",
+        "targetHandle": "1",
+        "type": "default",
+        "source": "4",
+        "target": "10",
+        "data": {},
+        "events": {},
+        "id": "4-1|10-1",
+        "class": "edge__CLIP",
+        "sourceX": 6.999813436274792,
+        "sourceY": 248.16662600621075,
+        "targetX": 143.66663121834117,
+        "targetY": 117.49988184269048,
+        "animated": false
+      },
+      {
+        "sourceHandle": "1",
+        "targetHandle": "1",
+        "type": "default",
+        "source": "4",
+        "target": "11",
+        "data": {},
+        "events": {},
+        "id": "4-1|11-1",
+        "class": "edge__CLIP",
+        "sourceX": 6.999813436274792,
+        "sourceY": 248.16662600621075,
+        "targetX": 143.66663121834117,
+        "targetY": 475.49988665883166,
+        "animated": false
+      },
+      {
+        "sourceHandle": "2",
+        "targetHandle": "1",
+        "type": "default",
+        "source": "4",
+        "target": "12",
+        "data": {},
+        "events": {},
+        "id": "4-2|12-1",
+        "class": "edge__VAE",
+        "sourceX": 6.999813436274792,
+        "sourceY": 280.4999476157793,
+        "targetX": 1563.6665194438046,
+        "targetY": 298.1666326275945,
+        "animated": false
+      },
+      {
+        "sourceHandle": "0",
+        "targetHandle": "0",
+        "type": "default",
+        "source": "12",
+        "target": "9",
+        "data": {},
+        "events": {},
+        "id": "12-0|9-0",
+        "class": "edge__IMAGE",
+        "sourceX": 1775.9997507123812,
+        "sourceY": 265.83333304599824,
+        "targetX": 1993.666595753148,
+        "targetY": 275.8333359283251,
+        "animated": false
+      },
+      {
+        "sourceHandle": "0",
+        "targetHandle": "0",
+        "type": "default",
+        "source": "4",
+        "target": "13",
+        "data": {},
+        "events": {},
+        "id": "4-0|13-0",
+        "class": "edge__MODEL",
+        "sourceX": 6.999813436274792,
+        "sourceY": 215.83326204200063,
+        "targetX": 1013.6666439074829,
+        "targetY": 215.83327624500652
+      },
+      {
+        "sourceHandle": "0",
+        "targetHandle": "0",
+        "type": "default",
+        "source": "13",
+        "target": "12",
+        "data": {},
+        "events": {},
+        "id": "13-0|12-0",
+        "class": "edge__LATENT",
+        "sourceX": 1398.000041209763,
+        "sourceY": 215.83327624500652,
+        "targetX": 1563.6665194438046,
+        "targetY": 265.83333304599824,
+        "animated": false
+      },
+      {
+        "sourceHandle": "0",
+        "targetHandle": "9",
+        "type": "default",
+        "source": "5",
+        "target": "13",
+        "data": {},
+        "events": {},
+        "id": "5-0|13-9",
+        "class": "edge__LATENT",
+        "sourceX": 637.9998488786389,
+        "sourceY": 725.8333467512838,
+        "targetX": 1013.6666439074829,
+        "targetY": 675.8645379176821
+      },
+      {
+        "sourceHandle": "0",
+        "targetHandle": "8",
+        "type": "default",
+        "source": "11",
+        "target": "13",
+        "data": {},
+        "events": {},
+        "id": "11-0|13-8",
+        "class": "edge__CONDITIONING",
+        "sourceX": 739.9994380190917,
+        "sourceY": 405.8332771587301,
+        "targetX": 1013.6666439074829,
+        "targetY": 643.5312573339409
+      },
+      {
+        "sourceHandle": "0",
+        "targetHandle": "7",
+        "type": "default",
+        "source": "10",
+        "target": "13",
+        "data": {},
+        "events": {},
+        "id": "10-0|13-7",
+        "class": "edge__CONDITIONING",
+        "sourceX": 739.9994939063599,
+        "sourceY": 25.83329113054711,
+        "targetX": 1013.6666439074829,
+        "targetY": 611.1979767501996
+      }
+    ],
+    "position": [
+      334.8286131988036,
+      125.51848469803389
+    ],
+    "zoom": 0.4138327425998664,
+    "viewport": {
+      "x": 334.8286131988036,
+      "y": 125.51848469803389,
+      "zoom": 0.4138327425998664
+    }
+  },
+  "variables": {}
+}

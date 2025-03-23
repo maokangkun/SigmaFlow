@@ -115,10 +115,9 @@ Logs are stored in the `logs` folder. If `save_pref` is `true`, you can see the 
 日志存储在logs文件夹下，如果save_pref为true，你可以看到相关的性能报告。
 
 <div align="center">
+  <img src="./assets/pipe.png" alt="pipe" />
 
-  ![pipe](https://raw.githubusercontent.com/maokangkun/SigmaFlow/main/assets/pipe.png)
-
-  ![perf](https://raw.githubusercontent.com/maokangkun/SigmaFlow/main/assets/perf.png)
+  <!-- ![perf](./assets/perf.png) -->
 </div>
 
 ## Documentation
