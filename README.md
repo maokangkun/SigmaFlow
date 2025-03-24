@@ -214,7 +214,6 @@ pipeline = SigmaFlow(demo_pipe, llm_api, rag_api)
 result, info = pipeline.run(data, core_num=4, save_pref=True)
 ```
 </details>
-<br/>
 
 Logs are stored in the `logs` folder. If `save_pref` is `true`, you can see the relevant performance report.
 
