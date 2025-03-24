@@ -12,8 +12,8 @@ on:
   # release:
   #   types: [published]
   push:
-    tags:
-      - '*'
+    branches:
+      - 'main'
 
 permissions:
   contents: read
