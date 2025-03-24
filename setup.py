@@ -9,7 +9,6 @@ def get_new_version():
     pkg_url = f'https://pypi.org/rss/project/{pkg_name}/releases.xml'
     root = ET.fromstring(requests.get(pkg_url).text)
     old_version = root[0].findall('item')[0].find('title').text
-    old_version = '0.1.99'
     num = reduce(lambda a,b:a*100+b, map(int, old_version.split('.')))
     num += 1
     arr = []
@@ -22,7 +21,7 @@ def get_new_version():
     return version
 
 def parse_requirements(filename):
-    with open(filename) as f:
+    with open(filename, "r") as f:
         lines = f.read().splitlines()
 
     requires = []
@@ -39,15 +38,6 @@ def parse_requirements(filename):
 with open("README.md", "r") as f:
     long_description = f.read()
 
-requires = []
-with open("requirements.txt", "r") as f:
-    for line in f.read().splitlines():
-        if "http" in line:
-            pkg_name_without_url = line.split('@')[0].strip()
-            requires.append(pkg_name_without_url)
-        else:
-            requires.append(line)
-
 setuptools.setup(
     name=pkg_name.lower(),  # Replace with your own username
     version=get_new_version(),
@@ -58,7 +48,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url=f"https://github.com/maokangkun/{pkg_name}",
     packages=setuptools.find_packages(),
-    install_requires=requires,
+    install_requires=parse_requirements("requirements.txt"),
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
