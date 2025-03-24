@@ -19,6 +19,17 @@ def parse_requirements(filename):
 with open("README.md", "r") as f:
     long_description = f.read()
 
+with open("requirements.txt", "r") as f:
+    lines = f.read().splitlines()
+    requires = []
+
+    for line in lines:
+        if "http" in line:
+            pkg_name_without_url = line.split('@')[0].strip()
+            requires.append(pkg_name_without_url)
+        else:
+            requires.append(line)
+
 setuptools.setup(
     name="sigmaflow",  # Replace with your own username
     version="0.0.1",
@@ -29,7 +40,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/maokangkun/SigmaFlow",
     packages=setuptools.find_packages(),
-    install_requires=parse_requirements('requirements.txt'),
+    install_requires=requires,
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: Apache License",
