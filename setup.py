@@ -1,5 +1,5 @@
 import setuptools
-from sigmaflow import __version__
+# from sigmaflow import __version__
 
 def parse_requirements(filename):
     with open(filename) as f:
@@ -21,7 +21,7 @@ with open("README.md", "r") as f:
 
 setuptools.setup(
     name="sigmaflow",  # Replace with your own username
-    version=__version__,
+    version="0.0.1",
     author="maokangkun",
     author_email="maokangkun@pjlab.prg.cn",
     description="SigmaFlow is a Python package designed to optimize the performance of task-flow related to LLMs or MLLMs",
