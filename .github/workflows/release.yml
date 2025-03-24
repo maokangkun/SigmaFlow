@@ -9,8 +9,11 @@
 name: Upload Python Package
 
 on:
-  release:
-    types: [published]
+  # release:
+  #   types: [published]
+  push:
+    tags:
+      - '*'
 
 permissions:
   contents: read
@@ -37,10 +40,10 @@ jobs:
         with:
           name: release-dists
           path: dist/
-      
+
       - name: Send msg
         run:
-          curl https://api.day.app/ozCgXAen6CwTabCZRPJfRQ/github/build_done?icon=https://avatars1.githubusercontent.com/u/9919&group=github_action
+          curl https://api.day.app/ozCgXAen6CwTabCZRPJfRQ/github/sigmaflow%20build%20done?icon=https://avatars1.githubusercontent.com/u/9919&group=github_action
 
   pypi-publish:
     runs-on: ubuntu-latest
@@ -72,3 +75,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+
+      - name: Send msg
+        run:
+          curl https://api.day.app/ozCgXAen6CwTabCZRPJfRQ/github/sigmaflow%20upload%20done?icon=https://avatars1.githubusercontent.com/u/9919&group=github_action
