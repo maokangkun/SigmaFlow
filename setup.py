@@ -1,5 +1,5 @@
 import setuptools
-from llmpipeline import __version__
+from sigmaflow import __version__
 
 def parse_requirements(filename):
     with open(filename) as f:
