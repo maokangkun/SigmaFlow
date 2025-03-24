@@ -1,4 +1,25 @@
 import setuptools
+import requests
+from functools import reduce
+import xml.etree.ElementTree as ET
+
+pkg_name = 'SigmaFlow'
+
+def get_new_version():
+    pkg_url = f'https://pypi.org/rss/project/{pkg_name}/releases.xml'
+    root = ET.fromstring(requests.get(pkg_url).text)
+    old_version = root[0].findall('item')[0].find('title').text
+    old_version = '0.1.99'
+    num = reduce(lambda a,b:a*100+b, map(int, old_version.split('.')))
+    num += 1
+    arr = []
+    while num:
+        arr.append(num % 100)
+        num //= 100
+    arr += [0] * max(0, (3-len(arr)))
+    version = '.'.join(map(str, arr[::-1]))
+
+    return version
 
 def parse_requirements(filename):
     with open(filename) as f:
@@ -31,14 +52,14 @@ requires = []
 #             requires.append(line)
 
 setuptools.setup(
-    name="sigmaflow",  # Replace with your own username
-    version="0.0.1",
+    name=pkg_name.lower(),  # Replace with your own username
+    version=get_new_version(),
     author="maokangkun",
     author_email="maokangkun@pjlab.prg.cn",
-    description="SigmaFlow is a Python package designed to optimize the performance of task-flow related to LLMs or MLLMs",
+    description=f"{pkg_name} is a Python package designed to optimize the performance of task-flow related to LLMs or MLLMs",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/maokangkun/SigmaFlow",
+    url=f"https://github.com/maokangkun/{pkg_name}",
     packages=setuptools.find_packages(),
     install_requires=requires,
     classifiers=[
