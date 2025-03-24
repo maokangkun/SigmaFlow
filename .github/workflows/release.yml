@@ -37,6 +37,10 @@ jobs:
         with:
           name: release-dists
           path: dist/
+      
+      - name: Send msg
+        run:
+          curl https://api.day.app/ozCgXAen6CwTabCZRPJfRQ/github/build_done?icon=https://avatars1.githubusercontent.com/u/9919&group=github_action
 
   pypi-publish:
     runs-on: ubuntu-latest
