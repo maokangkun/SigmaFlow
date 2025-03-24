@@ -19,16 +19,17 @@ def parse_requirements(filename):
 with open("README.md", "r") as f:
     long_description = f.read()
 
-with open("requirements.txt", "r") as f:
-    lines = f.read().splitlines()
-    requires = []
+requires = []
+# with open("requirements.txt", "r") as f:
+#     lines = f.read().splitlines()
+#     requires = []
 
-    for line in lines:
-        if "http" in line:
-            pkg_name_without_url = line.split('@')[0].strip()
-            requires.append(pkg_name_without_url)
-        else:
-            requires.append(line)
+#     for line in lines:
+#         if "http" in line:
+#             pkg_name_without_url = line.split('@')[0].strip()
+#             requires.append(pkg_name_without_url)
+#         else:
+#             requires.append(line)
 
 setuptools.setup(
     name="sigmaflow",  # Replace with your own username
