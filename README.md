@@ -150,6 +150,9 @@ Here is a basic example to get you started:
 
 下面是一个基本示例，帮助你快速入门：
 
+<details>
+<summary>Example Code</summary>
+
 ```python
 from SigmaFlow import SigmaFlow, Prompt
 
@@ -210,6 +213,8 @@ demo_pipe = {
 pipeline = SigmaFlow(demo_pipe, llm_api, rag_api)
 result, info = pipeline.run(data, core_num=4, save_pref=True)
 ```
+</details>
+<br/>
 
 Logs are stored in the `logs` folder. If `save_pref` is `true`, you can see the relevant performance report.
 
