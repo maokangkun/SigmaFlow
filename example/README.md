@@ -1,7 +1,11 @@
+### Demo
+
+Running example:
 ```bash
 python example/demo.py
 ```
 
+demo pipeline flow diagram:
 ```mermaid
 graph TD
     %% ========================
@@ -75,6 +79,7 @@ graph TD
     linkStyle 0 fill:none,stroke:#CC8A4D,stroke-dasharray:5 5,stroke-width:2px
 ```
 
+demo pipeline performance:
 ```mermaid
 gantt
 title Task Timeline

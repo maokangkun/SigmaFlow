@@ -213,13 +213,11 @@ result, info = pipeline.run(data, core_num=4, save_pref=True)
 
 Logs are stored in the `logs` folder. If `save_pref` is `true`, you can see the relevant performance report.
 
-日志存储在logs文件夹下，如果save_pref为true，你可以看到相关的性能报告。
+日志存储在`logs`文件夹下，如果`save_pref`为`true`，你可以看到相关的性能报告。
 
-<!-- <div align="center">
-  <img src="./assets/pipe.png" alt="pipe" />
+For a complete example, please refer to the [example](./example/) directory.
 
-  ![perf](./assets/perf.png)
-</div> -->
+完整示例请参考example目录。
 
 ## Documentation
 For detailed documentation, please visit our official documentation page.
@@ -247,7 +245,5 @@ For any questions or issues, please open an issue on our [GitHub repository](htt
 如有任何问题或意见，请在我们的[GitHub 仓库](https://github.com/maokangkun/SigmaFlow)提交 issue。
 
 <div align="center">
-  
-[![Star History Chart](https://api.star-history.com/svg?repos=maokangkun/SigmaFlow&type=Date)](https://star-history.com/#maokangkun/SigmaFlow&Date)
-
+  <a href="https://star-history.com/#maokangkun/SigmaFlow&Date"><img src="https://api.star-history.com/svg?repos=maokangkun/SigmaFlow&type=Date" alt="Star History Chart" /></a>
 </div>
