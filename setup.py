@@ -39,7 +39,7 @@ def parse_requirements(filename):
 with open("README.md", "r") as f:
     long_description = f.read()
     m = re.findall( r"```mermaid.*?```", long_description, flags=re.DOTALL)
-    long_description = long_description.replace(m[0], '![comfyUI demo](https://github.com/maokangkun/SigmaFlow/blob/main/assets/demo_pipe.png)').replace(m[1], '![comfyUI demo](https://github.com/maokangkun/SigmaFlow/blob/main/assets/demo_perf.png)')
+    long_description = long_description.replace(m[0], '![pipe demo](https://raw.githubusercontent.com/maokangkun/SigmaFlow/main/assets/demo_pipe.png)').replace(m[1], '![perf demo](https://raw.githubusercontent.com/maokangkun/SigmaFlow/main/assets/demo_perf.png)')
 
 setuptools.setup(
     name=pkg_name.lower(),  # Replace with your own username

@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://github.com/maokangkun/SigmaFlow/blob/main/assets/banner.png" alt="banner" />
+  <img src="https://raw.githubusercontent.com/maokangkun/SigmaFlow/main/assets/banner.png" alt="banner" />
 
   <a href='https://sigmaflows.github.io/'><img src='https://img.shields.io/badge/Project-Page-Green'></a>
   <a href="https://sigmaflow.gitbook.io/sigmaflow-docs"><img src="https://img.shields.io/static/v1?message=Docs&logo=gitbook&logoColor=ffffff&label=%20&labelColor=5c5c5c&color=3F89A1"></a>
@@ -17,7 +17,7 @@
 
 # 🚀 SigmaFlow
 SigmaFlow is a Python package designed to optimize the performance of task-flow related to LLMs or MLLMs.
-![comfyUI demo](https://github.com/maokangkun/SigmaFlow/blob/main/assets/comfyUI.png)
+![comfyUI demo](https://raw.githubusercontent.com/maokangkun/SigmaFlow/main/assets/comfyUI.png)
 
 ```mermaid
 graph LR
