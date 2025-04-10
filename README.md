@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./assets/banner.png" alt="banner" />
+  <img src="https://github.com/maokangkun/SigmaFlow/blob/main/assets/banner.png" alt="banner" />
 
   <a href='https://sigmaflows.github.io/'><img src='https://img.shields.io/badge/Project-Page-Green'></a>
   <a href="https://sigmaflow.gitbook.io/sigmaflow-docs"><img src="https://img.shields.io/static/v1?message=Docs&logo=gitbook&logoColor=ffffff&label=%20&labelColor=5c5c5c&color=3F89A1"></a>
@@ -9,16 +9,15 @@
   <a href='https://arxiv.org/abs/xxx'><img src='https://img.shields.io/badge/arXiv-xxx-b31b1b'></a>
   [![license](https://img.shields.io/github/license/maokangkun/SigmaFlow.svg)](https://github.com/maokangkun/SigmaFlow/tree/main/LICENSE)
   [![issue resolution](https://img.shields.io/github/issues-closed-raw/maokangkun/SigmaFlow)](https://github.com/maokangkun/SigmaFlow/issues)
-  [![open issues](https://img.shields.io/github/issues-raw/maokangkun/SigmaFlow)](https://github.com/maokangkun/SigmaFlow/issues)
 
   <p align="center">
     👋 join us on <a href="https://linluhe.github.io/group_qrcode.html" target="_blank">WeChat</a>
   </p>
 </div>
 
-# SigmaFlow
+# 🚀 SigmaFlow
 SigmaFlow is a Python package designed to optimize the performance of task-flow related to LLMs or MLLMs.
-![comfyUI demo](./assets/comfyUI.png)
+![comfyUI demo](https://github.com/maokangkun/SigmaFlow/blob/main/assets/comfyUI.png)
 
 ```mermaid
 graph LR
@@ -121,6 +120,10 @@ section pid_03
 搜索疾病列表: 4118, 1023ms
 ```
 
+## 🎉 News
+
+- [X] [2025.04.01]🎯📢SigmaFlow first release [pypi](https://pypi.org/project/sigmaflow/)!
+
 ## Introduction
 SigmaFlow is a Python package designed to optimize the performance of task-flow related to Large Language Models (LLMs) or Multimodal Large Language Models (MLLMs). It ensures efficient parallel execution of task-flow while maintaining dependency constraints, significantly enhancing the overall performance.
 
@@ -148,7 +151,7 @@ You can install SigmaFlow via pip:
 pip install SigmaFlow
 ```
 
-## Usage
+## Quick Start
 Here is a basic example to get you started:
 
 下面是一个基本示例，帮助你快速入门：
@@ -222,7 +225,7 @@ Logs are stored in the `logs` folder. If `save_pref` is `true`, you can see the 
 
 日志存储在`logs`文件夹下，如果`save_pref`为`true`，你可以看到相关的性能报告。
 
-For a complete example, please refer to the [example](./example/) directory.
+For a complete example, please refer to the [example](https://github.com/maokangkun/SigmaFlow/tree/main/example/) directory.
 
 完整示例请参考example目录。
 
@@ -251,6 +254,36 @@ For any questions or issues, please open an issue on our [GitHub repository](htt
 
 如有任何问题或意见，请在我们的[GitHub 仓库](https://github.com/maokangkun/SigmaFlow)提交 issue。
 
+## Star History
+
 <div align="center">
-  <a href="https://star-history.com/#maokangkun/SigmaFlow&Date"><img src="https://api.star-history.com/svg?repos=maokangkun/SigmaFlow&type=Date" alt="Star History Chart" /></a>
+<a href="https://star-history.com/#maokangkun/SigmaFlow&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=maokangkun/SigmaFlow&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=maokangkun/SigmaFlow&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=maokangkun/SigmaFlow&type=Date" />
+ </picture>
+</a>
 </div>
+
+## Contribution
+
+Thank you to all our contributors!
+
+<a href="https://github.com/maokangkun/SigmaFlow/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=maokangkun/SigmaFlow" />
+</a>
+
+## 🌟Citation
+
+```python
+@book{Mao2025maokangkun,
+	title = {maokangkun/SigmaFlow},
+	url = {https://github.com/maokangkun/SigmaFlow},
+	author = {Mao, Kangkun},
+	date = {2025-04-01},
+	year = {2025},
+	month = {4},
+	day = {1},
+}
+```
