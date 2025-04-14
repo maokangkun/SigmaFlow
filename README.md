@@ -16,7 +16,7 @@
 </div>
 
 # 🚀 SigmaFlow
-SigmaFlow is a Python package designed to optimize the performance of task-flow related to LLMs or MLLMs.
+SigmaFlow is a Python package designed to optimize the performance of task-flow related to LLMs/MLLMs or Multi-agent.
 ![comfyUI demo](https://raw.githubusercontent.com/maokangkun/SigmaFlow/main/assets/comfyUI.png)
 
 ```mermaid
