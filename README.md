@@ -122,6 +122,7 @@ section pid_03
 
 ## 🎉 News
 
+- [X] [2025.04.15]🎯📢SigmaFlow support command line use & file node! Please refer to the [example](https://github.com/maokangkun/SigmaFlow/tree/main/example/) directory.
 - [X] [2025.04.01]🎯📢SigmaFlow first release [pypi](https://pypi.org/project/sigmaflow/)!
 
 ## Introduction
@@ -228,6 +229,30 @@ Logs are stored in the `logs` folder. If `save_pref` is `true`, you can see the 
 For a complete example, please refer to the [example](https://github.com/maokangkun/SigmaFlow/tree/main/example/) directory.
 
 完整示例请参考example目录。
+
+## Start with CLI Mode
+
+> We have updated a more easy-to-use command to run pipeline.
+```bash
+sigmaflow -p example/demo_pipeline.py -i example/demo_data.json -m async
+```
+
+Command Options:
+```
+options:
+  -h, --help            show this help message and exit
+  -p PIPELINE, --pipeline PIPELINE
+                        specify the pipeline to run
+  -i INPUT, --input INPUT
+                        specify input data
+  -o OUTPUT, --output OUTPUT
+                        specify output data
+  -m {async,mp,seq}, --mode {async,mp,seq}
+                        specify the run mode
+  --split SPLIT         split the data into parts to run
+  --png                 export graph as png
+  --test                run test
+```
 
 ## Documentation
 For detailed documentation, please visit our official documentation page.

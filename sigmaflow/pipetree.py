@@ -13,6 +13,7 @@ import multiprocessing as mp
 from .log import log
 from .prompt import Prompt
 from .pipe import *
+import pymupdf4llm
 
 class DataState(Enum):
     VOID = 0
@@ -41,6 +42,7 @@ class NodeColorStyle:
     WebNode = f'fill:{Color.LightPink},color:{Color.Black}'
     ValueNode = f'fill:{Color.LightGreen},color:{Color.Black}'
     ExitNode = f'fill:{Color.Black2},color:{Color.White}'
+    FileNode = f'fill:{Color.Khaki},color:{Color.Black}'
     Data = f'fill:{Color.Green},color:{Color.Black}'
     InputData = f'fill:{Color.RED},color:{Color.Black}'
 
@@ -54,6 +56,7 @@ class NodeShape:
     WebNode = lambda x: f'{x}("{x}")'
     ValueNode = lambda n, x: f'{n}{{{{"{x}"}}}}'
     ExitNode = lambda x: f'{x}[["{x}"]]'
+    FileNode = lambda x: f'{x}["{x}"]'
     Data = lambda x: f'{x}(["{x}"])'
     InputData = lambda x: f'{x}(["{x}"])'
 
@@ -570,14 +573,6 @@ class LoopNode(Node):
 
         for n in self.next: queue.append(n)
 
-# class LoopEndNode(Node):
-#     def current_mp_task(self, data, queue):
-#         if (inps := self.get_inps_mp(data)):
-#             inp = inps[0]
-
-#             if (node := self.next.get(cond, None)): queue.put(node.name)
-#             log.debug(f'[LoopEndNode] condition: {cond}, goto node: {node}')
-
 class BranchNode(Node):
     mermaid_style = NodeColorStyle.BranchNode
     mermaid_shape = NodeShape.BranchNode
@@ -1031,6 +1026,35 @@ class ExitNode(Node):
             for k in list(data.keys()): del data[k]
             for k in ret: data[k] = ret[k]
 
+class FileNode(Node):
+    mermaid_style = NodeColorStyle.FileNode
+    mermaid_shape = NodeShape.FileNode
+
+    def current_normal_task(self, inps, data, queue):
+        info = self.conf.get('file_dir', None) or self.conf.get('file', None)
+        if 'file' in self.conf:
+            if (t := type(self.conf['file'])) is str:
+                files = [Path(self.conf['file'])]
+            elif t is list:
+                files = [Path(f) for f in self.conf['file']]
+        elif 'file_dir' in self.conf:
+            files = [f for f in Path(self.conf['file_dir']).iterdir() if f.is_file()]
+
+        md = []
+        for file in files:
+            if file.suffix == '.pdf':
+                md_text = pymupdf4llm.to_markdown(file)
+                md.append(md_text)
+            else:
+                with open(file, 'r') as f:
+                    md.append(f.read())
+
+        if 'file' in self.conf and t is str: md = md[0]
+
+        self.set_out(md, data)
+        log.debug(f'[{self.name}] read: {info} -> {self.conf["out"]}')
+        
+
 class PipeTree:
     def __init__(self, llm_backend, rag_backend, prompt_manager, name=None, pipeconf:dict=None, pipefile=None, run_mode='async'):
         self.name = name
@@ -1107,6 +1131,8 @@ class PipeTree:
                 node = ValueNode(name, conf, self)
             elif 'prompt' in conf:
                 node = LLMNode(name, conf, self)
+            elif 'file' in conf or 'file_dir' in conf:
+                node = FileNode(name, conf, self)
             else:
                 log.error(f"Unable to identify node type: [{name}] {conf}")
                 exit()
@@ -1203,7 +1229,7 @@ class PipeTree:
         for c, items in self.node_type.items():
             name = c.__name__.upper()
             mermaid += f'{indent}classDef {name} {c.mermaid_style}\n'
-            mermaid += f'{indent}class {",".join(items)} {name}\n'
+            if items: mermaid += f'{indent}class {",".join(items)} {name}\n'
         for i, style in enumerate(links_style):
             mermaid += f'{indent}linkStyle {i} {style}\n'
 

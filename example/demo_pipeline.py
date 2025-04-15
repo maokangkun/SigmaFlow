@@ -77,7 +77,7 @@ pipeline = {
         "backend_construct": llm_client,
         "next": {
             "确诊": "治疗推荐",
-            "无法确定": ["提取症状", "获取出生日期", "获取身高体重"],
+            "无法确定": ["提取症状", "获取出生日期", "获取身高体重", "查看指南"],
         }
     },
     "获取出生日期": {
@@ -146,6 +146,11 @@ pipeline = {
         'reset_out': '疾病',
         'next': ['是否确诊'],
     },
+    "查看指南": {
+        "file": "./example/demo_test.pdf",
+        # "file_dir": "./example/",
+        "out": "指南"
+    },
     # '联网搜索疾病': {
     #     'web': {
     #         'search_engine': 'bing',
@@ -159,8 +164,8 @@ pipeline = {
     # },
     '治疗推荐': {
         'prompt': {
-            "prompt": "请你根据患者信息和诊断给出具体的治疗建议。\n患者信息：{患者信息}\n年龄：{年龄}\nBMI：{BMI}\n诊断：{疾病}\n回答：",
-            "keys": ['{患者信息}', '{疾病}', '{年龄}', '{BMI}']
+            "prompt": "请你根据患者信息和诊断给出具体的治疗建议。\n患者信息：{患者信息}\n年龄：{年龄}\nBMI：{BMI}\n诊断：{疾病}\n指南: {指南}\n回答：",
+            "keys": ['{患者信息}', '{疾病}', '{年龄}', '{BMI}', '{指南}']
         },
         "backend_construct": llm_client,
         "return_json": False,

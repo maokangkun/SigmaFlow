@@ -3,3 +3,4 @@ fastapi
 openai
 dotenv
 Pillow
+pymupdf4llm
