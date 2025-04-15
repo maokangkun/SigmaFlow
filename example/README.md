@@ -2,6 +2,11 @@
 
 Running example:
 ```bash
+sigmaflow -p example/demo_pipeline.py -i example/demo_data.json -m async
+```
+
+or using python:
+```bash
 python example/demo.py
 ```
 

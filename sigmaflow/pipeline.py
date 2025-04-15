@@ -1,23 +1,28 @@
 import os
+import tqdm
 import time
 import json
 import uuid
 import asyncio
 import datetime
 import collections
+from tqdm.asyncio import tqdm_asyncio
 from .log import log, log_dir
 from .pipetree import PipeTree
-from .utils import check_cmd_exist, get_ordered_task
+from .utils import *
 
 class Pipeline:
     def __init__(self, llm_backend, rag_backend, prompt_manager, pipeconf=None, pipefile=None, run_mode='async'):
         self.llm_backend = llm_backend
         self.rag_backend = rag_backend
         self.run_mode = run_mode
+        self.pipefile = pipefile
         self.name = f'pipeline-{datetime.datetime.now().strftime("%m/%d/%Y_%H:%M:%S")}'
+        self.hash = ''
         if pipeconf or pipefile:
             self.pipetree = PipeTree(llm_backend, rag_backend, prompt_manager, pipeconf=pipeconf, pipefile=pipefile, run_mode=run_mode)
             self.name = self.pipetree.name
+            if pipefile: self.hash = calc_sha256(pipefile)
 
     def gen_info(self, data, start_t, save_perf=False):
         pipe_manager = self.pipetree.pipe_manager
@@ -69,23 +74,9 @@ class Pipeline:
         
         return info
 
-    def mp_run(self, data, core_num=4, save_perf=False):
-        start_t = time.time()
-        result = self.pipetree.mp_run(data, core_num)
-        log.debug(f'final out:\n{json.dumps(result, indent=4, ensure_ascii=False)}')
-        info = self.gen_info(result, start_t, save_perf)
-        return result, info
-
     async def async_run(self, data, save_perf=False):
         start_t = time.time()
         result = await self.pipetree.async_run(data)
-        log.debug(f'final out:\n{json.dumps(result, indent=4, ensure_ascii=False)}')
-        info = self.gen_info(result, start_t, save_perf)
-        return result, info
-
-    def normal_run(self, data, save_perf=False):
-        start_t = time.time()
-        result = self.pipetree.normal_run(data)
         log.debug(f'final out:\n{json.dumps(result, indent=4, ensure_ascii=False)}')
         info = self.gen_info(result, start_t, save_perf)
         return result, info
@@ -206,18 +197,50 @@ class Pipeline:
         send_msg("executed", out)
         return out
 
-    @property
-    def run(self):
+    def _run(self, data, save_perf=False, core_num=4):
+        start_t = time.time()
         match self.run_mode:
             case 'async':
                 log.debug(f"Run '{self.name}' pipeline in coroutine")
-                return self.async_run
+                result = asyncio.run(self.pipetree.async_run(data))
             case 'mp':
                 log.debug(f"Run '{self.name}' pipeline in multiprocess")
-                return self.mp_run
+                result = self.pipetree.mp_run(data, core_num)
             case _:
                 log.debug(f"Run '{self.name}' pipeline in sequential")
-                return self.normal_run
+                result = self.pipetree.normal_run(data)
+        log.debug(f'final out:\n{json.dumps(result, indent=4, ensure_ascii=False)}')
+        info = self.gen_info(result, start_t, save_perf)
+        return result, info
+
+    def run(self, data, save_perf=False, core_num=4, split=None):
+        if (t := type(data)) is dict:
+            return self._run(data, save_perf, core_num)
+        elif t is list:
+            if self.run_mode == 'async':
+                async def f():
+                    results = []
+                    if split is None:
+                        tasks = []
+                        for d in data:
+                            task = asyncio.create_task(self.pipetree.async_run(d))
+                            tasks.append(task)
+                        results = await tqdm_asyncio.gather(*tasks)
+                    else:
+                        parts = len(data) // split + 1
+                        for i in tqdm.trange(parts):
+                            tasks = []
+                            for d in data[i*split:(i+1)*split]:
+                                task = asyncio.create_task(self.pipetree.async_run(d))
+                                tasks.append(task)
+                            results += await asyncio.gather(*tasks)
+                    return results
+
+                results = asyncio.run(f())
+                return [(r, None) for r in results]
+            else:
+                all_result = [self._run(d, save_perf, core_num) for d in tqdm.tqdm(data)]
+            return all_result
 
     async def replay(self, node_name, data_arr):
         node = self.pipetree.node_manager[node_name]
@@ -247,3 +270,9 @@ class Pipeline:
             log.debug(f'save {pipe_img}')
         else:
             log.warning('Please install mmdc to generate mermaid images.')
+
+    def __str__(self):
+        return f"<{self.__class__.__name__}: {self.name}, mode: {self.run_mode}, file: {self.pipefile}, hash: {self.hash[-8:]}>"
+
+    def __repr__(self):
+        return self.__str__()

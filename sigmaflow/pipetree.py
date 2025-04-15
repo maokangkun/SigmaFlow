@@ -346,17 +346,25 @@ class LLMNode(Node):
         tree = self.tree
         if type(self.conf['prompt']) is not Prompt:
             self.conf['prompt'] = tree.prompt_manager.get(self.conf['prompt'])
+        
+        if self.conf.get('backend', None):
+            backend = self.conf['backend']
+        elif (constructor := self.conf.get('backend_construct', None)):
+            backend = constructor(tree.run_mode)
+        else:
+            backend = tree.llm_backend
+
         if tree.run_mode == 'mp':
             pipe = LLMPipe(
                     self.name,
-                    llm=tree.llm_backend,
+                    llm=backend,
                     lock=tree.mp_lock,
                     run_time=tree.mp_manager.list(),
                     inout_log=tree.mp_manager.list(),
                     **self.conf
                     )
         else:
-            pipe = LLMPipe(self.name, llm=tree.llm_backend, **self.conf)
+            pipe = LLMPipe(self.name, llm=backend, **self.conf)
         tree.pipe_manager[self.name] = pipe
         self.pipe = pipe
 
@@ -394,10 +402,13 @@ class RAGNode(Node):
 
     def post_init(self):
         tree = self.tree
-        if self.conf.get('rag_backend', None):
-            backend = self.conf['rag_backend']
+        if self.conf.get('backend', None):
+            backend = self.conf['backend']
+        elif (constructor := self.conf.get('backend_construct', None)):
+            backend = constructor(tree.run_mode)
         else:
             backend = tree.rag_backend
+
         if (param := self.conf.get('rag_param', None)):
             rag_backend = lambda *x: backend(*x, **dict(param))
         else:
@@ -579,17 +590,25 @@ class BranchNode(Node):
             self.conf['prompt'] = tree.prompt_manager.prompts['branch_node_prompt']
             self.conf['return_json'] = True
             self.conf['format'] = {'item_id': str}
+
+            if self.conf.get('backend', None):
+                backend = self.conf['backend']
+            elif (constructor := self.conf.get('backend_construct', None)):
+                backend = constructor(tree.run_mode)
+            else:
+                backend = tree.llm_backend
+
             if tree.run_mode == 'mp':
                 pipe = LLMPipe(
                         self.name,
-                        llm=tree.llm_backend,
+                        llm=backend,
                         lock=tree.mp_lock,
                         run_time=tree.mp_manager.list(),
                         inout_log=tree.mp_manager.list(),
                         **self.conf
                         )
             else:
-                pipe = LLMPipe(self.name, llm=tree.llm_backend, **self.conf)
+                pipe = LLMPipe(self.name, llm=backend, **self.conf)
             tree.pipe_manager[self.name] = pipe
             self.pipe = pipe
 
@@ -793,7 +812,10 @@ class BranchNode(Node):
         return {self.name: d}
 
     def __str__(self):
-        arr = [f'{cond} -> {[n.name for n in nodes]}' for cond, nodes in self.next.items()]
+        if type(self.next) is dict:
+            arr = [f'{cond} -> {[n.name for n in nodes]}' for cond, nodes in self.next.items()]
+        else:
+            arr = self.next
         return f"<{self.__class__.__name__}: {self.name}, next: {arr}>"
 
 class CodeNode(Node):
@@ -825,6 +847,15 @@ class CodeNode(Node):
             out = eval(self.conf['code'].format(**inps_dict))
         self.set_out(out, data, config=config)
         for n in self.next: queue.put((n.name, config))
+    
+    def current_normal_task(self, inps, data, queue):
+        if 'code_entry' in self.conf:
+            exec(self.conf['code'])
+            out = locals()[self.conf['code_entry']](*inps)
+        else:
+            inps_dict = {k:self._eval_format(v) for k,v in zip(self.conf['inp'], inps)}
+            out = eval(self.conf['code'].format(**inps_dict))
+        self.set_out(out, data)
 
 class WebNode(Node):
     mermaid_style = NodeColorStyle.WebNode
@@ -1062,8 +1093,6 @@ class PipeTree:
         for name, conf in self.pipeconf.items():
             if name == 'exit':
                 self.exit_node = node = ExitNode(name, conf, self)
-            elif 'prompt' in conf:
-                node = LLMNode(name, conf, self)
             elif 'rag_param' in conf:
                 node = RAGNode(name, conf, self)
             elif 'pipe_in_loop' in conf:
@@ -1076,6 +1105,8 @@ class PipeTree:
                 node = WebNode(name, conf, self)
             elif 'value' in conf or 'item' in conf:
                 node = ValueNode(name, conf, self)
+            elif 'prompt' in conf:
+                node = LLMNode(name, conf, self)
             else:
                 log.error(f"Unable to identify node type: [{name}] {conf}")
                 exit()

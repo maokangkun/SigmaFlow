@@ -1,5 +1,7 @@
 import sys
+import json
 import shutil
+import hashlib
 import collections
 from pathlib import Path, PosixPath
 
@@ -56,3 +58,23 @@ def get_ordered_task(tasks):
                 queue.append(neighbor)
 
     return execution_order
+
+def jload(inp):
+    with open(inp, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def jdump(obj, out):
+    with open(out, 'w', encoding='utf-8') as f:
+        if isinstance(obj, (dict, list)):
+            json.dump(obj, f, indent=4, ensure_ascii=False)
+        elif isinstance(obj, str):
+            f.write(obj)
+        else:
+            raise ValueError(f"Unexpected type: {type(obj)}")
+
+def calc_sha256(file_path):
+    hash_sha256 = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_sha256.update(chunk)
+    return hash_sha256.hexdigest()

@@ -59,4 +59,8 @@ setuptools.setup(
     ],
     python_requires='>=3.10',
     zip_safe=False,
+    entry_points = {
+        'console_scripts': ['sigmaflow=sigmaflow.command_line:main'],
+    },
+    # scripts=['bin/funniest-joke']
 )

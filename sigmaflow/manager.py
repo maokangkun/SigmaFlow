@@ -1,8 +1,8 @@
 import sys
 from pathlib import Path
 from .log import log
+from .utils import *
 from .prompt import Prompt
-from .utils import importpath
 from .pipeline import Pipeline
 
 class PromptManager:
@@ -61,10 +61,29 @@ class PipelineManager:
         pipe_files = list(self.pipes_dir.glob('*_pipeline.py'))
         log.debug(f'Find {len(pipe_files)} pipeline files: {[p.stem for p in pipe_files]}')
 
-        for pf in pipe_files:
-            self.pipes[pf.stem] = Pipeline(self.llm_client, self.rag_client, self.prompt_manager, pipefile=pf, run_mode=self.run_mode)
+        for pf in pipe_files: self._load_pipe(pf.stem, pipefile=pf)
+        sys.path.pop()
 
         log.debug('All pipelines loaded')
+
+    def add_pipe(self, name, pipeconf=None, pipefile=None, run_mode=None):
+        if pipefile:
+            if type(pipefile) is str: pipefile = Path(pipefile)
+            sys.path.append(str(pipefile.parent))
+
+        p = self._load_pipe(name, pipeconf=pipeconf, pipefile=pipefile, run_mode=run_mode)
+
+        if pipefile: sys.path.pop()
+
+        return p
+
+    def _load_pipe(self, name, pipeconf=None, pipefile=None, run_mode=None):
+        if pipefile and name in self.pipes and calc_sha256(pipefile) == self.pipes[name].hash:
+            p = self.pipes[name]
+        else:
+            p = Pipeline(self.llm_client, self.rag_client, self.prompt_manager, pipeconf=pipeconf, pipefile=pipefile, run_mode=run_mode or self.run_mode)
+            self.pipes[name] = p
+        return p
 
     def export_pipe_conf(self):
         conf = {k: copy.deepcopy(v['conf']) for k,v in self.pipes.items()}
@@ -119,6 +138,8 @@ class PipelineManager:
                 nodes |= node.export_as_comfyui()
         return nodes
 
-    def add_pipe(self, name, pipeconf=None, pipefile=None, run_mode='async', is_seq=False):
-        self.pipes[name] = Pipeline(self.llm_client, self.rag_client, self.prompt_manager, pipeconf=pipeconf, pipefile=pipefile, run_mode=run_mode)
-        return self.pipes[name]
+    def __str__(self):
+        return f"<{self.__class__.__name__} mode: {self.run_mode}, pipes: {list(self.pipes)}, dir: {self.pipes_dir.absolute()}>"
+
+    def __repr__(self):
+        return self.__str__()
