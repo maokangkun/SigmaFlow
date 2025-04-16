@@ -203,7 +203,11 @@ class Pipeline:
         match self.run_mode:
             case 'async':
                 log.debug(f"Run '{self.name}' pipeline in coroutine")
-                result = asyncio.run(self.pipetree.async_run(data))
+                async def f():
+                    if self.llm_batch_processor:
+                        asyncio.create_task(self.llm_batch_processor())
+                    return await self.pipetree.async_run(data)
+                result = asyncio.run(f())
             case 'mp':
                 log.debug(f"Run '{self.name}' pipeline in multiprocess")
                 result = self.pipetree.mp_run(data, core_num)
