@@ -43,15 +43,19 @@ class PromptManager:
             return self.prompts[name]
 
 class PipelineManager:
-    def __init__(self, llm_client=None, rag_client=None, run_mode='async', pipes_dir=None, prompt_manager=None):
+    def __init__(self, llm_client=None, rag_client=None, llm_type=None, rag_type=None, run_mode='async', pipes_dir=None, prompt_manager=None):
         log.debug('Setup PipelineManager')
         if pipes_dir is None: pipes_dir = '.'
         self.pipes_dir = Path(pipes_dir)
         self.prompt_manager = prompt_manager or PromptManager()
         self.llm_client = llm_client
         self.rag_client = rag_client
+        self.llm_type = llm_type
+        self.rag_type = rag_type
+        self.llm_batch_processor = None
         self.run_mode = run_mode
         self.pipes = {}
+        self.load_llm_rag_client()
         self.load_pipes()
 
     def load_pipes(self):
@@ -65,6 +69,39 @@ class PipelineManager:
         sys.path.pop()
 
         log.debug('All pipelines loaded')
+
+    def load_llm_rag_client(self):
+        if self.llm_client is None and self.llm_type is not None:
+            log.debug(f'Initializing {self.llm_type} backend')
+            llm_batch_processor = None
+            match self.llm_type:
+                case 'torch':
+                    from .clients.llm_torch import llm_client
+                case 'lmdeploy':
+                    from .clients.llm_lmdeploy import llm_client, llm_batch_processor
+                case 'vllm':
+                    from .clients.llm_vllm import llm_client, llm_batch_processor
+                case 'ollama':
+                    from .clients.llm_ollama import llm_client
+                case 'openai':
+                    from .clients.llm_openai import llm_client
+                case 'mlx':
+                    from .clients.llm_mlx import llm_client
+                case _:
+                    pass
+            self.llm_client = llm_client(is_async=self.run_mode=='async')
+            self.llm_batch_processor = llm_batch_processor
+
+        if self.rag_client is None and self.rag_type is not None:
+            log.debug(f'Initializing {self.rag_type} backend')
+            match self.rag_type:
+                case 'json':
+                    from sigmaflow.clients.rag_json import rag_client
+                case 'http':
+                    from sigmaflow.clients.rag_http import rag_client
+                case _:
+                    pass
+            self.rag_client = rag_client(is_async=self.run_mode=='async')
 
     def add_pipe(self, name, pipeconf=None, pipefile=None, run_mode=None):
         if pipefile:
@@ -81,7 +118,7 @@ class PipelineManager:
         if pipefile and name in self.pipes and calc_sha256(pipefile) == self.pipes[name].hash:
             p = self.pipes[name]
         else:
-            p = Pipeline(self.llm_client, self.rag_client, self.prompt_manager, pipeconf=pipeconf, pipefile=pipefile, run_mode=run_mode or self.run_mode)
+            p = Pipeline(self.llm_client, self.rag_client, self.prompt_manager, pipeconf=pipeconf, pipefile=pipefile, run_mode=run_mode or self.run_mode, llm_batch_processor=self.llm_batch_processor)
             self.pipes[name] = p
         return p
 

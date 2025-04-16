@@ -12,8 +12,9 @@ from .pipetree import PipeTree
 from .utils import *
 
 class Pipeline:
-    def __init__(self, llm_backend, rag_backend, prompt_manager, pipeconf=None, pipefile=None, run_mode='async'):
+    def __init__(self, llm_backend, rag_backend, prompt_manager, pipeconf=None, pipefile=None, run_mode='async', llm_batch_processor=None):
         self.llm_backend = llm_backend
+        self.llm_batch_processor = llm_batch_processor
         self.rag_backend = rag_backend
         self.run_mode = run_mode
         self.pipefile = pipefile
@@ -219,6 +220,9 @@ class Pipeline:
         elif t is list:
             if self.run_mode == 'async':
                 async def f():
+                    if self.llm_batch_processor:
+                        asyncio.create_task(self.llm_batch_processor())
+
                     results = []
                     if split is None:
                         tasks = []

@@ -12,6 +12,7 @@ def beijing(sec, what):
 
 LOG_DIR = os.getenv('LOGGING_DIR', 'logs')
 LOG_LEVEL = os.getenv('LOGGING_LEVEL', 'NOTSET')
+SAVE_LOG = bool(os.getenv('SAVE_LOG', 0))
 MAXBYTES = 10000000 # ~10M
 LOGFORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 LOGFORMAT_RICH = '%(message)s'
@@ -21,8 +22,10 @@ log_dir = Path(LOG_DIR)
 log_dir.mkdir(exist_ok=True, parents=True)
 log_file = log_dir / f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}.log"
 logging.Formatter.converter = beijing
-logging.basicConfig(level=LOG_LEVEL, format=LOGFORMAT, datefmt="[%y-%m-%d %H:%M:%S]", handlers=[rh, RotatingFileHandler(log_file, maxBytes=MAXBYTES)])
-log = logging.getLogger("llmpipeline")
+handlers = [rh]
+if SAVE_LOG: handlers.append(RotatingFileHandler(log_file, maxBytes=MAXBYTES))
+logging.basicConfig(level=LOG_LEVEL, format=LOGFORMAT, datefmt="[%y-%m-%d %H:%M:%S]", handlers=handlers)
+log = logging.getLogger("SigmaFlow")
 
 def _banner_print(text):
     n = len(text)
