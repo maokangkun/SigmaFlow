@@ -149,6 +149,7 @@ pipeline = {
     "查看指南": {
         "file": "./example/demo_test.pdf",
         # "file_dir": "./example/",
+        "tool": "pymupdf4llm", # "docling"
         "out": "指南"
     },
     # '联网搜索疾病': {

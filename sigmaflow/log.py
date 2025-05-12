@@ -10,16 +10,16 @@ def beijing(sec, what):
     beijing_time = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
     return beijing_time.timetuple()
 
+SAVE_LOG = bool(int(os.getenv('SAVE_LOG', 0)))
 LOG_DIR = os.getenv('LOGGING_DIR', 'logs')
 LOG_LEVEL = os.getenv('LOGGING_LEVEL', 'NOTSET')
-SAVE_LOG = bool(os.getenv('SAVE_LOG', 0))
 MAXBYTES = 10000000 # ~10M
 LOGFORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 LOGFORMAT_RICH = '%(message)s'
 rh = RichHandler(console=Console(stderr=True))
 rh.setFormatter(logging.Formatter(LOGFORMAT_RICH))
 log_dir = Path(LOG_DIR)
-log_dir.mkdir(exist_ok=True, parents=True)
+if SAVE_LOG: log_dir.mkdir(exist_ok=True, parents=True)
 log_file = log_dir / f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}.log"
 logging.Formatter.converter = beijing
 handlers = [rh]

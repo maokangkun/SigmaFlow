@@ -78,3 +78,51 @@ def calc_sha256(file_path):
         for chunk in iter(lambda: f.read(4096), b""):
             hash_sha256.update(chunk)
     return hash_sha256.hexdigest()
+
+def test_env():
+    from rich import print
+    from rich.table import Table
+    from rich.console import Console
+    from rich.progress import Progress
+
+    console = Console()
+    table = Table(title="LLM Environment Check Results")
+    table.add_column("Library", style="cyan", justify="left")
+    table.add_column("Status", style="magenta", justify="left")
+    table.add_column("Details", style="white", justify="left")
+
+    libraries = [
+        ("PyTorch", "torch", lambda lib: f"Version: {lib.__version__}, CUDA: {lib.cuda.is_available()}"),
+        ("Transformer Engine", "transformer_engine", lambda _: f"Version: {lib.__version__}"),
+        ("FlashAttention", "flash_attn", lambda _: f"Version: {lib.__version__}"),
+        ("Transformers", "transformers", lambda lib: f"Version: {lib.__version__}"),
+        ("DeepSpeed", "deepspeed", lambda lib: f"Version: {lib.__version__}"),
+        ("Apex", "apex", lambda _: "Apex is available"),
+        ("Datasets", "datasets", lambda lib: f"Version: {lib.__version__}"),
+        ("Tokenizers", "tokenizers", lambda lib: f"Version: {lib.__version__}"),
+        ("vLLM", "vllm", lambda lib: f"Version: {lib.__version__}"),
+        ("bitsandbytes", "bitsandbytes", lambda lib: f"Version: {lib.__version__}"),
+        ("PEFT", "peft", lambda lib: f"Version: {lib.__version__}"),
+        ("TRL", "trl", lambda lib: f"Version: {lib.__version__}"),
+        ("wandb", "wandb", lambda lib: f"Version: {lib.__version__}"),
+        ("lmdeploy", "lmdeploy", lambda lib: f"Version: {lib.__version__}"),
+        ("Megatron-Core", "megatron.core", lambda lib: f"Version: {lib.core.__version__}")
+    ]
+
+    rows = []
+    with Progress() as progress:
+        task = progress.add_task("[cyan]Checking libraries...", total=len(libraries))
+        for name, module, details_func in libraries:
+            try:
+                lib = __import__(module)
+                status = "[green]Installed[/green]"
+                details = details_func(lib)
+            except ImportError:
+                status = "[red]Not Installed[/red]"
+                details = "N/A"
+            rows.append((name, status, details))
+            progress.update(task, advance=1)
+
+    rows.sort(key=lambda x: x[0])
+    for row in rows: table.add_row(*row)
+    console.print(table)

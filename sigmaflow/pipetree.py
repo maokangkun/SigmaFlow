@@ -13,7 +13,6 @@ import multiprocessing as mp
 from .log import log
 from .prompt import Prompt
 from .pipe import *
-import pymupdf4llm
 
 class DataState(Enum):
     VOID = 0
@@ -91,6 +90,8 @@ class Node:
         if self.reset_out_flag:
             self.conf['out'] = self.conf['reset_out']
             del self.conf['reset_out']
+        if 'inp' in self.conf and type(self.conf['inp']) is str:
+            self.conf['inp'] = [self.conf['inp']]
         self.set_mermaid()
         self.post_init()
 
@@ -828,6 +829,8 @@ class CodeNode(Node):
         if 'code_entry' in self.conf:
             exec(self.conf['code'])
             out = locals()[self.conf['code_entry']](*inps)
+        elif 'code_func' in self.conf:
+            out = self.conf['code_func'](*inps)
         else:
             inps_dict = {k:self._eval_format(v) for k,v in zip(self.conf['inp'], inps)}
             out = eval(self.conf['code'].format(**inps_dict))
@@ -837,6 +840,8 @@ class CodeNode(Node):
         if 'code_entry' in self.conf:
             exec(self.conf['code'])
             out = locals()[self.conf['code_entry']](*inps)
+        elif 'code_func' in self.conf:
+            out = self.conf['code_func'](*inps)
         else:
             inps_dict = {k:self._eval_format(v) for k,v in zip(self.conf['inp'], inps)}
             out = eval(self.conf['code'].format(**inps_dict))
@@ -847,6 +852,8 @@ class CodeNode(Node):
         if 'code_entry' in self.conf:
             exec(self.conf['code'])
             out = locals()[self.conf['code_entry']](*inps)
+        elif 'code_func' in self.conf:
+            out = self.conf['code_func'](*inps)
         else:
             inps_dict = {k:self._eval_format(v) for k,v in zip(self.conf['inp'], inps)}
             out = eval(self.conf['code'].format(**inps_dict))
@@ -1040,6 +1047,7 @@ class FileNode(Node):
         elif 'file_dir' in self.conf:
             files = [f for f in Path(self.conf['file_dir']).iterdir() if f.is_file()]
 
+        import pymupdf4llm
         md = []
         for file in files:
             if file.suffix == '.pdf':
@@ -1123,7 +1131,7 @@ class PipeTree:
                 node = LoopNode(name, conf, self)
             elif 'use_llm' in conf or type(conf.get('next', None)) is dict:
                 node = BranchNode(name, conf, self)
-            elif 'code' in conf:
+            elif 'code' in conf or 'code_func' in conf:
                 node = CodeNode(name, conf, self)
             elif 'web' in conf:
                 node = WebNode(name, conf, self)

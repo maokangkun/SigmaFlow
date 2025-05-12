@@ -38,7 +38,7 @@ def completion(text):
         msg,
         do_sample=True,
         max_new_tokens=max_new_tokens,
-        pad_token_id = pipe.tokenizer.eos_token_id
+        pad_token_id=pipe.tokenizer.eos_token_id
     )
 
     return resp[0]["generated_text"][-1]['content']

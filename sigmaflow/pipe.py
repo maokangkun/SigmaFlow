@@ -24,6 +24,12 @@ class Pipe:
         return None
 
     def _json(self, inp):
+        inp = inp.strip()
+
+        # remove think content
+        regex = r"(^<think>[^<]*(?:<(?!/?think>)[^<]*)*<\/think>)"
+        inp = re.sub(regex, '', inp).strip()
+
         try:
             j = json.loads(inp)
             return j
