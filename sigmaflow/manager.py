@@ -1,4 +1,5 @@
 import sys
+import copy
 from pathlib import Path
 from .log import log
 from .utils import *
@@ -123,12 +124,19 @@ class PipelineManager:
         return p
 
     def export_pipe_conf(self):
-        conf = {k: copy.deepcopy(v['conf']) for k,v in self.pipes.items()}
+        conf = {k: copy.deepcopy(p.pipetree.pipeconf) for k, p in self.pipes.items()}
         for c in conf.values():
             for pipe_conf in c.values():
                 if 'format' in pipe_conf:
                     for k, v in pipe_conf['format'].items():
                         pipe_conf['format'][k] = str(v)
+
+                if 'prompt' in pipe_conf:
+                    pipe_conf['prompt'] = pipe_conf['prompt'].name
+
+                if 'backend_construct' in pipe_conf:
+                    pipe_conf['backend_construct'] = str(pipe_conf['backend_construct'])
+
         return conf
 
     def update_pipe(self, pipe_name, pipe_data):

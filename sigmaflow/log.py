@@ -16,14 +16,18 @@ LOG_LEVEL = os.getenv('LOGGING_LEVEL', 'NOTSET')
 MAXBYTES = 10000000 # ~10M
 LOGFORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 LOGFORMAT_RICH = '%(message)s'
+log_dir = Path(LOG_DIR)
+
 rh = RichHandler(console=Console(stderr=True))
 rh.setFormatter(logging.Formatter(LOGFORMAT_RICH))
-log_dir = Path(LOG_DIR)
-if SAVE_LOG: log_dir.mkdir(exist_ok=True, parents=True)
-log_file = log_dir / f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}.log"
 logging.Formatter.converter = beijing
 handlers = [rh]
-if SAVE_LOG: handlers.append(RotatingFileHandler(log_file, maxBytes=MAXBYTES))
+
+if SAVE_LOG:
+    log_dir.mkdir(exist_ok=True, parents=True)
+    log_file = log_dir / f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}.log"
+    handlers.append(RotatingFileHandler(log_file, maxBytes=MAXBYTES))
+
 logging.basicConfig(level=LOG_LEVEL, format=LOGFORMAT, datefmt="[%y-%m-%d %H:%M:%S]", handlers=handlers)
 log = logging.getLogger("SigmaFlow")
 

@@ -11,11 +11,13 @@ if spec:
     batch_size = int(os.getenv('LMDEPLOY_BATCH_SIZE', 128))
     pp = int(os.getenv('LMDEPLOY_PP', 1))
     tp = int(os.getenv('LMDEPLOY_TP', 1))
+    dp = int(os.getenv('LMDEPLOY_DP', 1))
 
     backend_config = TurbomindEngineConfig(
                         session_len=session_len,
                         pp=pp,
-                        tp=tp)
+                        tp=tp,
+                        dp=dp)
     gen_config = GenerationConfig(
                         do_sample=True,
                         # top_p=0.95,

@@ -20,11 +20,11 @@ from PIL import Image, ImageOps, PngImagePlugin
 from typing import Optional, Dict, Any, Callable
 from .log import log
 
-PipelineServer = server = FastAPI(title='llmpipeline server')
+PipelineServer = server = FastAPI(title='Sigmaflow Server')
 PipelineServer.api = None
 web_dir = 'web'
 web_root = Path(f'{__file__[:__file__.rindex("/")]}/{web_dir}')
-server.mount("/web", StaticFiles(directory=web_root, html=True), name="llmpipeline server web")
+# server.mount("/web", StaticFiles(directory=web_root, html=True), name="llmpipeline server web")
 
 class BinaryEventTypes:
     PREVIEW_IMAGE = 1

@@ -10,6 +10,7 @@ def setup_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-p', '--pipeline', type=str, help='specify the pipeline to run')
+    parser.add_argument('-d', '--pipeline_dir', type=str, help='specify the pipeline dir to run')
     parser.add_argument('-i', '--input', type=str, help='specify input data')
     parser.add_argument('-o', '--output', type=str, help='specify output data')
     parser.add_argument('-m', '--mode', type=str, default='async', choices=['async', 'mp', 'seq'], help='specify the run mode')
@@ -20,6 +21,7 @@ def setup_args():
     parser.add_argument('--png', action='store_true', help='export graph as png')
     parser.add_argument('--log', action='store_true', help='save logs')
     parser.add_argument('--test', action='store_true', help='run test')
+    parser.add_argument('--api', action='store_true', default=False, help='serve the pipeline as API')
     
     parser.add_argument('--env', action='store_true', default=False, help='run in environment mode, ignoring other required options')
 
@@ -28,8 +30,8 @@ def setup_args():
     if args.env:
         return args
 
-    if not args.pipeline:
-        parser.error("the following arguments are required: -p/--pipeline")
+    if not args.pipeline and not args.pipeline_dir:
+        parser.error("the following arguments are required: -p/--pipeline or -d/--pipeline_dir")
 
     if args.log: os.environ['SAVE_LOG'] = '1'
     return args
@@ -41,14 +43,15 @@ def main():
         test_env()
         return
 
-    pipefile = Path(args.pipeline)
-
     if args.model:
         os.environ['MODEL_PATH'] = args.model
 
     from .manager import PipelineManager
-    pm = PipelineManager(run_mode=args.mode, llm_type=args.llm, rag_type=args.rag)
-    pipe = pm.add_pipe(pipefile.stem, pipefile=pipefile)
+    pm = PipelineManager(run_mode=args.mode, llm_type=args.llm, rag_type=args.rag, pipes_dir=args.pipeline_dir)
+
+    if args.pipeline:
+        pipefile = Path(args.pipeline)
+        pipe = pm.add_pipe(pipefile.stem, pipefile=pipefile)
 
     if args.input:
         data = jload(args.input)
@@ -59,4 +62,9 @@ def main():
             elif type(r) is list: jdump([i for i,_ in r], args.output)
     elif args.png:
         pipe.to_png(f'{pipefile.stem}.png')
+    elif args.api:
+        import uvicorn
+        from .server import PipelineServer
 
+        server = PipelineServer(pipeline_manager=pm)
+        uvicorn.run(server.app, host="0.0.0.0", port=8000, log_config=None, log_level=os.getenv('LOGGING_LEVEL', 'INFO').lower())

@@ -250,6 +250,30 @@ class Pipeline:
                 all_result = [self._run(d, save_perf, core_num) for d in tqdm.tqdm(data)]
             return all_result
 
+    async def async_run(self, data, save_perf=False, split=None):
+        if self.llm_batch_processor:
+            asyncio.create_task(self.llm_batch_processor())
+
+        if (t := type(data)) is dict:
+            return await self.pipetree.async_run(data)
+        elif t is list:
+            results = []
+            if split is None:
+                tasks = []
+                for d in data:
+                    task = asyncio.create_task(self.pipetree.async_run(d))
+                    tasks.append(task)
+                results = await tqdm_asyncio.gather(*tasks)
+            else:
+                parts = len(data) // split + 1
+                for i in tqdm.trange(parts):
+                    tasks = []
+                    for d in data[i*split:(i+1)*split]:
+                        task = asyncio.create_task(self.pipetree.async_run(d))
+                        tasks.append(task)
+                    results += await asyncio.gather(*tasks)
+            return results
+
     async def replay(self, node_name, data_arr):
         node = self.pipetree.node_manager[node_name]
         pipe = self.pipetree.pipe_manager.get(node_name, None)
