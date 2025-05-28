@@ -75,129 +75,6 @@ class Pipeline:
         
         return info
 
-    async def async_run(self, data, save_perf=False):
-        start_t = time.time()
-        result = await self.pipetree.async_run(data)
-        log.debug(f'final out:\n{json.dumps(result, indent=4, ensure_ascii=False)}')
-        info = self.gen_info(result, start_t, save_perf)
-        return result, info
-
-    def seq_run(self, prompt_id, ws_id, task_data, send_msg):
-        task_order = get_ordered_task(task_data)
-        task_out = {}
-
-        for task_id in task_order:
-            msg = {
-                "node": task_id, 
-                "display_node": task_id,
-                "prompt_id": prompt_id
-            }
-            send_msg("executing", msg, ws_id)
-            task = task_data[task_id]
-            task_type = task['class_type']
-
-            if task_type == 'InputText':
-                task_out[task_id] = [task['inputs']['input']]
-            elif task_type == 'PreviewText':
-                inp_id, inp_idx = task['inputs']['out'][0].split('-')
-                inp_idx = int(inp_idx)
-                out = task_out[inp_id][inp_idx] if inp_id in task_out else None
-
-                msg = {
-                    "node": task_id,
-                    "display_node": task_id,
-                    "output": {
-                        "string": [out],
-                    },
-                    "prompt_id": prompt_id
-                }
-                send_msg("executed", msg)
-            elif 'prompt' in task['inputs']:
-                prompt = task['inputs']['prompt']
-                for k, v in task['inputs'].items():
-                    if k == 'prompt': continue
-                    elif k == '模型' or k == 'model': continue
-                    else:
-                        inp_id, inp_idx = v[0].split('-')
-                        inp_idx = int(inp_idx)
-                        inp = task_out[inp_id][inp_idx] if inp_id in task_out else None
-                        prompt = prompt.replace(k, inp)
-                out = self.llm_backend(prompt)
-                task_out[task_id] = [out]
-
-                msg = {
-                    "node": task_id,
-                    "display_node": task_id,
-                    "output": {
-                        "string": [out],
-                    },
-                    "prompt_id": prompt_id
-                }
-                send_msg("executed", msg)
-            elif 'kb' in task['inputs']:
-                ...
-            elif 'use_llm' in task['inputs']:
-                ...
-            else:
-                time.sleep(3)
-
-        return msg
-
-    def fake_run(self, prompt_id, ws_id, task_data, send_msg):
-        # 模拟
-        for node_id in [2, 3, 8, 5, 7, 6]:
-        # for node_id in [4, 10, 11, 5, 13]:
-            data = {
-                "node": str(node_id), 
-                "display_node": str(node_id),
-                "prompt_id": prompt_id
-            }
-            send_msg("executing", data, ws_id)
-            time.sleep(3)
-
-        # for i in range(20):
-        #     data = {
-        #         "value": i+1,
-        #         "max": 20,
-        #         "prompt_id": prompt_id,
-        #         "node": "13"
-        #     }
-        #     self.send_msg("progress", data, ws_id)
-        #     time.sleep(.5)
-
-        # for node_id in [12, 9]:
-        #     data = {
-        #         "node": str(node_id), 
-        #         "display_node": str(node_id),
-        #         "prompt_id": prompt_id
-        #     }
-        #     self.send_msg("executing", data, ws_id)
-        #     time.sleep(1)
-
-        # out = {
-        #     "node": "9",
-        #     "display_node": "9",
-        #     "output": {
-        #         "images": [{
-        #             "filename": "doubao.png",
-        #             "subfolder": "",
-        #             "type": "temp"
-        #         }],
-        #     },
-        #     "prompt_id": prompt_id
-        # }
-
-        out = {
-            "node": "6",
-            "display_node": "6",
-            "output": {
-                "string": ["1234dededexdeee\ndefwefew"],
-            },
-            "prompt_id": prompt_id
-        }
-        send_msg("executed", out)
-        return out
-
     def _run(self, data, save_perf=False, core_num=4):
         start_t = time.time()
         match self.run_mode:
@@ -302,6 +179,13 @@ class Pipeline:
             log.debug(f'save {pipe_img}')
         else:
             log.warning('Please install mmdc to generate mermaid images.')
+
+    def add_node_finish_callback(self, callbacks, nodes=None):
+        if nodes is None: nodes = self.pipetree.node_manager.values()
+        elif type(nodes) is list and type(nodes[0]) is str:
+            nodes = [self.pipetree.node_manager[n] for n in nodes]
+
+        for n in nodes: n.add_finish_callback(callbacks)
 
     def __str__(self):
         return f"<{self.__class__.__name__}: {self.name}, mode: {self.run_mode}, file: {self.pipefile}, hash: {self.hash[-8:]}>"

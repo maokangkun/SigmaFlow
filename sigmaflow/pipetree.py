@@ -86,6 +86,7 @@ class Node:
         self.in_loop = None
         self.next = []
         self.loop_nodes = []
+        self.finish_callbacks = []
         self.reset_out_flag = 'reset_out' in self.conf
         if self.reset_out_flag:
             self.conf['out'] = self.conf['reset_out']
@@ -94,6 +95,20 @@ class Node:
             self.conf['inp'] = [self.conf['inp']]
         self.set_mermaid()
         self.post_init()
+
+    def add_finish_callback(self, callback):
+        if type(callback) is list:
+            self.finish_callbacks += callback
+        else:
+            self.finish_callbacks.append(callback)
+        self.finish_callbacks = list(set(self.finish_callbacks))
+
+    def execute_finish_callback(self, out):
+        data = {
+            'node': self.name,
+            'out': out,
+        }
+        for callback in self.finish_callbacks: callback(data)
 
     def set_mermaid(self):
         self.mermaid_inps = []
@@ -179,6 +194,7 @@ class Node:
         if self.__class__.__name__ in ['LLMNode', 'RAGNode']:
             out = self.pipe(*inps)
             self.set_out(out, data, config=config)
+            self.execute_finish_callback(out)
 
         for n in self.next: queue.put((n.name, config))
 
@@ -266,6 +282,7 @@ class Node:
             inps = await self.get_inps(queue)
             out = await self.pipe.async_call(*inps)
             self.set_out(out, data, queue)
+            self.execute_finish_callback(out)
 
     async def async_run(self, data, queue, dynamic_tasks):
         start_time = time.time()
@@ -309,6 +326,7 @@ class Node:
         if self.__class__.__name__ in ['LLMNode', 'RAGNode']:
             out = self.pipe(*inps)
             self.set_out(out, data)
+            self.execute_finish_callback(out)
 
         for n in self.next: queue.append(n)
 
