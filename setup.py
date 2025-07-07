@@ -1,12 +1,13 @@
-import setuptools
-import requests
-from functools import reduce
-import xml.etree.ElementTree as ET
 import re
+import setuptools
 
 pkg_name = 'SigmaFlow'
 
 def get_new_version():
+    import requests
+    from functools import reduce
+    import xml.etree.ElementTree as ET
+
     pkg_url = f'https://pypi.org/rss/project/{pkg_name}/releases.xml'
     root = ET.fromstring(requests.get(pkg_url).text)
     old_version = root[0].findall('item')[0].find('title').text

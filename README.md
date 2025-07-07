@@ -150,6 +150,10 @@ You can install SigmaFlow via pip:
 你可以通过 pip 安装 SigmaFlow：
 ```bash
 pip install SigmaFlow
+
+# or editable install from source
+git clone https://github.com/maokangkun/SigmaFlow.git && cd SigmaFlow
+pip install --no-build-isolation -e .
 ```
 
 ## Quick Start

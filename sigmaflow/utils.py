@@ -6,7 +6,6 @@ import hashlib
 import requests
 import platform
 import collections
-from packaging import version
 from pathlib import Path, PosixPath
 
 def check_cmd_exist(command):
@@ -84,6 +83,7 @@ def calc_sha256(file_path):
     return hash_sha256.hexdigest()
 
 def get_latest_version(lib):
+    from packaging import version
     package_name = lib[1]
     if package_name == "apex": return package_name, None
     if package_name == "swift": package_name = "ms-swift"
@@ -147,6 +147,8 @@ def test_env():
         ("lmdeploy", "lmdeploy"),
         ("Megatron-Core", "megatron.core"),
         ("ms-swift", "swift"),
+        ("Triton", "triton"),
+        ("ModelScope", "modelscope")
     ]
 
     versions_dict = {}
@@ -183,7 +185,7 @@ def test_env():
                     details = f"Version: {ver}"
                 
                 v = versions_dict[module]
-                if v and v != ver:
+                if v and v != ver and not ver.startswith(v):
                     details += f"[red]  (Latest: {v})[/red]"
             except ImportError:
                 status = "[red]Not Installed[/red]"
@@ -206,7 +208,7 @@ def test_env():
             memstr = f'{int(meminfo.used/1024/1024/1024):d}G / {int(meminfo.total/1024/1024/1024):d}G, {meminfo.used/meminfo.total:3.0%}'
             temp = pynvml.nvmlDeviceGetTemperature(handle, 0)
             utlization = pynvml.nvmlDeviceGetUtilizationRates(handle)
-            table.add_row('GPU' if not i else '', f'{i}', f"{name}, \[mem] {memstr}, \[utl] {utlization.gpu:3d}%, {temp:3d}°C")
+            table.add_row('GPU' if not i else '', f'{i}', f"{name}, \\[mem] {memstr}, \\[utl] {utlization.gpu:3d}%, {temp:3d}°C")
         pynvml.nvmlShutdown()
     except ImportError:
         pass
