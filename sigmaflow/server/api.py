@@ -1,16 +1,6 @@
 import traceback
-from fastapi import APIRouter
-from pydantic import BaseModel
-from fastapi import HTTPException
-
-class PromptData(BaseModel):
-    name:   str | None = None
-    text:   str | None = None
-    keys:  list | None = None
-
-class PipeData(BaseModel):
-    name:   str | None = None
-    data:  dict | None = None
+from fastapi import APIRouter, HTTPException
+from .constant import *
 
 class PipelineAPI:
     def __init__(self, pipeline_manager):

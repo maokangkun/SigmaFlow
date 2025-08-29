@@ -1,6 +1,7 @@
 logs/
 example/logs/
 sigmaflow/web-notuse/
+node_modules
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

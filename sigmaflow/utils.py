@@ -185,7 +185,7 @@ def test_env():
                     details = f"Version: {ver}"
                 
                 v = versions_dict[module]
-                if v and v != ver and not ver.startswith(v):
+                if v and v != ver and not ver.startswith(v) and v > ver:
                     details += f"[red]  (Latest: {v})[/red]"
             except ImportError:
                 status = "[red]Not Installed[/red]"

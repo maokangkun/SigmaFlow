@@ -6,48 +6,12 @@ import heapq
 import asyncio
 import traceback
 import threading
-from enum import Enum
 from tqdm.rich import tqdm
-from pydantic import BaseModel
-from dataclasses import dataclass
 from starlette.websockets import WebSocketState
-from typing import Optional, Dict, Any, Callable
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from ..log import log
-
-class Events(Enum):
-    MSG = 'msg'
-    PREVIEW_IMAGE = 'img'
-    UNENCODED_PREVIEW_IMAGE = 'unencoded_img'
-    WS_CONNECTED = 'ws_connected'
-    TASK_START = 'task_start'
-    TASK_ITEM_START = 'task_item_start'
-    TASK_ITEM_PROCESS = 'task_item_process'
-    TASK_ITEM_DONE = 'task_item_done'
-    TASK_END = 'task_end'
-    ERROR = 'error'
-
-@dataclass
-class Message:
-    event: Events
-    data: Any
-    sid: Optional[str] = None
-
-    def dict(self):
-        return {
-            "event": self.event.value,
-            "data": self.data,
-            "sid": self.sid
-        }
-
-class TaskData(BaseModel):
-    sid: str | None = None
-    task: list
-
-class BinaryEventTypes:
-    PREVIEW_IMAGE = 1
-    UNENCODED_PREVIEW_IMAGE = 2
+from .constant import *
 
 class TaskQueue:
     def __init__(self, ws_msges, loop=None, max_history_size=10000):
@@ -170,6 +134,19 @@ class TaskQueue:
             else:
                 return self.flags.copy()
 
+    def cancel_task(self, task_id):
+        with self.mutex:
+            if task_id in [v[0] for v in self.currently_running.values()]:
+                self.flags[task_id] = {"cancel": True}
+                return "running"
+            for idx, item in enumerate(self.queue):
+                if item[0] == task_id:
+                    self.queue.pop(idx)
+                    heapq.heapify(self.queue)
+                    self.queue_updated_broadcast()
+                    return "queued"
+        return None
+
 class TaskWorker(threading.Thread):
     def __init__(self, queue=None, loop=None, ws_msges=None, pipeline_manager=None):
         name = self.__class__.__name__
@@ -189,7 +166,13 @@ class TaskWorker(threading.Thread):
                 queue_id, (task_id, task_data, sid) = queue_item
                 log.debug(f'{name}:\nqueue_id: {queue_id}\nsid: {sid}\ntask_id: {task_id}')
 
-                out = self.run_task(task_id, task_data, sid)
+                try:
+                    out = self.run_task(task_id, task_data, sid)
+                except Exception as e:
+                    err = traceback.format_exc()
+                    log.error(err)
+                    self.send_msg(Events.ERROR, {"error": err}, sid)
+                    out = {"error": err}
 
                 self.queue.task_done(
                     queue_id,
@@ -210,20 +193,23 @@ class TaskWorker(threading.Thread):
         out = None
         if self.pipeline_manager:
             msg_func = lambda out: self.send_msg(Events.TASK_ITEM_PROCESS, out, sid)
+            def cancel_func(out):
+                if self.queue.get_flags(reset=False).get(task_id, {}).get("cancel"):
+                    raise Exception(f"Task {task_id} cancelled during execution.")
 
             for i, task in enumerate(tqdm(task_data)):
                 self.send_msg(Events.TASK_ITEM_START, {"task_index": i, "total": len(task_data)}, sid)
                 pipe = self.pipeline_manager.pipes[task['pipe']]
-                pipe.add_node_finish_callback(callbacks=[msg_func])
+                pipe.add_node_finish_callback(callbacks=[msg_func, cancel_func])
                 out, info = pipe.run(task['data'])
                 self.send_msg(Events.TASK_ITEM_DONE, out, sid)
                 # self.send_msg(Events.TASK_ITEM_DONE, info, sid)
 
         return out
 
-    def send_msg(self, event, data, sid=None):
+    def send_msg(self, header, data, sid=None):
         data |= {"timestamp": int(time.time() * 1000)}
-        m = Message(event, data, sid)
+        m = Message(header, data, sid)
         self.loop.call_soon_threadsafe(self.ws_msges.put_nowait, m)
 
 class WSConnectionManager:
@@ -239,7 +225,7 @@ class WSConnectionManager:
             del self.active_connections[sid]
 
     async def send(self, msg: Message):
-        match msg.event:
+        match msg.header:
             case Events.UNENCODED_PREVIEW_IMAGE:
                 data = self.encode_image(msg.data)
                 func = 'send_bytes'
@@ -291,7 +277,7 @@ class TaskAPI:
         @router.on_event("startup")
         async def startup_event():
             if task_queue.loop is None:
-                log.debug("Starting Sigmaflow server")
+                log.debug("Setup Sigmaflow Task API")
                 loop = asyncio.get_running_loop()
                 task_queue.loop = loop
                 TaskWorker(queue=task_queue, loop=loop, ws_msges=ws_msges, pipeline_manager=pipeline_manager).start()
@@ -309,6 +295,16 @@ class TaskAPI:
                 'queue_pending': pending,
             }
             return queue_info
+
+        @router.get("/cancel_task/{task_id}")
+        async def cancel_task(task_id: str):
+            status = task_queue.cancel_task(task_id)
+            if status == "queued":
+                return {"status": "removed_from_queue", "task_id": task_id}
+            elif status == "running":
+                return {"status": "cancelling_running_task", "task_id": task_id}
+            else:
+                raise HTTPException(status_code=404, detail="Task not found")
 
         @router.post("/task")
         async def process_task(data: TaskData):

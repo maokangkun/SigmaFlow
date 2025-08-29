@@ -21,7 +21,7 @@ def setup_args():
     parser.add_argument('--png', action='store_true', help='export graph as png')
     parser.add_argument('--log', action='store_true', help='save logs')
     parser.add_argument('--test', action='store_true', help='run test')
-    parser.add_argument('--api', action='store_true', default=False, help='serve the pipeline as API')
+    parser.add_argument('--serve', action='store_true', default=False, help='serve the pipeline as website & API')
     
     parser.add_argument('--env', action='store_true', default=False, help='run in environment mode, ignoring other required options')
 
@@ -30,7 +30,7 @@ def setup_args():
     if args.env:
         return args
 
-    if not args.pipeline and not args.pipeline_dir:
+    if not args.serve and not args.pipeline and not args.pipeline_dir:
         parser.error("the following arguments are required: -p/--pipeline or -d/--pipeline_dir")
 
     if args.log: os.environ['SAVE_LOG'] = '1'
@@ -62,9 +62,10 @@ def main():
             elif type(r) is list: jdump([i for i,_ in r], args.output)
     elif args.png:
         pipe.to_png(f'{pipefile.stem}.png')
-    elif args.api:
+    elif args.serve:
         import uvicorn
         from .server import PipelineServer
 
+        port = int(os.getenv('PORT', 8000))
         server = PipelineServer(pipeline_manager=pm)
-        uvicorn.run(server.app, host="0.0.0.0", port=8000, log_config=None, log_level=os.getenv('LOGGING_LEVEL', 'INFO').lower())
+        uvicorn.run(server.app, host="0.0.0.0", port=port, log_config=None, log_level=os.getenv('LOGGING_LEVEL', 'INFO').lower())

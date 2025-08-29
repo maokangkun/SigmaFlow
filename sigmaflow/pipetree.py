@@ -687,8 +687,9 @@ class BranchNode(Node):
                 retry += 1
         elif 'code' in self.conf:
             if 'code_entry' in self.conf:
-                exec(self.conf['code'])
-                cond = locals()[self.conf['code_entry']](*inps)
+                local = {}
+                exec(self.conf['code'], local)
+                cond = local[self.conf['code_entry']](*inps)
             else:
                 inps_dict = {k:v for k,v in zip(self.conf['inp'], inps)}
                 cond = eval(self.conf['code'].format(**inps_dict))
@@ -749,8 +750,9 @@ class BranchNode(Node):
                 retry += 1
         elif 'code' in self.conf:
             if 'code_entry' in self.conf:
-                exec(self.conf['code'])
-                cond = locals()[self.conf['code_entry']](*inps)
+                local = {}
+                exec(self.conf['code'], local)
+                cond = local[self.conf['code_entry']](*inps)
             else:
                 inps_dict = {k:v for k,v in zip(self.conf['inp'], inps)}
                 cond = eval(self.conf['code'].format(**inps_dict))
@@ -787,8 +789,9 @@ class BranchNode(Node):
                 retry += 1
         elif 'code' in self.conf:
             if 'code_entry' in self.conf:
-                exec(self.conf['code'])
-                cond = locals()[self.conf['code_entry']](*inps)
+                local = {}
+                exec(self.conf['code'], local)
+                cond = local[self.conf['code_entry']](*inps)
             else:
                 inps_dict = {k:v for k,v in zip(self.conf['inp'], inps)}
                 cond = eval(self.conf['code'].format(**inps_dict))
@@ -845,8 +848,9 @@ class CodeNode(Node):
     async def current_task(self, data, queue, dynamic_tasks):
         inps = await self.get_inps(queue)
         if 'code_entry' in self.conf:
-            exec(self.conf['code'])
-            out = locals()[self.conf['code_entry']](*inps)
+            local = {}
+            exec(self.conf['code'], local) # PEP 667
+            out = local[self.conf['code_entry']](*inps)
         elif 'code_func' in self.conf:
             out = self.conf['code_func'](*inps)
         else:
@@ -856,8 +860,9 @@ class CodeNode(Node):
 
     def current_mp_task(self, inps, data, queue, config=None):
         if 'code_entry' in self.conf:
-            exec(self.conf['code'])
-            out = locals()[self.conf['code_entry']](*inps)
+            local = {}
+            exec(self.conf['code'], local)
+            out = local[self.conf['code_entry']](*inps)
         elif 'code_func' in self.conf:
             out = self.conf['code_func'](*inps)
         else:
@@ -868,8 +873,9 @@ class CodeNode(Node):
     
     def current_normal_task(self, inps, data, queue):
         if 'code_entry' in self.conf:
-            exec(self.conf['code'])
-            out = locals()[self.conf['code_entry']](*inps)
+            local = {}
+            exec(self.conf['code'], local)
+            out = local[self.conf['code_entry']](*inps)
         elif 'code_func' in self.conf:
             out = self.conf['code_func'](*inps)
         else:
@@ -1295,8 +1301,15 @@ class PipeTree:
 
         return mermaid
 
+    def check_inp(self, inp):
+        need_inps = set()
+        for n in self.start_nodes: need_inps.update(n.mermaid_inps)
+        missing = need_inps - set(inp.keys())
+        assert not missing, f'missing input data: {list(missing)}'
+
     async def async_run(self, inp_data):
         self.reset()
+        self.check_inp(inp_data)
         data = copy.deepcopy(inp_data)
         dynamic_tasks = []
         queue = collections.defaultdict(asyncio.Queue)
@@ -1337,6 +1350,7 @@ class PipeTree:
 
     def mp_run(self, inp_data, core_num=4):
         self.reset()
+        self.check_inp(inp_data)
         task_queue = self.mp_manager.Queue()
         perf_queue = self.mp_manager.Queue()
         data       = self.mp_manager.dict()
@@ -1357,6 +1371,7 @@ class PipeTree:
 
     def normal_run(self, inp_data):
         self.reset()
+        self.check_inp(inp_data)
         data = copy.deepcopy(inp_data)
 
         try:
@@ -1372,6 +1387,7 @@ class PipeTree:
 
     async def server_run(self, inp_data):
         self.reset()
+        self.check_inp(inp_data)
         data = copy.deepcopy(inp_data)
 
         queue = self.start_nodes[:]
