@@ -181,6 +181,9 @@ def test_env():
     with Progress() as progress:
         task = progress.add_task("[cyan]Checking libraries...", total=len(libraries))
         for name, module in libraries:
+            ver = None
+            details = ''
+
             try:
                 ver = get_pkg_version(module)
             except ImportError:
