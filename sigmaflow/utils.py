@@ -5,6 +5,7 @@ import shutil
 import hashlib
 import requests
 import platform
+import datetime
 import collections
 from pathlib import Path, PosixPath
 
@@ -101,7 +102,11 @@ def test_env():
     from rich.table import Table
     from rich.console import Console
     from rich.progress import Progress
+    from importlib.metadata import version as get_pkg_version
     from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    cache_dir = Path.home() / '.config/sigmaflow'
+    cache_dir.mkdir(parents=True, exist_ok=True)
 
     console = Console()
     table = Table(title="LLM Environment Check Results")
@@ -148,48 +153,58 @@ def test_env():
         ("Megatron-Core", "megatron.core"),
         ("ms-swift", "swift"),
         ("Triton", "triton"),
-        ("ModelScope", "modelscope")
+        ("ModelScope", "modelscope"),
+        ("xFormers", "xformers"),
+        ("FlashAttention3", "flash_attn_3"),
+        ("FlashInfer", "flashinfer"),
+        ("NumPy", "numpy"),
     ]
+    libraries = sorted(libraries)
 
-    versions_dict = {}
-    with Progress() as progress:
-        task = progress.add_task("[cyan]Checking latest versions...", total=len(libraries))
+    versions_file = cache_dir / 'versions.json'
+    if not versions_file.exists() or datetime.datetime.fromtimestamp(versions_file.stat().st_mtime).strftime('%Y%m%d') < datetime.datetime.now().strftime('%Y%m%d'):
+        versions_dict = {}
+        with Progress() as progress:
+            task = progress.add_task("[cyan]Checking latest versions...", total=len(libraries))
 
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            future_to_lib = {executor.submit(get_latest_version, lib): lib for lib in libraries}
-            for future in as_completed(future_to_lib):
-                package_name, version = future.result()
-                versions_dict[package_name] = version
-                progress.update(task, advance=1)
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                future_to_lib = {executor.submit(get_latest_version, lib): lib for lib in libraries}
+                for future in as_completed(future_to_lib):
+                    package_name, version = future.result()
+                    versions_dict[package_name] = version
+                    progress.update(task, advance=1)
+        jdump(versions_dict, versions_file)
+    else:
+        versions_dict = jload(versions_file)
 
     rows = []
     with Progress() as progress:
         task = progress.add_task("[cyan]Checking libraries...", total=len(libraries))
         for name, module in libraries:
             try:
+                ver = get_pkg_version(module)
+            except ImportError:
+                try:
+                    ver = get_pkg_version(name)
+                except ImportError:
+                    ver = None
+                    
+            if ver: details = f"Version: {ver}"
+
+            try:
                 lib = __import__(module)
                 status = "Installed"
 
-                if module == "megatron.core":
-                    ver = lib.core.__version__
-                elif module == "apex":
-                    ver = "unknown"
-                else:
-                    ver = lib.__version__
+                if not ver: ver = lib.__version__
 
-                if module == "apex":
-                    details = "Apex is available"
-                elif module == "torch":
-                    details = f"Version: {ver}, CUDA: {lib.cuda.is_available()}"
-                else:
-                    details = f"Version: {ver}"
-                
-                v = versions_dict[module]
+                if module == "torch":
+                    details += f", CUDA: {lib.cuda.is_available()}"
+
+                v = versions_dict.get(module, None)
                 if v and v != ver and not ver.startswith(v) and v > ver:
                     details += f"[red]  (Latest: {v})[/red]"
             except ImportError:
                 status = "[red]Not Installed[/red]"
-                details = "N/A"
             rows.append((name, status, details))
             progress.update(task, advance=1)
 
@@ -210,7 +225,7 @@ def test_env():
             utlization = pynvml.nvmlDeviceGetUtilizationRates(handle)
             table.add_row('GPU' if not i else '', f'{i}', f"{name}, \\[mem] {memstr}, \\[utl] {utlization.gpu:3d}%, {temp:3d}°C")
         pynvml.nvmlShutdown()
-    except ImportError:
+    except (ImportError, pynvml.NVMLError):
         pass
 
     console.print(table)
