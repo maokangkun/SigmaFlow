@@ -19,6 +19,6 @@ class PipelineServer:
         self.app.include_router(workspace.router)
 
         web_root = Path(f'{__file__[:__file__.rindex("/")]}/website/dist/')
-        work_root = Path(f'/mnt/workspace/code/github/ComfyUI_frontend/dist/')
+        work_root = Path(f'{__file__[:__file__.rindex("/")]}/comfyui/dist')
         self.app.mount("/workspace/", StaticFiles(directory=work_root, html=True), name="SigmaFlow Workspace")
         self.app.mount("/", StaticFiles(directory=web_root, html=True), name="SigmaFlow Web")

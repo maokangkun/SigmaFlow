@@ -137,13 +137,14 @@ class Pipe:
         return out
 
 class LLMPipe(Pipe):
-    def __init__(self, name, prompt=None, return_json=True, format=None, llm=None, verbose=True, retry=5, inp=None, out=None, lock=None, run_time=None, inout_log=None, second_round=False, **kargs):
+    def __init__(self, name, prompt=None, return_json=True, format=None, llm=None, verbose=True, retry=5, inp=None, out=None, lock=None, run_time=None, inout_log=None, second_round=False, remove_think=False, **kargs):
         if return_json: second_round = True
         super().__init__(name, lock, run_time, inout_log, verbose, retry, second_round)
         self.prompt = prompt
         self.llm = llm
         self.return_json = return_json
         self.format = format
+        self.remove_think = remove_think
 
     def _call(self, *inp):
         text = self.prompt(*inp)
@@ -163,7 +164,12 @@ class LLMPipe(Pipe):
                     self.log(f'check {self.format}', '✗')
                     out = None
         else:
-            out = resp
+            if self.remove_think:
+                regex = r"(^<think>[^<]*(?:<(?!/?think>)[^<]*)*<\/think>)"
+                out = re.sub(regex, '', resp).strip()
+                self.log('remove think', out)
+            else:
+                out = resp
         return out, text, resp
 
     async def _async_call(self, *inp):
@@ -184,7 +190,12 @@ class LLMPipe(Pipe):
                     self.log(f'check {self.format}', '✗')
                     out = None
         else:
-            out = resp
+            if self.remove_think:
+                regex = r"(^<think>[^<]*(?:<(?!/?think>)[^<]*)*<\/think>)"
+                out = re.sub(regex, '', resp).strip()
+                self.log('remove think', out)
+            else:
+                out = resp
         return out, text, resp
     
     async def _async_second_call(self, history):

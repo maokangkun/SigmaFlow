@@ -2,6 +2,7 @@ rich
 fastapi
 openai
 dotenv
+ollama
 Pillow
 requests
 packaging

@@ -158,6 +158,7 @@ def test_env():
         ("FlashAttention3", "flash_attn_3"),
         ("FlashInfer", "flashinfer"),
         ("NumPy", "numpy"),
+        ("XTuner", "xtuner"),
     ]
     libraries = sorted(libraries)
 
