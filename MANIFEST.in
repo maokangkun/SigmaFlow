@@ -1,0 +1,2 @@
+include sigmaflow/server/comfyui/dist
+include sigmaflow/server/website/dist
