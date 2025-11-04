@@ -63,5 +63,6 @@ setuptools.setup(
     entry_points = {
         'console_scripts': ['sigmaflow=sigmaflow.cmd:main'],
     },
+    include_package_data=True,
     # scripts=['bin/funniest-joke']
 )
