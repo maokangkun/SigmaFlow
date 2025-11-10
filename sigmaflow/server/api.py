@@ -63,36 +63,30 @@ class PipelineAPI:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.post("/run/{pipe_name}")
-        async def run_pipe(pipe_name: str, data: dict | list[dict]):
-            try:
-                pipe = pipeline_manager.pipes[pipe_name]
-                ret = {
-                    'result': await pipe.async_run(data)
-                }
-                return ret
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=traceback.format_exc())
-
-        @router.post("/run_stream/{pipe_name}")
-        async def run_pipe_stream(pipe_name: str, data: dict | list[dict]):
+        async def run_pipe(pipe_name: str, p_data: PipelineData):
             try:
                 pipe = deepcopy(pipeline_manager.pipes[pipe_name])
-                queue = asyncio.Queue()
-                msg_func = lambda out: asyncio.create_task(queue.put(out))
-                pipe.add_node_finish_callback(callbacks=[msg_func])
+                if p_data.stream:
+                    queue = asyncio.Queue()
+                    msg_func = lambda out: asyncio.create_task(queue.put(out))
+                    pipe.add_node_finish_callback(callbacks=[msg_func])
 
-                async def run_pipe():
-                    result = await pipe.async_run(data)
-                    await queue.put(result)
-                    await queue.put(None)
+                    async def run_pipe():
+                        result = await pipe.async_run(p_data.data)
+                        await queue.put({'result': result})
+                        await queue.put(None)
 
-                async def event_stream():
-                    asyncio.create_task(run_pipe())
-                    while True:
-                        msg = await queue.get()
-                        if msg is None: break
-                        yield str(msg)+'\n'
+                    async def event_stream():
+                        asyncio.create_task(run_pipe())
+                        while True:
+                            msg = await queue.get()
+                            if msg is None: break
+                            yield str(msg)+'\n'
 
-                return StreamingResponse(event_stream(), media_type="application/json")
-            except Exception:
+                    return StreamingResponse(event_stream(), media_type="application/json")
+                else:
+                    return {
+                        'result': await pipe.async_run(p_data.data)
+                    }
+            except Exception as e:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())

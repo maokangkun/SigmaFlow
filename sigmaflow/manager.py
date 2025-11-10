@@ -1,3 +1,4 @@
+import os
 import sys
 import copy
 from pathlib import Path
@@ -55,6 +56,7 @@ class PipelineManager:
         self.rag_type = rag_type
         self.llm_batch_processor = None
         self.run_mode = run_mode
+        self.pipeline_suffix = os.getenv('PIPELINE_SUFFIX', '_pipeline')
         self.pipes = {}
         self.load_llm_rag_client()
         self.load_pipes()
@@ -63,10 +65,10 @@ class PipelineManager:
         self.pipes = {}
         log.debug(f'Start load pipelines: {self.pipes_dir}')
         sys.path.append(str(self.pipes_dir))
-        pipe_files = list(self.pipes_dir.glob('*_pipeline.py'))
-        log.debug(f'Find {len(pipe_files)} pipeline files: {[p.stem for p in pipe_files]}')
+        pipe_files = list(self.pipes_dir.glob(f'*{self.pipeline_suffix}.py'))
+        log.debug(f'Find {len(pipe_files)} pipeline files: {[p.stem.removesuffix(self.pipeline_suffix) for p in pipe_files]}')
 
-        for pf in pipe_files: self._load_pipe(pf.stem, pipefile=pf)
+        for pf in pipe_files: self._load_pipe(pf.stem.removesuffix(self.pipeline_suffix), pipefile=pf)
         sys.path.pop()
 
         log.debug('All pipelines loaded')

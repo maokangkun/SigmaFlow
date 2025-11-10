@@ -51,21 +51,15 @@ async def async_rag(text):
             }
         }
 
-        return await _get_completion(
-            input_data=input_data,
-            retry=retry_count
-        )
+        return await _req(input_data, url)
 
-async def _get_completion(input_data: dict, retry: int = 5):
+async def _req(input_data: dict, url: str, retry: int = 5):
     try:
         async with httpx.AsyncClient(verify=False) as client:
             async with client.stream(
                 "POST",
-                pulse_url,
+                url,
                 json=input_data,
-                headers={
-                    "Authorization": f"Bearer {pulse_token}",
-                },
                 timeout=600,
             ) as stream:
                 # error
@@ -81,18 +75,7 @@ async def _get_completion(input_data: dict, retry: int = 5):
 
                 content = (await stream.aread()).decode("utf8")
                 content = json.loads(content)
-                content = "".join(content['messages'][0]['content']['parts'])
                 return content
     except Exception as e:
-        # logger.error(json.dumps({
-        #     "retry": retry,
-        #     "input": input_data,
-        #     "error": traceback.format_exc()
-        # }, ensure_ascii=False, indent=4))
-        # 重试次数到达极限
         if retry == 0: raise e
-
-        return await _get_completion(
-            input_data=input_data,
-            retry=retry-1,
-        )
+        return await _req(input_data, url, retry-1,)

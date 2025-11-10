@@ -1,4 +1,5 @@
 import re
+import os
 import copy
 import time
 import queue
@@ -857,6 +858,8 @@ class CodeNode(Node):
             inps_dict = {k:self._eval_format(v) for k,v in zip(self.conf['inp'], inps)}
             out = eval(self.conf['code'].format(**inps_dict))
         self.set_out(out, data, queue)
+        log.debug(f'{self.conf["out"]}: {out}')
+        self.execute_finish_callback(out)
 
     def current_mp_task(self, inps, data, queue, config=None):
         if 'code_entry' in self.conf:
@@ -869,6 +872,8 @@ class CodeNode(Node):
             inps_dict = {k:self._eval_format(v) for k,v in zip(self.conf['inp'], inps)}
             out = eval(self.conf['code'].format(**inps_dict))
         self.set_out(out, data, config=config)
+        log.debug(f'{self.conf["out"]}: {out}')
+        self.execute_finish_callback(out)
         for n in self.next: queue.put((n.name, config))
     
     def current_normal_task(self, inps, data, queue):
@@ -882,6 +887,8 @@ class CodeNode(Node):
             inps_dict = {k:self._eval_format(v) for k,v in zip(self.conf['inp'], inps)}
             out = eval(self.conf['code'].format(**inps_dict))
         self.set_out(out, data)
+        log.debug(f'{self.conf["out"]}: {out}')
+        self.execute_finish_callback(out)
 
 class WebNode(Node):
     mermaid_style = NodeColorStyle.WebNode
@@ -973,6 +980,8 @@ class ValueNode(Node):
         else:
             out = self.conf['value']
         self.set_out(out, data, config=config)
+        log.debug(f'{mode = }, {self.conf["out"]}: {out}')
+        self.execute_finish_callback(out)
         for n in self.next: queue.put((n.name, config))
 
     async def current_task(self, data, queue, dynamic_tasks):
@@ -994,6 +1003,8 @@ class ValueNode(Node):
         else:
             out = v
         self.set_out(out, data, queue)
+        log.debug(f'{mode = }, {self.conf["out"]}: {out}')
+        self.execute_finish_callback(out)
 
     def current_normal_task(self, inps, data, queue):
         mode = self.conf.get('mode', 'assign')
@@ -1013,6 +1024,8 @@ class ValueNode(Node):
         else:
             out = v
         self.set_out(out, data)
+        log.debug(f'{mode = }, {self.conf["out"]}: {out}')
+        self.execute_finish_callback(out)
 
 class DatabaseNode(Node):
     def aa(self):
@@ -1117,7 +1130,7 @@ class PipeTree:
         if type(pipefile) is str: pipefile = Path(pipefile)
         m = importlib.import_module(pipefile.stem)
         self.pipeconf = m.pipeline
-        if self.name is None: self.name = pipefile.stem
+        if self.name is None: self.name = pipefile.stem.removesuffix(os.getenv('PIPELINE_SUFFIX', '_pipeline'))
 
     def _check(self):
         node_names = set(self.node_manager.keys())

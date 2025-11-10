@@ -57,6 +57,10 @@ class PipeData(BaseModel):
     name:   str | None = None
     data:  dict | None = None
 
+class PipelineData(BaseModel):
+    stream:   bool | None = False
+    data:  dict | list[dict]
+
 class WorkspacePromptData(BaseModel):
     client_id: str | None = None
     extra_data: dict

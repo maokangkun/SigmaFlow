@@ -23,7 +23,8 @@ def completion(text):
                 "content": text,
             }
         ],
-        model=os.getenv("OPENAI_API_MODEL")
+        model=os.getenv("OPENAI_API_MODEL"),
+        max_completion_tokens=int(n) if (n:= os.getenv("OPENAI_API_MAX_COMP_TOKENS")) else None
     )
 
     return chat_completion.choices[0].message.content
@@ -53,7 +54,8 @@ async def async_completion(text):
     async with llm_sem:
         chat_completion = await client.chat.completions.create(
             messages=msg,
-            model=os.getenv("OPENAI_API_MODEL")
+            model=os.getenv("OPENAI_API_MODEL"),
+            max_completion_tokens=int(n) if (n:= os.getenv("OPENAI_API_MAX_COMP_TOKENS")) else None
         )
 
     return chat_completion.choices[0].message.content

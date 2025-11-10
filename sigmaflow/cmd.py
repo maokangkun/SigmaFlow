@@ -6,6 +6,13 @@ load_dotenv('.env')
 
 from .utils import *
 
+def get_version():
+    import importlib.metadata
+    try:
+        return importlib.metadata.version("sigmaflow")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+
 def setup_args():
     parser = argparse.ArgumentParser()
 
@@ -14,9 +21,9 @@ def setup_args():
     parser.add_argument('-i', '--input', type=str, help='specify input data')
     parser.add_argument('-o', '--output', type=str, help='specify output data')
     parser.add_argument('-m', '--mode', type=str, default='async', choices=['async', 'mp', 'seq'], help='specify the run mode')
-    parser.add_argument('--llm', type=str, choices=['lmdeploy', 'vllm', 'mlx', 'ollama', 'openai', 'torch'], help='specify the llm backend')
+    parser.add_argument('--llm', type=str, choices=['lmdeploy', 'vllm', 'mlx', 'ollama', 'openai', 'torch'], default='openai', help='specify the llm backend')
     parser.add_argument('--model', type=str, help='specify the model path')
-    parser.add_argument('--rag', type=str, choices=['json', 'http'], help='specify the rag backend')
+    parser.add_argument('--rag', type=str, choices=['json', 'http'], default='http', help='specify the rag backend')
     parser.add_argument('--split', type=int, help='split the data into parts to run')
     parser.add_argument('--png', action='store_true', help='export graph as png')
     parser.add_argument('--log', action='store_true', help='save logs')
@@ -24,6 +31,7 @@ def setup_args():
     parser.add_argument('--serve', action='store_true', default=False, help='serve the pipeline as website & API')
     
     parser.add_argument('--env', action='store_true', default=False, help='run in environment mode, ignoring other required options')
+    parser.add_argument('--version', action='version', version=get_version())
 
     args, _ = parser.parse_known_args()
 
