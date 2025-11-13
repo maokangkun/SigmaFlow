@@ -6,6 +6,7 @@ import uuid
 import asyncio
 import datetime
 import collections
+import pandas as pd
 from tqdm.asyncio import tqdm_asyncio
 from .log import log, log_dir
 from .pipetree import PipeTree
@@ -91,6 +92,9 @@ class Pipeline:
             case _:
                 log.debug(f"Run '{self.name}' pipeline in sequential")
                 result = self.pipetree.normal_run(data)
+        for k in result:
+            if isinstance(result[k], pd.DataFrame):
+                result[k] = result[k].to_dict(orient='records')
         log.debug(f'final out:\n{json.dumps(result, indent=4, ensure_ascii=False)}')
         info = self.gen_info(result, start_t, save_perf)
         return result, info

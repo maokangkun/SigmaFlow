@@ -1,5 +1,6 @@
 import asyncio
 import traceback
+import pandas as pd
 from copy import deepcopy
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -85,8 +86,10 @@ class PipelineAPI:
 
                     return StreamingResponse(event_stream(), media_type="application/json")
                 else:
-                    return {
-                        'result': await pipe.async_run(p_data.data)
-                    }
+                    result = await pipe.async_run(p_data.data)
+                    for k in result:
+                        if isinstance(result[k], pd.DataFrame):
+                            result[k] = result[k].to_dict(orient='records')
+                    return {'result': result}
             except Exception as e:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())

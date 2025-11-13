@@ -1098,7 +1098,7 @@ class FileNode(Node):
 
         self.set_out(md, data)
         log.debug(f'[{self.name}] read: {info} -> {self.conf["out"]}')
-        
+
 
 class PipeTree:
     def __init__(self, llm_backend, rag_backend, prompt_manager, name=None, pipeconf:dict=None, pipefile=None, run_mode='async'):

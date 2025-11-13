@@ -1,9 +1,10 @@
 rich
-fastapi
 openai
 dotenv
 ollama
+pandas
 Pillow
+fastapi
 requests
 packaging
 pymupdf4llm
