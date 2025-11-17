@@ -1197,7 +1197,7 @@ class PipeTree:
         if not self.start_nodes:
             log.error(f"Can't find start entry in pipes.")
             exit()
-        log.debug(f"'{self.name}' tree initialization successful, start nodes: {self.start_nodes}")
+        log.debug(f"'{self.name}' tree initialization successful, start nodes: {self.start_nodes}, required input: {self.required_inputs}")
 
     def export_conf(self):
         conf = copy.deepcopy(self.pipeconf)
@@ -1315,14 +1315,14 @@ class PipeTree:
         return mermaid
 
     def check_inp(self, inp):
-        need_inps = set()
-        for n in self.start_nodes: need_inps.update(n.mermaid_inps)
-        missing = need_inps - set(inp.keys())
-        assert not missing, f'missing input data: {list(missing)}'
+        if (missing := self.required_inputs - set(inp.keys())):
+            error_msg = f'missing input data: {list(missing)}'
+            log.error(f'[{self.name}]:\n{error_msg}')
+            return {'error_msg': error_msg}
 
     async def async_run(self, inp_data):
         self.reset()
-        self.check_inp(inp_data)
+        if (err := self.check_inp(inp_data)): return err
         data = copy.deepcopy(inp_data)
         dynamic_tasks = []
         queue = collections.defaultdict(asyncio.Queue)
@@ -1363,7 +1363,7 @@ class PipeTree:
 
     def mp_run(self, inp_data, core_num=4):
         self.reset()
-        self.check_inp(inp_data)
+        if (err := self.check_inp(inp_data)): return err
         task_queue = self.mp_manager.Queue()
         perf_queue = self.mp_manager.Queue()
         data       = self.mp_manager.dict()
@@ -1384,7 +1384,7 @@ class PipeTree:
 
     def normal_run(self, inp_data):
         self.reset()
-        self.check_inp(inp_data)
+        if (err := self.check_inp(inp_data)): return err
         data = copy.deepcopy(inp_data)
 
         try:
