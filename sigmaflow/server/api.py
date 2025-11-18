@@ -6,6 +6,15 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from .constant import *
 
+def post_progress(result):
+    if type(result) is list:
+        return [post_progress(r) for r in result]
+    elif type(result) is dict:
+        for k in result:
+            if isinstance(result[k], pd.DataFrame):
+                result[k] = result[k].to_dict(orient='records')
+    return result
+
 class PipelineAPI:
     def __init__(self, pipeline_manager):
         self.router = router = APIRouter(prefix='/api')
@@ -87,9 +96,7 @@ class PipelineAPI:
                     return StreamingResponse(event_stream(), media_type="application/json")
                 else:
                     result = await pipe.async_run(p_data.data)
-                    for k in result:
-                        if isinstance(result[k], pd.DataFrame):
-                            result[k] = result[k].to_dict(orient='records')
+                    result = post_progress(result)
                     return {'result': result}
             except Exception as e:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
