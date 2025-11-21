@@ -4,7 +4,7 @@
 git clone https://github.com/Comfy-Org/ComfyUI_frontend
 cd ComfyUI_frontend
 pnpm install
-vi vite.config.mts # -> base: '/workspace/',
+vi vite.config.mts # -> base: '/workspace/', build->outDir: 'xxx/SigmaFlow/sigmaflow/server/comfyui/dist',
 pnpm run build
 ```
 
@@ -12,6 +12,7 @@ pnpm run build
 modified:   src/locales/en/main.json
 modified:   src/locales/zh/main.json
 modified:   src/services/litegraphService.ts
+modified:   build/plugins/generateImportMapPlugin.ts
 
 Untracked files:
 src/services/nodeEditingService.ts

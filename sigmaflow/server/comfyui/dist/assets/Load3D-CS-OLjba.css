@@ -1,0 +1,1 @@
+.spinner[data-v-b13965f5]{width:50px;height:50px;border:4px solid #f3f3f3;border-top:4px solid #3498db;border-radius:50%;animation:spin-b13965f5 1s linear infinite}@keyframes spin-b13965f5{0%{transform:rotate(0)}to{transform:rotate(360deg)}}.recording-button-blink[data-v-145dbaf6]{animation:blink-145dbaf6 1s infinite}@keyframes blink-145dbaf6{0%,to{opacity:1}50%{opacity:.5}}
