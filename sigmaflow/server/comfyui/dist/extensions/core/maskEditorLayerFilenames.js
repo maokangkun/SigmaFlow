@@ -1,3 +1,0 @@
-// Shim for extensions/core/maskEditorLayerFilenames.ts
-export const imageLayerFilenamesByTimestamp = window.comfyAPI.maskEditorLayerFilenames.imageLayerFilenamesByTimestamp;
-export const imageLayerFilenamesIfApplicable = window.comfyAPI.maskEditorLayerFilenames.imageLayerFilenamesIfApplicable;

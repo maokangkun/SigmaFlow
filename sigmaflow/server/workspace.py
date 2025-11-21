@@ -202,24 +202,28 @@ class WorkspaceAPI:
                 return {
                     "system": {
                         "os": "posix",
-                        "ram_total": 274877906944,
-                        "ram_free": 270875971584,
-                        "comfyui_version": "0.3.49",
-                        "required_frontend_version": "1.24.4",
+                        "ram_total": 536870912000,
+                        "ram_free": 531932536832,
+                        "comfyui_version": "0.3.70",
+                        "required_frontend_version": "1.28.8",
+                        "installed_templates_version": None,
+                        "required_templates_version": "0.2.11",
                         "python_version": "3.13.5 | packaged by Anaconda, Inc. | (main, Jun 12 2025, 16:09:02) [GCC 11.2.0]",
-                        "pytorch_version": "2.7.1+cu128",
+                        "pytorch_version": "2.8.0+cu128",
                         "embedded_python": False,
                         "argv": [
-                            "main.py"
+                            "main.py",
+                            "--front-end-root",
+                            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI_frontend/dist"
                         ]
                     },
                     "devices": [
                         {
-                            "name": "cuda:0 NVIDIA A800-SXM4-80GB : cudaMallocAsync",
+                            "name": "cuda:0 NVIDIA H200 : cudaMallocAsync",
                             "type": "cuda",
                             "index": 0,
-                            "vram_total": 17029083955,
-                            "vram_free": 16594973491,
+                            "vram_total": 150393585664,
+                            "vram_free": 149845180416,
                             "torch_vram_total": 0,
                             "torch_vram_free": 0
                         }
@@ -241,6 +245,10 @@ class WorkspaceAPI:
                 }
             except Exception as e:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
+
+        @router.get("/api/global_subgraphs")
+        async def global_subgraphs():
+            return {}
 
         @router.get("/api/userdata")
         async def userdata():

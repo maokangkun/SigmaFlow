@@ -415,7 +415,7 @@ function App() {
 
       {/* 主视觉区域 */}
       <section className="px-6 py-20 text-center">
-        <h1 className="text-5xl font-bold mb-6 bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+        <h1 className="text-5xl font-bold mb-6 bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent" style={{lineHeight: '1.5'}}>
           {t.hero.title}
         </h1>
         <p className="text-xl text-gray-600 mb-8 max-w-3xl mx-auto leading-relaxed">
