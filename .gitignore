@@ -1,6 +1,5 @@
 logs/
 example/logs/
-sigmaflow/web-notuse/
 node_modules
 
 # Byte-compiled / optimized / DLL files
@@ -176,4 +175,5 @@ cython_debug/
 .pypirc
 
 !sigmaflow/server/comfyui/dist
+!sigmaflow/server/comfyui/dist/assets/lib
 !sigmaflow/server/website/dist
