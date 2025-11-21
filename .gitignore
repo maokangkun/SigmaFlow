@@ -12,13 +12,10 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -175,5 +172,4 @@ cython_debug/
 .pypirc
 
 !sigmaflow/server/comfyui/dist
-!sigmaflow/server/comfyui/dist/assets/lib
 !sigmaflow/server/website/dist
