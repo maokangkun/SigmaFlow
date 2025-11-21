@@ -212,14 +212,12 @@ class WorkspaceAPI:
                         "pytorch_version": "2.8.0+cu128",
                         "embedded_python": False,
                         "argv": [
-                            "main.py",
-                            "--front-end-root",
-                            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI_frontend/dist"
+                            "main.py"
                         ]
                     },
                     "devices": [
                         {
-                            "name": "cuda:0 NVIDIA H200 : cudaMallocAsync",
+                            "name": "cuda:0 NVIDIA",
                             "type": "cuda",
                             "index": 0,
                             "vram_total": 150393585664,
