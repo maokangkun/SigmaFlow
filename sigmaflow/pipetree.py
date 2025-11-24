@@ -213,7 +213,7 @@ class Node:
 
     async def get_inps(self, queue):
         inps = []
-        for i in self.conf['inp']:
+        for i in self.conf.get('inp', []):
             if type(i) is str:
                 d = await queue[i].get()
                 inps.append(d)
