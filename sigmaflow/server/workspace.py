@@ -54,74 +54,82 @@ class WorkspaceTaskWorker(TaskWorker):
 
     def run_task(self, task_id, task_data, sid):
         self.send_msg(Types.EXEC_START, {"prompt_id": task_id}, sid)
+        # breakpoint()
+        # {'28': {'inputs': {'prompt': '你是谁', 'return_json': False, 'preview': '', 'model': ['34', 0]}, 'class_type': 'LLMNode', '_meta': {'title': 'LLM Node'}}, '34': {'inputs': {'base_url': 'http://localhost:11434/v1', 'api_key': 'test', 'model': 'qwen3', 'max_completion_tokens': 2048, 'temperature': 0.9}, 'class_type': 'OpenAIModel', '_meta': {'title': 'OpenAI Model'}}}
 
-        d = {
-            "prompt_id": task_id,
-            "nodes": {
-                1: {
-                    'display_node_id': "1",
-                    'state': "running",
-                }
-            }
-        }
-        self.send_msg(Types.PROG_STATE, d, sid)
+        # d = {
+        #     "prompt_id": task_id,
+        #     "nodes": {
+        #         1: {
+        #             'display_node_id': "1",
+        #             'state': "running",
+        #         }
+        #     }
+        # }
+        # self.send_msg(Types.PROG_STATE, d, sid)
 
-        time.sleep(1)
+        # time.sleep(1)
 
-        # node 2
-        d = {
-            "prompt_id": task_id,
-            "nodes": {
-                2: {
-                    'display_node_id': "2",
-                    'max': 20,
-                    'state': "running",
-                    'value': 0,
-                },
-            }
-        }
-        self.send_msg(Types.PROG_STATE, d, sid)
+        # # node 2
+        # d = {
+        #     "prompt_id": task_id,
+        #     "nodes": {
+        #         2: {
+        #             'display_node_id': "2",
+        #             'max': 20,
+        #             'state': "running",
+        #             'value': 0,
+        #         },
+        #     }
+        # }
+        # self.send_msg(Types.PROG_STATE, d, sid)
 
-        for i in range(20):
-            d = {
-                "prompt_id": task_id,
-                "nodes": {
-                    2: {
-                        'display_node_id': "2",
-                        'max': 20,
-                        'state': "running",
-                        'value': i+1,
-                    }
-                }
-            }
-            self.send_msg(Types.PROG_STATE, d, sid)
-            time.sleep(0.2)
+        # for i in range(20):
+        #     d = {
+        #         "prompt_id": task_id,
+        #         "nodes": {
+        #             2: {
+        #                 'display_node_id': "2",
+        #                 'max': 20,
+        #                 'state': "running",
+        #                 'value': i+1,
+        #             }
+        #         }
+        #     }
+        #     self.send_msg(Types.PROG_STATE, d, sid)
+        #     time.sleep(0.2)
         
 
-        # node 3
-        d = {
-            "prompt_id": task_id,
-            "nodes": {
-                3: {
-                    'display_node_id': "3",
-                    'state': "running",
-                },
-            }
-        }
-        self.send_msg(Types.PROG_STATE, d, sid)
+        # # node 3
+        # d = {
+        #     "prompt_id": task_id,
+        #     "nodes": {
+        #         3: {
+        #             'display_node_id': "3",
+        #             'state': "running",
+        #         },
+        #     }
+        # }
+        # self.send_msg(Types.PROG_STATE, d, sid)
+
+        out = '# hI\n**Hell**hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123'
 
         d = {
             "prompt_id": task_id,
-            "display_node": '3',
-            'node': '3',
+            "display_node": '20',
+            'node': '20',
             "output": {
-                'images': [
-                    {
-                        "filename": "ComfyUI_00005_.png",
-                        "subfolder": "",
-                        "type": "output"
-                    }
-                ]
+                'text': ['11'+out]
+            }
+        }
+        self.send_msg(Types.EXECUTED, d, sid)
+
+        d = {
+            "prompt_id": task_id,
+            "display_node": '27',
+            'node': '27',
+            "output": {
+                'text': [out]
             }
         }
         self.send_msg(Types.EXECUTED, d, sid)
@@ -129,8 +137,8 @@ class WorkspaceTaskWorker(TaskWorker):
         d = {
             "prompt_id": task_id,
             "nodes": {
-                3: {
-                    'display_node_id': "3",
+                26: {
+                    'display_node_id': "26",
                     'state': "finished",
                 },
             }
@@ -266,8 +274,12 @@ class WorkspaceAPI:
         async def object_info():
             try:
                 cur_folder = Path(__file__).parent
+                obj = {}
+                with open(cur_folder / 'sigmaflow.json', 'r') as f:
+                    obj |= json.load(f)
                 with open(cur_folder / 'object_info.json', 'r') as f:
-                    return json.load(f)
+                    obj |= json.load(f)
+                return obj
             except Exception as e:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
         

@@ -1,0 +1,122 @@
+{
+    "OpenAIModel": {
+        "input": {
+            "required": {
+                "base_url": ["STRING", {}],
+                "api_key": ["STRING", {}],
+                "model": [
+                    "STRING",
+                    {
+                        "tooltip": "The name of the model.",
+                        "default": "gpt-5"
+                    }
+                ],
+                "max_completion_tokens": [
+                    "INT",
+                    {
+                        "default": 2048,
+                        "min": 1,
+                        "max": 10000000,
+                        "tooltip": "Use the max_completion_tokens parameter to limit how many tokens the model will generate."
+                    }
+                ],
+                "temperature": [
+                    "FLOAT",
+                    {
+                        "default": 1.0,
+                        "min": 0.0,
+                        "max": 2.0,
+                        "step": 0.1,
+                        "tooltip": "The temperature parameter determines the creativity or predictability of each response."
+                    }
+                ]
+            }
+        },
+        "input_order": {
+            "required": [
+                "base_url",
+                "api_key",
+                "model",
+                "max_completion_tokens",
+                "temperature"
+            ]
+        },
+        "output": [
+            "MODEL"
+        ],
+        "output_is_list": [
+            false
+        ],
+        "output_name": [
+            "MODEL"
+        ],
+        "name": "OpenAIModel",
+        "display_name": "OpenAI Model",
+        "description": "Using a OpenAI LLM model api.",
+        "python_module": "nodes",
+        "category": "sigmaflow/model",
+        "output_node": false,
+        "output_tooltips": [
+            "The model used for LLM node."
+        ]
+    },
+    "LLMNode": {
+        "input": {
+            "required": {
+                "prompt": [
+                    "STRING",
+                    {
+                        "tooltip": "Text inputs to the model, used to generate a response.",
+                        "default": "",
+                        "multiline": true
+                    }
+                ],
+                "return_json": [
+                    "BOOLEAN",
+                    {
+                        "tooltip": "Make sure returned in JSON format",
+                        "default": false
+                    }
+                ]
+            },
+            "optional": {
+                "model": [
+                    "MODEL",
+                    {
+                        "tooltip": "The model used to generate the response"
+                    }
+                ]
+            },
+            "hidden": {}
+        },
+        "input_order": {
+            "required": [
+                "prompt",
+                "return_json"
+            ],
+            "optional": [
+                "model"
+            ],
+            "hidden": []
+        },
+        "output": [
+            "STRING"
+        ],
+        "output_is_list": [
+            false
+        ],
+        "output_name": [
+            "STRING"
+        ],
+        "output_tooltips": [
+            null
+        ],
+        "name": "LLMNode",
+        "display_name": "LLM Node",
+        "description": "Generate text responses from an LLM model.",
+        "python_module": "comfy_api_nodes.nodes_openai",
+        "category": "sigmaflow",
+        "output_node": true,
+        "api_node": true
+    }
+}

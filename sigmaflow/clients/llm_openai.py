@@ -24,7 +24,7 @@ def completion(text):
             }
         ],
         model=os.getenv("OPENAI_API_MODEL"),
-        max_completion_tokens=int(n) if (n:= os.getenv("OPENAI_API_MAX_COMP_TOKENS")) else None
+        max_completion_tokens=int(n) if (n:= os.getenv("OPENAI_API_MAX_COMP_TOKENS")) else None,
         temperature=os.getenv("OPENAI_API_TEMPERATURE", 1)
     )
 
@@ -56,7 +56,7 @@ async def async_completion(text):
         chat_completion = await client.chat.completions.create(
             messages=msg,
             model=os.getenv("OPENAI_API_MODEL"),
-            max_completion_tokens=int(n) if (n:= os.getenv("OPENAI_API_MAX_COMP_TOKENS")) else None
+            max_completion_tokens=int(n) if (n:= os.getenv("OPENAI_API_MAX_COMP_TOKENS")) else None,
             temperature=os.getenv("OPENAI_API_TEMPERATURE", 1)
         )
 
