@@ -1,16 +1,13 @@
-import os
-import sys
-import copy
-from pathlib import Path
+from .imports import *
 from .log import log
 from .utils import *
-from .prompt import Prompt
+from .prompts import Prompt
 from .pipeline import Pipeline
 
 class PromptManager:
     def __init__(self, prompts_dir=None):
         log.debug('Setup PromptManager')
-        self.buildin_prompts_dir = Path(__file__).parent / 'build_in_prompts'
+        self.buildin_prompts_dir = Path(__file__).parent / 'prompts'
         if prompts_dir is None:
             log.debug('PromptManager dir is None, set to current dir.')
             self.prompts_dir = Path('.')

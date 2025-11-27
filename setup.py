@@ -43,7 +43,7 @@ with open("README.md", "r") as f:
     long_description = long_description.replace(m[0], '![pipe demo](https://raw.githubusercontent.com/maokangkun/SigmaFlow/main/assets/demo_pipe.png)').replace(m[1], '![perf demo](https://raw.githubusercontent.com/maokangkun/SigmaFlow/main/assets/demo_perf.png)')
 
 setuptools.setup(
-    name=pkg_name.lower(),  # Replace with your own username
+    name=pkg_name.lower(),
     version=get_new_version(),
     author="maokangkun",
     author_email="maokangkun@pjlab.prg.cn",
@@ -52,7 +52,10 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url=f"https://github.com/maokangkun/{pkg_name}",
     packages=setuptools.find_packages(),
-    install_requires=parse_requirements("requirements.txt"),
+    install_requires=parse_requirements("deps/requirements.txt"),
+    extras_require={
+        'all': parse_requirements("deps/requirements_all.txt"),
+    },
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",

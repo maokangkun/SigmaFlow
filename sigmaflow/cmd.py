@@ -1,17 +1,6 @@
-import os
-import argparse
-from pathlib import Path
-from dotenv import load_dotenv
+from .imports import *
 load_dotenv('.env')
-
 from .utils import *
-
-def get_version():
-    import importlib.metadata
-    try:
-        return importlib.metadata.version("sigmaflow")
-    except importlib.metadata.PackageNotFoundError:
-        return "unknown"
 
 def setup_args():
     parser = argparse.ArgumentParser()
@@ -48,7 +37,7 @@ def main():
     args = setup_args()
 
     if args.env:
-        test_env()
+        check_env()
         return
 
     if args.model:
@@ -68,6 +57,9 @@ def main():
         if args.output:
             if type(r) is tuple: jdump(r[0], args.output)
             elif type(r) is list: jdump([i for i,_ in r], args.output)
+
+        if args.png:
+            pipe.to_png(f'{pipefile.stem}.png')
     elif args.png:
         pipe.to_png(f'{pipefile.stem}.png')
     elif args.serve:

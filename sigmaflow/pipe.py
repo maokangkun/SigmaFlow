@@ -1,6 +1,4 @@
-import re
-import time
-import json
+from .imports import *
 from .log import log
 from .clients import SearchEngine
 

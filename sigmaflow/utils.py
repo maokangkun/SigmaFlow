@@ -1,13 +1,10 @@
-import os
-import sys
-import json
-import shutil
-import hashlib
-import requests
-import platform
-import datetime
-import collections
-from pathlib import Path, PosixPath
+from .imports import *
+
+def get_version():
+    try:
+        return importlib.metadata.version("sigmaflow")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
 
 def check_cmd_exist(command):
     return shutil.which(command) is not None
@@ -97,7 +94,7 @@ def get_latest_version(lib):
     latest_version = max(versions, key=version.parse)
     return lib[1], latest_version
 
-def test_env():
+def check_env():
     from rich import print
     from rich.table import Table
     from rich.console import Console

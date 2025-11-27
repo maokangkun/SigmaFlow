@@ -7,5 +7,4 @@ Pillow
 fastapi
 requests
 packaging
-pymupdf4llm
 uvicorn[standard]

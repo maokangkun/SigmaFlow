@@ -1,5 +1,5 @@
-import json
-from .log import log
+from ..imports import *
+from ..log import log
 
 class PromptKeys:
     def __init__(self, arr, prompt):

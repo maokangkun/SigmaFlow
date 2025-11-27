@@ -1,10 +1,4 @@
-import os
-import logging
-import datetime
-from pathlib import Path
-from rich.console import Console
-from rich.logging import RichHandler
-from logging.handlers import RotatingFileHandler
+from .imports import *
 
 def beijing(sec, what):
     beijing_time = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
