@@ -57,9 +57,6 @@ def main():
         if args.output:
             if type(r) is tuple: jdump(r[0], args.output)
             elif type(r) is list: jdump([i for i,_ in r], args.output)
-
-        if args.png:
-            pipe.to_png(f'{pipefile.stem}.png')
     elif args.png:
         pipe.to_png(f'{pipefile.stem}.png')
     elif args.serve:

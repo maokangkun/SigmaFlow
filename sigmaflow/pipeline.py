@@ -35,6 +35,7 @@ class Pipeline:
             }
 
         if save_perf and 'error_msg' not in data:
+            log_dir.mkdir(parents=True, exist_ok=True)
             info['mermaid']['pipe'] = self.pipetree.tree2mermaid(info)
             info['mermaid']['perf'] = self.pipetree.perf2mermaid()
             fname = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
