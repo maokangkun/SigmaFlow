@@ -39,23 +39,14 @@ class Pipeline:
             info['mermaid']['pipe'] = self.pipetree.tree2mermaid(info)
             info['mermaid']['perf'] = self.pipetree.perf2mermaid()
             fname = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-            if check_cmd_exist('mmdc'):
-                pipe_img = str(log_dir / f'{fname}_pipe.png')
-                tmp_file = f'/tmp/{uuid.uuid4()}'
-                with open(tmp_file, 'w') as f: f.write(info["mermaid"]["pipe"])
-                log.debug(f'Save pipeline mermaid in: {tmp_file}')
-                os.popen(f'mmdc -i {tmp_file} -o {pipe_img} -s 3 >/dev/null 2>&1')
-                log.debug(f'save {pipe_img}')
-                perf_img = str(log_dir / f"{fname}_perf.png")
-                os.popen(f'echo "{info["mermaid"]["perf"]}" | mmdc -i - -o {perf_img} -s 3 >/dev/null 2>&1')
-                log.debug(f'save {perf_img}')
-                # md_pipe = f"![pipe_img]({pipe_img.split('/')[1]})"
-                # md_perf = f"![perf_img]({perf_img.split('/')[1]})"
-            else:
-                log.warning('Please install mmdc to generate mermaid images.')
+
+            pipe_img = str(log_dir / f'{fname}_pipe.png')
+            perf_img = str(log_dir / f"{fname}_perf.png")
+            mmdc(info['mermaid']['pipe'], pipe_img)
+            mmdc(info['mermaid']['perf'], perf_img)
+
             md_pipe = f"```mermaid\n{info['mermaid']['pipe']}```"
             md_perf = f"```mermaid\n{info['mermaid']['perf']}```"
-
             r_str = f'```json\n{json.dumps(data, indent=4, ensure_ascii=False)}\n```'
             md_content = f'## result\n{r_str}\n## Pipeline\n{md_pipe}\n## Perfermence\n{md_perf}'
             md_file = f'logs/{fname}_report.md'
@@ -166,15 +157,8 @@ class Pipeline:
         return ret, len(pipe.run_time) if pipe else node.run_cnt
 
     def to_png(self, pipe_img):
-        if check_cmd_exist('mmdc'):
-            pipe_mermaid = self.pipetree.tree2mermaid()
-            tmp_file = f'/tmp/{uuid.uuid4()}'
-            with open(tmp_file, 'w') as f: f.write(pipe_mermaid)
-            log.debug(f'Save pipeline mermaid in: {tmp_file}')
-            os.popen(f'mmdc -i {tmp_file} -o {pipe_img} -s 3 >/dev/null 2>&1')
-            log.debug(f'save {pipe_img}')
-        else:
-            log.warning('Please install mmdc to generate mermaid images.')
+        pipe_mermaid = self.pipetree.tree2mermaid()
+        mmdc(pipe_mermaid, pipe_img)
 
     def add_node_finish_callback(self, callbacks, nodes=None):
         if nodes is None: nodes = self.pipetree.node_manager.values()

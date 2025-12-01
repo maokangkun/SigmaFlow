@@ -17,6 +17,7 @@ import platform
 import datetime
 import importlib
 import traceback
+import subprocess
 import collections
 import pandas as pd
 import importlib.metadata

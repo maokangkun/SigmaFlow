@@ -1,4 +1,5 @@
 from .imports import *
+from .log import log
 
 def get_version():
     try:
@@ -230,3 +231,14 @@ def check_env():
         pass
 
     console.print(table)
+
+def mmdc(mermaid, img):
+    if check_cmd_exist('mmdc'):
+        tmp_file = f'/tmp/{uuid.uuid4()}'
+        with open(tmp_file, 'w') as f: f.write(mermaid)
+        log.debug(f'Save mermaid in: {tmp_file}')
+        subprocess.run(['mmdc', '-i', tmp_file, '-o', img, '-s', '3'], 
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        log.debug(f'Save {img}')
+    else:
+        log.warning('Please install mmdc to generate mermaid images.')
