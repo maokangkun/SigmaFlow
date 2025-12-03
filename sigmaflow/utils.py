@@ -74,12 +74,15 @@ def jdump(obj, out):
         else:
             raise ValueError(f"Unexpected type: {type(obj)}")
 
-def calc_sha256(file_path):
-    hash_sha256 = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(4096), b""):
-            hash_sha256.update(chunk)
-    return hash_sha256.hexdigest()
+def calc_hash(file_path=None):
+    if file_path:
+        hash_sha256 = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_sha256.update(chunk)
+    else:
+        hash_sha256 = hashlib.sha256(os.urandom(32))
+    return hash_sha256.hexdigest()[-16:]
 
 def get_latest_version(lib):
     from packaging import version
@@ -242,3 +245,51 @@ def mmdc(mermaid, img):
         log.debug(f'Save {img}')
     else:
         log.warning('Please install mmdc to generate mermaid images.')
+
+def async_compat(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            # 检查是否在异步上下文中
+            loop = asyncio.get_running_loop()
+            # 如果在异步上下文中，返回协程
+            async def async_wrapper():
+                return func(*args, **kwargs)
+            return async_wrapper()
+        except RuntimeError:
+            # 如果在同步上下文中，直接执行
+            return func(*args, **kwargs)
+    return wrapper
+
+def sync_compat(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            loop = asyncio.get_running_loop()
+            return func(*args, **kwargs)
+        except RuntimeError:
+            return asyncio.run(func(*args, **kwargs))
+    return wrapper
+
+def remove_think_content(text):
+    regex = r"(^<think>[^<]*(?:<(?!/?think>)[^<]*)*<\/think>)"
+    text = re.sub(regex, '', text).strip()
+    return text
+
+def extract_json(text, remove_think=True):
+    text = text.strip()
+
+    if remove_think:
+        text = remove_think_content(text)
+
+    try:
+        j = json.loads(text)
+        return j
+    except: pass
+
+    if (m := re.findall(r'```(?:json)?(.*?)```', text, re.DOTALL)):
+        try:
+            j = json.loads(m[0])
+            return j
+        except: pass
+    return None

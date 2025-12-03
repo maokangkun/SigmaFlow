@@ -1,6 +1,6 @@
 from ..imports import *
 from ..log import log
-from ..pipe import RAGPipe
+from ..blocks import RAGBlock
 from .constant import *
 from .base import Node
 
@@ -23,7 +23,7 @@ class RAGNode(Node):
             rag_backend = backend
 
         if tree.run_mode == 'mp':
-            pipe = RAGPipe(
+            pipe = RAGBlock(
                     self.name,
                     rag=rag_backend,
                     lock=tree.mp_lock,
@@ -32,7 +32,7 @@ class RAGNode(Node):
                     **self.conf
                     )
         else:
-            pipe = RAGPipe(self.name, rag=rag_backend, **self.conf)
+            pipe = RAGBlock(self.name, rag=rag_backend, **self.conf)
 
         tree.pipe_manager[self.name] = pipe
         self.pipe = pipe

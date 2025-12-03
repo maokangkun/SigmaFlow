@@ -1,6 +1,6 @@
 from ..imports import *
 from ..log import log
-from ..pipe import SearchPipe, BrowserPipe
+from ..blocks import SearchBlock, BrowserBlock
 from .constant import *
 from .base import Node
 
@@ -13,18 +13,18 @@ class WebNode(Node):
         search_pipe = None
         if tree.is_async:
             if 'search_engine' in self.conf['web']:
-                search_pipe = SearchPipe(self.name, **self.conf['web'])
-            browser_pipe = BrowserPipe(self.name)
+                search_pipe = SearchBlock(self.name, **self.conf['web'])
+            browser_pipe = BrowserBlock(self.name)
         else:
             if 'search_engine' in self.conf['web']:
-                search_pipe = SearchPipe(
+                search_pipe = SearchBlock(
                         self.name,
                         lock=tree.mp_lock,
                         run_time=tree.mp_manager.list(),
                         inout_log=tree.mp_manager.list(),
                         **self.conf
                         )
-            browser_pipe = BrowserPipe(self.name)
+            browser_pipe = BrowserBlock(self.name)
 
         tree.pipe_manager[self.name] = {'search': search_pipe, 'browser': browser_pipe}
         self.search_pipe = search_pipe
@@ -38,7 +38,7 @@ class WebNode(Node):
 
     async def current_task(self, data, queue, dynamic_tasks):
         inps = await self.get_inps(queue)
-        out = await self.search_pipe.async_call(*inps)
+        out = await self.search_pipe(*inps)
 
         browser_tasks = []
         for url in self.loop_nodes:

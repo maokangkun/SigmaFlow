@@ -43,7 +43,7 @@ def main():
     if args.model:
         os.environ['MODEL_PATH'] = args.model
 
-    from .manager import PipelineManager
+    from .managers import PipelineManager
     pm = PipelineManager(run_mode=args.mode, llm_type=args.llm, rag_type=args.rag, pipes_dir=args.pipeline_dir)
 
     if args.pipeline:

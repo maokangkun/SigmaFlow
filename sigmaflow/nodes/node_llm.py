@@ -1,7 +1,7 @@
 from ..imports import *
 from ..log import log
 from ..prompts import Prompt
-from ..pipe import LLMPipe
+from ..blocks import LLMBlock
 from .constant import *
 from .base import Node
 
@@ -22,7 +22,7 @@ class LLMNode(Node):
             backend = tree.llm_backend
 
         if tree.run_mode == 'mp':
-            pipe = LLMPipe(
+            pipe = LLMBlock(
                     self.name,
                     llm=backend,
                     lock=tree.mp_lock,
@@ -31,7 +31,7 @@ class LLMNode(Node):
                     **self.conf
                     )
         else:
-            pipe = LLMPipe(self.name, llm=backend, **self.conf)
+            pipe = LLMBlock(self.name, llm=backend, **self.conf)
         tree.pipe_manager[self.name] = pipe
         self.pipe = pipe
 

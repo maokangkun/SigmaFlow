@@ -1,63 +1,38 @@
-from openai import OpenAI
-from openai import AsyncOpenAI
+from openai import OpenAI, AsyncOpenAI
 from . import *
+from ..utils import sync_compat
 
 def llm_client(is_async=False):
-    if is_async:
-        return async_completion
-    else:
-        return completion
+    return completion
 
-def completion(text):
-    client = OpenAI(
-        api_key=os.getenv("OPENAI_API_KEY"),
-        base_url=os.getenv("OPENAI_API_URL"),
-        max_retries=20,
-        # timeout=6000.0,
-    )
-
-    chat_completion = client.chat.completions.create(
-        messages=[
-            {
-                "role": "user",
-                "content": text,
-            }
-        ],
-        model=os.getenv("OPENAI_API_MODEL"),
-        max_completion_tokens=int(n) if (n:= os.getenv("OPENAI_API_MAX_COMP_TOKENS")) else None,
-        temperature=float(os.getenv("OPENAI_API_TEMPERATURE", 1))
-    )
-
-    return chat_completion.choices[0].message.content
-
-async def async_completion(text):
-    client = AsyncOpenAI(
-        api_key=os.getenv("OPENAI_API_KEY"),
-        base_url=os.getenv("OPENAI_API_URL"),
-        max_retries=20,
-        # timeout=6000.0,
-    )
+@sync_compat
+async def completion(text):
+    msg = []
     if (t := type(text)) is str:
-        msg = [
-            {
-                "role": "user",
-                "content": text,
-            }
-        ]
+        msg.append({
+            "role": "user",
+            "content": text,
+        })
     elif t is list:
-        msg = []
         for role, c in zip(['user', 'assistant']*len(text), text):
             msg.append({
                 "role": role,
                 "content": c,
             })
 
-    async with llm_sem:
-        chat_completion = await client.chat.completions.create(
-            messages=msg,
-            model=os.getenv("OPENAI_API_MODEL"),
-            max_completion_tokens=int(n) if (n:= os.getenv("OPENAI_API_MAX_COMP_TOKENS")) else None,
-            temperature=float(os.getenv("OPENAI_API_TEMPERATURE", 1))
-        )
+    client_param = {
+        'api_key': os.getenv("OPENAI_API_KEY"),
+        'base_url': os.getenv("OPENAI_API_URL"),
+        'max_retries': 20,
+        # 'timeout': 6000.0,
+    }
+    chat_param = {
+        'messages': msg,
+        'model': os.getenv("OPENAI_API_MODEL"),
+        'max_completion_tokens': int(n) if (n:= os.getenv("OPENAI_API_MAX_COMP_TOKENS")) else None,
+        'temperature': float(os.getenv("OPENAI_API_TEMPERATURE", 1))
+    }
 
+    client = AsyncOpenAI(**client_param)
+    chat_completion = await client.chat.completions.create(**chat_param)
     return chat_completion.choices[0].message.content

@@ -25,9 +25,9 @@ if SAVE_LOG:
 logging.basicConfig(level=LOG_LEVEL, format=LOGFORMAT, datefmt="[%y-%m-%d %H:%M:%S]", handlers=handlers)
 log = logging.getLogger("SigmaFlow")
 
-def _banner_print(text):
+def _banner_print(text, separate=True):
     n = len(text)
-    t = '\n' + '-'*(4+n) + '\n| ' + text + ' |\n' + '-'*(4+n)
+    t = ('\n' if separate else '') + '-'*(4+n) + '\n| ' + text + ' |\n' + '-'*(4+n)
     log.debug(t)
 
 log.banner = _banner_print

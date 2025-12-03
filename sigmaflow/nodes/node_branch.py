@@ -1,6 +1,6 @@
 from ..imports import *
 from ..log import log
-from ..pipe import LLMPipe
+from ..blocks import LLMBlock
 from .constant import *
 from .base import Node
 
@@ -25,7 +25,7 @@ class BranchNode(Node):
                 backend = tree.llm_backend
 
             if tree.run_mode == 'mp':
-                pipe = LLMPipe(
+                pipe = LLMBlock(
                         self.name,
                         llm=backend,
                         lock=tree.mp_lock,
@@ -34,7 +34,7 @@ class BranchNode(Node):
                         **self.conf
                         )
             else:
-                pipe = LLMPipe(self.name, llm=backend, **self.conf)
+                pipe = LLMBlock(self.name, llm=backend, **self.conf)
             tree.pipe_manager[self.name] = pipe
             self.pipe = pipe
 
@@ -83,10 +83,10 @@ class BranchNode(Node):
             retry = 0
             while retry < 5:
                 if len(inps) == 1:
-                    cond = await self.pipe.async_call(inps[0], items_text)
+                    cond = await self.pipe(inps[0], items_text)
                 else:
                     inps_t = '\n'.join(f'{k}: {v}' for k,v in zip(self.conf['inp'], inps))
-                    cond = await self.pipe.async_call(inps_t, items_text)
+                    cond = await self.pipe(inps_t, items_text)
 
                 if cond and type(cond) is dict:
                     item_id = cond.get('item_id', '')

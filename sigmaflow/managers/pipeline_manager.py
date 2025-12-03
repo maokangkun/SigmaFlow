@@ -1,52 +1,14 @@
-from .imports import *
-from .log import log
-from .utils import *
-from .prompts import Prompt
-from .pipeline import Pipeline
-
-class PromptManager:
-    def __init__(self, prompts_dir=None):
-        log.debug('Setup PromptManager')
-        self.buildin_prompts_dir = Path(__file__).parent / 'prompts'
-        if prompts_dir is None:
-            log.debug('PromptManager dir is None, set to current dir.')
-            self.prompts_dir = Path('.')
-        else:
-            self.prompts_dir = Path(prompts_dir)
-        self.prompts = {}
-        self.load_prompts()
-
-    def load_prompts(self):
-        self.prompts = {}
-        prompts_dirs = [self.buildin_prompts_dir, self.prompts_dir]
-        log.debug(f'Start load prompts: {prompts_dirs}')
-
-        for pdir in prompts_dirs:
-            prompt_files = list(pdir.glob('*_prompt.py'))
-            log.debug(f'Find {len(prompt_files)} prompt files: {[p.stem for p in prompt_files]}')
-
-            for pf in prompt_files:
-                m = importpath(pf)
-                self.prompts[pf.stem] = Prompt(m.prompt, m.keys, pf.stem, pf)
-
-        log.debug('All prompts loaded')
-    
-    def get(self, item):
-        if (t := type(item)) is str:
-            if item not in self.prompts: raise KeyError(f"Don't has prompt: {item}")
-            return self.prompts[item]
-        elif t is dict:
-            name = f'prompt_{len(self.prompts)}'
-            assert name not in self.prompts, f'PromptManager: two prompts has the same name {name}'
-            self.prompts[name] = Prompt(item['prompt'], item['keys'], name)
-            return self.prompts[name]
+from ..imports import *
+from ..log import log
+from ..utils import *
+from ..pipeline import Pipeline
+from .prompt_manager import PromptManager
 
 class PipelineManager:
     def __init__(self, llm_client=None, rag_client=None, llm_type=None, rag_type=None, run_mode='async', pipes_dir=None, prompt_manager=None):
-        log.debug('Setup PipelineManager')
-        if pipes_dir is None: pipes_dir = '.'
-        self.pipes_dir = Path(pipes_dir)
         self.prompt_manager = prompt_manager or PromptManager()
+        log.banner('Setup PipelineManager', separate=False)
+        self.pipes_dir = Path(pipes_dir or '.')
         self.llm_client = llm_client
         self.rag_client = rag_client
         self.llm_type = llm_type
@@ -60,7 +22,7 @@ class PipelineManager:
 
     def load_pipes(self):
         self.pipes = {}
-        log.debug(f'Start load pipelines: {self.pipes_dir}')
+        log.debug(f'Start load pipelines from: {self.pipes_dir}')
         sys.path.append(str(self.pipes_dir))
         pipe_files = list(self.pipes_dir.glob(f'*{self.pipeline_suffix}.py'))
         log.debug(f'Find {len(pipe_files)} pipeline files: {[p.stem.removesuffix(self.pipeline_suffix) for p in pipe_files]}')
@@ -71,34 +33,35 @@ class PipelineManager:
         log.debug('All pipelines loaded')
 
     def load_llm_rag_client(self):
+        log.debug(f'Pipeline run mode: {self.run_mode}')
         if self.llm_client is None and self.llm_type is not None:
-            log.debug(f'Initializing {self.llm_type} backend')
+            log.debug(f'Initializing LLM backend: {self.llm_type}')
             llm_batch_processor = None
             match self.llm_type:
                 case 'torch':
-                    from .clients.llm_torch import llm_client
+                    from ..clients.llm_torch import llm_client
                 case 'lmdeploy':
-                    from .clients.llm_lmdeploy import llm_client, llm_batch_processor
+                    from ..clients.llm_lmdeploy import llm_client, llm_batch_processor
                 case 'vllm':
-                    from .clients.llm_vllm import llm_client, llm_batch_processor
+                    from ..clients.llm_vllm import llm_client, llm_batch_processor
                 case 'ollama':
-                    from .clients.llm_ollama import llm_client
+                    from ..clients.llm_ollama import llm_client
                 case 'openai':
-                    from .clients.llm_openai import llm_client
+                    from ..clients.llm_openai import llm_client
                 case 'mlx':
-                    from .clients.llm_mlx import llm_client
+                    from ..clients.llm_mlx import llm_client
                 case _:
                     pass
             self.llm_client = llm_client(is_async=self.run_mode=='async')
             self.llm_batch_processor = llm_batch_processor
 
         if self.rag_client is None and self.rag_type is not None:
-            log.debug(f'Initializing {self.rag_type} backend')
+            log.debug(f'Initializing RAG backend: {self.rag_type}')
             match self.rag_type:
                 case 'json':
-                    from sigmaflow.clients.rag_json import rag_client
+                    from ..clients.rag_json import rag_client
                 case 'http':
-                    from sigmaflow.clients.rag_http import rag_client
+                    from ..clients.rag_http import rag_client
                 case _:
                     pass
             self.rag_client = rag_client(is_async=self.run_mode=='async')
@@ -115,7 +78,7 @@ class PipelineManager:
         return p
 
     def _load_pipe(self, name, pipeconf=None, pipefile=None, run_mode=None):
-        if pipefile and name in self.pipes and calc_sha256(pipefile) == self.pipes[name].hash:
+        if pipefile and name in self.pipes and calc_hash(pipefile) == self.pipes[name].hash:
             p = self.pipes[name]
         else:
             p = Pipeline(self.llm_client, self.rag_client, self.prompt_manager, pipeconf=pipeconf, pipefile=pipefile, run_mode=run_mode or self.run_mode, llm_batch_processor=self.llm_batch_processor)

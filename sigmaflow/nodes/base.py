@@ -112,6 +112,7 @@ class Node:
                     return DataState.VOID
             return data[i]
 
+        if 'inp' not in self.conf: return data
         inps = []
         for i in self.conf['inp']:
             if type(i) is str:
@@ -215,7 +216,7 @@ class Node:
     async def current_task(self, data, queue, dynamic_tasks):
         if self.__class__.__name__ in ['LLMNode', 'RAGNode']:
             inps = await self.get_inps(queue)
-            out = await self.pipe.async_call(*inps)
+            out = await self.pipe(*inps)
             self.set_out(out, data, queue)
             self.execute_finish_callback(out)
 

@@ -1,12 +1,9 @@
-import os
-import asyncio
-import pkgutil
-import importlib
+from ..imports import *
 from ..log import log
 
 class _SearchEngine:
     def __init__(self):
-        log.debug('Setup SearchEngine')
+        log.banner('Setup SearchEngine', separate=False)
         self.engines = {}
         for loader, module_name, is_pkg in pkgutil.walk_packages(__path__, __name__ + '.'):
             if (name := module_name.split('.')[-1]).startswith('search_'):
