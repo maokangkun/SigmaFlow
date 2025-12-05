@@ -2,11 +2,15 @@ from ..imports import *
 from ..log import log
 from ..blocks import RAGBlock
 from .constant import *
-from .base import Node
+from .node import Node
 
 class RAGNode(Node):
     mermaid_style = NodeColorStyle.RAGNode
     mermaid_shape = NodeShape.RAGNode
+
+    @staticmethod
+    def match(conf):
+        return 'rag_param' in conf
 
     def post_init(self):
         tree = self.tree

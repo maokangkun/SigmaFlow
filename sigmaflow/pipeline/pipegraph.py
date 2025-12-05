@@ -63,7 +63,7 @@ class PipeGraph(Graph):
         while not perf_queue.empty(): self.perf.append(perf_queue.get())
 
         data = dict(data)
-        self.exit_node.reformat(data)
+        self.node_manager['exit'].reformat(data)
         return data
 
     def normal_run(self, inp_data):

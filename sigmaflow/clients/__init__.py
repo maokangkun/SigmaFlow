@@ -1,5 +1,6 @@
 from ..imports import *
 from ..log import log
+from ..utils import sync_compat
 
 class _SearchEngine:
     def __init__(self):

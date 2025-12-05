@@ -1,6 +1,5 @@
-from openai import OpenAI, AsyncOpenAI
 from . import *
-from ..utils import sync_compat
+from openai import AsyncOpenAI
 
 def llm_client(is_async=False):
     return completion

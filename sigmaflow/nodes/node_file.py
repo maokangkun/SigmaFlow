@@ -1,11 +1,15 @@
 from ..imports import *
 from ..log import log
 from .constant import *
-from .base import Node
+from .node import Node
 
 class FileNode(Node):
     mermaid_style = NodeColorStyle.FileNode
     mermaid_shape = NodeShape.FileNode
+
+    @staticmethod
+    def match(conf):
+        return 'file' in conf or 'file_dir' in conf
 
     def current_normal_task(self, inps, data, queue):
         info = self.conf.get('file_dir', None) or self.conf.get('file', None)

@@ -1,11 +1,15 @@
 from ..imports import *
 from ..log import log
 from .constant import *
-from .base import Node
+from .node import Node
 
 class ExitNode(Node):
     mermaid_style = NodeColorStyle.ExitNode
     mermaid_shape = NodeShape.ExitNode
+
+    @staticmethod
+    def match(conf):
+        return conf['name'] == 'exit'
 
     def get_mermaid(self, info=None):
         defines = [self.__class__.mermaid_shape(self.name)]

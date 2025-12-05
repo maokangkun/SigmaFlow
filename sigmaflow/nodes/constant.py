@@ -16,10 +16,11 @@ class Color:
     Green = '#9BCFB8'
     LightYellow = '#FFFFAD'
     Black2 = '#3D3E3F'
+    Orange = '#f96'
 
 class NodeColorStyle:
     default = f'color:{Color.Black}'
-    LLMNode = f'fill:{Color.Gray},color:{Color.Black}'
+    LLMNode = f'fill:{Color.Gray},color:{Color.Black},stroke:{Color.Orange},stroke-width:1px,stroke-dasharray: 5 5'
     RAGNode = f'fill:{Color.Pink},color:{Color.Black}'
     LoopNode = f'fill:none,stroke:{Color.Khaki},stroke-dasharray:5 5,stroke-width:2px'
     BranchNode = f'fill:{Color.DarkBlue},color:{Color.White}'

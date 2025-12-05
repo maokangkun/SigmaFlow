@@ -2,11 +2,15 @@ from ..imports import *
 from ..log import log
 from ..blocks import SearchBlock, BrowserBlock
 from .constant import *
-from .base import Node
+from .node import Node
 
 class WebNode(Node):
     mermaid_style = NodeColorStyle.WebNode
     mermaid_shape = NodeShape.WebNode
+
+    @staticmethod
+    def match(conf):
+        return 'web' in conf
 
     def post_init(self):
         tree = self.tree

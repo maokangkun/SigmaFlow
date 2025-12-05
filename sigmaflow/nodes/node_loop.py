@@ -1,11 +1,15 @@
 from ..imports import *
 from ..log import log
 from .constant import *
-from .base import Node
+from .node import Node
 
 class LoopNode(Node):
     mermaid_style = NodeColorStyle.LoopNode
     mermaid_shape = NodeShape.LoopNode
+
+    @staticmethod
+    def match(conf):
+        return 'pipe_in_loop' in conf
 
     def update(self, nodes):
         super().update(nodes)

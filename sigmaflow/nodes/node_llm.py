@@ -3,11 +3,15 @@ from ..log import log
 from ..prompts import Prompt
 from ..blocks import LLMBlock
 from .constant import *
-from .base import Node
+from .node import Node
 
 class LLMNode(Node):
     mermaid_style = NodeColorStyle.LLMNode
     mermaid_shape = NodeShape.LLMNode
+
+    @staticmethod
+    def match(conf):
+        return 'prompt' in conf
 
     def post_init(self):
         tree = self.tree

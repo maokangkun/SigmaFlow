@@ -1,11 +1,15 @@
 from ..imports import *
 from ..log import log
 from .constant import *
-from .base import Node
+from .node import Node
 
 class ValueNode(Node):
     mermaid_style = NodeColorStyle.ValueNode
     mermaid_shape = NodeShape.ValueNode
+
+    @staticmethod
+    def match(conf):
+        return 'value' in conf or 'item' in conf
 
     def _get_mermaid_defines(self):
         data_defs = [Data.mermaid_shape(d) for d in self.mermaid_data]

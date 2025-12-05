@@ -16,7 +16,6 @@ class Graph:
 
         self.start_nodes = []
         self.required_inputs = []
-        self.exit_node = None
         self.prompt_manager = prompt_manager
         self.pipe_manager = {}
         self.node_manager = {}
@@ -62,28 +61,11 @@ class Graph:
     def _init(self):
         if 'exit' not in self.pipeconf: self.pipeconf['exit'] = {}
         for name, conf in self.pipeconf.items():
-            if name == 'exit':
-                self.exit_node = node = ExitNode(name, conf, self)
-            elif 'rag_param' in conf:
-                node = RAGNode(name, conf, self)
-            elif 'pipe_in_loop' in conf:
-                node = LoopNode(name, conf, self)
-            elif 'use_llm' in conf or type(conf.get('next', None)) is dict:
-                node = BranchNode(name, conf, self)
-            elif 'code' in conf or 'code_func' in conf:
-                node = CodeNode(name, conf, self)
-            elif 'web' in conf:
-                node = WebNode(name, conf, self)
-            elif 'value' in conf or 'item' in conf:
-                node = ValueNode(name, conf, self)
-            elif 'prompt' in conf:
-                node = LLMNode(name, conf, self)
-            elif 'file' in conf or 'file_dir' in conf:
-                node = FileNode(name, conf, self)
+            if (node := Node.create(name, conf, self)):
+                self.node_manager[name] = node
             else:
                 log.error(f"Unable to identify node type: [{name}] {conf}")
                 exit()
-            self.node_manager[name] = node
 
         all_outs = set()
         for n in self.node_manager.values():

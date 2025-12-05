@@ -1,11 +1,15 @@
 from ..imports import *
 from ..log import log
 from .constant import *
-from .base import Node
+from .node import Node
 
 class CodeNode(Node):
     mermaid_style = NodeColorStyle.CodeNode
     mermaid_shape = NodeShape.CodeNode
+
+    @staticmethod
+    def match(conf):
+        return 'code' in conf or 'code_func' in conf
 
     def _eval_format(self, item):
         if type(item) is str:

@@ -2,11 +2,15 @@ from ..imports import *
 from ..log import log
 from ..blocks import LLMBlock
 from .constant import *
-from .base import Node
+from .node import Node
 
 class BranchNode(Node):
     mermaid_style = NodeColorStyle.BranchNode
     mermaid_shape = NodeShape.BranchNode
+
+    @staticmethod
+    def match(conf):
+        return 'use_llm' in conf or type(conf.get('next', None)) is dict
 
     def post_init(self):
         self.passed_cond = set()
