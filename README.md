@@ -7,6 +7,7 @@
   <a href="https://pypi.org/project/sigmaflow/"><img src="https://img.shields.io/pypi/v/sigmaflow.svg"></a>
   <img src="https://komarev.com/ghpvc/?username=maokangkun&label=Views&color=0e75b6&style=flat" alt="访问量统计" />
   <a href='https://arxiv.org/abs/xxx'><img src='https://img.shields.io/badge/arXiv-xxx-b31b1b'></a>
+  <a href='https://doi.org/10.5281/zenodo.17874411'><img src='https://zenodo.org/badge/DOI/10.5281/zenodo.17874411.svg'></a>
   [![license](https://img.shields.io/github/license/maokangkun/SigmaFlow.svg)](https://github.com/maokangkun/SigmaFlow/tree/main/LICENSE)
   [![issue resolution](https://img.shields.io/github/issues-closed-raw/maokangkun/SigmaFlow)](https://github.com/maokangkun/SigmaFlow/issues)
 
