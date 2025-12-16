@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  pypi-publish:
+  publish-to-pypi:
     runs-on: ubuntu-latest
     needs:
       - release-build
