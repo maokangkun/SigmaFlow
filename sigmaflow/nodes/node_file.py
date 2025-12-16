@@ -11,7 +11,7 @@ class FileNode(Node):
     def match(conf):
         return 'file' in conf or 'file_dir' in conf
 
-    def current_normal_task(self, inps, data, queue):
+    def current_seq_task(self, inps, data, queue):
         info = self.conf.get('file_dir', None) or self.conf.get('file', None)
         if 'file' in self.conf:
             if (t := type(self.conf['file'])) is str:

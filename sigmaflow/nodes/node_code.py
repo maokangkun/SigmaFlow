@@ -47,7 +47,7 @@ class CodeNode(Node):
         self.execute_finish_callback(out)
         for n in self.next: queue.put((n.name, config))
     
-    def current_normal_task(self, inps, data, queue):
+    def current_seq_task(self, inps, data, queue):
         if 'code_entry' in self.conf:
             local = {}
             exec(self.conf['code'], local)

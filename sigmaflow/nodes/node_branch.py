@@ -181,7 +181,7 @@ class BranchNode(Node):
             for node in nodes: queue.put((node.name, config))
         log.debug(f'[{self.name}] condition: {cond}, goto nodes: {nodes}')
 
-    def current_normal_task(self, inps, data, queue):
+    def current_seq_task(self, inps, data, queue):
         if self.conf['use_llm']:
             items = list(self.conf['next'].keys())
             items_text = '\n'.join([f'[#{i+1}] {t}' for i, t in enumerate(items)])

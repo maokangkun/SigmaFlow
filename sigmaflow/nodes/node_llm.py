@@ -66,3 +66,21 @@ class LLMNode(Node):
             "output_node": False,
         }
         return {self.name: d}
+
+    def current_seq_task(self, inps, data, queue):
+        out = self.pipe(*inps)
+        self.set_out(out, data)
+        self.execute_finish_callback(out)
+        for n in self.next: queue.append(n)
+
+    def current_mp_task(self, inps, data, queue, config=None):
+        out = self.pipe(*inps)
+        self.set_out(out, data, config=config)
+        self.execute_finish_callback(out)
+        for n in self.next: queue.put((n.name, config))
+
+    async def current_task(self, data, queue, dynamic_tasks):
+        inps = await self.get_inps(queue)
+        out = await self.pipe(*inps)
+        self.set_out(out, data, queue)
+        self.execute_finish_callback(out)

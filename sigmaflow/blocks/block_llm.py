@@ -37,7 +37,7 @@ class LLMBlock(Block):
         else:
             if self.remove_think:
                 out = remove_think_content(resp)
-                self.log('remove think', out)
+                self.log('remove think', [f'{out[:20]} ...'])
             else:
                 out = resp
         return out, text, resp

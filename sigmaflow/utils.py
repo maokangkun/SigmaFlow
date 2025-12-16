@@ -1,5 +1,4 @@
 from .imports import *
-from .log import log
 
 def get_version():
     try:
@@ -236,6 +235,7 @@ def check_env():
     console.print(table)
 
 def mmdc(mermaid, img):
+    from .log import log
     if check_cmd_exist('mmdc'):
         tmp_file = f'/tmp/{uuid.uuid4()}'
         with open(tmp_file, 'w') as f: f.write(mermaid)

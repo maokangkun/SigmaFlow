@@ -44,12 +44,7 @@ class Node(Base):
         return inps
 
     def current_mp_task(self, inps, data, queue, config=None):
-        if self.__class__.__name__ in ['LLMNode', 'RAGNode']:
-            out = self.pipe(*inps)
-            self.set_out(out, data, config=config)
-            self.execute_finish_callback(out)
-
-        for n in self.next: queue.put((n.name, config))
+        pass
 
     def mp_run(self, mp_name, data, queue, perf, config=None):
         if (inps := self.get_inps_mp(data, config)):
@@ -131,11 +126,7 @@ class Node(Base):
             dynamic_tasks.append(task)
 
     async def current_task(self, data, queue, dynamic_tasks):
-        if self.__class__.__name__ in ['LLMNode', 'RAGNode']:
-            inps = await self.get_inps(queue)
-            out = await self.pipe(*inps)
-            self.set_out(out, data, queue)
-            self.execute_finish_callback(out)
+        pass
 
     async def async_run(self, data, queue, dynamic_tasks):
         start_time = time.time()
@@ -160,7 +151,7 @@ class Node(Base):
         await self.current_task(data, queue, [])
         log.banner(f"Leave async task: {self.name}, cnt: {cnt}")
 
-    def get_inps_normal(self, data):
+    def get_inps_seq(self, data):
         if 'inp' not in self.conf: return data
         inps = []
         for i in self.conf['inp']:
@@ -175,22 +166,17 @@ class Node(Base):
                 inps.append(t)
         return inps
 
-    def current_normal_task(self, inps, data, queue):
-        if self.__class__.__name__ in ['LLMNode', 'RAGNode']:
-            out = self.pipe(*inps)
-            self.set_out(out, data)
-            self.execute_finish_callback(out)
+    def current_seq_task(self, inps, data, queue):
+        pass
 
-        for n in self.next: queue.append(n)
-
-    def normal_run(self, data, queue):
-        if (inps := self.get_inps_normal(data)):
+    def seq_run(self, data, queue):
+        if (inps := self.get_inps_seq(data)):
             start_time = time.time()
             self.run_cnt += 1
-            log.banner(f"Enter normal task: {self.name}, cnt: {self.run_cnt}")
-            self.current_normal_task(inps, data, queue)
-            log.banner(f"Leave normal task: {self.name}, cnt: {self.run_cnt}")
-            self.tree.perf.append(('normal', self.name, start_time, time.time()))
+            log.banner(f"Enter task: {self.name}, cnt: {self.run_cnt}")
+            self.current_seq_task(inps, data, queue)
+            log.banner(f"Leave task: {self.name}, cnt: {self.run_cnt}")
+            self.tree.perf.append(('seq', self.name, start_time, time.time()))
         else:
             queue.append(self)
 
@@ -202,4 +188,4 @@ class Node(Base):
             case 'mp':
                 return self.mp_run
             case _:
-                return self.normal_run
+                return self.seq_run

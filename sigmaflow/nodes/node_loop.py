@@ -89,7 +89,7 @@ class LoopNode(Node):
 
         for node in self.next: queue.put((node.name, config))
 
-    def current_normal_task(self, inps, data, queue):
+    def current_seq_task(self, inps, data, queue):
         keys = list(data.keys())
         for item in inps[0]:
             tmp_d = copy.deepcopy(data)

@@ -35,7 +35,7 @@ class Block:
         n = 0
         while n < self.retry:
             start_t = time.time()
-            self.log('inp', inp)
+            self.log('inp', [str(i)[:20]+' ...' if len(str(i)) > 20 else i for i in inp])
             out, query, resp = await self._call(*inp)
 
             t = time.time() - start_t

@@ -75,7 +75,7 @@ class ValueNode(Node):
         log.debug(f'{mode = }, {self.conf["out"]}: {out}')
         self.execute_finish_callback(out)
 
-    def current_normal_task(self, inps, data, queue):
+    def current_seq_task(self, inps, data, queue):
         mode = self.conf.get('mode', 'assign')
         if 'value' in self.conf:
             v = self.conf['value']

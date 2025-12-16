@@ -31,3 +31,6 @@ def _banner_print(text, separate=True):
     log.debug(t)
 
 log.banner = _banner_print
+
+logging.getLogger("openai").setLevel(logging.WARNING)
+logging.getLogger("openai._base_client").setLevel(logging.WARNING)
