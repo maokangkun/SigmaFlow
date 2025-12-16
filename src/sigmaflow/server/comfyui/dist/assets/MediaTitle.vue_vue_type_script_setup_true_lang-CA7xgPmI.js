@@ -1,0 +1,2 @@
+import{defineComponent as n,computed as t,openBlock as m,createElementBlock as s,toDisplayString as c}from"vue";import{cU as i}from"./index-6STX4Oia.js";const r=["title"],d=n({__name:"MediaTitle",props:{fileName:{}},setup(o){const e=o,a=t(()=>e.fileName),l=t(()=>i(e.fileName));return(p,f)=>(m(),s("h3",{class:"m-0 line-clamp-1 text-sm font-bold text-base-foreground",title:a.value},c(l.value),9,r))}});export{d as _};
+//# sourceMappingURL=MediaTitle.vue_vue_type_script_setup_true_lang-CA7xgPmI.js.map

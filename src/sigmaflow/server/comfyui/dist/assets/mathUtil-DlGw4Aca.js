@@ -1,0 +1,2 @@
+var y=Object.defineProperty;var r=(t,n)=>y(t,"name",{value:n,configurable:!0});const d=r((t,n)=>n===0?t:d(n,t%n),"gcd"),p=r((t,n)=>Math.abs(t*n)/d(t,n),"lcm");function X(t){const n=t.length;if(n===0)return null;const i=t[0];let o=i[0],c=i[1],e=o+i[2],l=c+i[3];for(let u=1;u<n;u++){const s=t[u],f=s[0],m=s[1],x=f+s[2],h=m+s[3];f<o&&(o=f),m<c&&(c=m),x>e&&(e=x),h>l&&(l=h)}return{x:o,y:c,width:e-o,height:l-c}}r(X,"computeUnionBounds");export{X as c,p as l};
+//# sourceMappingURL=mathUtil-DlGw4Aca.js.map

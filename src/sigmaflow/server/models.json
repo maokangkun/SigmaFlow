@@ -1,0 +1,118 @@
+[
+    {
+        "name": "checkpoints",
+        "folders": [
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/checkpoints",
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/output/checkpoints"
+        ]
+    },
+    {
+        "name": "loras",
+        "folders": [
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/loras",
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/output/loras"
+        ]
+    },
+    {
+        "name": "vae",
+        "folders": [
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/vae",
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/output/vae"
+        ]
+    },
+    {
+        "name": "text_encoders",
+        "folders": [
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/text_encoders",
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/clip",
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/output/clip"
+        ]
+    },
+    {
+        "name": "diffusion_models",
+        "folders": [
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/unet",
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/diffusion_models",
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/output/diffusion_models"
+        ]
+    },
+    {
+        "name": "clip_vision",
+        "folders": [
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/clip_vision"
+        ]
+    },
+    {
+        "name": "style_models",
+        "folders": [
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/style_models"
+        ]
+    },
+    {
+        "name": "embeddings",
+        "folders": [
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/embeddings"
+        ]
+    },
+    {
+        "name": "diffusers",
+        "folders": [
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/diffusers"
+        ]
+    },
+    {
+        "name": "vae_approx",
+        "folders": [
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/vae_approx"
+        ]
+    },
+    {
+        "name": "controlnet",
+        "folders": [
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/controlnet",
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/t2i_adapter"
+        ]
+    },
+    {
+        "name": "gligen",
+        "folders": [
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/gligen"
+        ]
+    },
+    {
+        "name": "upscale_models",
+        "folders": [
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/upscale_models"
+        ]
+    },
+    {
+        "name": "hypernetworks",
+        "folders": [
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/hypernetworks"
+        ]
+    },
+    {
+        "name": "photomaker",
+        "folders": [
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/photomaker"
+        ]
+    },
+    {
+        "name": "classifiers",
+        "folders": [
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/classifiers"
+        ]
+    },
+    {
+        "name": "model_patches",
+        "folders": [
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/model_patches"
+        ]
+    },
+    {
+        "name": "audio_encoders",
+        "folders": [
+            "/mnt/shared-storage-user/maokangkun/code/github/ComfyUI/models/audio_encoders"
+        ]
+    }
+]
