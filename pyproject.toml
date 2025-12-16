@@ -1,3 +1,46 @@
+[project]
+name = "SigmaFlow"
+version = ""
+description = "SigmaFlow is a Python package designed to optimize the performance of task-flow related to LLMs/MLLMs or Multi-agent"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Kangkun Mao", email = "maokangkun@pjlab.org.cn" }]
+dependencies = [
+    "rich",
+    "openai",
+    "dotenv",
+    "ollama",
+    "pandas",
+    "Pillow",
+    "fastapi",
+    "requests",
+    "packaging",
+    "uvicorn[standard]",
+]
+classifiers=[
+    "Typing :: Typed",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://sigmaflows.github.io/"
+Repository = "https://github.com/maokangkun/SigmaFlow"
+
+[project.optional-dependencies]
+all = ["pymupdf4llm"]
+
+[dependency-groups]
+dev = [
+    "ruff",
+]
+
 [build-system]
-requires = ["setuptools >= 64"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sigmaflow"]

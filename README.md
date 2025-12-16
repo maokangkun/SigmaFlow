@@ -307,13 +307,13 @@ Thank you to all our contributors!
 ## 🌟Citation
 
 ```python
-@book{Mao2025maokangkun,
-	title = {maokangkun/SigmaFlow},
-	url = {https://github.com/maokangkun/SigmaFlow},
-	author = {Mao, Kangkun},
-	date = {2025-04-01},
-	year = {2025},
-	month = {4},
-	day = {1},
+@misc{mao2025sigmaflow,
+  author = {Mao, Kangkun},
+  doi = {10.5281/zenodo.17874411},
+  month = apr,
+  title = {{SigmaFlow Software}},
+  url = {https://github.com/maokangkun/SigmaFlow},
+  version = {0.0.44},
+  year = {2025}
 }
 ```
