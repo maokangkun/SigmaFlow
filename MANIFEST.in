@@ -1,5 +1,0 @@
-include sigmaflow/server/object_info.json
-include sigmaflow/server/models.json
-include sigmaflow/server/sigmaflow.json
-graft sigmaflow/server/comfyui/dist
-graft sigmaflow/server/website/dist

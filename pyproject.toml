@@ -1,6 +1,6 @@
 [project]
 name = "SigmaFlow"
-version = ""
+dynamic = ["version"]
 description = "SigmaFlow is a Python package designed to optimize the performance of task-flow related to LLMs/MLLMs or Multi-agent"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,8 +22,13 @@ classifiers=[
     "Typing :: Typed",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
 [project.urls]
@@ -38,9 +43,36 @@ dev = [
     "ruff",
 ]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[project.scripts]
+sigmaflow = "sigmaflow.cmd:main"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/sigmaflow"]
+[tool.uv.extra-build-dependencies]
+sigmaflow = ["requests"]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.dynamic]
+version = {attr = "sigmaflow.setup.__version__"}
+
+[tool.setuptools.package-data]
+"sigmaflow.server" = [
+    "object_info.json",
+    "models.json",
+    "sigmaflow.json",
+]
+"sigmaflow.server.comfyui" = [
+    "dist/*",
+    "dist/**/*",
+]
+"sigmaflow.server.website" = [
+    "dist/*",
+    "dist/**/*",
+]
