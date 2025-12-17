@@ -22,7 +22,7 @@ jobs:
         id: wait-for-build
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          checkName: "publish_to_pypi"
+          checkName: "Push python package to PyPI"
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Proceed only if build succeeded
         if: steps.wait-for-build.outputs.conclusion == 'success'
