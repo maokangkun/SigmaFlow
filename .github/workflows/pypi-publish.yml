@@ -1,8 +1,6 @@
 name: Publish to PyPI
 
 on:
-  # release:
-  #   types: [published]
   push:
     branches:
       - 'main'
@@ -11,10 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  publish-to-pypi:
+  publish_to_pypi:
+    name: Push python package to PyPI
     runs-on: ubuntu-latest
-    needs:
-      - release-build
     permissions:
       id-token: write
 
@@ -42,4 +39,4 @@ jobs:
 
       - name: Send msg
         run:
-          curl https://api.day.app/ozCgXAen6CwTabCZRPJfRQ/github/sigmaflow%20publish%20done?icon=https://avatars1.githubusercontent.com/u/9919&group=github_action
+          curl https://api.day.app/ozCgXAen6CwTabCZRPJfRQ/github/sigmaflow:%20pypi%20publish%20done?icon=https://avatars1.githubusercontent.com/u/9919&group=github_action

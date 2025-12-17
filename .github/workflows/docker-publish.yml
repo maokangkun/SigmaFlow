@@ -1,12 +1,3 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
-# GitHub recommends pinning actions to a commit SHA.
-# To get a newer version, you will need to update the SHA.
-# You can also reference a tag or branch, but the action may change without warning.
-
 name: Publish Docker image
 
 on:
@@ -23,9 +14,17 @@ jobs:
       contents: read
       attestations: write
       id-token: write
+    # needs:
+    #   - publish_to_pypi
     steps:
       - name: Check out the repo
         uses: actions/checkout@v5
+
+      - name: Get PyPI package version
+        id: get_version
+        run: |
+          VERSION=$(curl -s https://pypi.org/rss/project/SigmaFlow/releases.xml | xmllint --xpath "/rss/channel/item[1]/title/text()" -)
+          echo "Detected PyPI version: $VERSION"
 
       - name: Log in to Docker Hub
         uses: docker/login-action@f4ef78c080cd8ba55a85445d5b36e214a81df20a
@@ -46,7 +45,9 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: |
+            ai4drug/sigmaflow:${{ steps.get_version.outputs.VERSION }}
+            ai4drug/sigmaflow:latest
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Generate artifact attestation
@@ -55,3 +56,7 @@ jobs:
           subject-name: index.docker.io/ai4drug/sigmaflow
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+
+      - name: Send finish msg
+        run:
+          curl https://api.day.app/ozCgXAen6CwTabCZRPJfRQ/github/sigmaflow:%20docker%20publish%20done?icon=https://avatars1.githubusercontent.com/u/9919&group=github_action
