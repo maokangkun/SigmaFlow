@@ -23,7 +23,7 @@ jobs:
       - name: Get PyPI package version
         id: get_version
         run: |
-          VERSION=$(curl -s https://pypi.org/rss/project/SigmaFlow/releases.xml | xmllint --xpath "/rss/channel/item[1]/title/text()" -)
+          VERSION=$(curl -s https://pypi.org/rss/project/SigmaFlow/releases.xml | grep -oP '<title>\K[^<]+' | sed -n '2p')
           echo "Detected PyPI version: $VERSION"
 
       - name: Log in to Docker Hub
