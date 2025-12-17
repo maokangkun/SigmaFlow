@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from ..log import log
 from .constant import *
 
+
 class TaskQueue:
     def __init__(self, ws_msges, loop=None, max_history_size=10000):
         self.ws_msges = ws_msges
@@ -53,7 +54,7 @@ class TaskQueue:
 
             self.history[item[0]] = {
                 "task": item,
-                'status': status,
+                "status": status,
             } | history_result
             self.queue_updated_broadcast()
 
@@ -62,7 +63,7 @@ class TaskQueue:
         self.loop.call_soon_threadsafe(self.ws_msges.put_nowait, m)
 
     def get_queue_info(self):
-        return {'queue_remaining': self.get_tasks_remaining()}
+        return {"queue_remaining": self.get_tasks_remaining()}
 
     def get_current_queue(self):
         with self.mutex:
@@ -147,6 +148,7 @@ class TaskQueue:
                     return "queued"
         return None
 
+
 class TaskWorker(threading.Thread):
     def __init__(self, queue=None, loop=None, ws_msges=None, pipeline_manager=None):
         name = self.__class__.__name__
@@ -155,7 +157,7 @@ class TaskWorker(threading.Thread):
         self.loop = loop
         self.ws_msges = ws_msges
         self.pipeline_manager = pipeline_manager
-        log.debug(f'{name} thread start')
+        log.debug(f"{name} thread start")
 
     def run(self):
         name = threading.current_thread().name
@@ -164,7 +166,9 @@ class TaskWorker(threading.Thread):
             queue_item = self.queue.get(timeout=1000)
             if queue_item is not None:
                 queue_id, (task_id, task_data, sid) = queue_item
-                log.debug(f'{name}:\nqueue_id: {queue_id}\nsid: {sid}\ntask_id: {task_id}')
+                log.debug(
+                    f"{name}:\nqueue_id: {queue_id}\nsid: {sid}\ntask_id: {task_id}"
+                )
 
                 try:
                     out = self.run_task(task_id, task_data, sid)
@@ -176,14 +180,12 @@ class TaskWorker(threading.Thread):
 
                 self.queue.task_done(
                     queue_id,
-                    {
-                        "outputs": out
-                    },
+                    {"outputs": out},
                     status={
-                        "status_str": 'success',
+                        "status_str": "success",
                         "completed": True,
                         "messages": None,
-                    }
+                    },
                 )
                 self.send_msg(Events.TASK_END, {"task_id": task_id}, sid)
 
@@ -193,15 +195,20 @@ class TaskWorker(threading.Thread):
         out = None
         if self.pipeline_manager:
             msg_func = lambda out: self.send_msg(Events.TASK_ITEM_PROCESS, out, sid)
+
             def cancel_func(out):
                 if self.queue.get_flags(reset=False).get(task_id, {}).get("cancel"):
                     raise Exception(f"Task {task_id} cancelled during execution.")
 
             for i, task in enumerate(tqdm(task_data)):
-                self.send_msg(Events.TASK_ITEM_START, {"task_index": i, "total": len(task_data)}, sid)
-                pipe = self.pipeline_manager.pipes[task['pipe']]
+                self.send_msg(
+                    Events.TASK_ITEM_START,
+                    {"task_index": i, "total": len(task_data)},
+                    sid,
+                )
+                pipe = self.pipeline_manager.pipes[task["pipe"]]
                 pipe.add_node_finish_callback(callbacks=[msg_func, cancel_func])
-                out, info = pipe.run(task['data'])
+                out, info = pipe.run(task["data"])
                 self.send_msg(Events.TASK_ITEM_DONE, out, sid)
                 # self.send_msg(Events.TASK_ITEM_DONE, info, sid)
 
@@ -211,6 +218,7 @@ class TaskWorker(threading.Thread):
         data |= {"timestamp": int(time.time() * 1000)}
         m = Message(header, data, sid)
         self.loop.call_soon_threadsafe(self.ws_msges.put_nowait, m)
+
 
 class WSConnectionManager:
     def __init__(self):
@@ -228,13 +236,13 @@ class WSConnectionManager:
         match msg.header:
             case Events.UNENCODED_PREVIEW_IMAGE:
                 data = self.encode_image(msg.data)
-                func = 'send_bytes'
+                func = "send_bytes"
             case Events.PREVIEW_IMAGE:
                 data = msg.data
-                func = 'send_bytes'
+                func = "send_bytes"
             case _:
                 data = msg.dict()
-                func = 'send_json'
+                func = "send_json"
 
         if msg.sid:
             websocket = self.active_connections.get(msg.sid)
@@ -247,11 +255,16 @@ class WSConnectionManager:
 
     def encode_image(self, image_data):
         from PIL import Image, ImageOps
+
         image_type = image_data[0]
         image = image_data[1]
         max_size = image_data[2]
         if max_size is not None:
-            resampling = Image.Resampling.BILINEAR if hasattr(Image, 'Resampling') else Image.ANTIALIAS
+            resampling = (
+                Image.Resampling.BILINEAR
+                if hasattr(Image, "Resampling")
+                else Image.ANTIALIAS
+            )
             image = ImageOps.contain(image, (max_size, max_size), resampling)
         type_num = 1 if image_type == "JPEG" else 2
         bytes_io = BytesIO()
@@ -260,6 +273,7 @@ class WSConnectionManager:
         image.save(bytes_io, format=image_type, quality=95, compress_level=1)
         preview_bytes = bytes_io.getvalue()
         return preview_bytes
+
 
 class TaskAPI:
     def __init__(self, pipeline_manager):
@@ -271,7 +285,7 @@ class TaskAPI:
         async def ws_loop():
             while True:
                 msg = await ws_msges.get()
-                log.info(f'WS send: {msg}')
+                log.info(f"WS send: {msg}")
                 await ws_manager.send(msg)
 
         @router.on_event("startup")
@@ -280,7 +294,12 @@ class TaskAPI:
                 log.debug("Setup Sigmaflow Task API")
                 loop = asyncio.get_running_loop()
                 task_queue.loop = loop
-                TaskWorker(queue=task_queue, loop=loop, ws_msges=ws_msges, pipeline_manager=pipeline_manager).start()
+                TaskWorker(
+                    queue=task_queue,
+                    loop=loop,
+                    ws_msges=ws_msges,
+                    pipeline_manager=pipeline_manager,
+                ).start()
                 asyncio.create_task(ws_loop())
 
         @router.get("/task")
@@ -291,8 +310,8 @@ class TaskAPI:
         async def get_cur_task():
             running, pending = task_queue.get_current_queue()
             queue_info = {
-                'queue_running': running,
-                'queue_pending': pending,
+                "queue_running": running,
+                "queue_pending": pending,
             }
             return queue_info
 
@@ -325,7 +344,7 @@ class TaskAPI:
 
             try:
                 data = {
-                    'queue_remaining': task_queue.get_tasks_remaining(),
+                    "queue_remaining": task_queue.get_tasks_remaining(),
                 }
                 m = Message(Events.WS_CONNECTED, data, sid)
                 await ws_manager.send(m)

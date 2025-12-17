@@ -3,6 +3,7 @@ from .constant import *
 from ..log import log
 from .base import Base
 
+
 class Node(Base):
     def add_finish_callback(self, callback):
         if type(callback) is list:
@@ -13,33 +14,40 @@ class Node(Base):
 
     def execute_finish_callback(self, out):
         data = {
-            'node': self.name,
-            'out': out,
+            "node": self.name,
+            "out": out,
         }
-        for callback in self.finish_callbacks: callback(data)
+        for callback in self.finish_callbacks:
+            callback(data)
 
     def get_inps_mp(self, data, config=None):
         def get_data(i):
-            if i not in data: return DataState.VOID
+            if i not in data:
+                return DataState.VOID
             if type(data[i]) is list:
-                if config and i in config['loop_index']:
-                    loop_i = config['loop_index'][i]
+                if config and i in config["loop_index"]:
+                    loop_i = config["loop_index"][i]
                     return data[i][loop_i]
                 elif DataState.VOID in data[i]:
                     return DataState.VOID
             return data[i]
 
-        if 'inp' not in self.conf: return data
+        if "inp" not in self.conf:
+            return data
         inps = []
-        for i in self.conf['inp']:
+        for i in self.conf["inp"]:
             if type(i) is str:
-                if (d := get_data(i)) is DataState.VOID: return []
-                else: inps.append(d)
+                if (d := get_data(i)) is DataState.VOID:
+                    return []
+                else:
+                    inps.append(d)
             elif type(i) is dict:
                 t = {}
                 for k, v in i.items():
-                    if (d := get_data(v)) is DataState.VOID: return []
-                    else: t[k] = d
+                    if (d := get_data(v)) is DataState.VOID:
+                        return []
+                    else:
+                        t[k] = d
                 inps.append(t)
         return inps
 
@@ -47,7 +55,7 @@ class Node(Base):
         pass
 
     def mp_run(self, mp_name, data, queue, perf, config=None):
-        if (inps := self.get_inps_mp(data, config)):
+        if inps := self.get_inps_mp(data, config):
             start_time = time.time()
             self.run_cnt += 1
             cnt = self.run_cnt
@@ -60,7 +68,7 @@ class Node(Base):
 
     async def get_inps(self, queue):
         inps = []
-        for i in self.conf.get('inp', []):
+        for i in self.conf.get("inp", []):
             if type(i) is str:
                 d = await queue[i].get()
                 inps.append(d)
@@ -78,7 +86,7 @@ class Node(Base):
         def set_data(k, v, config, queue):
             if config:
                 with self.tree.mp_lock:
-                    i = config['loop_index'][k]
+                    i = config["loop_index"][k]
                     pre = data[k]
                     pre[i] = v
                     data[k] = pre
@@ -90,9 +98,10 @@ class Node(Base):
                 while arr:
                     q = arr.pop(0)
                     q[k].put_nowait(v)
-                    if '_sub' in q: arr += q['_sub']
+                    if "_sub" in q:
+                        arr += q["_sub"]
 
-        o = self.conf['out']
+        o = self.conf["out"]
         if (t := type(o)) is str:
             set_data(o, out, config, queue)
         elif t is list:
@@ -103,22 +112,27 @@ class Node(Base):
                 for k in o:
                     set_data(o[k], out.get(k, None), config, queue)
             else:
-                for k in o: set_data(o[k], None, config, queue)
+                for k in o:
+                    set_data(o[k], None, config, queue)
 
     def reset_out(self, queue):
         def q_del(q, k):
             if k in q:
-                while not q[k].empty(): q[k].get_nowait()
-            if '_sub' in q:
-                for sub_q in q['_sub']: q_del(sub_q, k)
+                while not q[k].empty():
+                    q[k].get_nowait()
+            if "_sub" in q:
+                for sub_q in q["_sub"]:
+                    q_del(sub_q, k)
 
-        o = self.conf['out']
+        o = self.conf["out"]
         if (t := type(o)) is str:
             q_del(queue, o)
         elif t is list:
-            for k in o: q_del(queue, k)
+            for k in o:
+                q_del(queue, k)
         elif t is dict:
-            for k in o: q_del(queue, o[k])
+            for k in o:
+                q_del(queue, o[k])
 
     async def add_task(self, data, queue, dynamic_tasks):
         for n in self.next:
@@ -132,37 +146,46 @@ class Node(Base):
         start_time = time.time()
         self.run_cnt += 1
         if self.max_cnt is not None and self.run_cnt > self.max_cnt:
-            log.banner(f"Async task: {self.name} hit max_cnt ({self.max_cnt}) limit, exit!")
+            log.banner(
+                f"Async task: {self.name} hit max_cnt ({self.max_cnt}) limit, exit!"
+            )
         else:
             cnt = self.run_cnt
             log.banner(f"Enter async task: {self.name}, cnt: {cnt}")
-            if self.reset_out_flag: self.reset_out(queue)
+            if self.reset_out_flag:
+                self.reset_out(queue)
             await self.add_task(data, queue, dynamic_tasks)
             await self.current_task(data, queue, dynamic_tasks)
             log.banner(f"Leave async task: {self.name}, cnt: {cnt}")
-            self.tree.perf.append(('coroutine', self.name, start_time, time.time()))
+            self.tree.perf.append(("coroutine", self.name, start_time, time.time()))
 
     async def replay(self, data):
         self.run_cnt += 1
         cnt = self.run_cnt
         log.banner(f"Enter async task: {self.name}, cnt: {cnt}")
         queue = collections.defaultdict(asyncio.Queue)
-        for k, v in data.items(): queue[k].put_nowait(v)
+        for k, v in data.items():
+            queue[k].put_nowait(v)
         await self.current_task(data, queue, [])
         log.banner(f"Leave async task: {self.name}, cnt: {cnt}")
 
     def get_inps_seq(self, data):
-        if 'inp' not in self.conf: return data
+        if "inp" not in self.conf:
+            return data
         inps = []
-        for i in self.conf['inp']:
+        for i in self.conf["inp"]:
             if type(i) is str:
-                if i not in data: return []
-                else: inps.append(data[i])
+                if i not in data:
+                    return []
+                else:
+                    inps.append(data[i])
             elif type(i) is dict:
                 t = {}
                 for k, v in i.items():
-                    if v not in data: return []
-                    else: t[k] = data[v]
+                    if v not in data:
+                        return []
+                    else:
+                        t[k] = data[v]
                 inps.append(t)
         return inps
 
@@ -170,22 +193,22 @@ class Node(Base):
         pass
 
     def seq_run(self, data, queue):
-        if (inps := self.get_inps_seq(data)):
+        if inps := self.get_inps_seq(data):
             start_time = time.time()
             self.run_cnt += 1
             log.banner(f"Enter task: {self.name}, cnt: {self.run_cnt}")
             self.current_seq_task(inps, data, queue)
             log.banner(f"Leave task: {self.name}, cnt: {self.run_cnt}")
-            self.tree.perf.append(('seq', self.name, start_time, time.time()))
+            self.tree.perf.append(("seq", self.name, start_time, time.time()))
         else:
             queue.append(self)
 
     @property
     def run(self):
         match self.tree.run_mode:
-            case 'async':
+            case "async":
                 return self.async_run
-            case 'mp':
+            case "mp":
                 return self.mp_run
             case _:
                 return self.seq_run

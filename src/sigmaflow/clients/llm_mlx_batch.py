@@ -1,15 +1,17 @@
 import os, sys
-sys.path.append('/Users/mkk/workspace/git_repos/mlx_parallm')
+
+sys.path.append("/Users/mkk/workspace/git_repos/mlx_parallm")
 from mlx_parallm.utils import load, batch_generate
 from . import *
 
-model, tokenizer = load(os.getenv('MLX_MODEL'))
-max_tokens = int(os.getenv('MLX_MAX_TOKENS', 256))
-batch_size = int(os.getenv('MLX_BATCH_SIZE', 128))
+model, tokenizer = load(os.getenv("MLX_MODEL"))
+max_tokens = int(os.getenv("MLX_MAX_TOKENS", 256))
+batch_size = int(os.getenv("MLX_BATCH_SIZE", 128))
 
 batch_wait_time = 1
 batch_queue = []
 batch_event = asyncio.Event()
+
 
 def llm_client(is_async=False):
     if is_async:
@@ -17,14 +19,25 @@ def llm_client(is_async=False):
     else:
         return completion
 
+
 def completion(text):
     raise NotImplementedError
 
+
 def batch_completion(batch_data):
     print(f"Processed batch, len: {len(batch_data)}")
-    prompts = [text for text,_ in batch_data]
-    result = batch_generate(model, tokenizer, prompts=prompts, verbose=True, format_prompts=True, max_tokens=max_tokens, temp=0.7)
+    prompts = [text for text, _ in batch_data]
+    result = batch_generate(
+        model,
+        tokenizer,
+        prompts=prompts,
+        verbose=True,
+        format_prompts=True,
+        max_tokens=max_tokens,
+        temp=0.7,
+    )
     return result
+
 
 async def llm_batch_processor():
     global batch_queue
@@ -34,7 +47,7 @@ async def llm_batch_processor():
 
         if batch_queue:
             batch = batch_queue[:batch_size]
-            batch_queue = batch_queue[len(batch):]
+            batch_queue = batch_queue[len(batch) :]
             result = await asyncio.to_thread(batch_completion, batch)
 
             for (_, future), res in zip(batch, result):
@@ -43,6 +56,7 @@ async def llm_batch_processor():
         if not batch_queue:
             print("Batch queue is empty. Resetting event.")
             batch_event.clear()
+
 
 async def async_completion(text):
     global batch_queue

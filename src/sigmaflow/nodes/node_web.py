@@ -4,33 +4,34 @@ from ..blocks import SearchBlock, BrowserBlock
 from .constant import *
 from .node import Node
 
+
 class WebNode(Node):
     mermaid_style = NodeColorStyle.WebNode
     mermaid_shape = NodeShape.WebNode
 
     @staticmethod
     def match(conf):
-        return 'web' in conf
+        return "web" in conf
 
     def post_init(self):
         tree = self.tree
         search_pipe = None
         if tree.is_async:
-            if 'search_engine' in self.conf['web']:
-                search_pipe = SearchBlock(self.name, **self.conf['web'])
+            if "search_engine" in self.conf["web"]:
+                search_pipe = SearchBlock(self.name, **self.conf["web"])
             browser_pipe = BrowserBlock(self.name)
         else:
-            if 'search_engine' in self.conf['web']:
+            if "search_engine" in self.conf["web"]:
                 search_pipe = SearchBlock(
-                        self.name,
-                        lock=tree.mp_lock,
-                        run_time=tree.mp_manager.list(),
-                        inout_log=tree.mp_manager.list(),
-                        **self.conf
-                        )
+                    self.name,
+                    lock=tree.mp_lock,
+                    run_time=tree.mp_manager.list(),
+                    inout_log=tree.mp_manager.list(),
+                    **self.conf,
+                )
             browser_pipe = BrowserBlock(self.name)
 
-        tree.pipe_manager[self.name] = {'search': search_pipe, 'browser': browser_pipe}
+        tree.pipe_manager[self.name] = {"search": search_pipe, "browser": browser_pipe}
         self.search_pipe = search_pipe
         self.browser_pipe = browser_pipe
 
@@ -38,7 +39,8 @@ class WebNode(Node):
         out = self.search_pipe(*inps)
         self.set_out(out, data, config=config)
 
-        for n in self.next: queue.put((n.name, config))
+        for n in self.next:
+            queue.put((n.name, config))
 
     async def current_task(self, data, queue, dynamic_tasks):
         inps = await self.get_inps(queue)

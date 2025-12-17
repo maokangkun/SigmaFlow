@@ -2,33 +2,34 @@ from ..imports import *
 from .constant import *
 from ..log import log
 
+
 class Base:
     registered_nodes = []
     mermaid_style = NodeColorStyle.default
     mermaid_shape = NodeShape.default
-    mermaid_inline = '-->'
-    mermaid_outline = '-.->'
-    mermaid_toexit = '--o'
-    mermaid_inline_passed = '==>'
-    mermaid_outline_passed = '==>'
-    mermaid_toexit_passed = '==o'
+    mermaid_inline = "-->"
+    mermaid_outline = "-.->"
+    mermaid_toexit = "--o"
+    mermaid_inline_passed = "==>"
+    mermaid_outline_passed = "==>"
+    mermaid_toexit_passed = "==o"
 
     def __init__(self, name, conf, tree=None):
         self.name = name
         self.conf = conf
         self.tree = tree
         self.run_cnt = 0
-        self.max_cnt = self.conf.get('max_cnt', None)
+        self.max_cnt = self.conf.get("max_cnt", None)
         self.in_loop = None
         self.next = []
         self.loop_nodes = []
         self.finish_callbacks = []
-        self.reset_out_flag = 'reset_out' in self.conf
+        self.reset_out_flag = "reset_out" in self.conf
         if self.reset_out_flag:
-            self.conf['out'] = self.conf['reset_out']
-            del self.conf['reset_out']
-        if 'inp' in self.conf and type(self.conf['inp']) is str:
-            self.conf['inp'] = [self.conf['inp']]
+            self.conf["out"] = self.conf["reset_out"]
+            del self.conf["reset_out"]
+        if "inp" in self.conf and type(self.conf["inp"]) is str:
+            self.conf["inp"] = [self.conf["inp"]]
         self.set_mermaid()
         self.post_init()
 
@@ -38,15 +39,15 @@ class Base:
 
     def set_mermaid(self):
         self.mermaid_inps = []
-        if 'inp' in self.conf:
-            for i in self.conf['inp']:
+        if "inp" in self.conf:
+            for i in self.conf["inp"]:
                 if (t := type(i)) is str:
                     self.mermaid_inps.append(i)
                 elif t is dict:
                     self.mermaid_inps += list(i.values())
 
         outs = []
-        if (o := self.conf.get('out', None)):
+        if o := self.conf.get("out", None):
             if (t := type(o)) is str:
                 outs = [o]
             elif t is list:
@@ -57,16 +58,23 @@ class Base:
         self.mermaid_data = self.mermaid_inps + self.mermaid_outs
 
     def _get_mermaid_defines(self):
-        return [self.__class__.mermaid_shape(self.name)] + [Data.mermaid_shape(d) for d in self.mermaid_data]
+        return [self.__class__.mermaid_shape(self.name)] + [
+            Data.mermaid_shape(d) for d in self.mermaid_data
+        ]
 
     def get_mermaid(self, info=None):
-        inps = ' & '.join(self.mermaid_inps) or None
-        outs = ' & '.join(self.mermaid_outs) or None
+        inps = " & ".join(self.mermaid_inps) or None
+        outs = " & ".join(self.mermaid_outs) or None
 
         defines = self._get_mermaid_defines()
 
-        t = info["detail"][self.name]["avg_time"] if info and self.name in info['detail'] else None
-        if t is not None: t = f'|{t:.2f}s|'
+        t = (
+            info["detail"][self.name]["avg_time"]
+            if info and self.name in info["detail"]
+            else None
+        )
+        if t is not None:
+            t = f"|{t:.2f}s|"
 
         inline = self.mermaid_inline_passed if self.run_cnt else self.mermaid_inline
         outline = self.mermaid_outline_passed if self.run_cnt else self.mermaid_outline
@@ -74,17 +82,32 @@ class Base:
 
         links = [inout_link]
         for n in self.next:
-            if n.name == 'exit':
-                t = f'|total: {info["total_time"]:.2f}s|' if info and self.name in info['exec_path'] else None
-                links.append((None, None, outs, self.mermaid_toexit_passed if t else self.mermaid_toexit, t, 'exit', None))
+            if n.name == "exit":
+                t = (
+                    f"|total: {info['total_time']:.2f}s|"
+                    if info and self.name in info["exec_path"]
+                    else None
+                )
+                links.append(
+                    (
+                        None,
+                        None,
+                        outs,
+                        self.mermaid_toexit_passed if t else self.mermaid_toexit,
+                        t,
+                        "exit",
+                        None,
+                    )
+                )
 
         subg = []
 
         return defines, links, subg
 
     def update(self, nodes):
-        for name in self.conf.get('next', []):
-            if name in nodes: self.next.append(nodes[name])
+        for name in self.conf.get("next", []):
+            if name in nodes:
+                self.next.append(nodes[name])
 
     def post_init(self):
         pass
@@ -104,18 +127,18 @@ class Base:
     @classmethod
     def create(cls, name, conf, graph):
         for N in cls.registered_nodes:
-            if N.match(conf | {'name': name}):
+            if N.match(conf | {"name": name}):
                 return N(name, conf, graph)
 
     @staticmethod
     def match(conf):
         pass
-    
+
     @staticmethod
     def import_nodes():
         for file in Path(__file__).parent.glob("node_*.py"):
             module_name = file.stem
-            
+
             try:
                 module = importlib.import_module(f".{module_name}", __package__)
             except Exception as e:

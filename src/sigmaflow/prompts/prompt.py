@@ -1,6 +1,7 @@
 from ..imports import *
 from ..log import log
 
+
 class PromptKeys:
     def __init__(self, arr, prompt):
         self._arr = arr.copy()
@@ -16,6 +17,7 @@ class PromptKeys:
 
     def __str__(self):
         return str(self._arr)
+
 
 class Prompt:
     def __init__(self, text, keys, name, file=None):
@@ -47,13 +49,15 @@ class Prompt:
     def __call__(self, *inps):
         t = self.__text
         for a, b in zip(self.__keys, inps):
-            if b is None: b = str(b)
-            elif type(b) is not str: b = json.dumps(b, ensure_ascii=False)
+            if b is None:
+                b = str(b)
+            elif type(b) is not str:
+                b = json.dumps(b, ensure_ascii=False)
             t = t.replace(a, b)
         return t
 
     def save(self):
         if self.file is not None:
-            log.debug(f'Save prompt [{self.name}] to: {self.file}')
-            with open(self.file, 'w') as f:
+            log.debug(f"Save prompt [{self.name}] to: {self.file}")
+            with open(self.file, "w") as f:
                 f.write(f'prompt="""{self.text}"""\nkeys={self.keys}')

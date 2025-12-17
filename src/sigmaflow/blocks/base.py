@@ -2,13 +2,18 @@ from ..imports import *
 from ..log import log
 from ..utils import sync_compat
 
+
 class Block:
-    def __init__(self, name, lock, run_time, inout_log, verbose, retry=1, second_round=False):
+    def __init__(
+        self, name, lock, run_time, inout_log, verbose, retry=1, second_round=False
+    ):
         self.name = name
         self.verbose = verbose
         self.retry = retry
         self.second_round = second_round
-        self.log = lambda n, t: log.debug(f'[{name}] {n}: {t}') if self.verbose else None
+        self.log = (
+            lambda n, t: log.debug(f"[{name}] {n}: {t}") if self.verbose else None
+        )
 
         # multiprocess lock
         self.lock = lock
@@ -35,17 +40,19 @@ class Block:
         n = 0
         while n < self.retry:
             start_t = time.time()
-            self.log('inp', [str(i)[:20]+' ...' if len(str(i)) > 20 else i for i in inp])
+            self.log(
+                "inp", [str(i)[:20] + " ..." if len(str(i)) > 20 else i for i in inp]
+            )
             out, query, resp = await self._call(*inp)
 
             t = time.time() - start_t
             inout = {
-                'id': self.name,
-                'timestamp': time.time(),
-                'input': query,
-                'output': resp,
+                "id": self.name,
+                "timestamp": time.time(),
+                "input": query,
+                "output": resp,
             }
-            self.log('cost time', t)
+            self.log("cost time", t)
             if self.lock is not None:
                 with self.lock:
                     self.run_time.append(t)
@@ -53,19 +60,19 @@ class Block:
             else:
                 self.run_time.append(t)
                 self.inout_log.append(inout)
-            
+
             if out is None and self.second_round:
                 start_t = time.time()
                 out, query2, resp2 = await self._second_call([query, resp])
 
                 t = time.time() - start_t
                 inout = {
-                    'id': self.name,
-                    'timestamp': time.time(),
-                    'input': query2,
-                    'output': resp2,
+                    "id": self.name,
+                    "timestamp": time.time(),
+                    "input": query2,
+                    "output": resp2,
                 }
-                self.log('cost time', t)
+                self.log("cost time", t)
                 if self.lock is not None:
                     with self.lock:
                         self.run_time.append(t)
@@ -73,10 +80,10 @@ class Block:
                 else:
                     self.run_time.append(t)
                     self.inout_log.append(inout)
-            
+
             if out is None:
                 n += 1
-                self.log('retry', n)
+                self.log("retry", n)
             else:
                 break
         return out

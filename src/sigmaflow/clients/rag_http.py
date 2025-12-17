@@ -6,7 +6,9 @@ from fastapi import HTTPException
 
 import warnings
 from urllib3.exceptions import InsecureRequestWarning
+
 warnings.simplefilter("ignore", InsecureRequestWarning)
+
 
 def rag_client(is_async=False):
     if is_async:
@@ -14,25 +16,24 @@ def rag_client(is_async=False):
     else:
         return rag
 
+
 def rag(text, url=None, index=None):
-    j = {
-        'type': index,
-        'query': json.dumps([str(text)])
-    }
+    j = {"type": index, "query": json.dumps([str(text)])}
 
     response = requests.post(url, json=j, verify=False)
 
     if response.status_code != 200:
         raise Exception(f"Failed to generate completion: {response.text}")
-    
-    pids = [i['condiate_result'] for i in response.json()[0]['condidate']]
+
+    pids = [i["condiate_result"] for i in response.json()[0]["condidate"]]
     return pids
+
 
 async def async_rag(text):
     messages = [
         {
-            'action': 'From user', # 'To user'
-            'content': text,
+            "action": "From user",  # 'To user'
+            "content": text,
         }
     ]
 
@@ -48,10 +49,11 @@ async def async_rag(text):
                 "top_k": top_k,
                 "max_tokens": max_tokens,
                 "repetition_penalty": repetition_penalty,
-            }
+            },
         }
 
         return await _req(input_data, url)
+
 
 async def _req(input_data: dict, url: str, retry: int = 5):
     try:
@@ -77,5 +79,10 @@ async def _req(input_data: dict, url: str, retry: int = 5):
                 content = json.loads(content)
                 return content
     except Exception as e:
-        if retry == 0: raise e
-        return await _req(input_data, url, retry-1,)
+        if retry == 0:
+            raise e
+        return await _req(
+            input_data,
+            url,
+            retry - 1,
+        )

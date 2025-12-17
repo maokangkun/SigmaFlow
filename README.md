@@ -154,7 +154,12 @@ pip install SigmaFlow
 
 # or editable install from source
 git clone https://github.com/maokangkun/SigmaFlow.git && cd SigmaFlow
-pip install --no-build-isolation -e .
+pip install -e .
+```
+
+Or using docker image:
+```bash
+docker pull ai4drug/sigmaflow:latest
 ```
 
 ## Quick Start

@@ -1,4 +1,5 @@
 from dotenv import load_dotenv
+
 load_dotenv()
 import sys
 import time
@@ -10,9 +11,8 @@ sys.path.append(".")
 sys.path.append("..")
 from sigmaflow import PipelineManager
 
-test_task = {
-    'demo_pipeline': json.load(open('demo_data.json'))
-}
+test_task = {"demo_pipeline": json.load(open("demo_data.json"))}
+
 
 def test(run_mode):
     cur_dir = Path(__file__).parent
@@ -21,4 +21,5 @@ def test(run_mode):
     for pipe_name, data in test_task.items():
         results = pm.pipes[pipe_name].run(data, save_perf=False)
 
-test('async')
+
+test("async")

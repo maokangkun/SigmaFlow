@@ -13,11 +13,13 @@ from .constant import *
 from ..log import log
 from .task import WSConnectionManager, TaskQueue, TaskWorker
 
+
 class WorkspaceTaskQueue(TaskQueue):
     def queue_updated_broadcast(self):
         d = {"status": {"exec_info": self.get_queue_info()}}
         m = Message(Types.STATUS, d)
         self.loop.call_soon_threadsafe(self.ws_msges.put_nowait, m)
+
 
 class WorkspaceTaskWorker(TaskWorker):
     def run(self):
@@ -27,7 +29,9 @@ class WorkspaceTaskWorker(TaskWorker):
             queue_item = self.queue.get(timeout=1000)
             if queue_item is not None:
                 queue_id, (task_id, task_data, sid) = queue_item
-                log.debug(f'{name}:\nqueue_id: {queue_id}\nsid: {sid}\ntask_id: {task_id}')
+                log.debug(
+                    f"{name}:\nqueue_id: {queue_id}\nsid: {sid}\ntask_id: {task_id}"
+                )
 
                 try:
                     out = self.run_task(task_id, task_data, sid)
@@ -38,18 +42,18 @@ class WorkspaceTaskWorker(TaskWorker):
                     out = {"error": err}
 
                 self.send_msg(Types.EXEC_SUCCESS, {"prompt_id": task_id}, sid)
-                self.send_msg(Types.EXECUTING, {'prompt_id': task_id, 'node': None}, sid) # remove progress in the browser tab bar
+                self.send_msg(
+                    Types.EXECUTING, {"prompt_id": task_id, "node": None}, sid
+                )  # remove progress in the browser tab bar
 
                 self.queue.task_done(
                     queue_id,
-                    {
-                        "outputs": out
-                    },
+                    {"outputs": out},
                     status={
-                        "status_str": 'success',
+                        "status_str": "success",
                         "completed": True,
                         "messages": None,
-                    }
+                    },
                 )
 
     def run_task(self, task_id, task_data, sid):
@@ -98,7 +102,6 @@ class WorkspaceTaskWorker(TaskWorker):
         #     }
         #     self.send_msg(Types.PROG_STATE, d, sid)
         #     time.sleep(0.2)
-        
 
         # # node 3
         # d = {
@@ -112,40 +115,34 @@ class WorkspaceTaskWorker(TaskWorker):
         # }
         # self.send_msg(Types.PROG_STATE, d, sid)
 
-        out = '# hI\n**Hell**hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123'
+        out = "# hI\n**Hell**hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123"
 
         d = {
             "prompt_id": task_id,
-            "display_node": '20',
-            'node': '20',
-            "output": {
-                'text': ['11'+out]
-            }
+            "display_node": "20",
+            "node": "20",
+            "output": {"text": ["11" + out]},
         }
         self.send_msg(Types.EXECUTED, d, sid)
 
         d = {
             "prompt_id": task_id,
-            "display_node": '27',
-            'node': '27',
-            "output": {
-                'text': [out]
-            }
+            "display_node": "27",
+            "node": "27",
+            "output": {"text": [out]},
         }
         self.send_msg(Types.EXECUTED, d, sid)
-        
+
         d = {
             "prompt_id": task_id,
             "nodes": {
                 26: {
-                    'display_node_id': "26",
-                    'state': "finished",
+                    "display_node_id": "26",
+                    "state": "finished",
                 },
-            }
+            },
         }
         self.send_msg(Types.PROG_STATE, d, sid)
-
-
 
         out = None
         # if self.pipeline_manager:
@@ -164,9 +161,10 @@ class WorkspaceTaskWorker(TaskWorker):
 
         return out
 
+
 class WorkspaceAPI:
     def __init__(self, pipeline_manager):
-        self.router = router = APIRouter(prefix='/workspace')
+        self.router = router = APIRouter(prefix="/workspace")
         ws_msges = asyncio.Queue()
         ws_manager = WSConnectionManager()
         task_queue = WorkspaceTaskQueue(ws_msges)
@@ -174,7 +172,7 @@ class WorkspaceAPI:
         async def ws_loop():
             while True:
                 msg = await ws_msges.get()
-                log.info(f'WS send: {msg}')
+                log.info(f"WS send: {msg}")
                 await ws_manager.send(msg)
 
         @router.on_event("startup")
@@ -183,27 +181,29 @@ class WorkspaceAPI:
                 log.debug("Setup Sigmaflow Workspace API")
                 loop = asyncio.get_running_loop()
                 task_queue.loop = loop
-                WorkspaceTaskWorker(queue=task_queue, loop=loop, ws_msges=ws_msges, pipeline_manager=pipeline_manager).start()
+                WorkspaceTaskWorker(
+                    queue=task_queue,
+                    loop=loop,
+                    ws_msges=ws_msges,
+                    pipeline_manager=pipeline_manager,
+                ).start()
                 asyncio.create_task(ws_loop())
 
         @router.get("/api/users")
         async def users():
             try:
-                ret = {
-                    'storage': "server",
-                    'migrated': True
-                }
+                ret = {"storage": "server", "migrated": True}
                 return ret
             except Exception as e:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
-        
+
         @router.get("/api/i18n")
         async def i18n():
             try:
                 return {}
             except Exception as e:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
-        
+
         @router.get("/api/system_stats")
         async def system_stats():
             try:
@@ -219,9 +219,7 @@ class WorkspaceAPI:
                         "python_version": "3.13.5 | packaged by Anaconda, Inc. | (main, Jun 12 2025, 16:09:02) [GCC 11.2.0]",
                         "pytorch_version": "2.8.0+cu128",
                         "embedded_python": False,
-                        "argv": [
-                            "main.py"
-                        ]
+                        "argv": ["main.py"],
                     },
                     "devices": [
                         {
@@ -231,9 +229,9 @@ class WorkspaceAPI:
                             "vram_total": 150393585664,
                             "vram_free": 149845180416,
                             "torch_vram_total": 0,
-                            "torch_vram_free": 0
+                            "torch_vram_free": 0,
                         }
-                    ]
+                    ],
                 }
             except Exception as e:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
@@ -247,7 +245,7 @@ class WorkspaceAPI:
                     "Comfy.Release.Status": "what's new seen",
                     "Comfy.Release.Timestamp": 1752042448014,
                     "Comfy.ColorPalette": "dark",
-                    "Comfy.Locale": "en"
+                    "Comfy.Locale": "en",
                 }
             except Exception as e:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
@@ -262,36 +260,36 @@ class WorkspaceAPI:
                 return []
             except Exception as e:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
-        
+
         @router.get("/api/extensions")
         async def extensions():
             try:
                 return []
             except Exception as e:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
-        
+
         @router.get("/api/object_info")
         async def object_info():
             try:
                 cur_folder = Path(__file__).parent
                 obj = {}
-                with open(cur_folder / 'sigmaflow.json', 'r') as f:
+                with open(cur_folder / "sigmaflow.json", "r") as f:
                     obj |= json.load(f)
-                with open(cur_folder / 'object_info.json', 'r') as f:
+                with open(cur_folder / "object_info.json", "r") as f:
                     obj |= json.load(f)
                 return obj
             except Exception as e:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
-        
+
         @router.get("/api/experiment/models")
         async def models():
             try:
                 cur_folder = Path(__file__).parent
-                with open(cur_folder / 'models.json', 'r') as f:
+                with open(cur_folder / "models.json", "r") as f:
                     return json.load(f)
             except Exception as e:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
-        
+
         @router.get("/api/queue")
         async def queue():
             try:
@@ -309,7 +307,9 @@ class WorkspaceAPI:
         @router.get("/api/view")
         async def view(filename: str, subfolder: str):
             try:
-                image_path = '/mnt/workspace/code/github/ComfyUI/output/ComfyUI_00001_.png'
+                image_path = (
+                    "/mnt/workspace/code/github/ComfyUI/output/ComfyUI_00001_.png"
+                )
                 return FileResponse(image_path)
             except Exception as e:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
@@ -317,7 +317,7 @@ class WorkspaceAPI:
         @router.post("/api/prompt")
         async def prompt(data: WorkspacePromptData):
             try:
-                log.debug(f'prompt: {data.prompt}')
+                log.debug(f"prompt: {data.prompt}")
                 prompt_id = str(data.prompt_id or uuid.uuid4())
                 task_queue.put((prompt_id, data.prompt, data.client_id))
                 response = {"prompt_id": prompt_id, "number": 1, "node_errors": {}}
@@ -349,12 +349,12 @@ class WorkspaceAPI:
 
             try:
                 data = {
-                    'status': {
-                        'exec_info':{
-                            'queue_remaining': task_queue.get_tasks_remaining(),
+                    "status": {
+                        "exec_info": {
+                            "queue_remaining": task_queue.get_tasks_remaining(),
                         }
                     },
-                    'sid': sid,
+                    "sid": sid,
                 }
                 m = Message(Types.STATUS, data, sid)
                 await ws_manager.send(m)
@@ -372,11 +372,15 @@ class WorkspaceAPI:
                                     log.error("Error parsing JSON")
                                     ret = {"error": "Invalid JSON format"}
                                     e = Events.ERROR
-                                if ret is None and first_message and json_data.get("type") == "feature_flags":
+                                if (
+                                    ret is None
+                                    and first_message
+                                    and json_data.get("type") == "feature_flags"
+                                ):
                                     print(123)
                                     ret = {
                                         "max_upload_size": 104857600,
-                                        "supports_preview_metadata": True
+                                        "supports_preview_metadata": True,
                                     }
                                     e = Types.FEATURE_FLAG
                                     first_message = False
@@ -398,4 +402,3 @@ class WorkspaceAPI:
                 return {}
             except Exception as e:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
-

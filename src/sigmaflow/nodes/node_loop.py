@@ -3,20 +3,22 @@ from ..log import log
 from .constant import *
 from .node import Node
 
+
 class LoopNode(Node):
     mermaid_style = NodeColorStyle.LoopNode
     mermaid_shape = NodeShape.LoopNode
 
     @staticmethod
     def match(conf):
-        return 'pipe_in_loop' in conf
+        return "pipe_in_loop" in conf
 
     def update(self, nodes):
         super().update(nodes)
 
         self.loop_nodes = []
-        for name in self.conf['pipe_in_loop']:
-            if name in nodes: self.loop_nodes.append(nodes[name])
+        for name in self.conf["pipe_in_loop"]:
+            if name in nodes:
+                self.loop_nodes.append(nodes[name])
 
         # inp = self.conf['inp'][0]
         # for n in self.loop_nodes:
@@ -25,11 +27,21 @@ class LoopNode(Node):
 
     def get_mermaid(self, info=None):
         links = []
-        inp = self.conf['inp'][0]
-        links.append((None, None, inp, self.mermaid_inline, None, self.name, NodeColorStyle.LoopNode))
+        inp = self.conf["inp"][0]
+        links.append(
+            (
+                None,
+                None,
+                inp,
+                self.mermaid_inline,
+                None,
+                self.name,
+                NodeColorStyle.LoopNode,
+            )
+        )
 
         defines = []
-        subg = [(self.name, *self.conf['pipe_in_loop'])]
+        subg = [(self.name, *self.conf["pipe_in_loop"])]
 
         return defines, links, subg
 
@@ -43,7 +55,7 @@ class LoopNode(Node):
         inps = await self.get_inps(queue)
         inp = inps[0]
         n = len(inp)
-        inp_name = self.conf['inp'][0]
+        inp_name = self.conf["inp"][0]
 
         loop_tasks = []
         loop_data = []
@@ -65,35 +77,42 @@ class LoopNode(Node):
                 task = asyncio.create_task(n.run(new_data, new_queue, loop_tasks))
                 loop_tasks.append(task)
 
-        queue['_sub'] = sub
+        queue["_sub"] = sub
 
         while not all(t.done() for t in loop_tasks):
             await asyncio.gather(*loop_tasks)
 
-        del queue['_sub']
+        del queue["_sub"]
         for d in loop_data:
             for k, v in d.items():
-                if k in data: data[k].append(v)
-                else: data[k] = [v]
-        for k in loop_data[0]: queue[k].put_nowait(data[k])
+                if k in data:
+                    data[k].append(v)
+                else:
+                    data[k] = [v]
+        for k in loop_data[0]:
+            queue[k].put_nowait(data[k])
 
     def current_mp_task(self, inps, data, queue, config=None):
         N = len(inps[0])
         loop_outs = self.get_loop_outs()
-        for k in loop_outs: data[k] = [DataState.VOID] * N
+        for k in loop_outs:
+            data[k] = [DataState.VOID] * N
         for i in range(N):
             new_config = {} if config is None else copy.deepcopy(config)
-            if 'loop_index' not in new_config: new_config['loop_index'] = {}
-            new_config['loop_index'] |= {k:i for k in self.conf['inp']+loop_outs}
-            for node in self.loop_nodes: queue.put((node.name, new_config))
+            if "loop_index" not in new_config:
+                new_config["loop_index"] = {}
+            new_config["loop_index"] |= {k: i for k in self.conf["inp"] + loop_outs}
+            for node in self.loop_nodes:
+                queue.put((node.name, new_config))
 
-        for node in self.next: queue.put((node.name, config))
+        for node in self.next:
+            queue.put((node.name, config))
 
     def current_seq_task(self, inps, data, queue):
         keys = list(data.keys())
         for item in inps[0]:
             tmp_d = copy.deepcopy(data)
-            tmp_d[self.conf['inp'][0]] = item
+            tmp_d[self.conf["inp"][0]] = item
             tmp_q = self.loop_nodes[:]
             while tmp_q:
                 n = tmp_q.pop(0)
@@ -106,4 +125,5 @@ class LoopNode(Node):
                     else:
                         data[k] = [tmp_d[k]]
 
-        for n in self.next: queue.append(n)
+        for n in self.next:
+            queue.append(n)

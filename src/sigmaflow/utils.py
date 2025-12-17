@@ -1,13 +1,16 @@
 from .imports import *
 
+
 def get_version():
     try:
         return importlib.metadata.version("sigmaflow")
     except importlib.metadata.PackageNotFoundError:
         return "unknown"
 
+
 def check_cmd_exist(command):
     return shutil.which(command) is not None
+
 
 def importpath(path):
     if type(path) is not PosixPath:
@@ -24,6 +27,7 @@ def importpath(path):
     finally:
         sys.path.pop(0)
     return module
+
 
 def get_ordered_task(tasks):
     def get_dependencies(task_id, task_info):
@@ -60,18 +64,21 @@ def get_ordered_task(tasks):
 
     return execution_order
 
+
 def jload(inp):
-    with open(inp, 'r', encoding='utf-8') as f:
+    with open(inp, "r", encoding="utf-8") as f:
         return json.load(f)
 
+
 def jdump(obj, out):
-    with open(out, 'w', encoding='utf-8') as f:
+    with open(out, "w", encoding="utf-8") as f:
         if isinstance(obj, (dict, list)):
             json.dump(obj, f, indent=4, ensure_ascii=False)
         elif isinstance(obj, str):
             f.write(obj)
         else:
             raise ValueError(f"Unexpected type: {type(obj)}")
+
 
 def calc_hash(file_path=None):
     if file_path:
@@ -83,19 +90,25 @@ def calc_hash(file_path=None):
         hash_sha256 = hashlib.sha256(os.urandom(32))
     return hash_sha256.hexdigest()[-16:]
 
+
 def get_latest_version(lib):
     from packaging import version
+
     package_name = lib[1]
-    if package_name == "apex": return package_name, None
-    if package_name == "swift": package_name = "ms-swift"
+    if package_name == "apex":
+        return package_name, None
+    if package_name == "swift":
+        package_name = "ms-swift"
     url = f"https://pypi.org/pypi/{package_name}/json"
     response = requests.get(url)
-    if response.status_code != 200: return package_name, None
+    if response.status_code != 200:
+        return package_name, None
 
     data = response.json()
     versions = data["releases"].keys()
     latest_version = max(versions, key=version.parse)
     return lib[1], latest_version
+
 
 def check_env():
     from rich import print
@@ -105,7 +118,7 @@ def check_env():
     from importlib.metadata import version as get_pkg_version
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    cache_dir = Path.home() / '.config/sigmaflow'
+    cache_dir = Path.home() / ".config/sigmaflow"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     console = Console()
@@ -113,26 +126,50 @@ def check_env():
     table.add_column("Library", style="cyan", justify="left")
     table.add_column("Status", style="green", justify="left")
     table.add_column("Details", style="white", justify="left")
-    table.add_row('OS', "Installed", f"Platform: {platform.system()}, Release: {platform.release()}")
-    table.add_row('Python', "Installed", "Version: " + sys.version.split()[0])
+    table.add_row(
+        "OS",
+        "Installed",
+        f"Platform: {platform.system()}, Release: {platform.release()}",
+    )
+    table.add_row("Python", "Installed", "Version: " + sys.version.split()[0])
 
     if shutil.which("nvidia-smi"):
-        driver_version = os.popen("nvidia-smi --version | grep DRIVER | awk '{print $4}'").read().strip()
-        cuda_version = os.popen("nvidia-smi --version | grep CUDA | awk '{print $4}'").read().strip()
-        table.add_row('Driver', "Installed", f"Version: {driver_version}")
-        table.add_row('CUDA', "Installed", f"Version: {cuda_version}")
+        driver_version = (
+            os.popen("nvidia-smi --version | grep DRIVER | awk '{print $4}'")
+            .read()
+            .strip()
+        )
+        cuda_version = (
+            os.popen("nvidia-smi --version | grep CUDA | awk '{print $4}'")
+            .read()
+            .strip()
+        )
+        table.add_row("Driver", "Installed", f"Version: {driver_version}")
+        table.add_row("CUDA", "Installed", f"Version: {cuda_version}")
 
     try:
         import torch
-        table.add_row('cuDNN', "Installed", f"Version: {torch.backends.cudnn.version()}")
-        table.add_row('NCCL', "Installed", f"Version: {'.'.join(map(str,torch.cuda.nccl.version()))}")
+
+        table.add_row(
+            "cuDNN", "Installed", f"Version: {torch.backends.cudnn.version()}"
+        )
+        table.add_row(
+            "NCCL",
+            "Installed",
+            f"Version: {'.'.join(map(str, torch.cuda.nccl.version()))}",
+        )
     except ImportError:
-        table.add_row('cuDNN', "[red]Not Installed[/red]")
-        table.add_row('NCCL', "[red]Not Installed[/red]")
+        table.add_row("cuDNN", "[red]Not Installed[/red]")
+        table.add_row("NCCL", "[red]Not Installed[/red]")
 
     if shutil.which("nvcc"):
-        nvcc_version = os.popen("nvcc --version | grep release").read().split('release')[-1].strip()
-        table.add_row('Toolkit', "Installed", f"Version: {nvcc_version}")
+        nvcc_version = (
+            os.popen("nvcc --version | grep release")
+            .read()
+            .split("release")[-1]
+            .strip()
+        )
+        table.add_row("Toolkit", "Installed", f"Version: {nvcc_version}")
     table.add_section()
 
     libraries = [
@@ -162,14 +199,20 @@ def check_env():
     ]
     libraries = sorted(libraries)
 
-    versions_file = cache_dir / 'versions.json'
-    if not versions_file.exists() or datetime.datetime.fromtimestamp(versions_file.stat().st_mtime).strftime('%Y%m%d') < datetime.datetime.now().strftime('%Y%m%d'):
+    versions_file = cache_dir / "versions.json"
+    if not versions_file.exists() or datetime.datetime.fromtimestamp(
+        versions_file.stat().st_mtime
+    ).strftime("%Y%m%d") < datetime.datetime.now().strftime("%Y%m%d"):
         versions_dict = {}
         with Progress() as progress:
-            task = progress.add_task("[cyan]Checking latest versions...", total=len(libraries))
+            task = progress.add_task(
+                "[cyan]Checking latest versions...", total=len(libraries)
+            )
 
             with ThreadPoolExecutor(max_workers=8) as executor:
-                future_to_lib = {executor.submit(get_latest_version, lib): lib for lib in libraries}
+                future_to_lib = {
+                    executor.submit(get_latest_version, lib): lib for lib in libraries
+                }
                 for future in as_completed(future_to_lib):
                     package_name, version = future.result()
                     versions_dict[package_name] = version
@@ -183,7 +226,7 @@ def check_env():
         task = progress.add_task("[cyan]Checking libraries...", total=len(libraries))
         for name, module in libraries:
             ver = None
-            details = ''
+            details = ""
 
             try:
                 ver = get_pkg_version(module)
@@ -192,14 +235,16 @@ def check_env():
                     ver = get_pkg_version(name)
                 except ImportError:
                     ver = None
-                    
-            if ver: details = f"Version: {ver}"
+
+            if ver:
+                details = f"Version: {ver}"
 
             try:
                 lib = __import__(module)
                 status = "Installed"
 
-                if not ver: ver = lib.__version__
+                if not ver:
+                    ver = lib.__version__
 
                 if module == "torch":
                     details += f", CUDA: {lib.cuda.is_available()}"
@@ -213,38 +258,51 @@ def check_env():
             progress.update(task, advance=1)
 
     rows.sort(key=lambda x: x[0])
-    for row in rows: table.add_row(*row)
+    for row in rows:
+        table.add_row(*row)
     table.add_section()
 
     try:
         import pynvml
+
         pynvml.nvmlInit()
         device_count = pynvml.nvmlDeviceGetCount()
         for i in range(device_count):
             handle = pynvml.nvmlDeviceGetHandleByIndex(i)
             name = pynvml.nvmlDeviceGetName(handle)
             meminfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            memstr = f'{int(meminfo.used/1024/1024/1024):d}G / {int(meminfo.total/1024/1024/1024):d}G, {meminfo.used/meminfo.total:3.0%}'
+            memstr = f"{int(meminfo.used / 1024 / 1024 / 1024):d}G / {int(meminfo.total / 1024 / 1024 / 1024):d}G, {meminfo.used / meminfo.total:3.0%}"
             temp = pynvml.nvmlDeviceGetTemperature(handle, 0)
             utlization = pynvml.nvmlDeviceGetUtilizationRates(handle)
-            table.add_row('GPU' if not i else '', f'{i}', f"{name}, \\[mem] {memstr}, \\[utl] {utlization.gpu:3d}%, {temp:3d}°C")
+            table.add_row(
+                "GPU" if not i else "",
+                f"{i}",
+                f"{name}, \\[mem] {memstr}, \\[utl] {utlization.gpu:3d}%, {temp:3d}°C",
+            )
         pynvml.nvmlShutdown()
     except (ImportError, pynvml.NVMLError):
         pass
 
     console.print(table)
 
+
 def mmdc(mermaid, img):
     from .log import log
-    if check_cmd_exist('mmdc'):
-        tmp_file = f'/tmp/{uuid.uuid4()}'
-        with open(tmp_file, 'w') as f: f.write(mermaid)
-        log.debug(f'Save mermaid in: {tmp_file}')
-        subprocess.run(['mmdc', '-i', tmp_file, '-o', img, '-s', '3'], 
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        log.debug(f'Save {img}')
+
+    if check_cmd_exist("mmdc"):
+        tmp_file = f"/tmp/{uuid.uuid4()}"
+        with open(tmp_file, "w") as f:
+            f.write(mermaid)
+        log.debug(f"Save mermaid in: {tmp_file}")
+        subprocess.run(
+            ["mmdc", "-i", tmp_file, "-o", img, "-s", "3"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        log.debug(f"Save {img}")
     else:
-        log.warning('Please install mmdc to generate mermaid images.')
+        log.warning("Please install mmdc to generate mermaid images.")
+
 
 def async_compat(func):
     @wraps(func)
@@ -252,14 +310,18 @@ def async_compat(func):
         try:
             # 检查是否在异步上下文中
             loop = asyncio.get_running_loop()
+
             # 如果在异步上下文中，返回协程
             async def async_wrapper():
                 return func(*args, **kwargs)
+
             return async_wrapper()
         except RuntimeError:
             # 如果在同步上下文中，直接执行
             return func(*args, **kwargs)
+
     return wrapper
+
 
 def sync_compat(func):
     @wraps(func)
@@ -269,12 +331,15 @@ def sync_compat(func):
             return func(*args, **kwargs)
         except RuntimeError:
             return asyncio.run(func(*args, **kwargs))
+
     return wrapper
+
 
 def remove_think_content(text):
     regex = r"(^<think>[^<]*(?:<(?!/?think>)[^<]*)*<\/think>)"
-    text = re.sub(regex, '', text).strip()
+    text = re.sub(regex, "", text).strip()
     return text
+
 
 def extract_json(text, remove_think=True):
     text = text.strip()
@@ -285,11 +350,13 @@ def extract_json(text, remove_think=True):
     try:
         j = json.loads(text)
         return j
-    except: pass
+    except:
+        pass
 
-    if (m := re.findall(r'```(?:json)?(.*?)```', text, re.DOTALL)):
+    if m := re.findall(r"```(?:json)?(.*?)```", text, re.DOTALL):
         try:
             j = json.loads(m[0])
             return j
-        except: pass
+        except:
+            pass
     return None

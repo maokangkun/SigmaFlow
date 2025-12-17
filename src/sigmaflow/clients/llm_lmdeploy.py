@@ -1,34 +1,42 @@
 from . import *
-spec = importlib.util.find_spec('lmdeploy')
+
+spec = importlib.util.find_spec("lmdeploy")
 
 if spec:
-    from lmdeploy import pipeline, GenerationConfig, TurbomindEngineConfig, ChatTemplateConfig
+    from lmdeploy import (
+        pipeline,
+        GenerationConfig,
+        TurbomindEngineConfig,
+        ChatTemplateConfig,
+    )
 
-    model_path = os.getenv('LMDEPLOY_MODEL')
-    chat_temp_name = os.getenv('LMDEPLOY_CHAT_TEMP', None)
-    session_len = int(os.getenv('LMDEPLOY_SESSION_LEN', 256))
-    max_new_tokens = int(os.getenv('LMDEPLOY_MAX_NEW_TOKENS', 256))
-    batch_size = int(os.getenv('LMDEPLOY_BATCH_SIZE', 128))
-    pp = int(os.getenv('LMDEPLOY_PP', 1))
-    tp = int(os.getenv('LMDEPLOY_TP', 1))
-    dp = int(os.getenv('LMDEPLOY_DP', 1))
+    model_path = os.getenv("LMDEPLOY_MODEL")
+    chat_temp_name = os.getenv("LMDEPLOY_CHAT_TEMP", None)
+    session_len = int(os.getenv("LMDEPLOY_SESSION_LEN", 256))
+    max_new_tokens = int(os.getenv("LMDEPLOY_MAX_NEW_TOKENS", 256))
+    batch_size = int(os.getenv("LMDEPLOY_BATCH_SIZE", 128))
+    pp = int(os.getenv("LMDEPLOY_PP", 1))
+    tp = int(os.getenv("LMDEPLOY_TP", 1))
+    dp = int(os.getenv("LMDEPLOY_DP", 1))
 
-    backend_config = TurbomindEngineConfig(
-                        session_len=session_len,
-                        pp=pp,
-                        tp=tp,
-                        dp=dp)
+    backend_config = TurbomindEngineConfig(session_len=session_len, pp=pp, tp=tp, dp=dp)
     gen_config = GenerationConfig(
-                        do_sample=True,
-                        # top_p=0.95,
-                        # temperature=0.7,
-                        max_new_tokens=max_new_tokens)
-    chat_temp = ChatTemplateConfig(model_name=chat_temp_name) if chat_temp_name else None
-    llm = pipeline(model_path, backend_config=backend_config, chat_template_config=chat_temp)
+        do_sample=True,
+        # top_p=0.95,
+        # temperature=0.7,
+        max_new_tokens=max_new_tokens,
+    )
+    chat_temp = (
+        ChatTemplateConfig(model_name=chat_temp_name) if chat_temp_name else None
+    )
+    llm = pipeline(
+        model_path, backend_config=backend_config, chat_template_config=chat_temp
+    )
 
 batch_wait_time = 1
 batch_queue = []
 batch_event = asyncio.Event()
+
 
 def llm_client(is_async=False):
     if is_async:
@@ -36,8 +44,10 @@ def llm_client(is_async=False):
     else:
         return completion
 
+
 def completion(text):
     raise NotImplementedError
+
 
 def batch_completion(batch_data):
     prompts = []
@@ -46,16 +56,19 @@ def batch_completion(batch_data):
             prompts.append(text)
         elif t is list:
             msg = []
-            for role, c in zip(['user', 'assistant']*len(text), text):
-                msg.append({
-                    "role": role,
-                    "content": c,
-                })
+            for role, c in zip(["user", "assistant"] * len(text), text):
+                msg.append(
+                    {
+                        "role": role,
+                        "content": c,
+                    }
+                )
             prompts.append(msg)
 
     outputs = llm(prompts, gen_config=gen_config)
     result = [o.text for o in outputs]
     return result
+
 
 async def llm_batch_processor():
     global batch_queue
@@ -64,7 +77,7 @@ async def llm_batch_processor():
 
         if batch_queue:
             batch = batch_queue[:batch_size]
-            batch_queue = batch_queue[len(batch):]
+            batch_queue = batch_queue[len(batch) :]
             result = await asyncio.to_thread(batch_completion, batch)
 
             for (_, future), res in zip(batch, result):
@@ -72,6 +85,7 @@ async def llm_batch_processor():
 
         if not batch_queue:
             batch_event.clear()
+
 
 async def async_completion(text):
     global batch_queue
