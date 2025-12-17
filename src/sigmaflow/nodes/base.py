@@ -1,6 +1,7 @@
-from ..imports import *
-from .constant import *
+import importlib
+from pathlib import Path
 from ..log import log
+from .constant import NodeColorStyle, NodeShape, Data
 
 
 class Base:
@@ -58,8 +59,8 @@ class Base:
         self.mermaid_data = self.mermaid_inps + self.mermaid_outs
 
     def _get_mermaid_defines(self):
-        return [self.__class__.mermaid_shape(self.name)] + [
-            Data.mermaid_shape(d) for d in self.mermaid_data
+        return [self.__class__.mermaid_shape.format(x=self.name)] + [
+            Data.mermaid_shape.format(x=d) for d in self.mermaid_data
         ]
 
     def get_mermaid(self, info=None):
@@ -140,7 +141,7 @@ class Base:
             module_name = file.stem
 
             try:
-                module = importlib.import_module(f".{module_name}", __package__)
+                importlib.import_module(f".{module_name}", __package__)
             except Exception as e:
                 log.error(f"Warning: Failed to import from {module_name}: {e}")
                 exit()

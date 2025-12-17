@@ -1,7 +1,5 @@
 from . import *
 import json
-import httpx
-from fastapi import HTTPException
 
 json_file = os.getenv("RAG_JSON")
 data = json.load(open(json_file, "r"))

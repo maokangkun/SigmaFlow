@@ -172,7 +172,7 @@ class TaskWorker(threading.Thread):
 
                 try:
                     out = self.run_task(task_id, task_data, sid)
-                except Exception as e:
+                except Exception:
                     err = traceback.format_exc()
                     log.error(err)
                     self.send_msg(Events.ERROR, {"error": err}, sid)
@@ -333,7 +333,7 @@ class TaskAPI:
 
                 ret = {"task_id": task_id}
                 return ret
-            except Exception as e:
+            except Exception:
                 print(traceback.format_exc())
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 

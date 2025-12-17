@@ -1,5 +1,4 @@
 from ..imports import *
-from ..log import log
 from .constant import *
 from .node import Node
 
@@ -13,7 +12,7 @@ class ExitNode(Node):
         return conf["name"] == "exit"
 
     def get_mermaid(self, info=None):
-        defines = [self.__class__.mermaid_shape(self.name)]
+        defines = [self.__class__.mermaid_shape.format(x=self.name)]
         return defines, [], []
 
     async def current_task(self, data, queue, dynamic_tasks):

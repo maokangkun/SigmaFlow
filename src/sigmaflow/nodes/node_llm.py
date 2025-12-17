@@ -1,5 +1,4 @@
 from ..imports import *
-from ..log import log
 from ..prompts import Prompt
 from ..blocks import LLMBlock
 from .constant import *

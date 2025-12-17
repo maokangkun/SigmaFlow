@@ -1,7 +1,5 @@
 from ..imports import *
-from ..log import log
 from .base import Block
-from ..clients import SearchEngine
 
 
 class BrowserBlock(Block):

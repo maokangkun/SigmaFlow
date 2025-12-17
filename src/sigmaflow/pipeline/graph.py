@@ -1,6 +1,13 @@
-from ..imports import *
+import os
+import copy
+import importlib
+import collections
+from pathlib import Path
+import multiprocessing as mp
+from functools import reduce
 from ..log import log
-from ..nodes import *
+from ..nodes import Node
+from ..nodes.constant import Data, InputData
 
 
 class Graph:
@@ -100,7 +107,7 @@ class Graph:
 
         self._find_start_nodes()
         if not self.start_nodes:
-            log.error(f"Can't find start entry in pipes.")
+            log.error("Can't find start entry in pipes.")
             exit()
         log.debug(
             f"'{self.name}' tree initialization successful, start nodes: {self.start_nodes}, required input: {self.required_inputs}"
@@ -202,7 +209,7 @@ class Graph:
         mermaid = "gantt\ntitle Task Timeline\ndateFormat  x\naxisFormat  %M:%S.%L\n"
         base_time = self.perf[0][2]
         data = collections.defaultdict(list)
-        loop_end = {}
+        # loop_end = {}
         for name, e, start_time, end_time in self.perf:
             if "pid" in name:
                 arr = name.split(": ")
@@ -239,8 +246,8 @@ class Graph:
             return {"error_msg": error_msg}
 
     def __str__(self):
-        loop_num = sum([type(n) is LoopNode for n in self.node_manager.values()])
-        branch_num = sum([type(n) is BranchNode for n in self.node_manager.values()])
+        loop_num = sum([n.__class__.__name__ == "LoopNode" for n in self.node_manager.values()])
+        branch_num = sum([n.__class__.__name__ == "BranchNode" for n in self.node_manager.values()])
         return f"<Graph '{self.name}': nodes: {len(self.node_manager)}, loop: {loop_num}, branch: {branch_num}>"
 
     def __repr__(self):

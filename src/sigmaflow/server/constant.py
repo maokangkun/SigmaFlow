@@ -1,7 +1,7 @@
 from enum import Enum
 from pydantic import BaseModel
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Any
 
 
 class Events(Enum):

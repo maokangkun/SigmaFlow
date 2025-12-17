@@ -1,4 +1,19 @@
-from .imports import *
+import re
+import os
+import sys
+import json
+import uuid
+import shutil
+import hashlib
+import asyncio
+import requests
+import platform
+import datetime
+import importlib
+import subprocess
+import collections
+from functools import wraps
+from pathlib import Path, PosixPath
 
 
 def get_version():
@@ -111,7 +126,6 @@ def get_latest_version(lib):
 
 
 def check_env():
-    from rich import print
     from rich.table import Table
     from rich.console import Console
     from rich.progress import Progress
@@ -309,7 +323,7 @@ def async_compat(func):
     def wrapper(*args, **kwargs):
         try:
             # 检查是否在异步上下文中
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
 
             # 如果在异步上下文中，返回协程
             async def async_wrapper():
@@ -327,7 +341,7 @@ def sync_compat(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         try:
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
             return func(*args, **kwargs)
         except RuntimeError:
             return asyncio.run(func(*args, **kwargs))
@@ -350,13 +364,13 @@ def extract_json(text, remove_think=True):
     try:
         j = json.loads(text)
         return j
-    except:
+    except Exception:
         pass
 
     if m := re.findall(r"```(?:json)?(.*?)```", text, re.DOTALL):
         try:
             j = json.loads(m[0])
             return j
-        except:
+        except Exception:
             pass
     return None

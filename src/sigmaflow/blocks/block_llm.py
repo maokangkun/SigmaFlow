@@ -1,5 +1,4 @@
 from ..imports import *
-from ..log import log
 from ..utils import *
 from .base import Block
 

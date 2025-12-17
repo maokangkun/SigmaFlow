@@ -1,6 +1,10 @@
-from ..imports import *
+import copy
+import queue
+import asyncio
+import traceback
+import collections
+import multiprocessing as mp
 from ..log import log
-from ..nodes import *
 from .graph import Graph
 
 
@@ -23,7 +27,7 @@ class PipeGraph(Graph):
             )
             while not all(t.done() for t in dynamic_tasks):
                 await asyncio.gather(*dynamic_tasks)
-        except Exception as e:
+        except Exception:
             error_msg = traceback.format_exc()
             data["error_msg"] = error_msg
             log.error(f"[{self.name}]:\n{error_msg}")
@@ -49,7 +53,7 @@ class PipeGraph(Graph):
                 self.node_manager[node_name].run(
                     name, data, task_queue, perf_queue, config
                 )
-        except Exception as e:
+        except Exception:
             error_msg = traceback.format_exc()
             with lock:
                 data["error_msg"] = error_msg
@@ -94,7 +98,7 @@ class PipeGraph(Graph):
             while queue:
                 node = queue.pop(0)
                 node.run(data, queue)
-        except Exception as e:
+        except Exception:
             error_msg = traceback.format_exc()
             data["error_msg"] = error_msg
             log.error(f"[{self.name}]:\n{error_msg}")

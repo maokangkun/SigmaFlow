@@ -1,14 +1,12 @@
 import json
 import uuid
-import time
 import asyncio
 import traceback
 import threading
 from pathlib import Path
 from fastapi import APIRouter
-from pydantic import BaseModel
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import FileResponse
 from .constant import *
 from ..log import log
 from .task import WSConnectionManager, TaskQueue, TaskWorker
@@ -35,7 +33,7 @@ class WorkspaceTaskWorker(TaskWorker):
 
                 try:
                     out = self.run_task(task_id, task_data, sid)
-                except Exception as e:
+                except Exception:
                     err = traceback.format_exc()
                     log.error(err)
                     self.send_msg(Events.ERROR, {"error": err}, sid)
@@ -194,14 +192,14 @@ class WorkspaceAPI:
             try:
                 ret = {"storage": "server", "migrated": True}
                 return ret
-            except Exception as e:
+            except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.get("/api/i18n")
         async def i18n():
             try:
                 return {}
-            except Exception as e:
+            except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.get("/api/system_stats")
@@ -233,7 +231,7 @@ class WorkspaceAPI:
                         }
                     ],
                 }
-            except Exception as e:
+            except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.get("/api/settings")
@@ -247,7 +245,7 @@ class WorkspaceAPI:
                     "Comfy.ColorPalette": "dark",
                     "Comfy.Locale": "en",
                 }
-            except Exception as e:
+            except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.get("/api/global_subgraphs")
@@ -258,14 +256,14 @@ class WorkspaceAPI:
         async def userdata():
             try:
                 return []
-            except Exception as e:
+            except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.get("/api/extensions")
         async def extensions():
             try:
                 return []
-            except Exception as e:
+            except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.get("/api/object_info")
@@ -278,7 +276,7 @@ class WorkspaceAPI:
                 with open(cur_folder / "object_info.json", "r") as f:
                     obj |= json.load(f)
                 return obj
-            except Exception as e:
+            except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.get("/api/experiment/models")
@@ -287,21 +285,21 @@ class WorkspaceAPI:
                 cur_folder = Path(__file__).parent
                 with open(cur_folder / "models.json", "r") as f:
                     return json.load(f)
-            except Exception as e:
+            except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.get("/api/queue")
         async def queue():
             try:
                 return {"queue_running": [], "queue_pending": []}
-            except Exception as e:
+            except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.get("/api/history")
         async def history(max_items: int):
             try:
                 return {}
-            except Exception as e:
+            except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.get("/api/view")
@@ -311,7 +309,7 @@ class WorkspaceAPI:
                     "/mnt/workspace/code/github/ComfyUI/output/ComfyUI_00001_.png"
                 )
                 return FileResponse(image_path)
-            except Exception as e:
+            except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.post("/api/prompt")
@@ -339,7 +337,7 @@ class WorkspaceAPI:
                 #     }
                 # }
                 # return JSONResponse(status_code=400, content={"error": "test", "node_errors": node_errors})
-            except Exception as e:
+            except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.websocket("/ws")
@@ -400,5 +398,5 @@ class WorkspaceAPI:
         async def logs():
             try:
                 return {}
-            except Exception as e:
+            except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())

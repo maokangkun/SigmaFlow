@@ -60,7 +60,7 @@ include-package-data = true
 where = ["src"]
 
 [tool.setuptools.dynamic]
-version = {attr = "sigmaflow.setup.__version__"}
+version = {attr = "sigmaflow.version.__version__"}
 
 [tool.setuptools.package-data]
 "sigmaflow.server" = [

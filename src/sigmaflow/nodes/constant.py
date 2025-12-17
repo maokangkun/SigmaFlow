@@ -37,18 +37,18 @@ class NodeColorStyle:
 
 
 class NodeShape:
-    default = lambda x: f'{x}["{x}"]'  # 矩形
-    LLMNode = lambda x: f'{x}["{x}"]'
-    RAGNode = lambda x: f'{x}("{x}")'  # 圆角矩形
-    LoopNode = lambda x: f'{x}(("{x}"))'  # 圆形
-    BranchNode = lambda x: f'{x}{{"{x}"}}'
-    CodeNode = lambda x: f'{x}[/"{x}"/]'
-    WebNode = lambda x: f'{x}("{x}")'
-    ValueNode = lambda n, x: f'{n}{{{{"{x}"}}}}'
-    ExitNode = lambda x: f'{x}[["{x}"]]'
-    FileNode = lambda x: f'{x}["{x}"]'
-    Data = lambda x: f'{x}(["{x}"])'
-    InputData = lambda x: f'{x}(["{x}"])'
+    default = '{x}["{x}"]'  # 矩形
+    LLMNode = '{x}["{x}"]'
+    RAGNode = '{x}("{x}")'  # 圆角矩形
+    LoopNode = '{x}(("{x}"))'  # 圆形
+    BranchNode = '{x}{{"{x}"}}'
+    CodeNode = '{x}[/"{x}"/]'
+    WebNode = '{x}("{x}")'
+    ValueNode = '{n}{{{{"{x}"}}}}'
+    ExitNode = '{x}[["{x}"]]'
+    FileNode = '{x}["{x}"]'
+    Data = '{x}(["{x}"])'
+    InputData = '{x}(["{x}"])'
 
 
 class Data:

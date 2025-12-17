@@ -1,5 +1,4 @@
 from ..imports import *
-from ..log import log
 from ..blocks import SearchBlock, BrowserBlock
 from .constant import *
 from .node import Node

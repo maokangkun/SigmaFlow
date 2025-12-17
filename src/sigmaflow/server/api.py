@@ -36,7 +36,7 @@ class PipelineAPI:
                     case _:
                         raise HTTPException(status_code=400, detail="Invalid item type")
                 return ret
-            except Exception as e:
+            except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.post("/update/{item}")
@@ -65,7 +65,7 @@ class PipelineAPI:
                         raise HTTPException(status_code=400, detail="Invalid item type")
 
                 return ret
-            except Exception as e:
+            except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.get("/mermaid/{pipe_name}")
@@ -76,7 +76,7 @@ class PipelineAPI:
                     "mermaid": pipe.pipetree.tree2mermaid(),
                 }
                 return ret
-            except Exception as e:
+            except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.post("/run/{pipe_name}")
@@ -108,5 +108,5 @@ class PipelineAPI:
                     result = await pipe.async_run(p_data.data)
                     result = post_progress(result)
                     return {"result": result}
-            except Exception as e:
+            except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())

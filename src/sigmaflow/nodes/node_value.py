@@ -13,7 +13,7 @@ class ValueNode(Node):
         return "value" in conf or "item" in conf
 
     def _get_mermaid_defines(self):
-        data_defs = [Data.mermaid_shape(d) for d in self.mermaid_data]
+        data_defs = [Data.mermaid_shape.format(x=d) for d in self.mermaid_data]
         n = 25
         if "value" in self.conf:
             t = str(self.conf["value"])
@@ -23,7 +23,7 @@ class ValueNode(Node):
             t = t[:n] + "..."
         m = {"append": "\\+", "assign": "="}[self.conf.get("mode", "assign")]
         d = f"{self.name}\n{m} {t}"
-        return [self.__class__.mermaid_shape(self.name, d)] + data_defs
+        return [self.__class__.mermaid_shape.format(n=self.name, x=d)] + data_defs
 
     def get_inps_mp(self, data, config=None):
         def get_data(i):

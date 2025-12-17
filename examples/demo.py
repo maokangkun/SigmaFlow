@@ -2,9 +2,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 import sys
-import time
 import json
-import asyncio
 from pathlib import Path
 
 sys.path.append(".")

@@ -1,5 +1,4 @@
 from ..imports import *
-from ..log import log
 from .base import Block
 from ..utils import sync_compat
 

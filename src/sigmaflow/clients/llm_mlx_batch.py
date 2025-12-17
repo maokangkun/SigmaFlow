@@ -1,4 +1,5 @@
-import os, sys
+import os
+import sys
 
 sys.path.append("/Users/mkk/workspace/git_repos/mlx_parallm")
 from mlx_parallm.utils import load, batch_generate
@@ -70,7 +71,7 @@ async def async_completion(text):
         print("Batch size reached. Triggering batch processing.")
         batch_event.set()
     else:
-        print(f"Task waiting for batch timeout or size threshold.")
+        print("Task waiting for batch timeout or size threshold.")
         await asyncio.sleep(batch_wait_time)
         batch_event.set()
 
