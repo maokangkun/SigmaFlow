@@ -17,6 +17,23 @@ jobs:
     # needs:
     #   - publish_to_pypi
     steps:
+      - name: Wait for build to succeed
+        uses: fountainhead/action-wait-for-check@v1.0.0
+        id: wait-for-build
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          checkName: "publish_to_pypi"
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Proceed only if build succeeded
+        if: steps.wait-for-build.outputs.conclusion == 'success'
+        run: |
+          echo "The build passed! Starting the next task..."
+      - name: Handle build failure or timeout
+        if: steps.wait-for-build.outputs.conclusion == 'failure' || steps.wait-for-build.outputs.conclusion == 'timed_out'
+        run: |
+          echo "The build failed or timed out. Exiting gracefully or performing cleanup..."
+          exit 1
+
       - name: Check out the repo
         uses: actions/checkout@v5
 
