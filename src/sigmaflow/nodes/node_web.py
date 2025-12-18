@@ -1,7 +1,6 @@
-from ..imports import *
-from ..blocks import SearchBlock, BrowserBlock
-from .constant import *
 from .node import Node
+from ..blocks import SearchBlock, BrowserBlock
+from .constant import NodeColorStyle, NodeShape
 
 
 class WebNode(Node):
@@ -41,15 +40,15 @@ class WebNode(Node):
         for n in self.next:
             queue.put((n.name, config))
 
-    async def current_task(self, data, queue, dynamic_tasks):
-        inps = await self.get_inps(queue)
-        out = await self.search_pipe(*inps)
+    # async def current_task(self, data, queue, dynamic_tasks):
+    #     inps = await self.get_inps(queue)
+    #     out = await self.search_pipe(*inps)
 
-        browser_tasks = []
-        for url in self.loop_nodes:
-            task = asyncio.create_task(n.run(new_data, new_queue, loop_tasks))
-            browser_tasks.append(task)
-        while not all(t.done() for t in browser_tasks):
-            await asyncio.gather(*browser_tasks)
+    #     browser_tasks = []
+    #     for url in self.loop_nodes:
+    #         task = asyncio.create_task(n.run(new_data, new_queue, loop_tasks))
+    #         browser_tasks.append(task)
+    #     while not all(t.done() for t in browser_tasks):
+    #         await asyncio.gather(*browser_tasks)
 
-        self.set_out(out, data, queue)
+    #     self.set_out(out, data, queue)

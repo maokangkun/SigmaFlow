@@ -1,7 +1,9 @@
-from . import *
+import os
 import json
 import httpx
+import requests
 from fastapi import HTTPException
+from . import llm_sem
 
 pulse_model = os.getenv("PULSE_MODEL")
 pulse_token = os.getenv("PULSE_TOKEN")
@@ -91,7 +93,7 @@ async def _get_completion(input_data: dict, retry: int = 5):
                     try:
                         error_detail = (await stream.aread()).decode("utf8")
                         error_detail = str(json.loads(error_detail))
-                    except:
+                    except Exception:
                         pass
 
                     raise HTTPException(status_code=500, detail=error_detail)

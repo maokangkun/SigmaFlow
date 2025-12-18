@@ -1,4 +1,3 @@
-from ..imports import *
 from .base import Block
 
 
@@ -17,7 +16,7 @@ class SearchBlock(Block):
         super().__init__(name, lock, run_time, inout_log, verbose)
         self.count = count
         if type(search_engine) is str:
-            self.engine, self.async_engine = SearchEngine.get(search_engine)
+            self.engine = self.async_engine = ... #SearchEngine.get(search_engine)
         else:
             self.engine = self.async_engine = search_engine
 

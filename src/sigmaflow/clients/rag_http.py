@@ -1,4 +1,3 @@
-from . import *
 import json
 import httpx
 import requests
@@ -6,7 +5,6 @@ from fastapi import HTTPException
 
 import warnings
 from urllib3.exceptions import InsecureRequestWarning
-
 warnings.simplefilter("ignore", InsecureRequestWarning)
 
 
@@ -30,29 +28,30 @@ def rag(text, url=None, index=None):
 
 
 async def async_rag(text):
-    messages = [
-        {
-            "action": "From user",  # 'To user'
-            "content": text,
-        }
-    ]
+    # messages = [
+    #     {
+    #         "action": "From user",  # 'To user'
+    #         "content": text,
+    #     }
+    # ]
 
-    async with llm_sem:
-        input_data = {
-            "action": "To user",
-            "parent_messages": messages,
-            "gen_kwargs": {
-                "model": pulse_model,
-                "num_return_sequences": 1,
-                "temperature": temperature,
-                "top_p": top_p,
-                "top_k": top_k,
-                "max_tokens": max_tokens,
-                "repetition_penalty": repetition_penalty,
-            },
-        }
+    # async with llm_sem:
+    #     input_data = {
+    #         "action": "To user",
+    #         "parent_messages": messages,
+    #         "gen_kwargs": {
+    #             "model": pulse_model,
+    #             "num_return_sequences": 1,
+    #             "temperature": temperature,
+    #             "top_p": top_p,
+    #             "top_k": top_k,
+    #             "max_tokens": max_tokens,
+    #             "repetition_penalty": repetition_penalty,
+    #         },
+    #     }
 
-        return await _req(input_data, url)
+    #     return await _req(input_data, url)
+    pass
 
 
 async def _req(input_data: dict, url: str, retry: int = 5):
@@ -70,7 +69,7 @@ async def _req(input_data: dict, url: str, retry: int = 5):
                     try:
                         error_detail = (await stream.aread()).decode("utf8")
                         error_detail = str(json.loads(error_detail))
-                    except:
+                    except Exception:
                         pass
 
                     raise HTTPException(status_code=500, detail=error_detail)

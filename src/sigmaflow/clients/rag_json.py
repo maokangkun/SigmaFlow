@@ -1,4 +1,4 @@
-from . import *
+import os
 import json
 
 json_file = os.getenv("RAG_JSON")

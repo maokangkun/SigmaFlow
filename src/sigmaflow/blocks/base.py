@@ -1,4 +1,4 @@
-from ..imports import *
+import time
 from ..log import log
 from ..utils import sync_compat
 

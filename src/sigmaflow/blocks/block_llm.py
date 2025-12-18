@@ -1,6 +1,5 @@
-from ..imports import *
-from ..utils import *
 from .base import Block
+from ..utils import extract_json, sync_compat, remove_think_content
 
 
 class LLMBlock(Block):

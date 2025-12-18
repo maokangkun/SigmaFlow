@@ -1,6 +1,6 @@
-from ..imports import *
+from pathlib import Path
 from ..log import log
-from ..utils import *
+from ..utils import importpath
 from ..prompts import Prompt, BuildinPromptsDir
 
 

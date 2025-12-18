@@ -4,12 +4,13 @@ import asyncio
 import traceback
 import threading
 from pathlib import Path
+from typing import Optional
 from fastapi import APIRouter
-from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
-from .constant import *
+from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 from ..log import log
 from .task import WSConnectionManager, TaskQueue, TaskWorker
+from .constant import Events, Types, Message, WorkspacePromptData
 
 
 class WorkspaceTaskQueue(TaskQueue):
@@ -366,7 +367,7 @@ class WorkspaceAPI:
                                 ret = None
                                 try:
                                     json_data = json.loads(data["text"])
-                                except:
+                                except Exception:
                                     log.error("Error parsing JSON")
                                     ret = {"error": "Invalid JSON format"}
                                     e = Events.ERROR

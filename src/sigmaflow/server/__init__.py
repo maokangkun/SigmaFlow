@@ -1,1 +1,1 @@
-from .main import PipelineServer
+from .main import PipelineServer as PipelineServer

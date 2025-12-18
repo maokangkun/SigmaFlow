@@ -4,7 +4,7 @@ import pandas as pd
 from copy import deepcopy
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from .constant import *
+from .constant import PromptData, PipeData, PipelineData
 
 
 def post_progress(result):
@@ -85,7 +85,7 @@ class PipelineAPI:
                 pipe = deepcopy(pipeline_manager.pipes[pipe_name])
                 if p_data.stream:
                     queue = asyncio.Queue()
-                    msg_func = lambda out: asyncio.create_task(queue.put(out))
+                    msg_func = lambda out: asyncio.create_task(queue.put(out)) # noqa: E731
                     pipe.add_node_finish_callback(callbacks=[msg_func])
 
                     async def run_pipe():

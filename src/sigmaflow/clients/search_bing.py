@@ -2,6 +2,7 @@ import os
 import json
 import httpx
 import requests
+from fastapi import HTTPException
 
 
 def search(query, mkt="zh-CN", count=5):

@@ -1,5 +1,6 @@
+import os
 from ollama import Client, AsyncClient
-from . import *
+from . import llm_sem
 
 ollama_model = os.getenv("OLLAMA_MODEL")
 ollama_num_ctx = int(os.getenv("OLLAMA_NUM_CTX", 2048))

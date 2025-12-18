@@ -1,8 +1,7 @@
-from ..imports import *
+from .node import Node
 from ..prompts import Prompt
 from ..blocks import LLMBlock
-from .constant import *
-from .node import Node
+from .constant import NodeColorStyle, NodeShape
 
 
 class LLMNode(Node):

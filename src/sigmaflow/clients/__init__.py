@@ -1,6 +1,8 @@
-from ..imports import *
+import os
+import asyncio
+import pkgutil
+import importlib
 from ..log import log
-from ..utils import sync_compat
 
 
 class _SearchEngine:

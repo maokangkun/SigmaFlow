@@ -1,4 +1,4 @@
-from . import *
+import os
 import torch
 from transformers import pipeline
 
@@ -46,7 +46,7 @@ def completion(text):
 
 
 async def async_completion(text):
-    async with llm_sem:
-        resp = completion(text)
+    # async with llm_sem:
+    resp = completion(text)
 
     return resp

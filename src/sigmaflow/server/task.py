@@ -3,15 +3,19 @@ import time
 import uuid
 import json
 import heapq
+import struct
 import asyncio
 import traceback
 import threading
+from io import BytesIO
 from tqdm.rich import tqdm
+from functools import partial
+from typing import Optional, Dict
 from starlette.websockets import WebSocketState
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from ..log import log
-from .constant import *
+from .constant import Events, Message, TaskData
 
 
 class TaskQueue:
@@ -194,7 +198,7 @@ class TaskWorker(threading.Thread):
 
         out = None
         if self.pipeline_manager:
-            msg_func = lambda out: self.send_msg(Events.TASK_ITEM_PROCESS, out, sid)
+            msg_func = partial(self.send_msg, Events.TASK_ITEM_PROCESS, sid=sid)
 
             def cancel_func(out):
                 if self.queue.get_flags(reset=False).get(task_id, {}).get("cancel"):
@@ -357,7 +361,7 @@ class TaskAPI:
                                 ret = None
                                 try:
                                     task_data = json.loads(data["text"])
-                                except:
+                                except Exception:
                                     log.error("Error parsing JSON")
                                     ret = {"error": "Invalid JSON format"}
                                     e = Events.ERROR

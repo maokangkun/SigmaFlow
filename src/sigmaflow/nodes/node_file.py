@@ -1,7 +1,7 @@
-from ..imports import *
+from pathlib import Path
 from ..log import log
-from .constant import *
 from .node import Node
+from .constant import NodeColorStyle, NodeShape
 
 
 class FileNode(Node):

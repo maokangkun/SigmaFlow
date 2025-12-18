@@ -1,2 +1,2 @@
-from .pipeline import Pipeline
-from .pipegraph import PipeGraph
+from .pipeline import Pipeline as Pipeline
+from .pipegraph import PipeGraph as PipeGraph

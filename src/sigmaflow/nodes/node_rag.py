@@ -1,7 +1,7 @@
-from ..imports import *
-from ..blocks import RAGBlock
-from .constant import *
+from functools import partial
 from .node import Node
+from ..blocks import RAGBlock
+from .constant import NodeColorStyle, NodeShape
 
 
 class RAGNode(Node):
@@ -22,7 +22,7 @@ class RAGNode(Node):
             backend = tree.rag_backend
 
         if param := self.conf.get("rag_param", None):
-            rag_backend = lambda *x: backend(*x, **dict(param))
+            rag_backend = partial(backend, **dict(param))
         else:
             rag_backend = backend
 
