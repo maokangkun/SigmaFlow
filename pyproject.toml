@@ -40,7 +40,11 @@ all = ["pymupdf4llm"]
 
 [dependency-groups]
 dev = [
+    "pip",
+    "mypy",
     "ruff",
+    "pytest",
+    "pandas-stubs",
 ]
 
 [project.scripts]

@@ -1,7 +1,7 @@
 from enum import Enum
-from pydantic import BaseModel
 from dataclasses import dataclass
-from typing import Optional, Any
+from pydantic import BaseModel, Field
+from typing import Optional, Any, Union, Literal, Annotated
 
 
 class Events(Enum):
@@ -56,17 +56,20 @@ class TaskData(BaseModel):
 
 
 class PromptData(BaseModel):
+    type: Literal["prompt"] = "prompt"
     name: str | None = None
     text: str | None = None
     keys: list | None = None
 
 
 class PipeData(BaseModel):
+    type: Literal["pipe"] = "pipe"
     name: str | None = None
     data: dict | None = None
 
 
 class PipelineData(BaseModel):
+    type: Literal["pipeline"] = "pipeline"
     stream: bool | None = False
     data: dict | list[dict]
 
@@ -76,3 +79,6 @@ class WorkspacePromptData(BaseModel):
     extra_data: dict
     prompt: dict
     prompt_id: str | None = None
+
+
+PData = Annotated[Union[PromptData, PipeData, PipelineData], Field(discriminator='type')]

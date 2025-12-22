@@ -1,11 +1,15 @@
 import importlib
 from pathlib import Path
+from typing import TYPE_CHECKING
 from ..log import log
 from .constant import NodeColorStyle, NodeShape, Data
 
+if TYPE_CHECKING:
+    from .node import Node
+
 
 class Base:
-    registered_nodes = []
+    registered_nodes: list["Node"] = []
     mermaid_style = NodeColorStyle.default
     mermaid_shape = NodeShape.default
     mermaid_inline = "-->"

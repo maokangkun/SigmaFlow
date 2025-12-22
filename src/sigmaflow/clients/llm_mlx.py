@@ -1,5 +1,5 @@
 import os
-from mlx_lm import load, generate
+from mlx_lm import load, generate # type: ignore[import-not-found]
 
 model, tokenizer = load(os.getenv("MLX_MODEL"))
 max_tokens = int(os.getenv("MLX_MAX_TOKENS", 256))

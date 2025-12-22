@@ -360,17 +360,17 @@ class WorkspaceAPI:
 
                 first_message = True
                 while True:
-                    data = await ws.receive()
+                    data = dict(await ws.receive())
                     match data["type"]:
                         case "websocket.receive":
                             if data["text"]:
-                                ret = None
+                                ret: Optional[dict[str, object]] = None
                                 try:
-                                    json_data = json.loads(data["text"])
+                                    json_data = json.loads(str(data["text"]))
                                 except Exception:
                                     log.error("Error parsing JSON")
                                     ret = {"error": "Invalid JSON format"}
-                                    e = Events.ERROR
+                                    e: Events|Types = Events.ERROR
                                 if (
                                     ret is None
                                     and first_message

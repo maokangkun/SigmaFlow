@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from dotenv import load_dotenv
-from sigmaflow import PipelineManager
+from sigmaflow.manager import PipelineManager
 load_dotenv()
 
 test_task = {"demo_pipeline": json.load(open("demo_data.json"))}

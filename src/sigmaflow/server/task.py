@@ -225,7 +225,7 @@ class TaskWorker(threading.Thread):
 
 
 class WSConnectionManager:
-    def __init__(self):
+    def __init__(self) -> None:
         self.active_connections: Dict[str, WebSocket] = {}
 
     async def connect(self, websocket: WebSocket, sid: str):
@@ -354,7 +354,7 @@ class TaskAPI:
                 await ws_manager.send(m)
 
                 while True:
-                    data = await ws.receive()
+                    data = dict(await ws.receive())
                     match data["type"]:
                         case "websocket.receive":
                             if data["text"]:

@@ -1,11 +1,11 @@
 import os
 import asyncio
-import importlib
+import importlib.util
 
 spec = importlib.util.find_spec("vllm")
 
 if spec:
-    from vllm import LLM, SamplingParams
+    from vllm import LLM, SamplingParams # type: ignore[import-not-found]
 
     model_path = os.getenv("VLLM_MODEL")
     max_model_len = int(os.getenv("VLLM_MAX_MODEL_LEN", 256))
@@ -26,7 +26,7 @@ if spec:
     )
 
 batch_wait_time = 1
-batch_queue = []
+batch_queue: list[tuple] = []
 batch_event = asyncio.Event()
 
 

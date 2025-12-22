@@ -1,6 +1,6 @@
 import os
-import torch
-from transformers import pipeline
+import torch # type: ignore[import-not-found]
+from transformers import pipeline # type: ignore[import-not-found]
 
 model_path = os.getenv("MODEL_PATH")
 max_new_tokens = int(os.getenv("MAX_TOKENS", 256))

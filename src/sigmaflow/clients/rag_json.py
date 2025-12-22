@@ -1,7 +1,7 @@
 import os
 import json
 
-json_file = os.getenv("RAG_JSON")
+json_file = os.getenv("RAG_JSON", "rag.json")
 data = json.load(open(json_file, "r"))
 
 

@@ -1,10 +1,12 @@
 import asyncio
 import traceback
 import pandas as pd
+from typing import Any
+from asyncio import Queue
 from copy import deepcopy
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from .constant import PromptData, PipeData, PipelineData
+from .constant import PData
 
 
 def post_progress(result):
@@ -39,10 +41,10 @@ class PipelineAPI:
             except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
-        @router.post("/update/{item}")
-        async def update_item(item: str, p_data: PromptData | PipeData):
+        @router.post("/update")
+        async def update_item(p_data: PData):
             try:
-                match item:
+                match p_data.type:
                     case "prompt":
                         if p_data.text:
                             prompt_manager.prompts[p_data.name].text = p_data.text
@@ -55,7 +57,7 @@ class PipelineAPI:
                                 "keys": prompt_manager.prompts[p_data.name].keys,
                             }
                         }
-                    case "pipeline":
+                    case "pipe":
                         ret = {
                             "result": pipeline_manager.update_pipe(
                                 p_data.name, p_data.data
@@ -80,11 +82,12 @@ class PipelineAPI:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.post("/run/{pipe_name}")
-        async def run_pipe(pipe_name: str, p_data: PipelineData):
+        async def run_pipe(pipe_name: str, p_data: PData):
+            assert p_data.type == 'pipeline'
             try:
                 pipe = deepcopy(pipeline_manager.pipes[pipe_name])
                 if p_data.stream:
-                    queue = asyncio.Queue()
+                    queue: Queue[Any] = Queue()
                     msg_func = lambda out: asyncio.create_task(queue.put(out)) # noqa: E731
                     pipe.add_node_finish_callback(callbacks=[msg_func])
 

@@ -3,6 +3,7 @@ import copy
 import importlib
 import collections
 from pathlib import Path
+from typing import Optional, Any
 import multiprocessing as mp
 from functools import reduce
 from ..log import log
@@ -17,7 +18,7 @@ class Graph:
         rag_backend,
         prompt_manager,
         name=None,
-        pipeconf: dict = None,
+        pipeconf: Optional[dict] = None,
         pipefile=None,
         run_mode="async",
     ):
@@ -28,16 +29,16 @@ class Graph:
         self.rag_backend = rag_backend
         self.run_mode = run_mode
         self.is_async = run_mode == "async"
-        self.perf = []
+        self.perf: list[tuple] = []
         if pipeconf is None and pipefile is not None:
             self.load(pipefile)
 
-        self.start_nodes = []
-        self.required_inputs = []
+        self.start_nodes: list[Node] = []
+        self.required_inputs: list[str] = []
         self.prompt_manager = prompt_manager
-        self.pipe_manager = {}
-        self.node_manager = {}
-        self.node_type = collections.defaultdict(set)
+        self.pipe_manager: dict[str, Any] = {} # this need to remove
+        self.node_manager: dict[str, Node] = {}
+        self.node_type: dict[Node, set] = collections.defaultdict(set)
         if run_mode == "mp":
             self.mp_manager = mp.Manager()
             self.mp_lock = self.mp_manager.Lock()

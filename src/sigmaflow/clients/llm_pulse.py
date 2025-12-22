@@ -7,7 +7,7 @@ from . import llm_sem
 
 pulse_model = os.getenv("PULSE_MODEL")
 pulse_token = os.getenv("PULSE_TOKEN")
-pulse_url = os.getenv("PULSE_URL")
+pulse_url = str(os.getenv("PULSE_URL"))
 max_tokens = int(os.getenv("PULSE_MAX_TOKENS", 2048))
 retry_count = int(os.getenv("PULSE_RETRY_COUNT", 5))
 repetition_penalty = float(os.getenv("PULSE_REPETITION_PENALTY", 1))

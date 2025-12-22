@@ -1,11 +1,11 @@
 import os
 import asyncio
-import importlib
+import importlib.util
 
 spec = importlib.util.find_spec("lmdeploy")
 
 if spec:
-    from lmdeploy import (
+    from lmdeploy import ( # type: ignore[import-not-found]
         pipeline,
         GenerationConfig,
         TurbomindEngineConfig,
@@ -36,7 +36,7 @@ if spec:
     )
 
 batch_wait_time = 1
-batch_queue = []
+batch_queue: list[tuple] = []
 batch_event = asyncio.Event()
 
 

@@ -3,14 +3,14 @@ import sys
 import asyncio
 
 sys.path.append("/Users/mkk/workspace/git_repos/mlx_parallm")
-from mlx_parallm.utils import load, batch_generate
+from mlx_parallm.utils import load, batch_generate # type: ignore[import-not-found]
 
 model, tokenizer = load(os.getenv("MLX_MODEL"))
 max_tokens = int(os.getenv("MLX_MAX_TOKENS", 256))
 batch_size = int(os.getenv("MLX_BATCH_SIZE", 128))
 
 batch_wait_time = 1
-batch_queue = []
+batch_queue: list[tuple] = []
 batch_event = asyncio.Event()
 
 

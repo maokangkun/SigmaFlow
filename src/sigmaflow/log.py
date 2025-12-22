@@ -1,13 +1,15 @@
 import os
+import time
 import logging
 import datetime
 from pathlib import Path
+from typing import Optional
 from rich.console import Console
 from rich.logging import RichHandler
 from logging.handlers import RotatingFileHandler
 
 
-def beijing(sec, what):
+def beijing(sec: Optional[float] = None) -> time.struct_time:
     beijing_time = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
     return beijing_time.timetuple()
 
@@ -23,7 +25,7 @@ log_dir = Path(LOG_DIR)
 rh = RichHandler(console=Console(stderr=True))
 rh.setFormatter(logging.Formatter(LOGFORMAT_RICH))
 logging.Formatter.converter = beijing
-handlers = [rh]
+handlers: list[logging.Handler] = [rh]
 
 if SAVE_LOG:
     log_dir.mkdir(exist_ok=True, parents=True)
@@ -33,23 +35,21 @@ if SAVE_LOG:
 logging.basicConfig(
     level=LOG_LEVEL, format=LOGFORMAT, datefmt="[%y-%m-%d %H:%M:%S]", handlers=handlers
 )
-log = logging.getLogger("SigmaFlow")
 
+class SigmaFlowLogger(logging.Logger):
+    def banner(self, text: str, separate: bool = True) -> None:
+        n = len(text)
+        t = (
+            ("\n" if separate else "")
+            + "-" * (4 + n)
+            + "\n| "
+            + text
+            + " |\n"
+            + "-" * (4 + n)
+        )
+        self.debug(t)
 
-def _banner_print(text, separate=True):
-    n = len(text)
-    t = (
-        ("\n" if separate else "")
-        + "-" * (4 + n)
-        + "\n| "
-        + text
-        + " |\n"
-        + "-" * (4 + n)
-    )
-    log.debug(t)
-
-
-log.banner = _banner_print
-
+logging.setLoggerClass(SigmaFlowLogger)
 logging.getLogger("openai").setLevel(logging.WARNING)
 logging.getLogger("openai._base_client").setLevel(logging.WARNING)
+log = logging.getLogger("SigmaFlow")
