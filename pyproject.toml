@@ -80,3 +80,8 @@ version = {attr = "sigmaflow.version.__version__"}
     "dist/*",
     "dist/**/*",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"
