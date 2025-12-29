@@ -370,7 +370,7 @@ class WorkspaceAPI:
                                 except Exception:
                                     log.error("Error parsing JSON")
                                     ret = {"error": "Invalid JSON format"}
-                                    e: Events|Types = Events.ERROR
+                                    e: Events | Types = Events.ERROR
                                 if (
                                     ret is None
                                     and first_message

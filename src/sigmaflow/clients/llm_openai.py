@@ -2,6 +2,7 @@ import os
 from openai import AsyncOpenAI
 from ..utils import sync_compat
 
+
 def llm_client(is_async=False):
     return completion
 

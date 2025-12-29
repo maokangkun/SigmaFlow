@@ -1,5 +1,6 @@
 import re
 import os
+import ast
 import sys
 import json
 import uuid
@@ -308,12 +309,17 @@ def mmdc(mermaid, img):
         with open(tmp_file, "w") as f:
             f.write(mermaid)
         log.debug(f"Save mermaid in: {tmp_file}")
-        subprocess.run(
-            ["mmdc", "-i", tmp_file, "-o", img, "-s", "3"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        log.debug(f"Save {img}")
+        try:
+            subprocess.run(
+                ["mmdc", "-i", tmp_file, "-o", img, "-s", "3"],
+                capture_output=True,  # 同时捕获stdout和stderr
+                text=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            log.error(f"mmdc命令执行失败，错误信息：{e.stderr}")
+        else:
+            log.debug(f"Save {img}")
     else:
         log.warning("Please install mmdc to generate mermaid images.")
 
@@ -360,6 +366,12 @@ def extract_json(text, remove_think=True):
 
     if remove_think:
         text = remove_think_content(text)
+
+    try:
+        j = ast.literal_eval(text)
+        return j
+    except Exception:
+        pass
 
     try:
         j = json.loads(text)

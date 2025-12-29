@@ -3,7 +3,7 @@ import sys
 import asyncio
 
 sys.path.append("/Users/mkk/workspace/git_repos/mlx_parallm")
-from mlx_parallm.utils import load, batch_generate # type: ignore[import-not-found]
+from mlx_parallm.utils import load, batch_generate  # type: ignore[import-not-found]
 
 model, tokenizer = load(os.getenv("MLX_MODEL"))
 max_tokens = int(os.getenv("MLX_MAX_TOKENS", 256))

@@ -19,33 +19,42 @@ class CodeNode(Node):
 
     async def current_task(self, data, queue, dynamic_tasks):
         inps = await self.get_inps(queue)
-        if "code_entry" in self.conf:
-            local = {}
-            exec(self.conf["code"], local)  # PEP 667
-            out = local[self.conf["code_entry"]](*inps)
-        elif "code_func" in self.conf:
-            out = self.conf["code_func"](*inps)
-        else:
-            inps_dict = {
-                k: self._eval_format(v) for k, v in zip(self.conf["inp"], inps)
-            }
-            out = eval(self.conf["code"].format(**inps_dict))
+        code = self.conf["code"]
+        if callable(code):
+            out = code(*inps)
+        elif type(code) is str:
+            if "def" in code:
+                func_name = code.split("def ")[1].split("(")[0].strip()
+                local = {}
+                exec(code, local)
+                out = local[func_name](*inps)
+            else:
+                inps_dict = {
+                    k: self._eval_format(v)
+                    for k, v in zip(self.conf.get("inp", []), inps)
+                }
+                out = eval(code.format(**inps_dict))
+
         self.set_out(out, data, queue)
         log.debug(f"{self.conf['out']}: {out}")
         self.execute_finish_callback(out)
 
     def current_mp_task(self, inps, data, queue, config=None):
-        if "code_entry" in self.conf:
-            local = {}
-            exec(self.conf["code"], local)
-            out = local[self.conf["code_entry"]](*inps)
-        elif "code_func" in self.conf:
-            out = self.conf["code_func"](*inps)
-        else:
-            inps_dict = {
-                k: self._eval_format(v) for k, v in zip(self.conf["inp"], inps)
-            }
-            out = eval(self.conf["code"].format(**inps_dict))
+        code = self.conf["code"]
+        if callable(code):
+            out = code(*inps)
+        elif type(code) is str:
+            if "def" in code:
+                func_name = code.split("def ")[1].split("(")[0].strip()
+                local = {}
+                exec(code, local)
+                out = local[func_name](*inps)
+            else:
+                inps_dict = {
+                    k: self._eval_format(v)
+                    for k, v in zip(self.conf.get("inp", []), inps)
+                }
+                out = eval(code.format(**inps_dict))
         self.set_out(out, data, config=config)
         log.debug(f"{self.conf['out']}: {out}")
         self.execute_finish_callback(out)
@@ -53,23 +62,28 @@ class CodeNode(Node):
             queue.put((n.name, config))
 
     def current_seq_task(self, inps, data, queue):
-        if "code_entry" in self.conf:
-            local = {}
-            exec(self.conf["code"], local)
+        code = self.conf["code"]
+        if callable(code):
             if "inp" not in self.conf:
-                out = local[self.conf["code_entry"]]()
+                out = code()
             else:
-                out = local[self.conf["code_entry"]](*inps)
-        elif "code_func" in self.conf:
-            if "inp" not in self.conf:
-                out = self.conf["code_func"]()
+                out = code(*inps)
+        elif type(code) is str:
+            if "def" in code:
+                func_name = code.split("def ")[1].split("(")[0].strip()
+                local = {}
+                exec(code, local)
+                if "inp" not in self.conf:
+                    out = local[func_name]()
+                else:
+                    out = local[func_name](*inps)
             else:
-                out = self.conf["code_func"](*inps)
-        else:
-            inps_dict = {
-                k: self._eval_format(v) for k, v in zip(self.conf.get("inp", []), inps)
-            }
-            out = eval(self.conf["code"].format(**inps_dict))
+                inps_dict = {
+                    k: self._eval_format(v)
+                    for k, v in zip(self.conf.get("inp", []), inps)
+                }
+                out = eval(code.format(**inps_dict))
+
         self.set_out(out, data)
         log.debug(f"{self.conf['out']}: {out}")
         self.execute_finish_callback(out)

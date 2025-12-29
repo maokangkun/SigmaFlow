@@ -12,24 +12,25 @@ class WebNode(Node):
         return "web" in conf
 
     def post_init(self):
-        tree = self.tree
+        graph = self.graph
         search_pipe = None
-        if tree.is_async:
+        if graph.is_async:
             if "search_engine" in self.conf["web"]:
                 search_pipe = SearchBlock(self.name, **self.conf["web"])
             browser_pipe = BrowserBlock(self.name)
         else:
             if "search_engine" in self.conf["web"]:
-                search_pipe = SearchBlock(
-                    self.name,
-                    lock=tree.mp_lock,
-                    run_time=tree.mp_manager.list(),
-                    inout_log=tree.mp_manager.list(),
-                    **self.conf,
-                )
+                # search_pipe = SearchBlock(
+                #     self.name,
+                #     lock=graph.mp_lock,
+                #     run_time=graph.mp_manager.list(),
+                #     inout_log=graph.mp_manager.list(),
+                #     **self.conf,
+                # )
+                search_pipe = ...
             browser_pipe = BrowserBlock(self.name)
 
-        tree.pipe_manager[self.name] = {"search": search_pipe, "browser": browser_pipe}
+        graph.pipe_manager[self.name] = {"search": search_pipe, "browser": browser_pipe}
         self.search_pipe = search_pipe
         self.browser_pipe = browser_pipe
 

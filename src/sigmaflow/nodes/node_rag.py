@@ -13,32 +13,26 @@ class RAGNode(Node):
         return "rag_param" in conf
 
     def post_init(self):
-        tree = self.tree
-        if self.conf.get("backend", None):
-            backend = self.conf["backend"]
-        elif constructor := self.conf.get("backend_construct", None):
-            backend = constructor(tree.run_mode)
-        else:
-            backend = tree.rag_backend
+        graph = self.graph
+
+        if "rag" not in self.conf:
+            self.conf["rag"] = graph.config.get("rag")
 
         if param := self.conf.get("rag_param", None):
-            rag_backend = partial(backend, **dict(param))
-        else:
-            rag_backend = backend
+            self.conf["rag"] = partial(self.conf["rag"], **dict(param))
 
-        if tree.run_mode == "mp":
+        if graph.run_mode == "mp":
             pipe = RAGBlock(
                 self.name,
-                rag=rag_backend,
-                lock=tree.mp_lock,
-                run_time=tree.mp_manager.list(),
-                inout_log=tree.mp_manager.list(),
+                lock=graph.mp_lock,
+                run_time=graph.mp_manager.list(),
+                inout_log=graph.mp_manager.list(),
                 **self.conf,
             )
         else:
-            pipe = RAGBlock(self.name, rag=rag_backend, **self.conf)
+            pipe = RAGBlock(self.name, **self.conf)
 
-        tree.pipe_manager[self.name] = pipe
+        graph.pipe_manager[self.name] = pipe
         self.pipe = pipe
 
     def export_as_comfyui(self):

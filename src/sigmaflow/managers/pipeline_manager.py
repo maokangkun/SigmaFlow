@@ -40,6 +40,11 @@ class PipelineManager:
         log.debug(f"Start load pipelines from: {self.pipes_dir}")
         sys.path.append(str(self.pipes_dir))
         pipe_files = list(self.pipes_dir.glob(f"*{self.pipeline_suffix}.py"))
+        # 对pipe_files进行排序，确保被依赖的pipeline先加载
+        pipe_files.sort(
+            key=lambda pf: "subgraph" in open(pf, "r", encoding="utf-8").read()
+        )
+
         log.debug(
             f"Find {len(pipe_files)} pipeline files: {[p.stem.removesuffix(self.pipeline_suffix) for p in pipe_files]}"
         )
@@ -85,6 +90,8 @@ class PipelineManager:
             self.rag_client = rag_client(is_async=self.run_mode == "async")
 
     def add_pipe(self, name, pipeconf=None, pipefile=None, run_mode=None):
+        name = name.removesuffix(self.pipeline_suffix)
+
         if pipefile:
             if type(pipefile) is str:
                 pipefile = Path(pipefile)
@@ -110,6 +117,7 @@ class PipelineManager:
             p = Pipeline(
                 self.llm_client,
                 self.rag_client,
+                self,
                 self.prompt_manager,
                 pipeconf=pipeconf,
                 pipefile=pipefile,

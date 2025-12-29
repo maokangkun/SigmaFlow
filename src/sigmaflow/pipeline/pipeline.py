@@ -15,6 +15,7 @@ class Pipeline:
         self,
         llm_backend,
         rag_backend,
+        pipeline_manager,
         prompt_manager,
         pipeconf=None,
         pipefile=None,
@@ -30,8 +31,7 @@ class Pipeline:
         self.hash = calc_hash()
         if pipeconf or pipefile:
             self.pipegraph = PipeGraph(
-                llm_backend,
-                rag_backend,
+                pipeline_manager,
                 prompt_manager,
                 pipeconf=pipeconf,
                 pipefile=pipefile,
@@ -103,7 +103,7 @@ class Pipeline:
                 result = self.pipegraph.mp_run(data, core_num)
             case _:
                 log.debug(f"Run '{self.name}' pipeline in sequential")
-                result = self.pipegraph.normal_run(data)
+                result = self.pipegraph.seq_run(data)
         for k in result:
             if isinstance(result[k], pd.DataFrame):
                 result[k] = result[k].to_dict(orient="records")
@@ -139,7 +139,17 @@ class Pipeline:
                             results += await asyncio.gather(*tasks)
                     return results
 
+                start_t = time.time()
                 results = asyncio.run(f())
+                for r in results:
+                    for k in r:
+                        if isinstance(r[k], pd.DataFrame):
+                            r[k] = r[k].to_dict(orient="records")
+                log.debug(
+                    f"final out:\n{json.dumps(results, indent=4, ensure_ascii=False)}"
+                )
+                _ = self.gen_info(results, start_t, save_perf)
+
                 return [(r, None) for r in results]
             else:
                 all_result = [
@@ -191,7 +201,7 @@ class Pipeline:
         return ret, len(pipe.run_time) if pipe else node.run_cnt
 
     def to_png(self, pipe_img):
-        pipe_mermaid = self.pipegraph.tree2mermaid()
+        pipe_mermaid = self.pipegraph.graph2mermaid()
         mmdc(pipe_mermaid, pipe_img)
 
     def add_node_finish_callback(self, callbacks, nodes=None):

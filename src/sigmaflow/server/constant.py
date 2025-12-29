@@ -81,4 +81,6 @@ class WorkspacePromptData(BaseModel):
     prompt_id: str | None = None
 
 
-PData = Annotated[Union[PromptData, PipeData, PipelineData], Field(discriminator='type')]
+PData = Annotated[
+    Union[PromptData, PipeData, PipelineData], Field(discriminator="type")
+]

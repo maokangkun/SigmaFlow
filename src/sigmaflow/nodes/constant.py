@@ -19,6 +19,11 @@ class Color:
     LightYellow = "#FFFFAD"
     Black2 = "#3D3E3F"
     Orange = "#f96"
+    LightBlue = "#E2EEFA"
+    LightPurple = "#E6DAF8"
+    Skin = "#EFC2A2"
+    Blue = "#4A90E2"
+    LightGray = "#F5F5F5"
 
 
 class NodeColorStyle:
@@ -31,31 +36,38 @@ class NodeColorStyle:
     WebNode = f"fill:{Color.LightPink},color:{Color.Black}"
     ValueNode = f"fill:{Color.LightGreen},color:{Color.Black}"
     ExitNode = f"fill:{Color.Black2},color:{Color.White}"
-    FileNode = f"fill:{Color.Khaki},color:{Color.Black}"
-    Data = f"fill:{Color.Green},color:{Color.Black}"
+    FileNode = f"fill:{Color.Skin},color:{Color.Black}"
+    MCPNode = f"fill:{Color.LightBlue},stroke:{Color.Blue},stroke-dasharray:5 5,stroke-width:2px"
+    APINode = f"fill:{Color.LightPurple},color:{Color.Black}"
+    SubGraphNode = f"fill:{Color.LightGray},stroke:{Color.Blue},stroke-dasharray:5 5,stroke-width:2px"
+    DatabaseNode = f"fill:{Color.Orange},color:{Color.Black}"
     InputData = f"fill:{Color.RED},color:{Color.Black}"
+    OutputData = f"fill:{Color.Green},color:{Color.Black}"
 
 
 class NodeShape:
-    default = '{x}["{x}"]'  # 矩形
-    LLMNode = '{x}["{x}"]'
-    RAGNode = '{x}("{x}")'  # 圆角矩形
-    LoopNode = '{x}(("{x}"))'  # 圆形
+    default = '{x}["{x}"]'
+    LLMNode = '{x}["{x}<br><font size=2>[{llm}] {model}</font>"]'
+    RAGNode = '{x}@{{shape: docs, label: "{x}"}}'
+    # LoopNode = '{x}(("{x}"))'
     BranchNode = '{x}{{"{x}"}}'
     CodeNode = '{x}[/"{x}"/]'
-    WebNode = '{x}("{x}")'
-    ValueNode = '{n}{{{{"{x}"}}}}'
+    WebNode = '{x}@{{shape: procs, label: "{x}"}}'
+    ValueNode = '{n}@{{shape: notch-rect, label: "{n}\\n{x}"}}'
     ExitNode = '{x}[["{x}"]]'
-    FileNode = '{x}["{x}"]'
-    Data = '{x}(["{x}"])'
+    FileNode = '{x}@{{shape: div-rect, label: "{x}"}}'
+    # MCPNode = '{x}("{x}")'
+    APINode = '{x}>"{x}"]'
+    DatabaseNode = '{x}@{{shape: cyl, label: "{x}"}}'
     InputData = '{x}(["{x}"])'
-
-
-class Data:
-    mermaid_style = NodeColorStyle.Data
-    mermaid_shape = NodeShape.Data
+    OutputData = '{x}(["{x}"])'
 
 
 class InputData:
     mermaid_style = NodeColorStyle.InputData
     mermaid_shape = NodeShape.InputData
+
+
+class OutputData:
+    mermaid_style = NodeColorStyle.OutputData
+    mermaid_shape = NodeShape.OutputData

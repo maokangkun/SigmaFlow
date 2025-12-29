@@ -2,12 +2,11 @@ import copy
 import asyncio
 import collections
 from .node import Node
-from .constant import NodeColorStyle, NodeShape, DataState
+from .constant import NodeColorStyle, DataState
 
 
 class LoopNode(Node):
     mermaid_style = NodeColorStyle.LoopNode
-    mermaid_shape = NodeShape.LoopNode
 
     @staticmethod
     def match(conf):
@@ -37,12 +36,13 @@ class LoopNode(Node):
                 self.mermaid_inline,
                 None,
                 self.name,
-                NodeColorStyle.LoopNode,
+                self.mermaid_style,
             )
         )
 
         defines = []
-        subg = [(self.name, *self.conf["pipe_in_loop"])]
+        loop_outs = self.get_loop_outs()
+        subg = [(self.name, *self.conf["pipe_in_loop"], *loop_outs)]
 
         return defines, links, subg
 

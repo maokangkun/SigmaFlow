@@ -3,19 +3,18 @@ import copy
 import importlib
 import collections
 from pathlib import Path
-from typing import Optional, Any
 import multiprocessing as mp
 from functools import reduce
+from typing import Optional, Any
 from ..log import log
 from ..nodes import Node
-from ..nodes.constant import Data, InputData
+from ..nodes.constant import InputData, OutputData
 
 
 class Graph:
     def __init__(
         self,
-        llm_backend,
-        rag_backend,
+        pipeline_manager,
         prompt_manager,
         name=None,
         pipeconf: Optional[dict] = None,
@@ -25,8 +24,7 @@ class Graph:
         self.name = name
         self.pipeconf = pipeconf
         self.pipefile = pipefile
-        self.llm_backend = llm_backend
-        self.rag_backend = rag_backend
+        self.config = {}
         self.run_mode = run_mode
         self.is_async = run_mode == "async"
         self.perf: list[tuple] = []
@@ -35,8 +33,9 @@ class Graph:
 
         self.start_nodes: list[Node] = []
         self.required_inputs: list[str] = []
+        self.pipeline_manager = pipeline_manager
         self.prompt_manager = prompt_manager
-        self.pipe_manager: dict[str, Any] = {} # this need to remove
+        self.pipe_manager: dict[str, Any] = {}  # this need to remove
         self.node_manager: dict[str, Node] = {}
         self.node_type: dict[Node, set] = collections.defaultdict(set)
         if run_mode == "mp":
@@ -69,7 +68,7 @@ class Graph:
 
     def _find_start_nodes(self):
         conf = self.pipeconf
-        deps = set(["exit"])
+        deps = set(["CONFIG", "exit"])
         for p in conf:
             if nt := conf[p].get("next", None):
                 if type(nt) is dict:
@@ -87,6 +86,8 @@ class Graph:
         self.start_nodes = [self.node_manager[i] for i in list(set(conf.keys()) - deps)]
 
     def _init(self):
+        if "CONFIG" not in self.pipeconf:
+            self.pipeconf["CONFIG"] = {}
         if "exit" not in self.pipeconf:
             self.pipeconf["exit"] = {}
         for name, conf in self.pipeconf.items():
@@ -100,10 +101,10 @@ class Graph:
         for n in self.node_manager.values():
             n.update(self.node_manager)
             self.node_type[n.__class__].add(n.name)
-            self.node_type[Data].update(n.mermaid_data)
+            self.node_type[OutputData].update(n.mermaid_data)
             all_outs.update(n.mermaid_outs)
 
-        self.required_inputs = self.node_type[Data] - all_outs
+        self.required_inputs = self.node_type[OutputData] - all_outs
         self.node_type[InputData] = self.required_inputs
 
         self._find_start_nodes()
@@ -127,8 +128,19 @@ class Graph:
         for node in self.node_manager.values():
             node.reset()
 
-    def tree2mermaid(self, info=None):
-        mermaid = "graph TD"
+    def graph2mermaid(self, info=None):
+        conf = self.config.get("mermaid", {})
+        mermaid_config = (
+            "---\n"
+            "config:\n"
+            f"  layout: {conf.get('layout', 'elk')}\n"
+            f"  look: {conf.get('look', 'classic')}\n"
+            "  elk:\n"
+            f"    mergeEdges: {str(conf.get('elk', {}).get('mergeEdges', 'false')).lower()}\n"
+            f"    nodePlacementStrategy: {conf.get('elk', {}).get('nodePlacementStrategy', 'BRANDES_KOEPF')}\n"
+            "---\n"
+        )
+        mermaid = mermaid_config + "graph TD"
         indent = " " * 4
         defines = set()
         links = set()
@@ -189,9 +201,11 @@ class Graph:
         mermaid += f"\n{indent}%% ================"
         mermaid += f"\n{indent}%% Subgraph section"
         mermaid += f"\n{indent}%% ================\n"
+        subg = []
         for i in subgraphs:
-            sub_items = "\n".join([indent * 2 + j for j in i[1:]])
-            mermaid += f"{indent}subgraph {i[0]}\n{sub_items}\n{indent}end\n"
+            sub_items = "\n".join([indent * 2 + j for j in i[1:] if j is not None])
+            subg.append(f"{indent}subgraph {i[0]}\n{sub_items}\n{indent}end\n")
+        mermaid += "\n".join(subg)
 
         mermaid += f"\n{indent}%% ========================"
         mermaid += f"\n{indent}%% Style definition section"
@@ -247,8 +261,12 @@ class Graph:
             return {"error_msg": error_msg}
 
     def __str__(self):
-        loop_num = sum([n.__class__.__name__ == "LoopNode" for n in self.node_manager.values()])
-        branch_num = sum([n.__class__.__name__ == "BranchNode" for n in self.node_manager.values()])
+        loop_num = sum(
+            [n.__class__.__name__ == "LoopNode" for n in self.node_manager.values()]
+        )
+        branch_num = sum(
+            [n.__class__.__name__ == "BranchNode" for n in self.node_manager.values()]
+        )
         return f"<Graph '{self.name}': nodes: {len(self.node_manager)}, loop: {loop_num}, branch: {branch_num}>"
 
     def __repr__(self):

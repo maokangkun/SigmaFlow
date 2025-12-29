@@ -36,6 +36,7 @@ logging.basicConfig(
     level=LOG_LEVEL, format=LOGFORMAT, datefmt="[%y-%m-%d %H:%M:%S]", handlers=handlers
 )
 
+
 class SigmaFlowLogger(logging.Logger):
     def banner(self, text: str, separate: bool = True) -> None:
         n = len(text)
@@ -48,6 +49,7 @@ class SigmaFlowLogger(logging.Logger):
             + "-" * (4 + n)
         )
         self.debug(t)
+
 
 logging.setLoggerClass(SigmaFlowLogger)
 logging.getLogger("openai").setLevel(logging.WARNING)

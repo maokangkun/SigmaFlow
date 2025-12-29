@@ -5,7 +5,7 @@ import importlib.util
 spec = importlib.util.find_spec("vllm")
 
 if spec:
-    from vllm import LLM, SamplingParams # type: ignore[import-not-found]
+    from vllm import LLM, SamplingParams  # type: ignore[import-not-found]
 
     model_path = os.getenv("VLLM_MODEL")
     max_model_len = int(os.getenv("VLLM_MAX_MODEL_LEN", 256))

@@ -87,7 +87,7 @@ class PipeGraph(Graph):
         self.node_manager["exit"].reformat(data)
         return data
 
-    def normal_run(self, inp_data):
+    def seq_run(self, inp_data):
         self.reset()
         if err := self.check_inp(inp_data):
             return err

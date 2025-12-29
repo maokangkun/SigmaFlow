@@ -1,6 +1,6 @@
 from ..log import log
 from .node import Node
-from .constant import NodeColorStyle, NodeShape, Data, DataState
+from .constant import NodeColorStyle, NodeShape, OutputData, DataState
 
 
 class ValueNode(Node):
@@ -12,7 +12,7 @@ class ValueNode(Node):
         return "value" in conf or "item" in conf
 
     def _get_mermaid_defines(self):
-        data_defs = [Data.mermaid_shape.format(x=d) for d in self.mermaid_data]
+        data_defs = [OutputData.mermaid_shape.format(x=d) for d in self.mermaid_data]
         n = 25
         if "value" in self.conf:
             t = str(self.conf["value"])
@@ -20,8 +20,8 @@ class ValueNode(Node):
             t = self.conf["item"]
         if len(t) > n:
             t = t[:n] + "..."
-        m = {"append": "\\+", "assign": "="}[self.conf.get("mode", "assign")]
-        d = f"{self.name}\n{m} {t}"
+        m = {"append": "+", "assign": "="}[self.conf.get("mode", "assign")]
+        d = f"{m} {t}"
         return [self.__class__.mermaid_shape.format(n=self.name, x=d)] + data_defs
 
     def get_inps_mp(self, data, config=None):

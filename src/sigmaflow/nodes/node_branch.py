@@ -18,30 +18,25 @@ class BranchNode(Node):
         if "use_llm" not in self.conf:
             self.conf["use_llm"] = False
         if self.conf["use_llm"]:
-            tree = self.tree
-            self.conf["prompt"] = tree.prompt_manager.prompts["branch_node_prompt"]
+            graph = self.graph
+            self.conf["prompt"] = graph.prompt_manager.prompts["branch_node_prompt"]
             self.conf["return_json"] = True
             self.conf["format"] = {"item_id": str}
 
-            if self.conf.get("backend", None):
-                backend = self.conf["backend"]
-            elif constructor := self.conf.get("backend_construct", None):
-                backend = constructor(tree.run_mode)
-            else:
-                backend = tree.llm_backend
+            if "llm" not in self.conf:
+                self.conf["llm"] = graph.config.get("llm")
 
-            if tree.run_mode == "mp":
+            if graph.run_mode == "mp":
                 pipe = LLMBlock(
                     self.name,
-                    llm=backend,
-                    lock=tree.mp_lock,
-                    run_time=tree.mp_manager.list(),
-                    inout_log=tree.mp_manager.list(),
+                    lock=graph.mp_lock,
+                    run_time=graph.mp_manager.list(),
+                    inout_log=graph.mp_manager.list(),
                     **self.conf,
                 )
             else:
-                pipe = LLMBlock(self.name, llm=backend, **self.conf)
-            tree.pipe_manager[self.name] = pipe
+                pipe = LLMBlock(self.name, **self.conf)
+            graph.pipe_manager[self.name] = pipe
             self.pipe = pipe
 
     def update(self, nodes):

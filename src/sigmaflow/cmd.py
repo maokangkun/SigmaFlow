@@ -33,7 +33,7 @@ def setup_args():
         default="openai",
         help="specify the llm backend",
     )
-    parser.add_argument("--model", type=str, help="specify the model path")
+    parser.add_argument("--model", type=str, help="specify the model name or path")
     parser.add_argument(
         "--rag",
         type=str,

@@ -87,7 +87,7 @@ class Node(Base):
     def set_out(self, out, data, queue=None, config=None):
         def set_data(k, v, config, queue):
             if config:
-                with self.tree.mp_lock:
+                with self.graph.mp_lock:
                     i = config["loop_index"][k]
                     pre = data[k]
                     pre[i] = v
@@ -159,7 +159,7 @@ class Node(Base):
             await self.add_task(data, queue, dynamic_tasks)
             await self.current_task(data, queue, dynamic_tasks)
             log.banner(f"Leave async task: {self.name}, cnt: {cnt}")
-            self.tree.perf.append(("coroutine", self.name, start_time, time.time()))
+            self.graph.perf.append(("coroutine", self.name, start_time, time.time()))
 
     async def replay(self, data):
         self.run_cnt += 1
@@ -201,13 +201,13 @@ class Node(Base):
             log.banner(f"Enter task: {self.name}, cnt: {self.run_cnt}")
             self.current_seq_task(inps, data, queue)
             log.banner(f"Leave task: {self.name}, cnt: {self.run_cnt}")
-            self.tree.perf.append(("seq", self.name, start_time, time.time()))
+            self.graph.perf.append(("seq", self.name, start_time, time.time()))
         else:
             queue.append(self)
 
     @property
     def run(self):
-        match self.tree.run_mode:
+        match self.graph.run_mode:
             case "async":
                 return self.async_run
             case "mp":

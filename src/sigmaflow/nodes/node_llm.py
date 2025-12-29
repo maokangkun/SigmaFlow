@@ -1,7 +1,7 @@
 from .node import Node
 from ..prompts import Prompt
 from ..blocks import LLMBlock
-from .constant import NodeColorStyle, NodeShape
+from .constant import NodeColorStyle, NodeShape, OutputData
 
 
 class LLMNode(Node):
@@ -13,30 +13,46 @@ class LLMNode(Node):
         return "prompt" in conf
 
     def post_init(self):
-        tree = self.tree
+        graph = self.graph
         if type(self.conf["prompt"]) is not Prompt:
-            self.conf["prompt"] = tree.prompt_manager.get(self.conf["prompt"])
+            k = ["{" + i + "}" for i in self.conf["inp"]]
+            if k[0] in self.conf["prompt"]:
+                p = {
+                    "prompt": self.conf["prompt"],
+                    "keys": k,
+                }
+            else:
+                p = self.conf["prompt"]
+            self.conf["prompt"] = graph.prompt_manager.get(p)
 
-        if self.conf.get("backend", None):
-            backend = self.conf["backend"]
-        elif constructor := self.conf.get("backend_construct", None):
-            backend = constructor(tree.run_mode)
-        else:
-            backend = tree.llm_backend
+        if "llm" not in self.conf:
+            self.conf["llm"] = graph.config.get("llm")
+        if "model" not in self.conf:
+            self.conf["model"] = graph.config.get("model")
 
-        if tree.run_mode == "mp":
+        if graph.run_mode == "mp":
             pipe = LLMBlock(
                 self.name,
-                llm=backend,
-                lock=tree.mp_lock,
-                run_time=tree.mp_manager.list(),
-                inout_log=tree.mp_manager.list(),
+                lock=graph.mp_lock,
+                run_time=graph.mp_manager.list(),
+                inout_log=graph.mp_manager.list(),
                 **self.conf,
             )
         else:
-            pipe = LLMBlock(self.name, llm=backend, **self.conf)
-        tree.pipe_manager[self.name] = pipe
+            pipe = LLMBlock(self.name, **self.conf)
+        graph.pipe_manager[self.name] = pipe
         self.pipe = pipe
+
+    def _get_mermaid_defines(self):
+        llm = (
+            self.conf["llm"].__name__
+            if callable(self.conf["llm"])
+            else self.conf["llm"]
+        )
+        model = self.conf["model"]
+        return [
+            self.__class__.mermaid_shape.format(x=self.name, llm=llm, model=model)
+        ] + [OutputData.mermaid_shape.format(x=d) for d in self.mermaid_data]
 
     def export_as_comfyui(self):
         inps = {i: ["TEXT"] for i in self.pipe.prompt.keys}

@@ -5,7 +5,7 @@ import importlib.util
 spec = importlib.util.find_spec("lmdeploy")
 
 if spec:
-    from lmdeploy import ( # type: ignore[import-not-found]
+    from lmdeploy import (  # type: ignore[import-not-found]
         pipeline,
         GenerationConfig,
         TurbomindEngineConfig,

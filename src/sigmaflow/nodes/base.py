@@ -2,7 +2,7 @@ import importlib
 from pathlib import Path
 from typing import TYPE_CHECKING
 from ..log import log
-from .constant import NodeColorStyle, NodeShape, Data
+from .constant import NodeColorStyle, NodeShape, OutputData
 
 if TYPE_CHECKING:
     from .node import Node
@@ -19,10 +19,10 @@ class Base:
     mermaid_outline_passed = "==>"
     mermaid_toexit_passed = "==o"
 
-    def __init__(self, name, conf, tree=None):
+    def __init__(self, name, conf, graph=None):
         self.name = name
         self.conf = conf
-        self.tree = tree
+        self.graph = graph
         self.run_cnt = 0
         self.max_cnt = self.conf.get("max_cnt", None)
         self.in_loop = None
@@ -64,7 +64,7 @@ class Base:
 
     def _get_mermaid_defines(self):
         return [self.__class__.mermaid_shape.format(x=self.name)] + [
-            Data.mermaid_shape.format(x=d) for d in self.mermaid_data
+            OutputData.mermaid_shape.format(x=d) for d in self.mermaid_data
         ]
 
     def get_mermaid(self, info=None):

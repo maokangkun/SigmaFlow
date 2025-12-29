@@ -83,12 +83,12 @@ class PipelineAPI:
 
         @router.post("/run/{pipe_name}")
         async def run_pipe(pipe_name: str, p_data: PData):
-            assert p_data.type == 'pipeline'
+            assert p_data.type == "pipeline"
             try:
                 pipe = deepcopy(pipeline_manager.pipes[pipe_name])
                 if p_data.stream:
                     queue: Queue[Any] = Queue()
-                    msg_func = lambda out: asyncio.create_task(queue.put(out)) # noqa: E731
+                    msg_func = lambda out: asyncio.create_task(queue.put(out))  # noqa: E731
                     pipe.add_node_finish_callback(callbacks=[msg_func])
 
                     async def run_pipe():

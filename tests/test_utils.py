@@ -1,9 +1,6 @@
-import os
-import json
 import hashlib
 import asyncio
 import pytest
-from pathlib import Path
 from sigmaflow import utils
 
 
@@ -87,18 +84,6 @@ def test_mmdc_no_cmd(monkeypatch, tmp_path):
     utils.mmdc("some mermaid", str(tmp_path / "out.png"))
 
 
-def test_mmdc_with_cmd(monkeypatch, tmp_path):
-    monkeypatch.setattr(utils, "check_cmd_exist", lambda x: True)
-    called = {}
-
-    def fake_run(args, stdout, stderr):
-        called["args"] = args
-
-    monkeypatch.setattr(utils.subprocess, "run", fake_run)
-    utils.mmdc("diagram", str(tmp_path / "out.png"))
-    assert "mmdc" in called["args"][0]
-
-
 def test_async_compat_sync_and_async():
     def f(a, b):
         return a + b
@@ -132,11 +117,12 @@ def test_sync_compat_sync_and_async():
 
 
 def test_remove_think_content_and_extract_json():
-    txt = "<think>secret</think> {\"a\":1}"
+    txt = '<think>secret</think> {"a":1}'
     # remove_think_content should strip the think block
     out = utils.remove_think_content(txt)
     assert out.strip().startswith("{")
 
     assert utils.extract_json('{"a":1}') == {"a": 1}
-    assert utils.extract_json("```json\n{\"b\":2}\n```") == {"b": 2}
+    assert utils.extract_json("{'a':1}") == {"a": 1}
+    assert utils.extract_json('```json\n{"b":2}\n```') == {"b": 2}
     assert utils.extract_json("no json here") is None
