@@ -61,3 +61,9 @@ class Prompt:
             log.debug(f"Save prompt [{self.name}] to: {self.file}")
             with open(self.file, "w") as f:
                 f.write(f'prompt="""{self.text}"""\nkeys={self.keys}')
+
+    def __str__(self):
+        return f"<{self.__class__.__name__}: {self.name}, text: {self.__text}, keys: {self.__keys}>"
+
+    def __repr__(self):
+        return self.__str__()

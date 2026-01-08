@@ -32,7 +32,7 @@ class PipelineManager:
         self.run_mode = run_mode
         self.pipeline_suffix = os.getenv("PIPELINE_SUFFIX", "_pipeline")
         self.pipes = {}
-        self.load_llm_rag_client()
+        # self.load_llm_rag_client()
         self.load_pipes()
 
     def load_pipes(self):
@@ -89,7 +89,7 @@ class PipelineManager:
                     pass
             self.rag_client = rag_client(is_async=self.run_mode == "async")
 
-    def add_pipe(self, name, pipeconf=None, pipefile=None, run_mode=None):
+    def add_pipe(self, name, pipeconf=None, pipefile=None, comfyui_data=None, run_mode=None):
         name = name.removesuffix(self.pipeline_suffix)
 
         if pipefile:
@@ -98,7 +98,7 @@ class PipelineManager:
             sys.path.append(str(pipefile.parent))
 
         p = self._load_pipe(
-            name, pipeconf=pipeconf, pipefile=pipefile, run_mode=run_mode
+            name, pipeconf=pipeconf, pipefile=pipefile, comfyui_data=comfyui_data, run_mode=run_mode
         )
 
         if pipefile:
@@ -106,21 +106,25 @@ class PipelineManager:
 
         return p
 
-    def _load_pipe(self, name, pipeconf=None, pipefile=None, run_mode=None):
+    def _load_pipe(self, name, pipeconf=None, pipefile=None, comfyui_data=None, run_mode=None):
         if (
             pipefile
             and name in self.pipes
-            and calc_hash(pipefile) == self.pipes[name].hash
+            and calc_hash(file=pipefile) == self.pipes[name].hash
+        ) or (
+            comfyui_data
+            and name in self.pipes
+            and calc_hash(obj=comfyui_data) == self.pipes[name].hash
         ):
             p = self.pipes[name]
         else:
             p = Pipeline(
-                self.llm_client,
-                self.rag_client,
                 self,
                 self.prompt_manager,
+                name=name,
                 pipeconf=pipeconf,
                 pipefile=pipefile,
+                comfyui_data=comfyui_data,
                 run_mode=run_mode or self.run_mode,
                 llm_batch_processor=self.llm_batch_processor,
             )
@@ -128,19 +132,7 @@ class PipelineManager:
         return p
 
     def export_pipe_conf(self):
-        conf = {k: copy.deepcopy(p.pipetree.pipeconf) for k, p in self.pipes.items()}
-        for c in conf.values():
-            for pipe_conf in c.values():
-                if "format" in pipe_conf:
-                    for k, v in pipe_conf["format"].items():
-                        pipe_conf["format"][k] = str(v)
-
-                if "prompt" in pipe_conf:
-                    pipe_conf["prompt"] = pipe_conf["prompt"].name
-
-                if "backend_construct" in pipe_conf:
-                    pipe_conf["backend_construct"] = str(pipe_conf["backend_construct"])
-
+        conf = {k: copy.deepcopy(p.pipegraph.export_conf()) for k, p in self.pipes.items()}
         return conf
 
     def update_pipe(self, pipe_name, pipe_data):

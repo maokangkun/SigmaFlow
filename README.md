@@ -122,6 +122,64 @@ section pid_03
 搜索疾病列表: 4118, 1023ms
 ```
 
+```mermaid
+graph TD
+    subgraph Legend
+        direction TB
+        LLMNode["LLM Node"]
+        OutputNode(["Output Node"])
+        InputNode(["Input Node"])
+        LoopNode["Loop Node"]
+        BranchNode{"Branch Node"}
+        ValueNode@{shape: notch-rect, label: "Value Node"}
+        CodeNode[/"Code Node"/]
+        RAGNode@{shape: docs, label: "RAG Node"}
+        APINode>"API Node"]
+        MCPNode["MCP Node"]
+        SubgraphNode["Subgraph Node"]
+        FileNode@{shape: div-rect, label: "File Node"}
+        DataBaseNode@{shape: cyl, label: "DataBase Node"}
+        WebNode@{shape: procs, label: "Web Node"}
+        ExitNode[["Exit Node"]]
+    end
+
+    %% ========================
+    %% Style definition section
+    %% ========================
+    classDef CONFIGNODE color:black
+    class CONFIG CONFIGNODE
+    classDef OUTPUTDATA fill:#9BCFB8,color:black
+    class OutputNode OUTPUTDATA
+    classDef LLMNODE fill:#ECE4E2,color:black,stroke:#f96,stroke-width:1px,stroke-dasharray: 5 5
+    class LLMNode LLMNODE
+    classDef LOOPNODE fill:none,stroke:#CC8A4D,stroke-dasharray:5 5,stroke-width:2px
+    class LoopNode LOOPNODE
+    classDef RAGNODE fill:#FE929F,color:black
+    class RAGNode RAGNODE
+    classDef CODENODE fill:#FFFFAD,color:black
+    class CodeNode CODENODE
+    classDef BRANCHNODE fill:#445760,color:white
+    class BranchNode BRANCHNODE
+    classDef APINODE fill:#E6DAF8,color:black
+    class APINode APINODE
+    classDef MCPNODE fill:#E2EEFA,stroke:#4A90E2,stroke-dasharray:5 5,stroke-width:2px
+    class MCPNode MCPNODE
+    classDef VALUENODE fill:#EAFFD0,color:black
+    class ValueNode VALUENODE
+    classDef SUBGRAPHNODE fill:#F5F5F5,stroke:#4A90E2,stroke-dasharray:5 5,stroke-width:2px
+    class SubgraphNode SUBGRAPHNODE
+    classDef FILENODE fill:#EFC2A2,color:black
+    class FileNode FILENODE
+    classDef DATABASENODE fill:#f96,color:black
+    class DataBaseNode DATABASENODE
+    classDef EXITNODE fill:#3D3E3F,color:white
+    class ExitNode EXITNODE
+    classDef INPUTDATA fill:#D64747,color:black
+    classDef WEBNODE fill:#FAB6BF,color:black
+    class WebNode WEBNODE
+    class InputNode INPUTDATA
+```
+
 ## 🎉 News
 
 - [X] [2025.04.15]🎯📢SigmaFlow support command line use & file node! Please refer to the [example](https://github.com/maokangkun/SigmaFlow/tree/main/example/) directory.
@@ -237,9 +295,9 @@ Logs are stored in the `logs` folder. If `save_pref` is `true`, you can see the 
 
 日志存储在`logs`文件夹下，如果`save_pref`为`true`，你可以看到相关的性能报告。
 
-For a complete example, please refer to the [example](https://github.com/maokangkun/SigmaFlow/tree/main/example/) directory.
+For a complete example, please refer to the [examples](https://github.com/maokangkun/SigmaFlow/tree/main/examples/) directory.
 
-完整示例请参考example目录。
+完整示例请参考examples目录。
 
 ## Start with CLI Mode
 

@@ -28,6 +28,7 @@ class Base:
         self.in_loop = None
         self.next = []
         self.loop_nodes = []
+        self.start_callbacks = []
         self.finish_callbacks = []
         self.reset_out_flag = "reset_out" in self.conf
         if self.reset_out_flag:

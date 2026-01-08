@@ -211,7 +211,7 @@ class TaskWorker(threading.Thread):
                     sid,
                 )
                 pipe = self.pipeline_manager.pipes[task["pipe"]]
-                pipe.add_node_finish_callback(callbacks=[msg_func, cancel_func])
+                pipe.add_node_callback(finish_cb=[msg_func, cancel_func])
                 out, info = pipe.run(task["data"])
                 self.send_msg(Events.TASK_ITEM_DONE, out, sid)
                 # self.send_msg(Events.TASK_ITEM_DONE, info, sid)

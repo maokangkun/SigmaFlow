@@ -16,6 +16,7 @@ def setup_args():
     parser.add_argument(
         "-d", "--pipeline_dir", type=str, help="specify the pipeline dir to run"
     )
+    parser.add_argument("--prompt", type=str, help="specify the prompt dir")
     parser.add_argument("-i", "--input", type=str, help="specify input data")
     parser.add_argument("-o", "--output", type=str, help="specify output data")
     parser.add_argument(
@@ -51,6 +52,7 @@ def setup_args():
         default=False,
         help="serve the pipeline as website & API",
     )
+    parser.add_argument("--port", type=int, help="specify the server port")
 
     parser.add_argument(
         "--env",
@@ -85,35 +87,44 @@ def main():
     if args.model:
         os.environ["MODEL_PATH"] = args.model
 
-    from .managers import PipelineManager
+    from .managers import PipelineManager, PromptManager
+
+    if args.prompt:
+        prompt_manager = PromptManager(prompts_dir=args.prompt)
+    else:
+        prompt_manager = None
 
     pm = PipelineManager(
         run_mode=args.mode,
         llm_type=args.llm,
         rag_type=args.rag,
         pipes_dir=args.pipeline_dir,
+        prompt_manager=prompt_manager,
     )
 
     if args.pipeline:
         pipefile = Path(args.pipeline)
         pipe = pm.add_pipe(pipefile.stem, pipefile=pipefile)
 
-    if args.input:
-        data = jload(args.input)
-        r = pipe.run(data, split=args.split, save_perf=args.png)
-
+        if args.input:
+            data = jload(args.input)
+            r = pipe.run(data, split=args.split, save_perf=args.png)
+        elif args.png:
+            pipe.to_png(f"{pipefile.stem}.png")
+        else:
+            # run without input data
+            r = pipe.run({}, save_perf=False)
+        
         if args.output:
             if type(r) is tuple:
                 jdump(r[0], args.output)
             elif type(r) is list:
                 jdump([i for i, _ in r], args.output)
-    elif args.png:
-        pipe.to_png(f"{pipefile.stem}.png")
     elif args.serve:
         import uvicorn
         from .server import PipelineServer
 
-        port = int(os.getenv("PORT", 8000))
+        port = args.port or int(os.getenv("PORT", 8000))
         server = PipelineServer(pipeline_manager=pm)
         uvicorn.run(
             server.app,

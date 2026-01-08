@@ -27,6 +27,7 @@ class Types(Enum):
     PROGRESS = "progress"
     EXECUTED = "executed"
     EXEC_SUCCESS = "execution_success"
+    TRANS_TO_PIPELINE = "trans_to_pipeline"
 
 
 @dataclass

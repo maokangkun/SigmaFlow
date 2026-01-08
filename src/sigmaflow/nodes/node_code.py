@@ -9,7 +9,7 @@ class CodeNode(Node):
 
     @staticmethod
     def match(conf):
-        return "code" in conf or "code_func" in conf
+        return "code" in conf and type(conf.get("next", None)) is not dict
 
     def _eval_format(self, item):
         if type(item) is str:

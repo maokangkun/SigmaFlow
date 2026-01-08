@@ -27,13 +27,13 @@ class WorkspaceTaskWorker(TaskWorker):
         while True:
             queue_item = self.queue.get(timeout=1000)
             if queue_item is not None:
-                queue_id, (task_id, task_data, sid) = queue_item
+                queue_id, (task_id, task_data, extra_data, sid) = queue_item
                 log.debug(
                     f"{name}:\nqueue_id: {queue_id}\nsid: {sid}\ntask_id: {task_id}"
                 )
 
                 try:
-                    out = self.run_task(task_id, task_data, sid)
+                    out = self.run_task(task_id, task_data, extra_data, sid)
                 except Exception:
                     err = traceback.format_exc()
                     log.error(err)
@@ -55,23 +55,49 @@ class WorkspaceTaskWorker(TaskWorker):
                     },
                 )
 
-    def run_task(self, task_id, task_data, sid):
+    def run_task(self, task_id, task_data, extra_data, sid):
         self.send_msg(Types.EXEC_START, {"prompt_id": task_id}, sid)
-        # breakpoint()
-        # {'28': {'inputs': {'prompt': '你是谁', 'return_json': False, 'preview': '', 'model': ['34', 0]}, 'class_type': 'LLMNode', '_meta': {'title': 'LLM Node'}}, '34': {'inputs': {'base_url': 'http://localhost:11434/v1', 'api_key': 'test', 'model': 'qwen3', 'max_completion_tokens': 2048, 'temperature': 0.9}, 'class_type': 'OpenAIModel', '_meta': {'title': 'OpenAI Model'}}}
+        pipe_id = extra_data["extra_pnginfo"]["workflow"]["id"]
+        pipeline = self.pipeline_manager.add_pipe(pipe_id, comfyui_data=task_data)
+        self.send_msg(Types.TRANS_TO_PIPELINE, {"pipeline": pipeline.pipegraph.export_conf()}, sid)
 
-        # d = {
-        #     "prompt_id": task_id,
-        #     "nodes": {
-        #         1: {
-        #             'display_node_id': "1",
-        #             'state': "running",
-        #         }
-        #     }
-        # }
-        # self.send_msg(Types.PROG_STATE, d, sid)
+        def start_msg_func(data):
+            node_id = data["node"].split('-')[0]
+            d = {
+                "prompt_id": task_id,
+                "nodes": {
+                    node_id: {
+                        'display_node_id': node_id,
+                        'state': "running",
+                    }
+                }
+            }
+            self.send_msg(Types.PROG_STATE, d, sid)
 
-        # time.sleep(1)
+        def finish_msg_func(data):
+            node_id = data["node"].split('-')[0]
+            out = data["out"]
+            if type(out) is dict:
+                out = json.dumps(out, indent=4, ensure_ascii=False)
+            d = {
+                "prompt_id": task_id,
+                "display_node": node_id,
+                "node": node_id,
+                "output": {"text": [out]},
+            }
+            self.send_msg(Types.EXECUTED, d, sid)
+
+        pipeline.add_node_callback(start_cb=[start_msg_func], finish_cb=[finish_msg_func])
+
+        inp_data = {}
+        for _, d in task_data.items():
+            match d["class_type"]:
+                case "JSONData":
+                    inp_data = json.loads(d["inputs"]["json"])
+                case _:
+                    pass
+
+        out, info = pipeline.run(inp_data)
 
         # # node 2
         # d = {
@@ -102,48 +128,17 @@ class WorkspaceTaskWorker(TaskWorker):
         #     self.send_msg(Types.PROG_STATE, d, sid)
         #     time.sleep(0.2)
 
-        # # node 3
         # d = {
         #     "prompt_id": task_id,
         #     "nodes": {
-        #         3: {
-        #             'display_node_id': "3",
-        #             'state': "running",
+        #         28: {
+        #             "display_node_id": "28",
+        #             "state": "finished",
         #         },
-        #     }
+        #     },
         # }
         # self.send_msg(Types.PROG_STATE, d, sid)
 
-        out = "# hI\n**Hell**hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123hahaha123"
-
-        d = {
-            "prompt_id": task_id,
-            "display_node": "20",
-            "node": "20",
-            "output": {"text": ["11" + out]},
-        }
-        self.send_msg(Types.EXECUTED, d, sid)
-
-        d = {
-            "prompt_id": task_id,
-            "display_node": "27",
-            "node": "27",
-            "output": {"text": [out]},
-        }
-        self.send_msg(Types.EXECUTED, d, sid)
-
-        d = {
-            "prompt_id": task_id,
-            "nodes": {
-                26: {
-                    "display_node_id": "26",
-                    "state": "finished",
-                },
-            },
-        }
-        self.send_msg(Types.PROG_STATE, d, sid)
-
-        out = None
         # if self.pipeline_manager:
         #     msg_func = lambda out: self.send_msg(Events.TASK_ITEM_PROCESS, out, sid)
         #     def cancel_func(out):
@@ -305,9 +300,10 @@ class WorkspaceAPI:
 
         @router.get("/api/view")
         async def view(filename: str, subfolder: str):
+            print(filename, subfolder)
             try:
                 image_path = (
-                    "/mnt/workspace/code/github/ComfyUI/output/ComfyUI_00001_.png"
+                    "/home/kk/code/SigmaFlow/examples/demo/legend.png"
                 )
                 return FileResponse(image_path)
             except Exception:
@@ -318,7 +314,7 @@ class WorkspaceAPI:
             try:
                 log.debug(f"prompt: {data.prompt}")
                 prompt_id = str(data.prompt_id or uuid.uuid4())
-                task_queue.put((prompt_id, data.prompt, data.client_id))
+                task_queue.put((prompt_id, data.prompt, data.extra_data, data.client_id))
                 response = {"prompt_id": prompt_id, "number": 1, "node_errors": {}}
                 return response
 
@@ -376,7 +372,6 @@ class WorkspaceAPI:
                                     and first_message
                                     and json_data.get("type") == "feature_flags"
                                 ):
-                                    print(123)
                                     ret = {
                                         "max_upload_size": 104857600,
                                         "supports_preview_metadata": True,

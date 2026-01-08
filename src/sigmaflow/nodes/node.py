@@ -7,12 +7,20 @@ from .constant import DataState
 
 
 class Node(Base):
-    def add_finish_callback(self, callback):
-        if type(callback) is list:
-            self.finish_callbacks += callback
-        else:
-            self.finish_callbacks.append(callback)
-        self.finish_callbacks = list(set(self.finish_callbacks))
+    def add_callback(self, start_cb=[], finish_cb=[]):
+        for item, callback in zip([self.start_callbacks, self.finish_callbacks], [start_cb, finish_cb]):
+            if type(callback) is list:
+                item += callback
+            else:
+                item.append(callback)
+            item = list(set(item))
+
+    def execute_start_callback(self):
+        data = {
+            "node": self.name,
+        }
+        for callback in self.start_callbacks:
+            callback(data)
 
     def execute_finish_callback(self, out):
         data = {
@@ -103,19 +111,19 @@ class Node(Base):
                     if "_sub" in q:
                         arr += q["_sub"]
 
-        o = self.conf["out"]
-        if (t := type(o)) is str:
-            set_data(o, out, config, queue)
-        elif t is list:
-            for k in o:
-                set_data(k, out[k], config, queue)
-        elif t is dict:
-            if out is not None and type(out) is dict:
+        if (o := self.conf.get("out", None)):
+            if (t := type(o)) is str:
+                set_data(o, out, config, queue)
+            elif t is list:
                 for k in o:
-                    set_data(o[k], out.get(k, None), config, queue)
-            else:
-                for k in o:
-                    set_data(o[k], None, config, queue)
+                    set_data(k, out[k], config, queue)
+            elif t is dict:
+                if out is not None and type(out) is dict:
+                    for k in o:
+                        set_data(o[k], out.get(k, None), config, queue)
+                else:
+                    for k in o:
+                        set_data(o[k], None, config, queue)
 
     def reset_out(self, queue):
         def q_del(q, k):
@@ -172,8 +180,6 @@ class Node(Base):
         log.banner(f"Leave async task: {self.name}, cnt: {cnt}")
 
     def get_inps_seq(self, data):
-        if "inp" not in self.conf:
-            return data
         inps = []
         for i in self.conf["inp"]:
             if type(i) is str:
@@ -195,7 +201,7 @@ class Node(Base):
         pass
 
     def seq_run(self, data, queue):
-        if inps := self.get_inps_seq(data):
+        if (inps := self.get_inps_seq(data)) or not self.conf["inp"]:
             start_time = time.time()
             self.run_cnt += 1
             log.banner(f"Enter task: {self.name}, cnt: {self.run_cnt}")

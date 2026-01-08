@@ -96,10 +96,13 @@ def jdump(obj, out):
             raise ValueError(f"Unexpected type: {type(obj)}")
 
 
-def calc_hash(file_path=None):
-    if file_path:
+def calc_hash(obj=None, file=None):
+    if obj:
         hash_sha256 = hashlib.sha256()
-        with open(file_path, "rb") as f:
+        hash_sha256.update(json.dumps(obj, sort_keys=True).encode("utf-8"))
+    elif file:
+        hash_sha256 = hashlib.sha256()
+        with open(file, "rb") as f:
             for chunk in iter(lambda: f.read(4096), b""):
                 hash_sha256.update(chunk)
     else:

@@ -4,6 +4,7 @@ A collection of example pipelines demonstrating how to use SigmaFlow for differe
 
 - **demo/** — interactive demo pipeline and example usage.
 - **Med-FoT/** — clinical diagnostic workflow for abdominal diseases (FoT research example).
+- **adverse_drug_reactions/** — pipeline for extracting and evaluating adverse drug reactions using LLMs and RAG.
 - **epidemic_response_plan/** — epidemic response planning pipeline using RAG and LLMs.
 - **meteorological_infectious_disease/** — combine meteorological and surveillance data to model infectious disease indicators.
 

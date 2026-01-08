@@ -13,10 +13,13 @@ class LLMNode(Node):
         return "prompt" in conf
 
     def post_init(self):
+        if "inp" not in self.conf:
+            self.conf["inp"] = []
+
         graph = self.graph
         if type(self.conf["prompt"]) is not Prompt:
-            k = ["{" + i + "}" for i in self.conf["inp"]]
-            if k[0] in self.conf["prompt"]:
+            k = ["{" + str(i) + "}" for i in self.conf["inp"]]
+            if len(k) == 0 or k[0] in self.conf["prompt"]:
                 p = {
                     "prompt": self.conf["prompt"],
                     "keys": k,
@@ -84,6 +87,7 @@ class LLMNode(Node):
         return {self.name: d}
 
     def current_seq_task(self, inps, data, queue):
+        self.execute_start_callback()
         out = self.pipe(*inps)
         self.set_out(out, data)
         self.execute_finish_callback(out)
@@ -91,6 +95,7 @@ class LLMNode(Node):
             queue.append(n)
 
     def current_mp_task(self, inps, data, queue, config=None):
+        self.execute_start_callback()
         out = self.pipe(*inps)
         self.set_out(out, data, config=config)
         self.execute_finish_callback(out)
@@ -99,6 +104,7 @@ class LLMNode(Node):
 
     async def current_task(self, data, queue, dynamic_tasks):
         inps = await self.get_inps(queue)
+        self.execute_start_callback()
         out = await self.pipe(*inps)
         self.set_out(out, data, queue)
         self.execute_finish_callback(out)

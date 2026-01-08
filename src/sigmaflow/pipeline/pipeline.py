@@ -13,33 +13,38 @@ from ..utils import mmdc, calc_hash
 class Pipeline:
     def __init__(
         self,
-        llm_backend,
-        rag_backend,
         pipeline_manager,
         prompt_manager,
+        name=None,
         pipeconf=None,
         pipefile=None,
+        comfyui_data=None,
         run_mode="async",
         llm_batch_processor=None,
     ):
-        self.llm_backend = llm_backend
         self.llm_batch_processor = llm_batch_processor
-        self.rag_backend = rag_backend
         self.run_mode = run_mode
         self.pipefile = pipefile
-        self.name = f"pipeline-{datetime.datetime.now().strftime('%m/%d/%Y_%H:%M:%S')}"
+        self.name = name or f"pipeline-{datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}"
         self.hash = calc_hash()
-        if pipeconf or pipefile:
+        if pipeconf or pipefile or comfyui_data:
             self.pipegraph = PipeGraph(
                 pipeline_manager,
                 prompt_manager,
                 pipeconf=pipeconf,
                 pipefile=pipefile,
+                comfyui_data=comfyui_data,
                 run_mode=run_mode,
             )
-            self.name = self.pipegraph.name
+            if self.pipegraph.name:
+                self.name = self.pipegraph.name
+            else:
+                self.pipegraph.name = self.name
+
             if pipefile:
-                self.hash = calc_hash(pipefile)
+                self.hash = calc_hash(file=pipefile)
+            elif comfyui_data:
+                self.hash = calc_hash(obj=comfyui_data)
 
     def gen_info(self, data, start_t, save_perf=False):
         pipe_manager = self.pipegraph.pipe_manager
@@ -204,14 +209,14 @@ class Pipeline:
         pipe_mermaid = self.pipegraph.graph2mermaid()
         mmdc(pipe_mermaid, pipe_img)
 
-    def add_node_finish_callback(self, callbacks, nodes=None):
+    def add_node_callback(self, start_cb=[], finish_cb=[], nodes=None):
         if nodes is None:
             nodes = self.pipegraph.node_manager.values()
         elif type(nodes) is list and type(nodes[0]) is str:
             nodes = [self.pipegraph.node_manager[n] for n in nodes]
 
         for n in nodes:
-            n.add_finish_callback(callbacks)
+            n.add_callback(start_cb=start_cb, finish_cb=finish_cb)
 
     def __str__(self):
         return f"<{self.__class__.__name__}: {self.name}, mode: {self.run_mode}, file: {self.pipefile}, hash: {self.hash}>"

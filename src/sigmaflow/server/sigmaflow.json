@@ -60,6 +60,108 @@
             "The model used for LLM node."
         ]
     },
+    "LoadJSON": {
+        "input": {
+            "required": {
+                "data": [
+                    [
+                        "example.json"
+                    ],
+                    {
+                        "file_upload": true
+                    }
+                ]
+            }
+        },
+        "input_order": {
+            "required": [
+                "data"
+            ]
+        },
+        "output": [
+            "IMAGE"
+        ],
+        "output_is_list": [
+            false
+        ],
+        "output_name": [
+            "IMAGE"
+        ],
+        "name": "LoadJSON",
+        "display_name": "Load JSON",
+        "description": "",
+        "python_module": "nodes",
+        "category": "sigmaflow/data",
+        "output_node": false
+    },
+    "LoadImage": {
+        "input": {
+            "required": {
+                "image": [
+                    [
+                        "example.png"
+                    ],
+                    {
+                        "image_upload": true
+                    }
+                ]
+            }
+        },
+        "input_order": {
+            "required": [
+                "image"
+            ]
+        },
+        "output": [
+            "IMAGE"
+        ],
+        "output_is_list": [
+            false
+        ],
+        "output_name": [
+            "IMAGE"
+        ],
+        "name": "LoadImage",
+        "display_name": "Load Image",
+        "description": "",
+        "python_module": "nodes",
+        "category": "sigmaflow/data",
+        "output_node": false
+    },
+    "JSONData": {
+        "input": {
+            "required": {
+                "json": [
+                    "STRING",
+                    {
+                        "multiline": true,
+                        "tooltip": "The JSON data as input."
+                    }
+                ]
+            }
+        },
+        "input_order": {
+            "required": [
+                "json"
+            ]
+        },
+        "output": [
+            "STRING"
+        ],
+        "output_is_list": [
+            false
+        ],
+        "output_name": [
+            "data"
+        ],
+        "name": "JSONData",
+        "display_name": "JSON Data",
+        "description": "JSON data as input.",
+        "python_module": "nodes",
+        "category": "sigmaflow/data",
+        "output_node": false,
+        "output_tooltips": []
+    },
     "LLMNode": {
         "input": {
             "required": {
@@ -77,6 +179,27 @@
                         "tooltip": "Make sure returned in JSON format",
                         "default": false
                     }
+                ],
+                "format": [
+                    "STRING",
+                    {
+                        "tooltip": "(Optional) Ensures output data matches a specified type or structure (e.g., int, float, list, dict). This is used when `return_json` is True.",
+                        "default": ""
+                    }
+                ],
+                "remove_think": [
+                    "BOOLEAN",
+                    {
+                        "tooltip": "Remove '<think>...</think>' from the response",
+                        "default": true
+                    }
+                ],
+                "out": [
+                    "STRING",
+                    {
+                        "tooltip": "Ensures output renames to specific name.",
+                        "default": ""
+                    }
                 ]
             },
             "optional": {
@@ -92,7 +215,10 @@
         "input_order": {
             "required": [
                 "prompt",
-                "return_json"
+                "return_json",
+                "format",
+                "remove_think",
+                "out"
             ],
             "optional": [
                 "model"
@@ -106,7 +232,7 @@
             false
         ],
         "output_name": [
-            "STRING"
+            "out"
         ],
         "output_tooltips": [
             null

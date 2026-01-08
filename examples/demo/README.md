@@ -14,6 +14,10 @@ cd examples/demo
 python demo.py
 ```
 
+### Legend
+
+![legend](legend.png)
+
 ### Pipeline flow diagram
 
 ![demo](demo_pipeline.png)

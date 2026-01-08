@@ -19,6 +19,7 @@ class Graph:
         name=None,
         pipeconf: Optional[dict] = None,
         pipefile=None,
+        comfyui_data=None,
         run_mode="async",
     ):
         self.name = name
@@ -30,6 +31,8 @@ class Graph:
         self.perf: list[tuple] = []
         if pipeconf is None and pipefile is not None:
             self.load(pipefile)
+        elif pipeconf is None and comfyui_data is not None:
+            self.comfyui2conf(comfyui_data)
 
         self.start_nodes: list[Node] = []
         self.required_inputs: list[str] = []
@@ -121,6 +124,10 @@ class Graph:
             if "format" in pipe_conf:
                 for k, v in pipe_conf["format"].items():
                     pipe_conf["format"][k] = str(v)
+            if "prompt" in pipe_conf:
+                pipe_conf["prompt"] = str(pipe_conf["prompt"])
+            if "llm" in pipe_conf:
+                pipe_conf["llm"] = str(pipe_conf["llm"])
         return conf
 
     def reset(self):
@@ -260,6 +267,59 @@ class Graph:
             log.error(f"[{self.name}]:\n{error_msg}")
             return {"error_msg": error_msg}
 
+    def comfyui2conf(self, comfyui_data):
+        pipeconf = {
+            "CONFIG": {},
+        }
+        next_dict = collections.defaultdict(list)
+
+        for node_id, node_data in comfyui_data.items():
+            node_type = node_data["class_type"]
+            node_inputs = node_data["inputs"]
+
+            if node_type.endswith("Model"):
+                match node_type:
+                    case "OpenAIModel":
+                        pipeconf["CONFIG"] |= {
+                            "llm": "openai",
+                            "model": node_inputs["model"],
+                            "api_key": node_inputs["api_key"],
+                            "base_url": node_inputs["base_url"],
+                        }
+                    case _:
+                        ...
+            elif node_type == "LLMNode":
+                name = f"{node_id}-{node_data['_meta']['title']}"
+                d = {
+                    "prompt": node_inputs["prompt"],
+                    "return_json": node_inputs["return_json"],
+                    "remove_think": node_inputs["remove_think"],
+                    "inp": list(node_inputs.keys() - {"prompt", "return_json", "remove_think", "preview", "model", "format", "out"}),
+                }
+
+                if (o := node_inputs["out"].strip()):
+                    if o.startswith("{") and o.endswith("}"):
+                        d["out"] = eval(o)
+                    else:
+                        d["out"] = o
+
+                if (f := node_inputs["format"].strip()):
+                    if f.startswith("{") and f.endswith("}") or f.startswith("[") and f.endswith("]"):
+                        d["format"] = eval(f)
+
+                for i in d["inp"]:
+                    nid = node_inputs[i][0]
+                    n = f"{nid}-{comfyui_data[nid]['_meta']['title']}"
+                    next_dict[n].append(name)
+
+                pipeconf |= {name: d}
+
+        for n in next_dict:
+            if n in pipeconf:
+                pipeconf[n]["next"] = next_dict[n]
+
+        self.pipeconf = pipeconf
+
     def __str__(self):
         loop_num = sum(
             [n.__class__.__name__ == "LoopNode" for n in self.node_manager.values()]
@@ -267,7 +327,7 @@ class Graph:
         branch_num = sum(
             [n.__class__.__name__ == "BranchNode" for n in self.node_manager.values()]
         )
-        return f"<Graph '{self.name}': nodes: {len(self.node_manager)}, loop: {loop_num}, branch: {branch_num}>"
+        return f"<Graph: {self.name}, nodes: {len(self.node_manager)}, loop: {loop_num}, branch: {branch_num}>"
 
     def __repr__(self):
         return self.__str__()

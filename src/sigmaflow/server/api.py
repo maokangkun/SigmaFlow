@@ -89,7 +89,7 @@ class PipelineAPI:
                 if p_data.stream:
                     queue: Queue[Any] = Queue()
                     msg_func = lambda out: asyncio.create_task(queue.put(out))  # noqa: E731
-                    pipe.add_node_finish_callback(callbacks=[msg_func])
+                    pipe.add_node_callback(finish_cb=[msg_func])
 
                     async def run_pipe():
                         result = await pipe.async_run(p_data.data)

@@ -451,14 +451,16 @@ function App() {
             <div className="relative bg-black rounded-2xl overflow-hidden">
               <video
                 className="w-full h-full object-cover rounded-2xl"
-                poster="https://files.manuscdn.com/webapp/_next/static/media/indexVideo.d4cf4280.webp"
+                // poster="https://files.manuscdn.com/webapp/_next/static/media/indexVideo.d4cf4280.webp"
+                poster="https://youke3.picui.cn/s1/2026/01/05/695b99b0c9279.png"
                 controls
                 preload="metadata"
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
                 onEnded={() => setIsPlaying(false)}
               >
-                <source src="https://files.manuscdn.com/assets/video/Manus-Chinese-2k-compressed-v2.mp4" type="video/mp4" />
+                {/* <source src="https://files.manuscdn.com/assets/video/Manus-Chinese-2k-compressed-v2.mp4" type="video/mp4" /> */}
+                <source src="https://resource2.heygen.ai/video/transcode/1c3cd271ad9f40ff9895c9da011fa482/v344cac8c4c754c1097f9e6878d14c38f/1280x720.mp4?response-content-disposition=attachment%3B+filename%2A%3DUTF-8%27%27SigmaFlow%2520Promo.mp4%3B" type="video/mp4" />
                 您的浏览器不支持视频播放。
               </video>
               {!isPlaying && (

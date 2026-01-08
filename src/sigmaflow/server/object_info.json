@@ -778,43 +778,6 @@
         "category": "image",
         "output_node": true
     },
-    "LoadImage": {
-        "input": {
-            "required": {
-                "image": [
-                    [
-                        "example.png"
-                    ],
-                    {
-                        "image_upload": true
-                    }
-                ]
-            }
-        },
-        "input_order": {
-            "required": [
-                "image"
-            ]
-        },
-        "output": [
-            "IMAGE",
-            "MASK"
-        ],
-        "output_is_list": [
-            false,
-            false
-        ],
-        "output_name": [
-            "IMAGE",
-            "MASK"
-        ],
-        "name": "LoadImage",
-        "display_name": "Load Image",
-        "description": "",
-        "python_module": "nodes",
-        "category": "image",
-        "output_node": false
-    },
     "LoadImageMask": {
         "input": {
             "required": {
