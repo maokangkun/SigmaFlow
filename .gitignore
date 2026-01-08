@@ -1,5 +1,5 @@
 logs/
-example/logs/
+examples/test/
 node_modules
 
 # Byte-compiled / optimized / DLL files
