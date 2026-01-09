@@ -83,7 +83,10 @@ class WorkspaceTaskWorker(TaskWorker):
                 "prompt_id": task_id,
                 "display_node": node_id,
                 "node": node_id,
-                "output": {"text": [out]},
+                "output": {
+                    "text": [out],
+                    "execution_time": 1234,
+                },
             }
             self.send_msg(Types.EXECUTED, d, sid)
 
