@@ -15,17 +15,22 @@ class Node(Base):
                 item.append(callback)
             item = list(set(item))
 
-    def execute_start_callback(self):
+    def execute_start_callback(self, info={}):
+        self.start_time = time.time()
         data = {
             "node": self.name,
+            "node_type": self.__class__.__name__,
+            "info": info,
         }
         for callback in self.start_callbacks:
             callback(data)
 
     def execute_finish_callback(self, out):
+        t = int(round((time.time() - self.start_time) * 1000 )) # ms
         data = {
             "node": self.name,
             "out": out,
+            "execution_time": t,
         }
         for callback in self.finish_callbacks:
             callback(data)

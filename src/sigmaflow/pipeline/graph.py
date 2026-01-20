@@ -271,12 +271,15 @@ class Graph:
         pipeconf = {
             "CONFIG": {},
         }
-        next_dict = collections.defaultdict(list)
+        loop_nodes = {nid for d in comfyui_data.values() if d["class_type"] == "LoopNode" for nid in d["inputs"]["node_in_loop"]["__value__"]}
 
         for node_id, node_data in comfyui_data.items():
             node_type = node_data["class_type"]
             node_inputs = node_data["inputs"]
+            node_outputs = node_data["outputs"]
+            name = f"{node_id}-{node_data['_meta']['title']}"
 
+            d = {}
             if node_type.endswith("Model"):
                 match node_type:
                     case "OpenAIModel":
@@ -289,12 +292,12 @@ class Graph:
                     case _:
                         ...
             elif node_type == "LLMNode":
-                name = f"{node_id}-{node_data['_meta']['title']}"
                 d = {
                     "prompt": node_inputs["prompt"],
                     "return_json": node_inputs["return_json"],
                     "remove_think": node_inputs["remove_think"],
-                    "inp": list(node_inputs.keys() - {"prompt", "return_json", "remove_think", "preview", "model", "format", "out"}),
+                    "inp": list(node_inputs.keys() - {"prompt", "return_json", "remove_think", "preview", "model", "format", "out", "condition"}),
+                    "next": [],
                 }
 
                 if (o := node_inputs["out"].strip()):
@@ -307,16 +310,61 @@ class Graph:
                     if f.startswith("{") and f.endswith("}") or f.startswith("[") and f.endswith("]"):
                         d["format"] = eval(f)
 
-                for i in d["inp"]:
-                    nid = node_inputs[i][0]
+                for nid in node_outputs["out"]:
+                    if node_id in loop_nodes and nid not in loop_nodes: continue
                     n = f"{nid}-{comfyui_data[nid]['_meta']['title']}"
-                    next_dict[n].append(name)
+                    d["next"].append(n)
+            elif node_type == "LoopNode":
+                d = {
+                    "inp": [],
+                    "pipe_in_loop": [f"{nid}-{comfyui_data[nid]['_meta']['title']}" for nid in node_inputs["node_in_loop"]["__value__"]],
+                    "next": [],
+                }
 
-                pipeconf |= {name: d}
+                nid = node_inputs["items"][0]
+                if (o := comfyui_data[nid]["inputs"]["out"]):
+                    if o.startswith("{") and o.endswith("}"):
+                        d["inp"] = list(eval(o).values())[0]
+                    else:
+                        d["inp"] = [o]
 
-        for n in next_dict:
-            if n in pipeconf:
-                pipeconf[n]["next"] = next_dict[n]
+                for nid in node_inputs["next"]["__value__"]:
+                    n = f"{nid}-{comfyui_data[nid]['_meta']['title']}"
+                    d["next"].append(n)
+            elif node_type == "BranchNode":
+                d = {
+                    "inp": [],
+                    "use_llm": node_inputs["use_llm"],
+                    "code": node_inputs["code"],
+                    "next": {k: [f"{nid}-{comfyui_data[nid]['_meta']['title']}" for nid in node_outputs[k]] for k in node_outputs},
+                }
+
+                nid = node_inputs["inp"][0]
+                if (o := comfyui_data[nid]["inputs"]["out"]):
+                    if o.startswith("{") and o.endswith("}"):
+                        d["inp"] = list(eval(o).values())[0]
+                    else:
+                        d["inp"] = [o]
+            elif node_type == "CodeNode":
+                d = {
+                    "inp": [],
+                    "code": node_inputs["code"],
+                    "out": node_inputs["out"],
+                    "next": [],
+                }
+
+                nid = node_inputs["inp"][0]
+                if (o := comfyui_data[nid]["inputs"]["out"]):
+                    if o.startswith("{") and o.endswith("}"):
+                        d["inp"] = list(eval(o).values())[0]
+                    else:
+                        d["inp"] = [o]
+                
+                for nid in node_outputs["out"]:
+                    n = f"{nid}-{comfyui_data[nid]['_meta']['title']}"
+                    d["next"].append(n)
+
+            if d: pipeconf |= {name: d}
 
         self.pipeconf = pipeconf
 

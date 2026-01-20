@@ -20,6 +20,15 @@ class LoopNode(Node):
             if name in nodes:
                 self.loop_nodes.append(nodes[name])
 
+        temp_next = set()
+        for n in self.loop_nodes:
+            temp_next.update(n.conf.get("next", []))
+
+        self.loop_start_nodes = []
+        for name in set(self.conf["pipe_in_loop"]) - temp_next:
+            if name in nodes:
+                self.loop_start_nodes.append(nodes[name])
+
         # inp = self.conf['inp'][0]
         # for n in self.loop_nodes:
         #     if inp in n.mermaid_inps:
@@ -57,6 +66,7 @@ class LoopNode(Node):
         inp = inps[0]
         n = len(inp)
         inp_name = self.conf["inp"][0]
+        self.execute_start_callback({"loop_count": n})
 
         loop_tasks = []
         loop_data = []
@@ -74,7 +84,7 @@ class LoopNode(Node):
                     new_queue[k] = queue[k]
             sub.append(new_queue)
 
-            for n in self.loop_nodes:
+            for n in self.loop_start_nodes:
                 task = asyncio.create_task(n.run(new_data, new_queue, loop_tasks))
                 loop_tasks.append(task)
 
@@ -93,6 +103,8 @@ class LoopNode(Node):
         for k in loop_data[0]:
             queue[k].put_nowait(data[k])
 
+        self.execute_finish_callback(None)
+
     def current_mp_task(self, inps, data, queue, config=None):
         N = len(inps[0])
         loop_outs = self.get_loop_outs()
@@ -103,18 +115,19 @@ class LoopNode(Node):
             if "loop_index" not in new_config:
                 new_config["loop_index"] = {}
             new_config["loop_index"] |= {k: i for k in self.conf["inp"] + loop_outs}
-            for node in self.loop_nodes:
+            for node in self.loop_start_nodes:
                 queue.put((node.name, new_config))
 
         for node in self.next:
             queue.put((node.name, config))
 
     def current_seq_task(self, inps, data, queue):
+        self.execute_start_callback()
         keys = list(data.keys())
         for item in inps[0]:
             tmp_d = copy.deepcopy(data)
             tmp_d[self.conf["inp"][0]] = item
-            tmp_q = self.loop_nodes[:]
+            tmp_q = self.loop_start_nodes[:]
             while tmp_q:
                 n = tmp_q.pop(0)
                 n.run(tmp_d, tmp_q)
@@ -128,3 +141,4 @@ class LoopNode(Node):
 
         for n in self.next:
             queue.append(n)
+        self.execute_finish_callback(None)

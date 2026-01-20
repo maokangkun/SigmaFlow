@@ -1,4 +1,5 @@
 import json
+import time
 import uuid
 import asyncio
 import traceback
@@ -10,7 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 from ..log import log
 from .task import WSConnectionManager, TaskQueue, TaskWorker
-from .constant import Events, Types, Message, WorkspacePromptData
+from .constant import Events, Types, Message, WorkspacePromptData, InterruptData
 
 
 class WorkspaceTaskQueue(TaskQueue):
@@ -37,7 +38,13 @@ class WorkspaceTaskWorker(TaskWorker):
                 except Exception:
                     err = traceback.format_exc()
                     log.error(err)
-                    self.send_msg(Events.ERROR, {"error": err}, sid)
+                    error = {
+                        "prompt_id": task_id,
+                        "exception_message": err,
+                        "exception_type": "Error",
+                        "traceback": [],
+                    }
+                    self.send_msg(Types.EXEC_ERROR, error, sid)
                     out = {"error": err}
 
                 self.send_msg(Types.EXEC_SUCCESS, {"prompt_id": task_id}, sid)
@@ -59,18 +66,27 @@ class WorkspaceTaskWorker(TaskWorker):
         self.send_msg(Types.EXEC_START, {"prompt_id": task_id}, sid)
         pipe_id = extra_data["extra_pnginfo"]["workflow"]["id"]
         pipeline = self.pipeline_manager.add_pipe(pipe_id, comfyui_data=task_data)
-        self.send_msg(Types.TRANS_TO_PIPELINE, {"pipeline": pipeline.pipegraph.export_conf()}, sid)
+        pconf = pipeline.pipegraph.export_conf()
+        self.send_msg(Types.TRANS_TO_PIPELINE, {"pipeline": pconf}, sid)
+
+        runing_nodes = set()
+        loop_nodes = {}
 
         def start_msg_func(data):
-            node_id = data["node"].split('-')[0]
+            runing_nodes.add(data["node"].split('-')[0])
+            if data["node_type"] == "LoopNode":
+                loop_nodes[data["node"].split('-')[0]] = {
+                    "value": 0,
+                    "max": data["info"].get("loop_count", 0),
+                    "completed_nodes": {n:0 for n in pconf[data["node"]]["pipe_in_loop"]},
+                }
+
             d = {
                 "prompt_id": task_id,
                 "nodes": {
-                    node_id: {
-                        'display_node_id': node_id,
-                        'state': "running",
-                    }
-                }
+                    node_id: {"display_node_id": node_id, "state": "running"} | (loop_nodes[node_id] if node_id in loop_nodes else {}) for node_id in runing_nodes
+                },
+                "from": data["node"],
             }
             self.send_msg(Types.PROG_STATE, d, sid)
 
@@ -85,12 +101,31 @@ class WorkspaceTaskWorker(TaskWorker):
                 "node": node_id,
                 "output": {
                     "text": [out],
-                    "execution_time": 1234,
+                    "execution_time": data["execution_time"],
                 },
             }
             self.send_msg(Types.EXECUTED, d, sid)
+            if node_id in runing_nodes: runing_nodes.remove(node_id)
+            for n in loop_nodes:
+                if data["node"] in loop_nodes[n]["completed_nodes"]:
+                    loop_nodes[n]["completed_nodes"][data["node"]] += 1
+                    v = min(loop_nodes[n]["completed_nodes"].values())
+                    if v != loop_nodes[n]["value"]:
+                        loop_nodes[n]["value"] = v
+                        d = {
+                            "prompt_id": task_id,
+                            "nodes": {
+                                node_id: {"display_node_id": node_id, "state": "running"} | (loop_nodes[node_id] if node_id in loop_nodes else {}) for node_id in runing_nodes
+                            },
+                            "from": data["node"],
+                        }
+                        self.send_msg(Types.PROG_STATE, d, sid)
 
-        pipeline.add_node_callback(start_cb=[start_msg_func], finish_cb=[finish_msg_func])
+        def cancel_func(out):
+            if self.queue.get_flags(reset=False).get(task_id, {}).get("cancel"):
+                raise Exception(f"Task {task_id} cancelled during execution.")
+
+        pipeline.add_node_callback(start_cb=[start_msg_func], finish_cb=[finish_msg_func, cancel_func])
 
         inp_data = {}
         for _, d in task_data.items():
@@ -100,61 +135,24 @@ class WorkspaceTaskWorker(TaskWorker):
                 case _:
                     pass
 
+        for node_id in set(task_data.keys()) - set(k.split("-")[0] for k in pconf.keys()):
+            d = {
+                "prompt_id": task_id,
+                "display_node": node_id,
+                "node": node_id,
+            }
+            self.send_msg(Types.EXECUTED, d, sid)
+
         out, info = pipeline.run(inp_data)
 
-        # # node 2
-        # d = {
-        #     "prompt_id": task_id,
-        #     "nodes": {
-        #         2: {
-        #             'display_node_id': "2",
-        #             'max': 20,
-        #             'state': "running",
-        #             'value': 0,
-        #         },
-        #     }
-        # }
-        # self.send_msg(Types.PROG_STATE, d, sid)
-
-        # for i in range(20):
-        #     d = {
-        #         "prompt_id": task_id,
-        #         "nodes": {
-        #             2: {
-        #                 'display_node_id': "2",
-        #                 'max': 20,
-        #                 'state': "running",
-        #                 'value': i+1,
-        #             }
-        #         }
-        #     }
-        #     self.send_msg(Types.PROG_STATE, d, sid)
-        #     time.sleep(0.2)
-
-        # d = {
-        #     "prompt_id": task_id,
-        #     "nodes": {
-        #         28: {
-        #             "display_node_id": "28",
-        #             "state": "finished",
-        #         },
-        #     },
-        # }
-        # self.send_msg(Types.PROG_STATE, d, sid)
-
-        # if self.pipeline_manager:
-        #     msg_func = lambda out: self.send_msg(Events.TASK_ITEM_PROCESS, out, sid)
-        #     def cancel_func(out):
-        #         if self.queue.get_flags(reset=False).get(task_id, {}).get("cancel"):
-        #             raise Exception(f"Task {task_id} cancelled during execution.")
-
-        #     for i, task in enumerate(tqdm(task_data)):
-        #         self.send_msg(Events.TASK_ITEM_START, {"task_index": i, "total": len(task_data)}, sid)
-        #         pipe = self.pipeline_manager.pipes[task['pipe']]
-        #         pipe.add_node_finish_callback(callbacks=[msg_func, cancel_func])
-        #         out, info = pipe.run(task['data'])
-        #         self.send_msg(Events.TASK_ITEM_DONE, out, sid)
-        #         # self.send_msg(Events.TASK_ITEM_DONE, info, sid)
+        if "error_msg" in out:
+            error = {
+                "prompt_id": task_id,
+                "exception_message": out["error_msg"],
+                "exception_type": "Pipeline Error",
+                "traceback": [],
+            }
+            self.send_msg(Types.EXEC_ERROR, error, sid)
 
         return out
 
@@ -320,23 +318,19 @@ class WorkspaceAPI:
                 task_queue.put((prompt_id, data.prompt, data.extra_data, data.client_id))
                 response = {"prompt_id": prompt_id, "number": 1, "node_errors": {}}
                 return response
+            except Exception:
+                raise HTTPException(status_code=500, detail=traceback.format_exc())
 
-                # node_errors = {
-                #     4: {
-                #         "errors": [{
-                #             "type": "exception_during_validation",
-                #             "message": "Exception when validating node",
-                #             "details": 'test error',
-                #             "extra_info": {
-                #                 "exception_type": '',
-                #                 "traceback": ''
-                #             }
-                #         }],
-                #         "dependent_outputs": [],
-                #         "class_type": "CheckpointLoaderSimple"
-                #     }
-                # }
-                # return JSONResponse(status_code=400, content={"error": "test", "node_errors": node_errors})
+        @router.post("/api/interrupt")
+        async def interrupt(data: InterruptData):
+            try:
+                status = task_queue.cancel_task(data.prompt_id)
+                if status == "queued":
+                    return {"status": "removed_from_queue", "prompt_id": data.prompt_id}
+                elif status == "running":
+                    return {"status": "cancelling_running_task", "prompt_id": data.prompt_id}
+                else:
+                    raise HTTPException(status_code=404, detail="Task not found")
             except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 

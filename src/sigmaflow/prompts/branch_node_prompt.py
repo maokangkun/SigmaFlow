@@ -3,7 +3,9 @@ prompt = """Task: Please select the closest item from the items based on the inp
 {"item_id": "#i"}
 ```
 
-Input: {input}
+Input:
+{input}
+
 Items:
 {items}
 

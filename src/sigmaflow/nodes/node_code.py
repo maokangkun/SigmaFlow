@@ -19,6 +19,7 @@ class CodeNode(Node):
 
     async def current_task(self, data, queue, dynamic_tasks):
         inps = await self.get_inps(queue)
+        self.execute_start_callback()
         code = self.conf["code"]
         if callable(code):
             out = code(*inps)
@@ -62,6 +63,7 @@ class CodeNode(Node):
             queue.put((n.name, config))
 
     def current_seq_task(self, inps, data, queue):
+        self.execute_start_callback()
         code = self.conf["code"]
         if callable(code):
             if "inp" not in self.conf:

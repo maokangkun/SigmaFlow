@@ -208,7 +208,8 @@
                     {
                         "tooltip": "The model used to generate the response"
                     }
-                ]
+                ],
+                "condition": ["*"]
             },
             "hidden": {}
         },
@@ -221,7 +222,8 @@
                 "out"
             ],
             "optional": [
-                "model"
+                "model",
+                "condition"
             ],
             "hidden": []
         },
@@ -244,5 +246,150 @@
         "category": "sigmaflow",
         "output_node": true,
         "api_node": true
+    },
+    "LoopNode": {
+        "input": {
+            "required": {
+                "items": [
+                    "*",
+                    {
+                        "tooltip": ""
+                    }
+                ],
+                "node_in_loop": []
+            },
+            "optional": {},
+            "hidden": {}
+        },
+        "input_order": {
+            "required": [
+                "items",
+                "node_in_loop"
+            ],
+            "optional": [],
+            "hidden": []
+        },
+        "output": [],
+        "output_is_list": [
+            false
+        ],
+        "output_name": [],
+        "output_tooltips": [
+            null
+        ],
+        "name": "LoopNode",
+        "display_name": "Loop Node",
+        "description": "",
+        "python_module": "nodes",
+        "category": "sigmaflow",
+        "output_node": false
+    },
+    "BranchNode": {
+        "input": {
+            "required": {
+                "inp": [
+                    "*",
+                    {
+                        "tooltip": ""
+                    }
+                ],
+                "use_llm": [
+                    "BOOLEAN",
+                    {
+                        "tooltip": "Using LLM to decide the branch",
+                        "default": true
+                    }
+                ],
+                "code": [
+                    "STRING",
+                    {
+                        "tooltip": "Using code to decide the branch. The variable 'inp' is the input data. The code should return a item indicating the next branch.",
+                        "default": "",
+                        "multiline": true
+                    }
+                ]
+            },
+            "optional": {},
+            "hidden": {}
+        },
+        "input_order": {
+            "required": [
+                "inp",
+                "use_llm",
+                "code"
+            ],
+            "optional": [],
+            "hidden": []
+        },
+        "output": [],
+        "output_is_list": [
+            false
+        ],
+        "output_name": [],
+        "output_tooltips": [
+            null
+        ],
+        "name": "BranchNode",
+        "display_name": "Branch Node",
+        "description": "",
+        "python_module": "nodes",
+        "category": "sigmaflow",
+        "output_node": false
+    },
+    "CodeNode": {
+        "input": {
+            "required": {
+                "inp": [
+                    "*",
+                    {
+                        "tooltip": ""
+                    }
+                ],
+                "code": [
+                    "STRING",
+                    {
+                        "tooltip": "Excute custom code. The variable 'inp' is the input data. The code should return the output data.",
+                        "default": "",
+                        "multiline": true
+                    }
+                ],
+                "out": [
+                    "STRING",
+                    {
+                        "tooltip": "Ensures output renames to specific name.",
+                        "default": ""
+                    }
+                ]
+            },
+            "optional": {},
+            "hidden": {}
+        },
+        "input_order": {
+            "required": [
+                "inp",
+                "code",
+                "out"
+            ],
+            "optional": [],
+            "hidden": []
+        },
+        "output": [
+            "*"
+        ],
+        "output_is_list": [
+            false
+        ],
+        "output_name": [
+            "out"
+        ],
+        "output_tooltips": [
+            null
+        ],
+        "name": "CodeNode",
+        "display_name": "Code Node",
+        "description": "",
+        "python_module": "nodes",
+        "category": "sigmaflow",
+        "output_node": false
     }
 }

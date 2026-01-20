@@ -27,6 +27,7 @@ class Types(Enum):
     PROGRESS = "progress"
     EXECUTED = "executed"
     EXEC_SUCCESS = "execution_success"
+    EXEC_ERROR = "execution_error"
     TRANS_TO_PIPELINE = "trans_to_pipeline"
 
 
@@ -81,6 +82,8 @@ class WorkspacePromptData(BaseModel):
     prompt: dict
     prompt_id: str | None = None
 
+class InterruptData(BaseModel):
+    prompt_id: str
 
 PData = Annotated[
     Union[PromptData, PipeData, PipelineData], Field(discriminator="type")

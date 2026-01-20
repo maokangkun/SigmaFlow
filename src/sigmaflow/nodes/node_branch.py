@@ -112,6 +112,7 @@ class BranchNode(Node):
 
     async def add_task(self, data, queue, dynamic_tasks):
         inps = await self.get_inps(queue)
+        self.execute_start_callback()
         if self.conf["use_llm"]:
             items = list(self.conf["next"].keys())
             items_text = "\n".join([f"[#{i + 1}] {t}" for i, t in enumerate(items)])
@@ -145,13 +146,21 @@ class BranchNode(Node):
                         break
                 retry += 1
         elif "code" in self.conf:
-            if "code_entry" in self.conf:
-                local = {}
-                exec(self.conf["code"], local)
-                cond = local[self.conf["code_entry"]](*inps)
-            else:
-                inps_dict = {k: v for k, v in zip(self.conf["inp"], inps)}
-                cond = eval(self.conf["code"].format(**inps_dict))
+            code = self.conf["code"]
+            if callable(code):
+                out = code(*inps)
+            elif type(code) is str:
+                if "def" in code:
+                    func_name = code.split("def ")[1].split("(")[0].strip()
+                    local = {}
+                    exec(code, local)
+                    out = local[func_name](*inps)
+                else:
+                    inps_dict = {
+                        k: self._eval_format(v)
+                        for k, v in zip(self.conf.get("inp", []), inps)
+                    }
+                    out = eval(code.format(**inps_dict))
         else:
             cond = inps[0]
 
@@ -192,6 +201,7 @@ class BranchNode(Node):
                     q_del(queue, o)
                 log.debug(f"[{self.name}] reset variables: {outs}")
         log.debug(f"[{self.name}] condition: {cond}, goto nodes: {nodes}")
+        self.execute_finish_callback(cond)
 
     def current_mp_task(self, inps, data, queue, config=None):
         if self.conf["use_llm"]:
@@ -227,13 +237,21 @@ class BranchNode(Node):
                         break
                 retry += 1
         elif "code" in self.conf:
-            if "code_entry" in self.conf:
-                local = {}
-                exec(self.conf["code"], local)
-                cond = local[self.conf["code_entry"]](*inps)
-            else:
-                inps_dict = {k: v for k, v in zip(self.conf["inp"], inps)}
-                cond = eval(self.conf["code"].format(**inps_dict))
+            code = self.conf["code"]
+            if callable(code):
+                out = code(*inps)
+            elif type(code) is str:
+                if "def" in code:
+                    func_name = code.split("def ")[1].split("(")[0].strip()
+                    local = {}
+                    exec(code, local)
+                    out = local[func_name](*inps)
+                else:
+                    inps_dict = {
+                        k: self._eval_format(v)
+                        for k, v in zip(self.conf.get("inp", []), inps)
+                    }
+                    out = eval(code.format(**inps_dict))
         else:
             cond = inps[0]
 
@@ -246,6 +264,7 @@ class BranchNode(Node):
         log.debug(f"[{self.name}] condition: {cond}, goto nodes: {nodes}")
 
     def current_seq_task(self, inps, data, queue):
+        self.execute_start_callback()
         if self.conf["use_llm"]:
             items = list(self.conf["next"].keys())
             items_text = "\n".join([f"[#{i + 1}] {t}" for i, t in enumerate(items)])
@@ -279,13 +298,21 @@ class BranchNode(Node):
                         break
                 retry += 1
         elif "code" in self.conf:
-            if "code_entry" in self.conf:
-                local = {}
-                exec(self.conf["code"], local)
-                cond = local[self.conf["code_entry"]](*inps)
-            else:
-                inps_dict = {k: v for k, v in zip(self.conf["inp"], inps)}
-                cond = eval(self.conf["code"].format(**inps_dict))
+            code = self.conf["code"]
+            if callable(code):
+                out = code(*inps)
+            elif type(code) is str:
+                if "def" in code:
+                    func_name = code.split("def ")[1].split("(")[0].strip()
+                    local = {}
+                    exec(code, local)
+                    out = local[func_name](*inps)
+                else:
+                    inps_dict = {
+                        k: self._eval_format(v)
+                        for k, v in zip(self.conf.get("inp", []), inps)
+                    }
+                    out = eval(code.format(**inps_dict))
         else:
             cond = inps[0]
 
@@ -295,6 +322,7 @@ class BranchNode(Node):
         if nodes := self.next.get(cond, None):
             queue += nodes
         log.debug(f"[{self.name}] condition: {cond}, goto nodes: {nodes}")
+        self.execute_finish_callback(cond)
 
     def export_as_comfyui(self):
         inps = {
