@@ -1,4 +1,5 @@
 import time
+from datetime import datetime
 from ..log import log
 from ..utils import sync_compat
 
@@ -14,6 +15,7 @@ class Block:
         self.log = (
             lambda n, t: log.debug(f"[{name}] {n}: {t}") if self.verbose else None
         )
+        self.trace_log = []
 
         # multiprocess lock
         self.lock = lock
@@ -38,12 +40,22 @@ class Block:
     @sync_compat
     async def __call__(self, *inp):
         n = 0
+        one_trace = []
         while n < self.retry:
             start_t = time.time()
             self.log(
                 "inp", [str(i)[:20] + " ..." if len(str(i)) > 20 else i for i in inp]
             )
-            out, query, resp = await self._call(*inp)
+            out, query, resp, usage = await self._call(*inp)
+            one_trace.append({
+                "inps": inp,
+                "prompt": query,
+                "resp": resp,
+                "out": out,
+                "usage": usage,
+                "started_at": datetime.utcfromtimestamp(start_t).isoformat()+"Z",
+                "ended_at": datetime.utcnow().isoformat()+"Z"
+            })
 
             t = time.time() - start_t
             inout = {
@@ -51,6 +63,7 @@ class Block:
                 "timestamp": time.time(),
                 "input": query,
                 "output": resp,
+                "usage": usage,
             }
             self.log("cost time", t)
             if self.lock is not None:
@@ -63,7 +76,16 @@ class Block:
 
             if out is None and self.second_round:
                 start_t = time.time()
-                out, query2, resp2 = await self._second_call([query, resp])
+                out, query2, resp2, usage2 = await self._second_call([query, resp])
+                one_trace.append({
+                    "inps": inp,
+                    "prompt": query2,
+                    "resp": resp2,
+                    "out": out,
+                    "usage": usage2,
+                    "started_at": datetime.utcfromtimestamp(start_t).isoformat()+"Z",
+                    "ended_at": datetime.utcnow().isoformat()+"Z"
+                })
 
                 t = time.time() - start_t
                 inout = {
@@ -71,6 +93,7 @@ class Block:
                     "timestamp": time.time(),
                     "input": query2,
                     "output": resp2,
+                    "usage": usage2,
                 }
                 self.log("cost time", t)
                 if self.lock is not None:
@@ -86,4 +109,5 @@ class Block:
                 self.log("retry", n)
             else:
                 break
+        self.trace_log.append(one_trace)
         return out

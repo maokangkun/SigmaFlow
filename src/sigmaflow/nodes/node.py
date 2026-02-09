@@ -1,6 +1,9 @@
 import time
+import uuid
 import asyncio
 import collections
+from functools import partial
+from datetime import datetime
 from ..log import log
 from .base import Base
 from .constant import DataState
@@ -16,7 +19,7 @@ class Node(Base):
             item = list(set(item))
 
     def execute_start_callback(self, info={}):
-        self.start_time = time.time()
+        self.start_time = datetime.utcnow()
         data = {
             "node": self.name,
             "node_type": self.__class__.__name__,
@@ -25,15 +28,55 @@ class Node(Base):
         for callback in self.start_callbacks:
             callback(data)
 
-    def execute_finish_callback(self, out):
-        t = int(round((time.time() - self.start_time) * 1000 )) # ms
+    def execute_finish_callback(self, inps, out, queue):
+        self.end_time = datetime.utcnow()
+        self.save_trace(inps, out, queue)
+
         data = {
             "node": self.name,
             "out": out,
-            "execution_time": t,
+            "execution_time": int((self.end_time - self.start_time).total_seconds() * 1000), # ms
         }
         for callback in self.finish_callbacks:
             callback(data)
+
+    def save_trace(self, inps, out, queue):
+        trace_node_id = self.trace_node_id or uuid.uuid4().hex
+        trace_id = queue["#TRACE_ID"].get_nowait()
+        queue["#TRACE_ID"].put_nowait(trace_id)
+        if "#TRACE_PARENT_ID" in queue:
+            parent_id = queue["#TRACE_PARENT_ID"].get_nowait()
+            queue["#TRACE_PARENT_ID"].put_nowait(parent_id)
+        else:
+            parent_id = None
+        save_span = partial(self.graph.storage.save_span, trace_id=trace_id, parent_id=parent_id, started_at=self.start_time.isoformat()+"Z", ended_at=self.end_time.isoformat()+"Z")
+
+        node_data = {
+            "type": self.__class__.__name__.replace('Node', ''),
+            "name": self.name,
+            "handoffs": [],
+            "tools": [],
+            "output_type": "str",
+            "input": [{"inps": {k:v for k,v in zip(self.conf["inp"], inps)}}],
+            "output": [{"out": out}]
+        }
+        save_span(span_id=trace_node_id, span_data=node_data)
+
+        if hasattr(self, "pipe") and hasattr(self.pipe, "trace_log") and self.pipe.trace_log:
+            for log in self.pipe.trace_log[-1]:
+                span_data = {
+                    "type": "generation",
+                    "input": [{"inps": {k:v for k,v in zip(self.conf["inp"], log["inps"])}, "prompt": log["prompt"]}],
+                    "output": [{"resp": log["resp"], "out": log["out"]}],
+                    "model": self.conf["model"],
+                    "usage": {
+                        "input_tokens": log["usage"].get("prompt_tokens", 0),
+                        "output_tokens": log["usage"].get("completion_tokens", 0)
+                    }
+                }
+                save_span(span_id=uuid.uuid4().hex, parent_id=trace_node_id, span_data=span_data, started_at=log["started_at"], ended_at=log["ended_at"])
+
+        self.trace_node_id = None
 
     def get_inps_mp(self, data, config=None):
         def get_data(i):

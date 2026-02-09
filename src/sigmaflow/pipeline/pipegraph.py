@@ -1,4 +1,5 @@
 import copy
+import uuid
 import queue
 import asyncio
 import traceback
@@ -14,10 +15,16 @@ class PipeGraph(Graph):
         if err := self.check_inp(inp_data):
             return err
         data = copy.deepcopy(inp_data)
+        if "#TRACE_ID" not in data:
+            data["#TRACE_ID"] = f"trace_{uuid.uuid4().hex}"
+
         dynamic_tasks = []
         queue = collections.defaultdict(asyncio.Queue)
         for k, v in data.items():
             queue[k].put_nowait(v)
+        
+        self.storage.save_trace(data["#TRACE_ID"], self.name, None, {})
+
         try:
             await asyncio.gather(
                 *[

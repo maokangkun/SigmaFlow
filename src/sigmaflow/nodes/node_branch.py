@@ -25,6 +25,8 @@ class BranchNode(Node):
 
             if "llm" not in self.conf:
                 self.conf["llm"] = graph.config.get("llm")
+            if "model" not in self.conf:
+                self.conf["model"] = graph.config.get("model")
 
             if graph.run_mode == "mp":
                 pipe = LLMBlock(
@@ -201,7 +203,7 @@ class BranchNode(Node):
                     q_del(queue, o)
                 log.debug(f"[{self.name}] reset variables: {outs}")
         log.debug(f"[{self.name}] condition: {cond}, goto nodes: {nodes}")
-        self.execute_finish_callback(cond)
+        self.execute_finish_callback(inps, cond, queue)
 
     def current_mp_task(self, inps, data, queue, config=None):
         if self.conf["use_llm"]:

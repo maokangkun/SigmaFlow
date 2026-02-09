@@ -11,6 +11,7 @@ import multimodalImage from './assets/6nDsNZOTCKcd.webp'
 import workflowImage from './assets/Hm9cNZrzavmM.png'
 import agentsImage from './assets/evo6elZAIwt7.webp'
 import agenticImage from './assets/PahVRft9OM4i.gif'
+import videoPoster from './assets/video-poster.webp'
 
 function App() {
   const [activeTab, setActiveTab] = useState('featured')
@@ -45,7 +46,8 @@ function App() {
       flag: '🇨🇳',
       content: {
         nav: {
-          start: '开始使用'
+          start: '开始使用',
+          admin: '后台'
         },
         hero: {
           title: 'Leave it to SigmaFlow',
@@ -104,7 +106,8 @@ function App() {
       flag: '🇺🇸',
       content: {
         nav: {
-          start: 'Get Started'
+          start: 'Get Started',
+          admin: 'Admin'
         },
         hero: {
           title: 'Leave it to SigmaFlow',
@@ -371,8 +374,9 @@ function App() {
       {/* 导航栏 */}
       <nav className="flex items-center justify-between px-6 py-4">
         <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center">
-            <Workflow className="w-5 h-5 text-white" />
+          <div className="w-6 h-6 rounded-lg flex items-center justify-center">
+            {/* <Workflow className="w-5 h-5 text-white" /> */}
+            <svg t="1770198307635" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1555" width="200" height="200"><path d="M0 0h440.32v102.4H0z m583.68 0H1024v102.4H583.68zM0 184.32h1024v102.4H0zM0 368.64h440.32v102.4H0z m583.68 0H1024v102.4H583.68zM0 552.96h1024v102.4H0zM0 737.28h440.32v102.4H0z m583.68 0H1024v102.4H583.68zM0 921.6h1024V1024H0z" p-id="1556"></path></svg>
           </div>
           <span className="text-xl font-bold">SigmaFlow</span>
         </div>
@@ -410,6 +414,12 @@ function App() {
           >
             {t.nav.start}
           </Button>
+          <Button
+            className="bg-gray-900 hover:bg-gray-700"
+            onClick={() => window.open("/admin/", "_blank")}
+          >
+            {t.nav.admin}
+          </Button>
         </div>
       </nav>
 
@@ -422,7 +432,10 @@ function App() {
           {t.hero.subtitle}
         </p>
         <div className="flex justify-center space-x-4 mb-12">
-          <Button size="lg" className="bg-gray-900 hover:bg-gray-800 px-8 py-3">
+          <Button size="lg"
+            className="bg-gray-900 hover:bg-gray-800 px-8 py-3"
+            onClick={() => (window.location.href = "/workspace/")}
+          >
             {t.hero.experience}
           </Button>
           <Button size="lg" variant="outline" className="px-8 py-3 border-gray-900 text-gray-900 hover:bg-gray-900 hover:text-white">
@@ -451,8 +464,7 @@ function App() {
             <div className="relative bg-black rounded-2xl overflow-hidden">
               <video
                 className="w-full h-full object-cover rounded-2xl"
-                // poster="https://files.manuscdn.com/webapp/_next/static/media/indexVideo.d4cf4280.webp"
-                poster="https://youke3.picui.cn/s1/2026/01/05/695b99b0c9279.png"
+                poster={videoPoster}
                 controls
                 preload="metadata"
                 onPlay={() => setIsPlaying(true)}

@@ -26,6 +26,7 @@ class Base:
         self.run_cnt = 0
         self.max_cnt = self.conf.get("max_cnt", None)
         self.in_loop = None
+        self.trace_node_id = None
         self.next = []
         self.loop_nodes = []
         self.start_callbacks = []

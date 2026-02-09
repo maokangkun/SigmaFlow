@@ -29,7 +29,15 @@
                         "step": 0.1,
                         "tooltip": "The temperature parameter determines the creativity or predictability of each response."
                     }
-                ]
+                ],
+                "tracing": [
+                    "BOOLEAN",
+                    {
+                        "tooltip": "Whether to enable tracing for this workflow. Tracing allows you to see the details of the API call in the execution trace, which can be useful for debugging and analysis.",
+                        "default": true
+                    }
+                ],
+                "trace_key": ["STRING", {}]
             }
         },
         "input_order": {
@@ -38,7 +46,9 @@
                 "api_key",
                 "model",
                 "max_completion_tokens",
-                "temperature"
+                "temperature",
+                "tracing",
+                "trace_key"
             ]
         },
         "output": [
@@ -58,7 +68,11 @@
         "output_node": false,
         "output_tooltips": [
             "The model used for LLM node."
-        ]
+        ],
+        "ui": {
+            "color_name": "blue",
+            "shape": "box"
+        }
     },
     "LoadJSON": {
         "input": {
@@ -160,7 +174,11 @@
         "python_module": "nodes",
         "category": "sigmaflow/data",
         "output_node": false,
-        "output_tooltips": []
+        "output_tooltips": [],
+        "ui": {
+            "color_name": "red",
+            "shape": "box"
+        }
     },
     "LLMNode": {
         "input": {
@@ -282,7 +300,11 @@
         "description": "",
         "python_module": "nodes",
         "category": "sigmaflow",
-        "output_node": false
+        "output_node": false,
+        "ui": {
+            "color_name": "cyan",
+            "shape": "box"
+        }
     },
     "BranchNode": {
         "input": {
@@ -334,7 +356,10 @@
         "description": "",
         "python_module": "nodes",
         "category": "sigmaflow",
-        "output_node": false
+        "output_node": false,
+        "ui": {
+            "color_name": "pale_blue"
+        }
     },
     "CodeNode": {
         "input": {
@@ -390,6 +415,9 @@
         "description": "",
         "python_module": "nodes",
         "category": "sigmaflow",
-        "output_node": false
+        "output_node": false,
+        "ui": {
+            "color_name": "green"
+        }
     }
 }

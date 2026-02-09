@@ -43,4 +43,9 @@ async def completion(item: str | list[str], conf={}):
 
     client = AsyncOpenAI(**client_param)
     chat_completion = await client.chat.completions.create(**chat_param)
-    return chat_completion.choices[0].message.content
+    resp = chat_completion.choices[0].message.content
+    usage = {
+        "prompt_tokens": chat_completion.usage.prompt_tokens,
+        "completion_tokens": chat_completion.usage.completion_tokens,
+    }
+    return resp, usage

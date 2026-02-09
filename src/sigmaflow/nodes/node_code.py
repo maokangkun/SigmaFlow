@@ -38,7 +38,7 @@ class CodeNode(Node):
 
         self.set_out(out, data, queue)
         log.debug(f"{self.conf['out']}: {out}")
-        self.execute_finish_callback(out)
+        self.execute_finish_callback(inps, out, queue)
 
     def current_mp_task(self, inps, data, queue, config=None):
         code = self.conf["code"]

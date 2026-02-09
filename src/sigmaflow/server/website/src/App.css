@@ -117,4 +117,20 @@
   body {
     @apply bg-background text-foreground;
   }
+  
+  /* 自定义鼠标样式 - 使用缩放后的图片 */
+  * {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" style="background:url(/src/assets/cursor2/default@2x.png);background-size:32px 32px"></svg>') 0 0, auto;
+  }
+  
+  /* 按钮、链接等可点击元素使用指针样式 */
+  a, button, [role="button"], .cursor-pointer, video {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" style="background:url(/src/assets/cursor2/pointer@2x.png);background-size:32px 32px"></svg>') 6 2, pointer !important;
+  }
+  
+  /* 文本输入框和可编辑区域使用文本光标 */
+  input[type="text"], input[type="email"], input[type="search"], 
+  input[type="password"], textarea, [contenteditable="true"] {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" style="background:url(/src/assets/cursor2/text@2x.png);background-size:32px 32px"></svg>') 6 6, text !important;
+  }
 }

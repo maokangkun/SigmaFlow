@@ -1,0 +1,82 @@
+{
+  "models": {
+    "gpt-4": {
+      "input_price_per_1k": 0.03,
+      "output_price_per_1k": 0.06,
+      "provider": "OpenAI",
+      "category": "openai"
+    },
+    "gpt-4-turbo": {
+      "input_price_per_1k": 0.01,
+      "output_price_per_1k": 0.03,
+      "provider": "OpenAI",
+      "category": "openai"
+    },
+    "gpt-3.5-turbo": {
+      "input_price_per_1k": 0.0005,
+      "output_price_per_1k": 0.0015,
+      "provider": "OpenAI",
+      "category": "openai"
+    },
+    "claude-3-opus": {
+      "input_price_per_1k": 0.015,
+      "output_price_per_1k": 0.075,
+      "provider": "Anthropic",
+      "category": "claude"
+    },
+    "claude-3-sonnet": {
+      "input_price_per_1k": 0.003,
+      "output_price_per_1k": 0.015,
+      "provider": "Anthropic",
+      "category": "claude"
+    },
+    "claude-3-haiku": {
+      "input_price_per_1k": 0.00025,
+      "output_price_per_1k": 0.00125,
+      "provider": "Anthropic",
+      "category": "claude"
+    },
+    "gemini-pro": {
+      "input_price_per_1k": 0.00025,
+      "output_price_per_1k": 0.0005,
+      "provider": "Google",
+      "category": "gemini"
+    },
+    "gemini-1.5-pro": {
+      "input_price_per_1k": 0.00125,
+      "output_price_per_1k": 0.005,
+      "provider": "Google",
+      "category": "gemini"
+    },
+    "qwen-turbo": {
+      "input_price_per_1k": 0.0002,
+      "output_price_per_1k": 0.0006,
+      "provider": "Alibaba",
+      "category": "qwen"
+    },
+    "qwen-plus": {
+      "input_price_per_1k": 0.0004,
+      "output_price_per_1k": 0.0012,
+      "provider": "Alibaba",
+      "category": "qwen"
+    },
+    "deepseek-chat": {
+      "input_price_per_1k": 0.00014,
+      "output_price_per_1k": 0.00028,
+      "provider": "DeepSeek",
+      "category": "deepseek"
+    },
+    "deepseek-coder": {
+      "input_price_per_1k": 0.00014,
+      "output_price_per_1k": 0.00028,
+      "provider": "DeepSeek",
+      "category": "deepseek"
+    }
+  },
+  "default_pricing": {
+    "input_price_per_1k": 0.001,
+    "output_price_per_1k": 0.002,
+    "provider": "Unknown",
+    "category": "other"
+  }
+}

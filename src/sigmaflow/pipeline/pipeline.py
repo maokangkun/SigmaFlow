@@ -25,12 +25,13 @@ class Pipeline:
         self.llm_batch_processor = llm_batch_processor
         self.run_mode = run_mode
         self.pipefile = pipefile
-        self.name = name or f"pipeline-{datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}"
+        self.name = name
         self.hash = calc_hash()
         if pipeconf or pipefile or comfyui_data:
             self.pipegraph = PipeGraph(
                 pipeline_manager,
                 prompt_manager,
+                name=self.name,
                 pipeconf=pipeconf,
                 pipefile=pipefile,
                 comfyui_data=comfyui_data,
@@ -39,7 +40,7 @@ class Pipeline:
             if self.pipegraph.name:
                 self.name = self.pipegraph.name
             else:
-                self.pipegraph.name = self.name
+                self.pipegraph.name = self.name = f"pipeline-{datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}"
 
             if pipefile:
                 self.hash = calc_hash(file=pipefile)

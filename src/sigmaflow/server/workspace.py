@@ -64,8 +64,8 @@ class WorkspaceTaskWorker(TaskWorker):
 
     def run_task(self, task_id, task_data, extra_data, sid):
         self.send_msg(Types.EXEC_START, {"prompt_id": task_id}, sid)
-        pipe_id = extra_data["extra_pnginfo"]["workflow"]["id"]
-        pipeline = self.pipeline_manager.add_pipe(pipe_id, comfyui_data=task_data)
+        pipe_name = extra_data["workflow_name"]
+        pipeline = self.pipeline_manager.add_pipe(pipe_name, comfyui_data=task_data)
         pconf = pipeline.pipegraph.export_conf()
         self.send_msg(Types.TRANS_TO_PIPELINE, {"pipeline": pconf}, sid)
 
@@ -123,6 +123,7 @@ class WorkspaceTaskWorker(TaskWorker):
 
         def cancel_func(out):
             if self.queue.get_flags(reset=False).get(task_id, {}).get("cancel"):
+                self.queue.set_flag(task_id, {})
                 raise Exception(f"Task {task_id} cancelled during execution.")
 
         pipeline.add_node_callback(start_cb=[start_msg_func], finish_cb=[finish_msg_func, cancel_func])
@@ -131,7 +132,7 @@ class WorkspaceTaskWorker(TaskWorker):
         for _, d in task_data.items():
             match d["class_type"]:
                 case "JSONData":
-                    inp_data = json.loads(d["inputs"]["json"])
+                    inp_data = json.loads(d["inputs"]["json"]) | {"#TRACE_ID": task_id}
                 case _:
                     pass
 

@@ -55,7 +55,7 @@ class LLMBlock(Block):
     async def _call(self, *inp):
         text = self.prompt(*inp)
         self.log("prompt", text)
-        resp = await self.llm(text)
+        resp, usage = await self.llm(text)
         self.log("resp", resp)
         if self.return_json:
             out = extract_json(resp)
@@ -68,7 +68,7 @@ class LLMBlock(Block):
                 self.log("remove think", [f"{out[:20]} ..."])
             else:
                 out = resp
-        return out, text, resp
+        return out, text, resp, usage
 
     @sync_compat
     async def _second_call(self, history):
@@ -76,14 +76,14 @@ class LLMBlock(Block):
             history.append("Make sure return answer in JSON format.")
 
             self.log("history", history)
-            resp = await self.llm(history)
+            resp, usage = await self.llm(history)
             self.log("resp", resp)
 
             out = extract_json(resp)
             self.log("json", out)
             if not self.check_format_valid(out):
                 out = None
-            return out, history, resp
+            return out, history, resp, usage
 
     def __str__(self):
         return f"<{self.__class__.__name__}: {self.name}, prompt: {self.prompt.name}, json: {self.return_json}>"

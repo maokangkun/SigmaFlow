@@ -1,4 +1,5 @@
 import copy
+import uuid
 import asyncio
 import collections
 from .node import Node
@@ -67,6 +68,7 @@ class LoopNode(Node):
         n = len(inp)
         inp_name = self.conf["inp"][0]
         self.execute_start_callback({"loop_count": n})
+        self.trace_node_id = uuid.uuid4().hex
 
         loop_tasks = []
         loop_data = []
@@ -77,6 +79,7 @@ class LoopNode(Node):
             loop_data.append(new_data)
 
             new_queue = collections.defaultdict(asyncio.Queue)
+            new_queue['#TRACE_PARENT_ID'].put_nowait(self.trace_node_id)
             for k in queue:
                 if k == inp_name:
                     new_queue[k].put_nowait(item)
@@ -100,10 +103,12 @@ class LoopNode(Node):
                     data[k].append(v)
                 else:
                     data[k] = [v]
+        out = {}
         for k in loop_data[0]:
             queue[k].put_nowait(data[k])
+            out[k] = data[k]
 
-        self.execute_finish_callback(None)
+        self.execute_finish_callback(inps, out, queue)
 
     def current_mp_task(self, inps, data, queue, config=None):
         N = len(inps[0])

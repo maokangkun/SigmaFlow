@@ -80,6 +80,10 @@ version = {attr = "sigmaflow.version.__version__"}
     "dist/*",
     "dist/**/*",
 ]
+"sigmaflow.server.admin" = [
+    "dist/*",
+    "dist/**/*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

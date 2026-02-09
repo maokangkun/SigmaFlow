@@ -90,7 +90,7 @@ class LLMNode(Node):
         self.execute_start_callback()
         out = self.pipe(*inps)
         self.set_out(out, data)
-        self.execute_finish_callback(out)
+        self.execute_finish_callback(inps, out, queue)
         for n in self.next:
             queue.append(n)
 
@@ -98,7 +98,7 @@ class LLMNode(Node):
         self.execute_start_callback()
         out = self.pipe(*inps)
         self.set_out(out, data, config=config)
-        self.execute_finish_callback(out)
+        self.execute_finish_callback(inps, out, queue)
         for n in self.next:
             queue.put((n.name, config))
 
@@ -107,4 +107,4 @@ class LLMNode(Node):
         self.execute_start_callback()
         out = await self.pipe(*inps)
         self.set_out(out, data, queue)
-        self.execute_finish_callback(out)
+        self.execute_finish_callback(inps, out, queue)

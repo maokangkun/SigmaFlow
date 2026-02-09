@@ -9,7 +9,7 @@ from typing import Optional, Any
 from ..log import log
 from ..nodes import Node
 from ..nodes.constant import InputData, OutputData
-
+from ..server.admin_storage import get_admin_storage
 
 class Graph:
     def __init__(
@@ -29,6 +29,7 @@ class Graph:
         self.run_mode = run_mode
         self.is_async = run_mode == "async"
         self.perf: list[tuple] = []
+        self.storage = get_admin_storage()
         if pipeconf is None and pipefile is not None:
             self.load(pipefile)
         elif pipeconf is None and comfyui_data is not None:
@@ -269,7 +270,7 @@ class Graph:
 
     def comfyui2conf(self, comfyui_data):
         pipeconf = {
-            "CONFIG": {},
+            "CONFIG": {"name": self.name},
         }
         loop_nodes = {nid for d in comfyui_data.values() if d["class_type"] == "LoopNode" for nid in d["inputs"]["node_in_loop"]["__value__"]}
 
@@ -288,6 +289,7 @@ class Graph:
                             "model": node_inputs["model"],
                             "api_key": node_inputs["api_key"],
                             "base_url": node_inputs["base_url"],
+                            "tracing": node_inputs["tracing"],
                         }
                     case _:
                         ...
