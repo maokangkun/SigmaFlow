@@ -23,21 +23,24 @@ SigmaFlow is a Python package designed to optimize the performance of task-flow 
 <table>
   <tr>
     <td width="50%">
-      <img src="https://sigmaflows.github.io/static/images/comfyUI.png" alt="comfyUI demo" style="transform: scale(1.1);" />
+      <img src="https://sigmaflows.github.io/static/images/comfyUI.png" alt="comfyUI demo" />
       <p align="center"><b>Multimodal Demo</b></p>
     </td>
     <td width="50%">
-      <img src="https://sigmaflows.github.io/static/images/comfyUI2.png" alt="comfyUI demo2" />
+      <img src="https://sigmaflows.github.io/static/images/comfyUI2.png" alt="comfyUI demo2" 
+      style="max-width: 90%; margin-left: 5%;" />
       <p align="center"><b>Workflow Demo</b></p>
     </td>
   </tr>
   <tr>
     <td width="50%">
-      <img src="https://sigmaflows.github.io/static/images/tracing.png" alt="Trace Details" />
+      <img src="https://sigmaflows.github.io/static/images/tracing.png" alt="Trace Details"
+      style="max-width: 90%; margin-left: 5%;" />
       <p align="center"><b>Trace Details</b></p>
     </td>
     <td width="50%">
-      <img src="https://sigmaflows.github.io/static/images/tracing2.png" alt="Costs & Usage" />
+      <img src="https://sigmaflows.github.io/static/images/tracing2.png" alt="Costs & Usage"
+      style="max-width: 90%; margin-left: 5%;" />
       <p align="center"><b>Costs & Usage Analytics</b></p>
     </td>
   </tr>
