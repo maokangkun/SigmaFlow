@@ -181,13 +181,13 @@ class Graph:
         links_str = []
         links_style = []
 
-        for inps, inline, self.name, outline, t, outs, link_style in links_d.values():
+        for inps, inline, name, outline, t, outs, link_style in links_d.values():
             if t is None:
                 t = ""
             if inps:
-                link = f"{inps} {inline} {self.name} {outline}{t} {outs}"
+                link = f"{inps} {inline} {name} {outline}{t} {outs}"
             else:
-                link = f"{self.name} {outline}{t} {outs}"
+                link = f"{name} {outline}{t} {outs}"
             if link_style is not None:
                 links_style.insert(0, link_style)
                 links_str.insert(0, link)

@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button';
 type SpanWithChildren = Span & { children: SpanWithChildren[] };
 import { codeToHtml } from 'shiki';
 import { useTheme } from '@/components/theme-provider';
+import YAML from 'yaml';
 
 const HandoffIcon = () => (
   <svg
@@ -110,6 +111,97 @@ const HighlightedJSON = ({
   );
 };
 
+const extractMermaidFrontmatter = (source: string) => {
+  const match = source.match(/^---\s*\n([\s\S]*?)\n---\s*\n?/);
+  if (!match) {
+    return { body: source, config: null as Record<string, unknown> | null };
+  }
+
+  try {
+    const parsed = YAML.parse(match[1]);
+    const config =
+      parsed && typeof parsed === 'object' ? parsed.config ?? null : null;
+    const body = source.slice(match[0].length);
+    return { body, config };
+  } catch {
+    return { body: source, config: null as Record<string, unknown> | null };
+  }
+};
+
+const MermaidDiagram = ({
+  source,
+  theme,
+}: {
+  source: string;
+  theme: string;
+}) => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const renderDiagram = async () => {
+      if (!containerRef.current || !source.trim()) {
+        return;
+      }
+
+      try {
+        const { body, config } = extractMermaidFrontmatter(source);
+        const { default: mermaid } = await import('mermaid');
+        const baseConfig = {
+          startOnLoad: false,
+          theme: theme === 'dark' ? 'dark' : 'default',
+          securityLevel: 'strict',
+        };
+        mermaid.initialize({
+          ...baseConfig,
+          ...(config ?? {}),
+        });
+
+        const id = `mermaid-${Math.random().toString(36).slice(2)}`;
+        const { svg } = await mermaid.render(id, body.trim());
+
+        if (cancelled || !containerRef.current) {
+          return;
+        }
+
+        containerRef.current.innerHTML = svg;
+        setError(null);
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+
+        if (containerRef.current) {
+          containerRef.current.innerHTML = '';
+        }
+        setError(
+          err instanceof Error ? err.message : 'Failed to render Mermaid diagram'
+        );
+      }
+    };
+
+    renderDiagram();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [source, theme]);
+
+  return (
+    <div className="space-y-2">
+      {error ? (
+        <div className="text-xs text-destructive">{error}</div>
+      ) : null}
+      <div
+        ref={containerRef}
+        className="rounded border border-border bg-muted p-2 overflow-auto"
+      />
+    </div>
+  );
+};
+
 export default function TraceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -135,6 +227,13 @@ export default function TraceDetailPage() {
   const dividerWidth = 6;
   const minLeftPanelWidth = 280;
   const minRightPanelWidth = 360;
+  const mermaidSource =
+    trace?.metadata && typeof trace.metadata.mermaid === 'string'
+      ? trace.metadata.mermaid.trim()
+      : '';
+  const metadataEntries = trace?.metadata
+    ? Object.entries(trace.metadata).filter(([key]) => key !== 'mermaid')
+    : [];
 
   const loadTrace = async () => {
     if (!id) return;
@@ -954,25 +1053,35 @@ export default function TraceDetailPage() {
                   showMetadata ? 'translate-y-0 pt-2' : '-translate-y-2 pt-0'
                 }`}
               >
-                {trace &&
-                trace.metadata &&
-                Object.keys(trace.metadata).length > 0 ? (
-                  <div className="space-y-2">
-                    {Object.entries(trace.metadata).map(([key, value]) => (
-                      <div
-                        key={key}
-                        className="flex justify-between items-start"
-                      >
-                        <span className="text-sm text-muted-foreground">
-                          {key}
-                        </span>
-                        <span className="text-sm max-w-[200px] truncate">
-                          {typeof value === 'object'
-                            ? JSON.stringify(value)
-                            : String(value)}
-                        </span>
+                {trace && (metadataEntries.length > 0 || mermaidSource) ? (
+                  <div className="space-y-4">
+                    {metadataEntries.length > 0 ? (
+                      <div className="space-y-2">
+                        {metadataEntries.map(([key, value]) => (
+                          <div
+                            key={key}
+                            className="flex justify-between items-start"
+                          >
+                            <span className="text-sm text-muted-foreground">
+                              {key}
+                            </span>
+                            <span className="text-sm max-w-[200px] truncate">
+                              {typeof value === 'object'
+                                ? JSON.stringify(value)
+                                : String(value)}
+                            </span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    ) : null}
+                    {mermaidSource ? (
+                      <div className="space-y-2">
+                        <div className="text-sm text-muted-foreground">
+                          graph
+                        </div>
+                        <MermaidDiagram source={mermaidSource} theme={theme} />
+                      </div>
+                    ) : null}
                   </div>
                 ) : (
                   <span className="text-sm text-muted-foreground">
