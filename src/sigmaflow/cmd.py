@@ -2,7 +2,7 @@ import os
 import argparse
 from pathlib import Path
 from dotenv import load_dotenv
-from .utils import jload, jdump, get_version, check_env
+from .utils import json, jload, jdump, get_version, check_env
 
 load_dotenv(".env")
 
@@ -60,6 +60,12 @@ def setup_args():
         default=False,
         help="run in environment mode, ignoring other required options",
     )
+    parser.add_argument(
+        "--reload",
+        action="store_true",
+        default=False,
+        help="enable auto-reload when serving (uvicorn reload)",
+    )
     parser.add_argument("--version", action="version", version=get_version())
 
     args, _ = parser.parse_known_args()
@@ -77,6 +83,44 @@ def setup_args():
     return args
 
 
+def build_pm(args):
+    """Construct a PipelineManager instance using parsed args."""
+    from .managers import PipelineManager, PromptManager
+
+    if args.prompt:
+        prompt_manager = PromptManager(prompts_dir=args.prompt)
+    else:
+        prompt_manager = None
+
+    return PipelineManager(
+        run_mode=args.mode,
+        llm_type=args.llm,
+        rag_type=args.rag,
+        pipes_dir=args.pipeline_dir,
+        prompt_manager=prompt_manager,
+    )
+
+
+def build_server(args=None):
+    """Factory used by uvicorn when serving with reload.
+    Relies on SIGMAFLOW_CMD_ARGS env var to reconstruct CLI arguments.
+    """
+    from .server import PipelineServer
+
+    if args is None:
+        try:
+            data = json.loads(os.getenv("SIGMAFLOW_CMD_ARGS", "{}"))
+        except Exception:
+            data = {}
+
+        class Dummy: pass
+        args = Dummy()
+        for key in ["mode", "llm", "rag", "pipeline_dir", "prompt"]: setattr(args, key, data.get(key))
+
+    server = PipelineServer(pipeline_manager=build_pm(args))
+    return server.app
+
+
 def main():
     args = setup_args()
 
@@ -87,24 +131,15 @@ def main():
     if args.model:
         os.environ["MODEL_PATH"] = args.model
 
-    from .managers import PipelineManager, PromptManager
-
-    if args.prompt:
-        prompt_manager = PromptManager(prompts_dir=args.prompt)
-    else:
-        prompt_manager = None
-
-    pm = PipelineManager(
-        run_mode=args.mode,
-        llm_type=args.llm,
-        rag_type=args.rag,
-        pipes_dir=args.pipeline_dir,
-        prompt_manager=prompt_manager,
-    )
+    # persist args in env for reload subprocesses
+    if args.serve and args.reload:
+        os.environ["SIGMAFLOW_CMD_ARGS"] = json.dumps({
+            k: v for k, v in vars(args).items() if k in ["mode", "llm", "rag", "pipeline_dir", "prompt"]
+        })
 
     if args.pipeline:
         pipefile = Path(args.pipeline)
-        pipe = pm.add_pipe(pipefile.stem, pipefile=pipefile)
+        pipe = build_pm(args).add_pipe(pipefile.stem, pipefile=pipefile)
 
         if args.input:
             data = jload(args.input)
@@ -122,14 +157,15 @@ def main():
                 jdump([i for i, _ in r], args.output)
     elif args.serve:
         import uvicorn
-        from .server import PipelineServer
 
         port = args.port or int(os.getenv("PORT", 8000))
-        server = PipelineServer(pipeline_manager=pm)
+        reload_dirs = [str(Path(__file__).resolve().parents[1])]
         uvicorn.run(
-            server.app,
+            "sigmaflow.cmd:build_server" if args.reload else build_server(args),
             host="0.0.0.0",
             port=port,
             log_config=None,
             log_level=os.getenv("LOGGING_LEVEL", "INFO").lower(),
+            reload=args.reload,
+            reload_dirs=reload_dirs,
         )

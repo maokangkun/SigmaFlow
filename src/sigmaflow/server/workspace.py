@@ -1,17 +1,45 @@
+import os
 import json
 import time
 import uuid
+import shutil
 import asyncio
+import logging
 import traceback
 import threading
+import glob
 from pathlib import Path
-from typing import Optional
-from fastapi import APIRouter
+from urllib import parse
+from typing import Optional, TypedDict
+from fastapi import APIRouter, Request, Response
 from fastapi.responses import FileResponse
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 from ..log import log
 from .task import WSConnectionManager, TaskQueue, TaskWorker
 from .constant import Events, Types, Message, WorkspacePromptData, InterruptData
+
+class FileInfo(TypedDict):
+    path: str
+    name: str
+    type: str
+    size: int
+    modified: int
+
+
+def get_userdata_dir() -> str:
+    """Get the userdata directory path, creating it if necessary."""
+    userdata_dir = os.path.expanduser("~/.sigmaflow/userdata")
+    os.makedirs(userdata_dir, exist_ok=True)
+    return userdata_dir
+
+
+def get_file_info(path: str, relative_to: str) -> dict:
+    return {
+        "path": os.path.relpath(path, relative_to).replace(os.sep, '/'),
+        "name": os.path.basename(path),
+        "size": os.path.getsize(path),
+        "modified": os.path.getmtime(path),
+    }
 
 
 class WorkspaceTaskQueue(TaskQueue):
@@ -250,11 +278,318 @@ class WorkspaceAPI:
         async def global_subgraphs():
             return {}
 
-        @router.get("/api/userdata")
-        async def userdata():
+        @router.get("/api/v2/userdata")
+        async def list_userdata_v2(path: str = ""):
+            """
+            List files and directories in the userdata directory.
+
+            Query Parameters:
+            - path (optional): The relative path within the userdata directory to list. Defaults to root ('').
+
+            Returns:
+            - 400: If the requested path is invalid or outside the userdata directory.
+            - 404: If the requested path does not exist.
+            - 500: If there is an error reading the directory contents.
+            - 200: JSON response containing a list of file and directory objects.
+                   Each object includes:
+                   - name: The name of the file or directory.
+                   - type: 'file' or 'directory'.
+                   - path: The relative path from the userdata root.
+                   - size (for files): The size in bytes.
+                   - modified (for files): The last modified timestamp (Unix epoch).
+            """
             try:
-                return []
-            except Exception:
+                # URL-decode the path parameter
+                if path:
+                    try:
+                        path = parse.unquote(path)
+                    except Exception as e:
+                        logging.warning(f"Failed to decode path parameter: {path}, Error: {e}")
+                        raise HTTPException(status_code=400, detail="Invalid characters in path parameter")
+
+                userdata_root = get_userdata_dir()
+                
+                # Build the target absolute path
+                if path:
+                    target_abs_path = os.path.abspath(os.path.join(userdata_root, path))
+                else:
+                    target_abs_path = userdata_root
+
+                # Prevent path traversal attacks
+                if os.path.commonpath((userdata_root, target_abs_path)) != userdata_root:
+                    raise HTTPException(status_code=400, detail="Invalid path requested")
+
+                # Handle cases where the path doesn't exist
+                if not os.path.exists(target_abs_path):
+                    # Check if it's the root directory that's missing
+                    if target_abs_path == userdata_root:
+                        return []
+                    else:
+                        raise HTTPException(status_code=404, detail="Requested path not found")
+
+                if not os.path.isdir(target_abs_path):
+                    raise HTTPException(status_code=400, detail="Requested path is not a directory")
+
+                results = []
+                try:
+                    for item in os.listdir(target_abs_path):
+                        item_path = os.path.join(target_abs_path, item)
+                        rel_path = os.path.relpath(item_path, userdata_root).replace(os.sep, '/')
+                        
+                        if os.path.isdir(item_path):
+                            results.append({
+                                "name": item,
+                                "path": rel_path,
+                                "type": "directory"
+                            })
+                        else:
+                            try:
+                                stats = os.stat(item_path)
+                                results.append({
+                                    "name": item,
+                                    "path": rel_path,
+                                    "type": "file",
+                                    "size": stats.st_size,
+                                    "modified": stats.st_mtime
+                                })
+                            except OSError as e:
+                                logging.warning(f"Could not stat file {item_path}: {e}")
+                                results.append({
+                                    "name": item,
+                                    "path": rel_path,
+                                    "type": "file"
+                                })
+                except OSError as e:
+                    logging.error(f"Error listing directory {target_abs_path}: {e}")
+                    raise HTTPException(status_code=500, detail="Error reading directory contents")
+
+                # Sort results alphabetically, directories first then files
+                results.sort(key=lambda x: (x['type'] != 'directory', x['name'].lower()))
+
+                return results
+            except HTTPException:
+                raise
+            except Exception as e:
+                logging.error(f"Error in userdata endpoint: {e}")
+                raise HTTPException(status_code=500, detail=traceback.format_exc())
+
+        def validate_userdata_path(file_path: str) -> str:
+            """Validate and return absolute path for userdata file operations."""
+            if not file_path:
+                raise HTTPException(status_code=400, detail="File path is required")
+            
+            # URL-decode the path
+            try:
+                file_path = parse.unquote(file_path)
+            except Exception as e:
+                logging.warning(f"Failed to decode file path: {file_path}, Error: {e}")
+                raise HTTPException(status_code=400, detail="Invalid characters in file path")
+            
+            userdata_root = get_userdata_dir()
+            abs_path = os.path.abspath(os.path.join(userdata_root, file_path))
+            
+            # Prevent path traversal attacks
+            if os.path.commonpath((userdata_root, abs_path)) != userdata_root:
+                raise HTTPException(status_code=403, detail="Invalid file path")
+            
+            return abs_path
+
+        @router.get("/api/userdata")
+        async def list_userdata(dir: str = "", recurse: str = "false", full_info: str = "false", split: str = "false"):
+            """List files in the userdata directory.
+
+            Query parameters mimic the UserManager implementation:
+            - dir: relative directory to list (required)
+            - recurse: "true" to recurse into subdirectories
+            - full_info: "true" to return FileInfo dicts instead of strings
+            - split: "true" to split returned paths into components (ignored if full_info)
+            """
+            try:
+                if not dir:
+                    raise HTTPException(status_code=400, detail="Directory not provided")
+
+                abs_dir = validate_userdata_path(dir)
+                if not os.path.exists(abs_dir):
+                    raise HTTPException(status_code=404, detail="Directory not found")
+                if not os.path.isdir(abs_dir):
+                    raise HTTPException(status_code=400, detail="Path is not a directory")
+
+                recurse_bool = recurse.lower() == "true"
+                full_info_bool = full_info.lower() == "true"
+                split_bool = split.lower() == "true"
+
+                if recurse_bool:
+                    pattern = os.path.join(glob.escape(abs_dir), "**", "*")
+                else:
+                    pattern = os.path.join(glob.escape(abs_dir), "*")
+
+                def process_full_path(full_path: str):
+                    if full_info_bool:
+                        return get_file_info(full_path, abs_dir)
+                    rel_path = os.path.relpath(full_path, abs_dir).replace(os.sep, '/')
+                    if split_bool:
+                        return [rel_path] + rel_path.split('/')
+                    return rel_path
+
+                results = [
+                    process_full_path(full_path)
+                    for full_path in glob.glob(pattern, recursive=recurse_bool)
+                    if os.path.isfile(full_path)
+                ]
+                return results
+            except HTTPException:
+                raise
+            except Exception as e:
+                logging.error(f"Error listing userdata: {e}")
+                raise HTTPException(status_code=500, detail=traceback.format_exc())
+
+        @router.get("/api/userdata/{file_path:path}")
+        async def get_userdata_file(file_path: str):
+            """Download a single userdata file.
+
+            When a request targets an index file that doesn't yet exist (e.g.
+            `workflows/.index.json`) we return an empty JSON object with 200
+            instead of generating a 404.  The frontend uses this pattern for
+            bookmarks and expects a missing file to silently fall back to
+            an empty set.
+            """
+            try:
+                if file_path == "comfy.templates.json":
+                    return FileResponse(Path(__file__).parent / "templates.json")
+
+                abs_path = validate_userdata_path(file_path)
+
+                if not os.path.exists(abs_path):
+                    # special case for index files
+                    if file_path.endswith(".index.json"):
+                        return {}
+                    raise HTTPException(status_code=404, detail="File not found")
+
+                if not os.path.isfile(abs_path):
+                    raise HTTPException(status_code=400, detail="Path is not a file")
+
+                return FileResponse(abs_path)
+            except HTTPException:
+                raise
+            except Exception as e:
+                logging.error(f"Error downloading userdata file: {e}")
+                raise HTTPException(status_code=500, detail=traceback.format_exc())
+
+        @router.post("/api/userdata/{file_path:path}")
+        async def post_userdata_file(file_path: str, request: Request, overwrite: str = "true", full_info: str = "false"):
+            """
+            Upload or update a userdata file.
+
+            Query Parameters:
+            - overwrite (optional): If "false", prevents overwriting existing files. Defaults to "true".
+            - full_info (optional): If "true", returns detailed file information. If "false", returns relative path.
+            """
+            try:
+                abs_path = validate_userdata_path(file_path)
+                
+                # Parse query parameters
+                should_overwrite = overwrite.lower() != "false"
+                return_full_info = full_info.lower() == "true"
+                
+                # Check if file already exists and overwrite is false
+                if not should_overwrite and os.path.exists(abs_path):
+                    raise HTTPException(status_code=409, detail="File already exists")
+                
+                # Create parent directories if they don't exist
+                os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+                
+                # Read and write file
+                try:
+                    body = await request.body()
+                    with open(abs_path, "wb") as f:
+                        f.write(body)
+                except OSError as e:
+                    logging.warning(f"Error saving file '{abs_path}': {e}")
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid filename. Please avoid special characters like :\\/*?\"<>|"
+                    )
+                
+                # Return response
+                userdata_root = get_userdata_dir()
+                if return_full_info:
+                    return get_file_info(abs_path, userdata_root)
+                else:
+                    return {"path": os.path.relpath(abs_path, userdata_root).replace(os.sep, '/')}
+            except HTTPException:
+                raise
+            except Exception as e:
+                logging.error(f"Error uploading userdata file: {e}")
+                raise HTTPException(status_code=500, detail=traceback.format_exc())
+
+        @router.delete("/api/userdata/{file_path:path}")
+        async def delete_userdata_file(file_path: str):
+            """Delete a userdata file.
+
+            Returns 204 No Content on success to match frontend expectations.
+            """
+            try:
+                abs_path = validate_userdata_path(file_path)
+                
+                if not os.path.exists(abs_path):
+                    raise HTTPException(status_code=404, detail="File not found")
+                
+                if not os.path.isfile(abs_path):
+                    raise HTTPException(status_code=400, detail="Path is not a file")
+                
+                os.remove(abs_path)
+                # respond with 204 and no body
+                return Response(status_code=204)
+            except HTTPException:
+                raise
+            except Exception as e:
+                logging.error(f"Error deleting userdata file: {e}")
+                raise HTTPException(status_code=500, detail=traceback.format_exc())
+
+        @router.post("/api/userdata/{file_path:path}/move/{dest_path:path}")
+        async def move_userdata_file(file_path: str, dest_path: str, request: Request, overwrite: str = "true", full_info: str = "false"):
+            """
+            Move or rename a userdata file.
+
+            Query Parameters:
+            - overwrite (optional): If "false", prevents overwriting destination. Defaults to "true".
+            - full_info (optional): If "true", returns detailed file information. If "false", returns relative path.
+            """
+            try:
+                source = validate_userdata_path(file_path)
+                dest = validate_userdata_path(dest_path)
+                
+                if not os.path.exists(source):
+                    raise HTTPException(status_code=404, detail="Source file not found")
+                
+                if not os.path.isfile(source):
+                    raise HTTPException(status_code=400, detail="Source path is not a file")
+                
+                # Parse query parameters
+                should_overwrite = overwrite.lower() != "false"
+                return_full_info = full_info.lower() == "true"
+                
+                # Check if destination exists and overwrite is false
+                if not should_overwrite and os.path.exists(dest):
+                    raise HTTPException(status_code=409, detail="Destination file already exists")
+                
+                # Create destination parent directories if they don't exist
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                
+                # Move the file
+                logging.info(f"Moving '{source}' -> '{dest}'")
+                shutil.move(source, dest)
+                
+                # Return response
+                userdata_root = get_userdata_dir()
+                if return_full_info:
+                    return get_file_info(dest, userdata_root)
+                else:
+                    return {"path": os.path.relpath(dest, userdata_root).replace(os.sep, '/')}
+            except HTTPException:
+                raise
+            except Exception as e:
+                logging.error(f"Error moving userdata file: {e}")
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.get("/api/extensions")

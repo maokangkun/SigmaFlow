@@ -104,7 +104,7 @@ class Graph:
         all_outs = set()
         for n in self.node_manager.values():
             n.update(self.node_manager)
-            self.node_type[n.__class__].add(n.name)
+            self.node_type[n.__class__].add(n.mermaid_name)
             self.node_type[OutputData].update(n.mermaid_data)
             all_outs.update(n.mermaid_outs)
 

@@ -21,6 +21,7 @@ class Base:
 
     def __init__(self, name, conf, graph=None):
         self.name = name
+        self.mermaid_name = "-".join(self.name.split())
         self.conf = conf
         self.graph = graph
         self.run_cnt = 0
@@ -65,7 +66,7 @@ class Base:
         self.mermaid_data = self.mermaid_inps + self.mermaid_outs
 
     def _get_mermaid_defines(self):
-        return [self.__class__.mermaid_shape.format(x=self.name)] + [
+        return [self.__class__.mermaid_shape.format(m=self.mermaid_name, x=self.name)] + [
             OutputData.mermaid_shape.format(x=d) for d in self.mermaid_data
         ]
 
@@ -85,7 +86,7 @@ class Base:
 
         inline = self.mermaid_inline_passed if self.run_cnt else self.mermaid_inline
         outline = self.mermaid_outline_passed if self.run_cnt else self.mermaid_outline
-        inout_link = (inps, inline, self.name, outline, t, outs, None)
+        inout_link = (inps, inline, self.mermaid_name, outline, t, outs, None)
 
         links = [inout_link]
         for n in self.next:

@@ -66,11 +66,11 @@ class BranchNode(Node):
         if t is not None:
             t = f"|{t:.2f}s|"
         inline = self.mermaid_inline_passed if self.run_cnt else self.mermaid_inline
-        inout_link = (None, None, inps, inline, t, self.name, None)
+        inout_link = (None, None, inps, inline, t, self.mermaid_name, None)
 
         links = [inout_link]
         for cond, arr in self.next.items():
-            nexts = [n.name for n in arr]
+            nexts = [n.mermaid_name for n in arr]
             if "exit" in nexts:
                 t = (
                     f"|{cond}, total: {info['total_time']:.2f}s|"
@@ -81,7 +81,7 @@ class BranchNode(Node):
                     (
                         None,
                         None,
-                        self.name,
+                        self.mermaid_name,
                         self.mermaid_toexit_passed if t else self.mermaid_toexit,
                         t,
                         "exit",
@@ -100,7 +100,7 @@ class BranchNode(Node):
                     (
                         None,
                         None,
-                        self.name,
+                        self.mermaid_name,
                         outline,
                         f"|{cond}|",
                         " & ".join(nexts),

@@ -1,16 +1,16 @@
 <div align="center">
   <img src="https://raw.githubusercontent.com/maokangkun/SigmaFlow/main/assets/banner.png" alt="banner" />
 
-  <a href='https://sigmaflows.github.io/'><img src='https://img.shields.io/badge/Project-Page-Green'></a>
-  <a href="https://sigmaflow.gitbook.io/sigmaflow-docs"><img src="https://img.shields.io/static/v1?message=Docs&logo=gitbook&logoColor=ffffff&label=%20&labelColor=5c5c5c&color=3F89A1"></a>
-  <a href="#"><img src="https://img.shields.io/badge/Open_Source-❤️-FDA599?"/></a>
-  <a href="https://pypi.org/project/sigmaflow/"><img src="https://img.shields.io/pypi/v/sigmaflow.svg"></a>
-  <a href="https://hub.docker.com/r/ai4drug/sigmaflow"><img src="https://img.shields.io/docker/v/ai4drug/sigmaflow?label=docker&logo=docker"></a>
-  <img src="https://komarev.com/ghpvc/?username=maokangkun&label=Views&color=0e75b6&style=flat" alt="访问量统计" />
-  <a href='https://arxiv.org/abs/2512.10313'><img src='https://img.shields.io/badge/arXiv-2512.10313-b31b1b'></a>
-  <a href='https://doi.org/10.5281/zenodo.17874411'><img src='https://zenodo.org/badge/DOI/10.5281/zenodo.17874411.svg'></a>
-  [![license](https://img.shields.io/github/license/maokangkun/SigmaFlow.svg)](https://github.com/maokangkun/SigmaFlow/tree/main/LICENSE)
-  [![issue resolution](https://img.shields.io/github/issues-closed-raw/maokangkun/SigmaFlow)](https://github.com/maokangkun/SigmaFlow/issues)
+  <a href='https://sigmaflows.github.io/'><img src='https://img.shields.io/badge/Project-Page-Green?style=flat-square'></a>
+  <a href="https://sigmaflow.gitbook.io/sigmaflow-docs"><img src="https://img.shields.io/static/v1?message=Docs&logo=gitbook&logoColor=ffffff&label=%20&labelColor=5c5c5c&color=06B6D4&style=flat-square"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Open_Source-❤️-FDA599?style=flat-square"/></a>
+  <a href="https://pypi.org/project/sigmaflow/"><img src="https://img.shields.io/pypi/v/sigmaflow.svg?style=flat-square"></a>
+  <a href="https://hub.docker.com/r/ai4drug/sigmaflow"><img src="https://img.shields.io/docker/v/ai4drug/sigmaflow?label=docker&logo=docker&style=flat-square"></a>
+  <img src="https://komarev.com/ghpvc/?username=maokangkun&label=Views&color=0e75b6&style=flat-square" alt="访问量统计" />
+  <a href='https://arxiv.org/abs/2512.10313'><img src='https://img.shields.io/badge/arXiv-2512.10313-b31b1b?style=flat-square'></a>
+  <a href='https://doi.org/10.5281/zenodo.17874411'><img src='https://img.shields.io/badge/DOI-10.5281%2Fzenodo.17874411-009688?style=flat-square'></a>
+  [![license](https://img.shields.io/github/license/maokangkun/SigmaFlow.svg?style=flat-square)](https://github.com/maokangkun/SigmaFlow/tree/main/LICENSE)
+  [![issue resolution](https://img.shields.io/github/issues-closed-raw/maokangkun/SigmaFlow?style=flat-square)](https://github.com/maokangkun/SigmaFlow/issues)
 
   <p align="center">
     👋 join us on <a href="https://linluhe.github.io/group_qrcode.html" target="_blank">WeChat</a>

@@ -45,14 +45,14 @@ class LoopNode(Node):
                 inp,
                 self.mermaid_inline,
                 None,
-                self.name,
+                self.mermaid_name,
                 self.mermaid_style,
             )
         )
 
         defines = []
         loop_outs = self.get_loop_outs()
-        subg = [(self.name, *self.conf["pipe_in_loop"], *loop_outs)]
+        subg = [(self.mermaid_name, *self.conf["pipe_in_loop"], *loop_outs)]
 
         return defines, links, subg
 

@@ -147,6 +147,18 @@ const MermaidDiagram = ({
       }
 
       try {
+        // Clear container before rendering
+        if (containerRef.current) {
+          containerRef.current.innerHTML = '';
+          // Remove any leftover mermaid error elements
+          const mermaidErrors = document.querySelectorAll('[id^="dmermaid-"], [id^="mermaid-"]');
+          mermaidErrors.forEach((el) => {
+            if (el.parentElement && el.parentElement !== containerRef.current) {
+              el.remove();
+            }
+          });
+        }
+
         const { body, config } = extractMermaidFrontmatter(source);
         const { default: mermaid } = await import('mermaid');
         const baseConfig = {
@@ -175,6 +187,13 @@ const MermaidDiagram = ({
 
         if (containerRef.current) {
           containerRef.current.innerHTML = '';
+          // Remove any leftover mermaid error elements
+          const mermaidErrors = document.querySelectorAll('[id^="dmermaid-"], [id^="mermaid-"]');
+          mermaidErrors.forEach((el) => {
+            if (el.parentElement && el.parentElement !== containerRef.current) {
+              el.remove();
+            }
+          });
         }
         setError(
           err instanceof Error ? err.message : 'Failed to render Mermaid diagram'

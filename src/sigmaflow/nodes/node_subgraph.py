@@ -40,6 +40,6 @@ class SubGraphNode(Node):
         defines = []
         sub_mermaid = self.sub_pipeline.pipegraph.graph2mermaid()
         lines = sub_mermaid.split("graph TD\n")[1].splitlines()
-        subg = [(self.name, *map(process_line, lines))]
+        subg = [(self.mermaid_name, *map(process_line, lines))]
 
         return defines, links, subg

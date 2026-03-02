@@ -54,7 +54,7 @@ class LLMNode(Node):
         )
         model = self.conf["model"]
         return [
-            self.__class__.mermaid_shape.format(x=self.name, llm=llm, model=model)
+            self.__class__.mermaid_shape.format(m=self.mermaid_name, x=self.name, llm=llm, model=model)
         ] + [OutputData.mermaid_shape.format(x=d) for d in self.mermaid_data]
 
     def export_as_comfyui(self):
