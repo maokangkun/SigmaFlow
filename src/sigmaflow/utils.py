@@ -167,6 +167,10 @@ def check_env():
 
     try:
         import torch
+        try:
+            nccl_version = '.'.join(map(str, torch.cuda.nccl.version()))
+        except:
+            nccl_version = None
 
         table.add_row(
             "cuDNN", "Installed", f"Version: {torch.backends.cudnn.version()}"
@@ -174,7 +178,7 @@ def check_env():
         table.add_row(
             "NCCL",
             "Installed",
-            f"Version: {'.'.join(map(str, torch.cuda.nccl.version()))}",
+            f"Version: {nccl_version}",
         )
     except ImportError:
         table.add_row("cuDNN", "[red]Not Installed[/red]")
@@ -283,22 +287,25 @@ def check_env():
     try:
         import pynvml
 
-        pynvml.nvmlInit()
-        device_count = pynvml.nvmlDeviceGetCount()
-        for i in range(device_count):
-            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-            name = pynvml.nvmlDeviceGetName(handle)
-            meminfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            memstr = f"{int(meminfo.used / 1024 / 1024 / 1024):d}G / {int(meminfo.total / 1024 / 1024 / 1024):d}G, {meminfo.used / meminfo.total:3.0%}"
-            temp = pynvml.nvmlDeviceGetTemperature(handle, 0)
-            utlization = pynvml.nvmlDeviceGetUtilizationRates(handle)
-            table.add_row(
-                "GPU" if not i else "",
-                f"{i}",
-                f"{name}, \\[mem] {memstr}, \\[utl] {utlization.gpu:3d}%, {temp:3d}°C",
-            )
-        pynvml.nvmlShutdown()
-    except (ImportError, pynvml.NVMLError):
+        try:
+            pynvml.nvmlInit()
+            device_count = pynvml.nvmlDeviceGetCount()
+            for i in range(device_count):
+                handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+                name = pynvml.nvmlDeviceGetName(handle)
+                meminfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                memstr = f"{int(meminfo.used / 1024 / 1024 / 1024):d}G / {int(meminfo.total / 1024 / 1024 / 1024):d}G, {meminfo.used / meminfo.total:3.0%}"
+                temp = pynvml.nvmlDeviceGetTemperature(handle, 0)
+                utlization = pynvml.nvmlDeviceGetUtilizationRates(handle)
+                table.add_row(
+                    "GPU" if not i else "",
+                    f"{i}",
+                    f"{name}, \\[mem] {memstr}, \\[utl] {utlization.gpu:3d}%, {temp:3d}°C",
+                )
+            pynvml.nvmlShutdown()
+        except pynvml.NVMLError:
+            pass
+    except ImportError:
         pass
 
     console.print(table)
