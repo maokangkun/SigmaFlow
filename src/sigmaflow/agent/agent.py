@@ -54,7 +54,7 @@ class Agent:
 
     def print_info(self, subagent=False):
         print(f"{Prompt.Baseurl}{self.client.base_url}")
-        k = self.client.api_key
+        k = self.client.api_key or '*****'
         print(f"{Prompt.APIkey}{k[:5]}{'*' *(len(k)-10)}{k[-5:]}")
         print(f"{Prompt.Model}[green]{self.model}[/]")
         print(f"{Prompt.System}{self.system if not subagent else SUBAGENT_SYSTEM}")

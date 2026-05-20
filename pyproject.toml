@@ -8,6 +8,7 @@ license = "MIT"
 authors = [{ name = "Kangkun Mao", email = "maokangkun@pjlab.org.cn" }]
 dependencies = [
     "rich",
+    "arxiv",
     "openai",
     "dotenv",
     "ollama",
@@ -16,6 +17,8 @@ dependencies = [
     "fastapi",
     "requests",
     "packaging",
+    "anthropic",
+    "prompt_toolkit",
     "uvicorn[standard]",
 ]
 classifiers=[
