@@ -4,8 +4,10 @@ Knight Rider style scanner animation as a context manager.
 Similar to rich.status.Status but with Knight Rider animation.
 Fixed at bottom of terminal while other output appears above.
 """
-
+import re
+import ast
 import sys
+import json
 import time
 import select
 import threading
@@ -23,6 +25,29 @@ try:
     HAS_UNIX_TERMIOS = True
 except ImportError:
     HAS_UNIX_TERMIOS = False
+
+def extract_json(text):
+    text = text.strip()
+
+    try:
+        j = ast.literal_eval(text)
+        return j
+    except Exception:
+        pass
+
+    try:
+        j = json.loads(text)
+        return j
+    except Exception:
+        pass
+
+    if m := re.findall(r"```(?:json)?(.*?)```", text, re.DOTALL):
+        try:
+            j = json.loads(m[0])
+            return j
+        except Exception:
+            pass
+    return None
 
 
 class InterruptedError(BaseException):

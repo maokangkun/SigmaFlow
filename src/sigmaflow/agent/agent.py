@@ -13,7 +13,7 @@ from anthropic import Anthropic
 from pathlib import Path
 from functools import singledispatchmethod
 from .tools import TOOL_HANDLERS, skill_loader, Compactor, BG, MCP
-from .utils import KnightRiderStatus
+from .utils import KnightRiderStatus, extract_json
 from .conf import *
 
 SYSTEM += skill_loader.get_descriptions()
@@ -193,6 +193,10 @@ class Agent:
                                         time.sleep(0.1)
                                 continue
 
+                            if response.stop_reason == 'max_tokens':
+                                console.print(f"{Prompt.Error}[red]Max tokens reached[/]")
+                                info['error'] = 'Max tokens reached, output may be incomplete'
+
                             break
                 case "openai":
                     if not msg.tool_calls:
@@ -201,6 +205,8 @@ class Agent:
 
                         if 'qwen' in self.model.lower() and msg.content and msg.content.startswith('<tool_call>') and msg.content.endswith('</tool_call>'):
                             msg.tool_calls = self._parse_to_openai_toolcall(msg.content)
+                        elif 'intern' in self.model.lower() and msg.content and ('```tool' in msg.content or '"tool_calls": [' in msg.content):
+                            msg.tool_calls = self._parse_intern_to_openai_toolcall(msg.content)
                         else:
                             print(f"{Prompt.Assistant}{msg.content}")
                             print(f"{Prompt.Tokens}inp: {response.usage.prompt_tokens}, out: {response.usage.completion_tokens}, time: {cost_time:.2f}s, {(response.usage.completion_tokens or 0) / cost_time:.2f} tokens/s, tools: {sum(not i[-1].startswith('Error:') for i in info['used_tools'])}/{len(info['used_tools'])}, skills: {sum(not i[-1].startswith('Error:') for i in info['used_skills'])}/{len(info['used_skills'])}")
@@ -341,6 +347,26 @@ class Agent:
 
             tool_calls.append(tool_call)
         return tool_calls
+
+    def _parse_intern_to_openai_toolcall(self, text):
+        from openai.types.chat import ChatCompletionMessageToolCall
+        from openai.types.chat.chat_completion_message_tool_call import Function
+
+        if (data := extract_json(text)):
+            tool_calls = []
+            for item in data.get("tool_calls", []):
+                tool_call = ChatCompletionMessageToolCall(
+                    id=item.get("id", f"call_{str(uuid.uuid4()).replace('-', '')[:8]}"),
+                    type="function",
+                    function=Function(
+                        name=item.get("function", {}).get("name", ""),
+                        arguments=json.dumps(item.get("function", {}).get("arguments", {}))
+                    )
+                )
+                tool_calls.append(tool_call)
+            return tool_calls
+
+        return self._parse_to_openai_toolcall(text)
 
     def _parse_to_anthropic_toolcall(self, xml_string):
         from anthropic.types.tool_use_block import ToolUseBlock

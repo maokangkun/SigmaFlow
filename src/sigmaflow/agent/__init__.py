@@ -1,2 +1,2 @@
 from .cli import cli
-from .agent import Agent, skill_loader, MCP, TOOLS
+from .agent import Agent, skill_loader, MCP, TOOLS, TOOL_HANDLERS

@@ -202,12 +202,12 @@ graph TD
     class InputNode INPUTDATA
 ```
 
-![sigmaflow agent](./assets/agent.png)
+![sigmaflow agent](https://raw.githubusercontent.com/maokangkun/SigmaFlow/main/assets/agent.png)
 
 ## 🎉 News
 
-- [X] [2026.5.20] 🎯📢SigmaFlow now has Agent mode!
-- [X] [2026.3.3] 🎯📢SigmaFlow now has Admin Dashboard with workflow tracing & Costs & Usage Analytics!
+- [X] [2026.05.20]🎯📢SigmaFlow now has Agent mode!
+- [X] [2026.03.03]🎯📢SigmaFlow now has Admin Dashboard with workflow tracing & Costs & Usage Analytics!
 - [X] [2025.04.15]🎯📢SigmaFlow support command line use & file node! Please refer to the [example](https://github.com/maokangkun/SigmaFlow/tree/main/example/) directory.
 - [X] [2025.04.01]🎯📢SigmaFlow first release [pypi](https://pypi.org/project/sigmaflow/)!
 
