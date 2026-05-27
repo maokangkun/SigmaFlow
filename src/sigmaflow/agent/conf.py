@@ -335,7 +335,10 @@ MCP_CONF = {
 
 API_ERRORS = [
     '相同的请求之前已经失败，请修改请求后重试', 
-    'Your input image may contain content that is not allowed by our content safety system'
+    'Your input image may contain content that is not allowed by our content safety system',
+    'Input data may contain inappropriate content.',
+    'thinking is enabled but reasoning_content is missing in assistant tool call message',
+    'The request was rejected because it was considered high risk',
 ]
 
 @dataclass

@@ -5,6 +5,7 @@ import uuid
 import copy
 import base64
 import random
+import traceback
 from rich import print
 from openai import OpenAI
 from rich.console import Console
@@ -151,6 +152,7 @@ class Agent:
                             m = {"role": "assistant", "content": msg.content or ""}
                             if msg.tool_calls: m["tool_calls"] = msg.tool_calls
                             messages.append(m)
+                            if (r:= msg.reasoning_content if hasattr(msg, 'reasoning_content') else None): m['reasoning_content'] = r
                             info["messages"].append(m)
 
                     cost_time = time.time() - start_time
@@ -165,6 +167,8 @@ class Agent:
                     else:
                         tried += 1
                         time.sleep(random.randint(2, 5))
+                        if tried == self.retry:
+                            console.print(f"{Prompt.Error}{traceback.format_exc()}")
             else:
                 break
 
@@ -199,10 +203,10 @@ class Agent:
 
                             break
                 case "openai":
-                    if not msg.tool_calls:
-                        if (r:= msg.reasoning_content if hasattr(msg, 'reasoning_content') else (msg.reasoning if hasattr(msg, 'reasoning') else None)):
-                            print(f"{Prompt.Assistant}[dim][italic]thinking[/]\n{r}[/]")
+                    if (r:= msg.reasoning_content if hasattr(msg, 'reasoning_content') else (msg.reasoning if hasattr(msg, 'reasoning') else None)):
+                        print(f"{Prompt.Assistant}[dim][italic]thinking[/]\n{r}[/]")
 
+                    if not msg.tool_calls:
                         if 'qwen' in self.model.lower() and msg.content and msg.content.startswith('<tool_call>') and msg.content.endswith('</tool_call>'):
                             msg.tool_calls = self._parse_to_openai_toolcall(msg.content)
                         elif 'intern' in self.model.lower() and msg.content and ('```tool' in msg.content or '"tool_calls": [' in msg.content):
@@ -211,6 +215,8 @@ class Agent:
                             print(f"{Prompt.Assistant}{msg.content}")
                             print(f"{Prompt.Tokens}inp: {response.usage.prompt_tokens}, out: {response.usage.completion_tokens}, time: {cost_time:.2f}s, {(response.usage.completion_tokens or 0) / cost_time:.2f} tokens/s, tools: {sum(not i[-1].startswith('Error:') for i in info['used_tools'])}/{len(info['used_tools'])}, skills: {sum(not i[-1].startswith('Error:') for i in info['used_skills'])}/{len(info['used_skills'])}")
                             break
+                    else:
+                        if msg.content: print(f"{Prompt.Assistant}{msg.content}")
 
             results = []
             for block in response.content if self.method == 'anthropic' else msg.tool_calls:
@@ -226,7 +232,7 @@ class Agent:
                     case _:
                         print(f"{Prompt.Assistant}{block}")
 
-                if block.type in ["tool_use", "function"]:
+                if block.type in ["tool_use", "function"] and func:
                     manual_compact = func == "compact"
                     if func == "task":
                         console.rule("Subagent Started", style="bold red")
@@ -238,7 +244,7 @@ class Agent:
                     else:
                         handler = TOOL_HANDLERS.get(func)
                         output = str(handler(**inp)) if handler else f"Error: unknown tool {func}"
-                        if len(output) > 100000: output = output[:10000]+' ...'
+                        if len(output) > 1000: output = output[:400]+'\n......\n'+output[-400:]
                     if func in MCP.tools:
                         print(f"{Prompt.MCP}[magenta]{func.upper()}[/]\n{output}")
                     else:

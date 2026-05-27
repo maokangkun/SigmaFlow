@@ -511,6 +511,10 @@ class MCPClient:
         self.config = MCP_CONF
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
+        # self.session.proxies.update({
+        #     "http": "socks5h://127.0.0.1:1080",
+        #     "https": "socks5h://127.0.0.1:1080",
+        # })
         self.tools = {}
         self.meta = defaultdict(int)
         self._init_mcp()
