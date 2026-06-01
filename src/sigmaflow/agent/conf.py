@@ -326,11 +326,7 @@ HEADERS = {
 }
 
 MCP_CONF = {
-    "mcpServers": {
-        "medical-apis": {
-            "url": "https://mcp.cloud.curiloo.com/tools/unified/mcp"
-        }
-    }
+    "mcpServers": os.getenv("MCP_ENDPOINT", {})
 }
 
 API_ERRORS = [
@@ -339,6 +335,8 @@ API_ERRORS = [
     'Input data may contain inappropriate content.',
     'thinking is enabled but reasoning_content is missing in assistant tool call message',
     'The request was rejected because it was considered high risk',
+    'You exceeded your current quota, please check your plan and billing details.',
+    'Failed to deserialize the JSON body into the target type: messages[1]: unknown variant `image_url`',
 ]
 
 @dataclass

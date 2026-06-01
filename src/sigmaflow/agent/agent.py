@@ -33,6 +33,7 @@ class Agent:
             sub_tools=CHILD_TOOLS,
             base_url=None,
             api_key=None,
+            available_tools=None,
             retry=3,
         ):
         self.method = method
@@ -46,9 +47,11 @@ class Agent:
         match method:
             case "anthropic":
                 self.client = Anthropic(base_url=base_url or ANTHROPIC_BASE_URL, api_key=api_key or API_KEY)
+                self.tools = [t for t in tools if not available_tools or t['name'] in available_tools]
             case "openai":
                 self.client = OpenAI(base_url=base_url or OPENAI_BASE_URL, api_key=api_key or API_KEY)
-                self.tools = self._trans_anthropic_tools_to_openai(self.tools)
+                tools = self._trans_anthropic_tools_to_openai(self.tools)
+                self.tools = [i for i in tools if not available_tools or i['function']['name'] in available_tools]
                 self.sub_tools = self._trans_anthropic_tools_to_openai(sub_tools)
             case _:
                 raise ValueError(f"Unsupported method: {method}")
@@ -74,6 +77,7 @@ class Agent:
 
         info = {
             "messages": [{"role": "system", "content": self.system if not subagent else self.sub_system}]+copy.deepcopy(messages[1:]),
+            "last_response": None,
             "cost_tokens": 0,
             "cost_time": 0,
             "used_tools": [],
@@ -139,12 +143,12 @@ class Agent:
                             messages.append((m := {"role": "assistant", "content": response.content}))
                             info["messages"].append(m)
                         case "openai":
+                            tool_param = {"tools": usable_tools, "tool_choice": "auto"} if usable_tools else {}
                             response = self.client.chat.completions.create(
                                 model=self.model,
                                 messages=messages,
-                                tools=usable_tools,
-                                tool_choice="auto",
                                 max_tokens=MAX_TOKENS,
+                                **tool_param
                             )
                             info["cost_tokens"] += response.usage.total_tokens
                             assert response.choices is not None, f"Response is None: {response}"
@@ -184,6 +188,7 @@ class Agent:
                                     md = Markdown(block.text)
                                     print(f"{Prompt.Assistant}")
                                     print(md)
+                                    info["last_response"] = block.text
                                 elif block.type == "thinking":
                                     print(f"{Prompt.Assistant}[dim][italic]thinking[/]\n{block.thinking}[/]")
                                 else:
@@ -213,6 +218,7 @@ class Agent:
                             msg.tool_calls = self._parse_intern_to_openai_toolcall(msg.content)
                         else:
                             print(f"{Prompt.Assistant}{msg.content}")
+                            info["last_response"] = msg.content
                             print(f"{Prompt.Tokens}inp: {response.usage.prompt_tokens}, out: {response.usage.completion_tokens}, time: {cost_time:.2f}s, {(response.usage.completion_tokens or 0) / cost_time:.2f} tokens/s, tools: {sum(not i[-1].startswith('Error:') for i in info['used_tools'])}/{len(info['used_tools'])}, skills: {sum(not i[-1].startswith('Error:') for i in info['used_skills'])}/{len(info['used_skills'])}")
                             break
                     else:

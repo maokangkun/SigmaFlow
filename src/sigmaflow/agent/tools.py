@@ -36,6 +36,8 @@ def run_bash(command: str) -> str:
         return out or "(no output)"
     except subprocess.TimeoutExpired:
         return f"Error: Timeout ({timeout}s)"
+    except Exception as e:
+        return f"Error: {e}"
 
 def run_read(path: str, limit: int = None) -> str:
     try:
