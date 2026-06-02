@@ -28,6 +28,7 @@ class Prompt:
     Interrupt = "[black on #F3476F] INTERRUPT [/] "
     Bgtask    = "[black on #8B4513]   BGTASK  [/] "
     Unknown   = "[white on #444444]  UNKNOWN  [/] "
+    Warning   = "[black on #F7EC4D]  WARNING  [/] "
 
 # ===== Configuration =====
 WORKDIR = Path.cwd()
@@ -333,10 +334,12 @@ API_ERRORS = [
     '相同的请求之前已经失败，请修改请求后重试', 
     'Your input image may contain content that is not allowed by our content safety system',
     'Input data may contain inappropriate content.',
+    'Input image data may contain inappropriate content.',
     'thinking is enabled but reasoning_content is missing in assistant tool call message',
     'The request was rejected because it was considered high risk',
     'You exceeded your current quota, please check your plan and billing details.',
     'Failed to deserialize the JSON body into the target type: messages[1]: unknown variant `image_url`',
+    '用户额度不足',
 ]
 
 @dataclass

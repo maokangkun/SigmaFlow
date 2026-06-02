@@ -35,6 +35,7 @@ class Agent:
             api_key=None,
             available_tools=None,
             retry=3,
+            max_turn=1e10,
         ):
         self.method = method
         self.model = model
@@ -43,6 +44,7 @@ class Agent:
         self.tools = tools
         self.sub_tools = sub_tools
         self.retry = retry
+        self.max_turn = max_turn
 
         match method:
             case "anthropic":
@@ -69,7 +71,15 @@ class Agent:
         if not subagent: print(Prompt.Tips)
 
     @singledispatchmethod
-    def __call__(self, messages: list, tools=None, subagent=False, print_inp=False, is_print=True, show_processing=True):
+    def __call__(self,
+        messages: list,
+        tools=None, 
+        subagent=False, 
+        print_inp=False, 
+        is_print=True, 
+        show_processing=True, 
+        max_turn=None,
+    ):
         if self.method == "openai" and messages[0]["role"] != "system":
             messages.insert(0, {"role": "system", "content": self.system if not subagent else self.sub_system})
         elif self.method == "anthropic" and messages[0]["role"] == "system":
@@ -108,9 +118,11 @@ class Agent:
         T = self.sub_tools if subagent else self.tools
         usable_tools = T if tools is None else [t for t in T if t.get('name', t.get('function', {}).get('name')) in tools]
 
+        cur_turn = len([m for m in messages if m['role'] == 'assistant'])
+        max_turn = max_turn or self.max_turn
         begin_time = time.time()
         manual_compact = False
-        while True:
+        while cur_turn < max_turn:
             # messages[:] = compactor.auto_compact(messages, force=manual_compact)
             manual_compact = False
 
@@ -232,8 +244,18 @@ class Agent:
                     case "thinking":
                         print(f"{Prompt.Assistant}[dim][italic]thinking[/]\n{block.thinking}[/]")
                     case "tool_use" | "function":
-                        func = block.name if block.type == 'tool_use' else block.function.name
-                        inp = block.input if block.type == 'tool_use' else json.loads(block.function.arguments or "{}")
+                        if block.type == 'tool_use':
+                            func = block.name
+                            inp = block.input
+                        else:
+                            func = block.function.name
+                            try:
+                                inp = json.loads(block.function.arguments or "{}")
+                            except json.JSONDecodeError:
+                                inp = block.function.arguments
+                                print(f"{Prompt.Error}Failed to parse function arguments as JSON, using raw string. Function: {func}, Arguments: {inp}")
+                                results.append({"role": "tool", "tool_call_id": block.id, "content": "Error: Failed to parse function arguments as JSON."})
+                                continue
                         print(f"{Prompt.Assistant}[orange3][italic]tool_use[/]\nname: {func}\ninput: [/]{inp}")
                     case _:
                         print(f"{Prompt.Assistant}{block}")
@@ -273,6 +295,18 @@ class Agent:
                 case "openai":
                     messages.extend(results)
                     info["messages"].extend(results)
+            cur_turn += 1
+            if cur_turn == max_turn -1:
+                console.print(f"{Prompt.Warning}Max turn {max_turn} will be reached in the next turn, stopping to avoid infinite loop.")
+                m = [
+                    {
+                        "role": "user", 
+                        "content": "[System] Max turn will be reached in the next turn, just finalize the response without calling tools. Stopping to avoid infinite loop."
+                    }
+                ]
+                print(f"{Prompt.User}{m[0]['content']}")
+                messages.extend(m)
+                info["messages"].extend(m)
 
         info["cost_time"] = time.time() - begin_time
         return info
