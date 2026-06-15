@@ -1,4 +1,5 @@
 import re
+import shlex
 import yaml
 import time
 import json
@@ -9,6 +10,7 @@ import aiohttp
 import requests
 import threading
 import subprocess
+import shutil
 from rich import print
 from pathlib import Path
 from collections import defaultdict
@@ -35,17 +37,45 @@ def run_ls(param: str) -> str:
 def run_bash(command: str) -> str:
     if command == "":
         return "Error: command cannot be empty"
-    timeout = 600
     dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
     if any(d in command for d in dangerous):
         return "Error: Dangerous command blocked"
     try:
         r = subprocess.run(command, shell=True, cwd=WORKDIR,
-                           capture_output=True, text=True, timeout=timeout)
+                           capture_output=True, text=True, timeout=CMD_TIMEOUT)
         out = (r.stdout + r.stderr).strip()
         return out or "(no output)"
     except subprocess.TimeoutExpired:
-        return f"Error: Timeout ({timeout}s)"
+        return f"Error: Timeout ({CMD_TIMEOUT}s)"
+    except Exception as e:
+        return f"Error: {e}"
+
+def run_grep(tool: str, args: str) -> str:
+    if not tool:
+        return f"Error: tool is required. Available: {', '.join(AVAILABLE_GREP_TOOLS) or '(none)'}"
+    if not args:
+        return "Error: args cannot be empty"
+    if tool not in AVAILABLE_GREP_TOOLS or not shutil.which(tool):
+        return f"Error: unavailable grep tool '{tool}'. Available: {', '.join(AVAILABLE_GREP_TOOLS) or '(none)'}"
+    try:
+        argv = shlex.split(args)
+        if argv[0] == tool: argv = argv[1:]
+    except ValueError as e:
+        return f"Error: failed to parse args: {e}"
+    if not argv:
+        return "Error: args cannot be empty"
+    try:
+        r = subprocess.run(
+            [tool, *argv],
+            cwd=WORKDIR,
+            capture_output=True,
+            text=True,
+            timeout=CMD_TIMEOUT,
+        )
+        out = (r.stdout + r.stderr).strip()
+        return (out or "(no matches)")[:50000]
+    except subprocess.TimeoutExpired:
+        return f"Error: Timeout ({CMD_TIMEOUT}s)"
     except Exception as e:
         return f"Error: {e}"
 
@@ -589,6 +619,7 @@ class MCPClient:
 # -- The dispatch map: {tool_name: handler} --
 TOOL_HANDLERS = {
     "bash":       lambda **kw: run_bash(kw.get("command", "")),
+    "grep":       lambda **kw: run_grep(kw.get("tool", ""), kw.get("args", "")),
     "read_file":  lambda **kw: run_read(kw["path"], kw.get("limit")),
     "write_file": lambda **kw: run_write(kw["path"], kw.get("content", "")),
     "edit_file":  lambda **kw: run_edit(kw["path"], kw.get("old_text", ""), kw.get("new_text", "")),

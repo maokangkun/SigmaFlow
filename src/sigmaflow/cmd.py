@@ -76,6 +76,11 @@ def setup_args():
         default="anthropic",
         help="api interface",
     )
+    agent_parser.add_argument(
+        "--tool",
+        type=str,
+        help="specify tools to use (e.g. bash, read, etc.)",
+    )
 
     # env
     subparsers.add_parser('env', help='Environment mode')
@@ -184,7 +189,8 @@ def main():
             )
         case 'agent':
             from .agent import cli
-            cli(args.query, args.method)
+            tools = [t.strip() for t in args.tool.split(",")] if args.tool else None
+            cli(args.query, args.method, available_tools=tools)
         case _:
             pass
 

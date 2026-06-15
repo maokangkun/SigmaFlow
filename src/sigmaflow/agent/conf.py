@@ -1,5 +1,6 @@
 import os
 import json
+import shutil
 from pathlib import Path
 from dotenv import load_dotenv
 from dataclasses import dataclass
@@ -52,6 +53,8 @@ KEEP_RECENT = 10000
 THRESHOLD = 5000000000
 RAG_ENDPOINT = os.getenv("RAG_ENDPOINT")
 
+CMD_TIMEOUT = 600
+
 VALID_MSG_TYPES = {
     "message",
     "broadcast",
@@ -59,6 +62,28 @@ VALID_MSG_TYPES = {
     "shutdown_response",
     "plan_approval_response",
 }
+
+GREP_TOOL_CANDIDATES = [
+    "rg",
+    "rga",
+    "grep",
+    "ag",
+    "ack",
+    "ug",
+    "pt",
+    "sift",
+]
+GREP_TOOL_DESCRIPTION = {
+    "rg": "ripgrep (rg) - A line-oriented search tool that recursively searches the current directory for a regex pattern. Known for its speed and efficiency.",
+    "rga": "ripgrep-all (rga) - An extension of ripgrep that supports searching within various file types, including PDFs, Word documents, and more.",
+    "grep": "GNU grep - A widely used command-line utility for searching plain-text data sets for lines that match a regular expression.",
+    "ag": "The Silver Searcher (ag) - A code-searching tool similar to ack, but faster. It ignores files in .gitignore and other VCS ignore files by default.",
+    "ack": "Ack - A tool like grep, optimized for programmers. It searches source code and ignores files that aren't likely to be relevant.",
+    "ug": "ugrep - An ultra-fast grep tool with additional features like context-aware search and support for various encodings.",
+    "pt": "The Platinum Searcher (pt) - A code search tool similar to ag, designed to be fast and user-friendly.",
+    "sift": "Sift - A fast and powerful alternative to grep, designed for searching codebases with support for various file types and encodings."
+}
+AVAILABLE_GREP_TOOLS = [tool for tool in GREP_TOOL_CANDIDATES if shutil.which(tool)]
 
 SYSTEM = f"""You are a team lead and coding agent at {WORKDIR}.
 Use `task` tools to plan and track work. Use background_run for long-running commands. Spawn teammates and communicate via inboxes.
@@ -87,6 +112,25 @@ CHILD_TOOLS = [
                 "command": {"type": "string"}
             }, 
             "required": ["command"]
+        }
+    },
+    {
+        "name": "grep",
+        "description": "Search text with an installed grep-like tool.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "tool": {
+                    "type": "string",
+                    "enum": AVAILABLE_GREP_TOOLS,
+                    "description": "The grep-like command to use.\n" + "\n".join([GREP_TOOL_DESCRIPTION[t] for t in AVAILABLE_GREP_TOOLS])
+                },
+                "args": {
+                    "type": "string",
+                    "description": "Arguments passed after the grep-like command, for example: -n \"pattern\" ."
+                }
+            },
+            "required": ["tool", "args"]
         }
     },
     {

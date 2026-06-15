@@ -151,6 +151,7 @@ class Agent:
                                 tools=usable_tools,
                                 max_tokens=MAX_TOKENS,
                             )
+                            response.content = sorted(response.content, key=lambda x: 0 if x.type == "thinking" else 1)
                             info["cost_tokens"] += response.usage.input_tokens + response.usage.output_tokens
                             messages.append((m := {"role": "assistant", "content": response.content}))
                             info["messages"].append(m)
@@ -191,11 +192,11 @@ class Agent:
             match self.method:
                 case "anthropic":
                     if response.stop_reason != "tool_use":
-                        if 'qwen' in self.model.lower() and (t := response.content[0].text.strip()) and '<tool_call>' in t and '</tool_call>' in t:
+                        if 'qwen' in self.model.lower() and (t := response.content[-1].text.strip()) and '<tool_call>' in t and '</tool_call>' in t:
                             response.content = self._parse_to_anthropic_toolcall(t)
                             response.stop_reason = "tool_use"
                         else:
-                            for block in response.content[::-1]:
+                            for block in response.content:
                                 if block.type == "text":
                                     md = Markdown(block.text)
                                     print(f"{Prompt.Assistant}")

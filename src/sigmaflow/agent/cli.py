@@ -4,8 +4,8 @@ from .logo import print_logo
 from .input import session
 from .conf import *
 
-def cli(query, method='anthropic'):
-    agent = Agent(method)
+def cli(query, method='anthropic', available_tools=None):
+    agent = Agent(method, available_tools=available_tools)
 
     print_logo()
     agent.print_info()
