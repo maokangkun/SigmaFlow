@@ -1,10 +1,11 @@
 import os
+import json
 from pathlib import Path
 from dotenv import load_dotenv
 from dataclasses import dataclass
 from typing import Dict, List, Any
 from prompt_toolkit.formatted_text import HTML
-load_dotenv(override=True)
+load_dotenv()
 
 class Prompt:
     # Version   = "[black on #cb7375]  VERSION  [/] "
@@ -60,17 +61,23 @@ VALID_MSG_TYPES = {
 }
 
 SYSTEM = f"""You are a team lead and coding agent at {WORKDIR}.
-Use load_skill to access specialized knowledge before tackling unfamiliar topics. Use task tools to plan and track work. Use background_run for long-running commands. Spawn teammates and communicate via inboxes.
-
-Skills available:
+Use `task` tools to plan and track work. Use background_run for long-running commands. Spawn teammates and communicate via inboxes.
 """
 SUBAGENT_SYSTEM = f"""You are a coding subagent at {WORKDIR}. Complete the given task, then summarize your findings.
-
-Skills available:
 """
 
 
 CHILD_TOOLS = [
+    {
+        "name": "ls", 
+        "description": "List files in a directory.",
+        "input_schema": {
+            "type": "object", 
+            "properties": {
+                "param": {"type": "string", "description": "Directory path or ls parameters"}
+            }
+        }
+    },
     {
         "name": "bash", 
         "description": "Run a shell command.",
@@ -327,7 +334,7 @@ HEADERS = {
 }
 
 MCP_CONF = {
-    "mcpServers": os.getenv("MCP_ENDPOINT", {})
+    "mcpServers": json.loads(os.getenv("MCP_ENDPOINT", "{}"))
 }
 
 API_ERRORS = [

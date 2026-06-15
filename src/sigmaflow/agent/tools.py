@@ -22,6 +22,16 @@ def safe_path(p: str) -> Path:
         raise ValueError(f"Path escapes workspace: {p}")
     return path
 
+def run_ls(param: str) -> str:
+    command = f"ls {param}" if param else "ls"
+    try:
+        r = subprocess.run(command, shell=True, cwd=WORKDIR,
+                            capture_output=True, text=True, timeout=30)
+        out = (r.stdout + r.stderr).strip()
+        return out or "(no files)"
+    except Exception as e:
+        return f"Error: {e}"
+
 def run_bash(command: str) -> str:
     if command == "":
         return "Error: command cannot be empty"
@@ -140,9 +150,11 @@ class SkillLoader:
         return meta, match.group(2).strip()
 
     def get_descriptions(self) -> str:
+        skill_prompt = f"Use `load_skill` to access specialized knowledge before tackling unfamiliar topics.\nSkills dir: {self.skills_dir}\nSkills available:\n"
+
         """Layer 1: short descriptions for the system prompt."""
         if not self.skills:
-            return "(no skills available)"
+            return skill_prompt + "(no skills available)"
         lines = []
         for name, skill in self.skills.items():
             desc = skill["meta"].get("description", "No description")
@@ -151,7 +163,7 @@ class SkillLoader:
             if tags:
                 line += f" [{tags}]"
             lines.append(line.strip())
-        return "\n".join(lines)
+        return skill_prompt + "\n".join(lines)
 
     def get_content(self, name: str) -> str:
         """Layer 2: full skill body returned in tool_result."""
@@ -594,6 +606,7 @@ TOOL_HANDLERS = {
     "read_inbox":      lambda **kw: json.dumps(BUS.read_inbox("lead"), indent=2),
     "broadcast":       lambda **kw: BUS.broadcast("lead", kw["content"], TEAM.member_names()),
     "rag":             lambda **kw: rag(kw.get("query", "")),
+    "ls":              lambda **kw: run_ls(kw.get("param", "")),
 }
 
 MCP = MCPClient()

@@ -224,7 +224,7 @@ class Agent:
                         print(f"{Prompt.Assistant}[dim][italic]thinking[/]\n{r}[/]")
 
                     if not msg.tool_calls:
-                        if 'qwen' in self.model.lower() and msg.content and msg.content.startswith('<tool_call>') and msg.content.endswith('</tool_call>'):
+                        if 'qwen' in self.model.lower() and msg.content and '<tool_call>' in msg.content and msg.content.endswith('</tool_call>'):
                             msg.tool_calls = self._parse_to_openai_toolcall(msg.content)
                         elif 'intern' in self.model.lower() and msg.content and ('```tool' in msg.content or '"tool_calls": [' in msg.content):
                             msg.tool_calls = self._parse_intern_to_openai_toolcall(msg.content)
@@ -234,7 +234,7 @@ class Agent:
                             print(f"{Prompt.Tokens}inp: {response.usage.prompt_tokens}, out: {response.usage.completion_tokens}, time: {cost_time:.2f}s, {(response.usage.completion_tokens or 0) / cost_time:.2f} tokens/s, tools: {sum(not i[-1].startswith('Error:') for i in info['used_tools'])}/{len(info['used_tools'])}, skills: {sum(not i[-1].startswith('Error:') for i in info['used_skills'])}/{len(info['used_skills'])}")
                             break
                     else:
-                        if msg.content: print(f"{Prompt.Assistant}{msg.content}")
+                        if msg.content.strip(): print(f"{Prompt.Assistant}{msg.content}")
 
             results = []
             for block in response.content if self.method == 'anthropic' else msg.tool_calls:
@@ -288,6 +288,7 @@ class Agent:
                         info['used_skills'].append((inp.get('name'), output))
                     else:
                         info['used_tools'].append((func, inp, output))
+
             match self.method:
                 case "anthropic":
                     messages.append((m := {"role": "user", "content": results}))
@@ -295,6 +296,7 @@ class Agent:
                 case "openai":
                     messages.extend(results)
                     info["messages"].extend(results)
+
             cur_turn += 1
             if cur_turn == max_turn -1:
                 console.print(f"{Prompt.Warning}Max turn {max_turn} will be reached in the next turn, stopping to avoid infinite loop.")
