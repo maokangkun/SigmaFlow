@@ -235,7 +235,7 @@ class Agent:
                             print(f"{Prompt.Tokens}inp: {response.usage.prompt_tokens}, out: {response.usage.completion_tokens}, time: {cost_time:.2f}s, {(response.usage.completion_tokens or 0) / cost_time:.2f} tokens/s, tools: {sum(not i[-1].startswith('Error:') for i in info['used_tools'])}/{len(info['used_tools'])}, skills: {sum(not i[-1].startswith('Error:') for i in info['used_skills'])}/{len(info['used_skills'])}")
                             break
                     else:
-                        if msg.content.strip(): print(f"{Prompt.Assistant}{msg.content}")
+                        if msg.content and msg.content.strip(): print(f"{Prompt.Assistant}{msg.content}")
 
             results = []
             for block in response.content if self.method == 'anthropic' else msg.tool_calls:
@@ -272,12 +272,12 @@ class Agent:
                         console.rule("Subagent End", style="bold red")
                     else:
                         handler = TOOL_HANDLERS.get(func)
-                        output = str(handler(**inp)) if handler else f"Error: unknown tool {func}"
-                        if len(output) > 1000: output = output[:400]+'\n......\n'+output[-400:]
+                        output = out_prt = str(handler(**inp)) if handler else f"Error: unknown tool {func}"
+                        if len(output) > 1000: out_prt = output[:400]+'\n......\n'+output[-400:]
                     if func in MCP.tools:
-                        print(f"{Prompt.MCP}[magenta]{func.upper()}[/]\n{output}")
+                        print(f"{Prompt.MCP}[magenta]{func.upper()}[/]\n{out_prt}")
                     else:
-                        print(f"{Prompt.Tool}[magenta]{func.upper()}[/]\n{output}")
+                        print(f"{Prompt.Tool}[magenta]{func.upper()}[/]\n{out_prt}")
 
                     match self.method:
                         case "anthropic":

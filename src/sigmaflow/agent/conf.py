@@ -135,11 +135,12 @@ CHILD_TOOLS = [
     },
     {
         "name": "read_file", 
-        "description": "Read file contents.",
+        "description": "Reads a file from the local filesystem. If the file is too long, you can specify a line offset (0-indexed) and limit to read a portion of the file.",
         "input_schema": {
             "type": "object", 
             "properties": {
-                "path": {"type": "string"}, 
+                "path": {"type": "string"},
+                "offset": {"type": "integer"},
                 "limit": {"type": "integer"}
             }, 
             "required": ["path"]

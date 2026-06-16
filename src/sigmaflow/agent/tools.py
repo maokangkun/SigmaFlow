@@ -68,6 +68,7 @@ def run_grep(tool: str, args: str) -> str:
         r = subprocess.run(
             [tool, *argv],
             cwd=WORKDIR,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=CMD_TIMEOUT,
@@ -79,13 +80,19 @@ def run_grep(tool: str, args: str) -> str:
     except Exception as e:
         return f"Error: {e}"
 
-def run_read(path: str, limit: int = None) -> str:
+def run_read(path: str, offset: int = None, limit: int = None) -> str:
     try:
         path = (WORKDIR / path).resolve()
         text = path.read_text()
         lines = text.splitlines()
+
+        if offset and 0 < offset < len(lines):
+            lines = [f"[{offset} lines skipped] ..."] + lines[offset:]
+            if limit: limit += 1
+
         if limit and limit < len(lines):
-            lines = lines[:limit] + [f"... ({len(lines) - limit} more lines)"]
+            lines = lines[:limit] + [f"... [{len(lines) - limit} more lines]"]
+
         return "\n".join(lines)[:50000]
     except Exception as e:
         return f"Error: {e}"
@@ -620,7 +627,7 @@ class MCPClient:
 TOOL_HANDLERS = {
     "bash":       lambda **kw: run_bash(kw.get("command", "")),
     "grep":       lambda **kw: run_grep(kw.get("tool", ""), kw.get("args", "")),
-    "read_file":  lambda **kw: run_read(kw["path"], kw.get("limit")),
+    "read_file":  lambda **kw: run_read(kw["path"], offset=kw.get("offset"), limit=kw.get("limit")),
     "write_file": lambda **kw: run_write(kw["path"], kw.get("content", "")),
     "edit_file":  lambda **kw: run_edit(kw["path"], kw.get("old_text", ""), kw.get("new_text", "")),
     "load_skill": lambda **kw: skill_loader.get_content(kw.get("name", "")),
