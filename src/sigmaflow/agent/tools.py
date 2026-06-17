@@ -81,6 +81,8 @@ def run_grep(tool: str, args: str) -> str:
         return f"Error: {e}"
 
 def run_read(path: str, offset: int = None, limit: int = None) -> str:
+    if path == "":
+        return "Error: path cannot be empty"
     try:
         path = (WORKDIR / path).resolve()
         text = path.read_text()
@@ -98,6 +100,8 @@ def run_read(path: str, offset: int = None, limit: int = None) -> str:
         return f"Error: {e}"
 
 def run_write(path: str, content: str) -> str:
+    if path == "":
+        return "Error: path cannot be empty"
     if content == "":
         return "Error: content cannot be empty"
     try:
@@ -109,6 +113,8 @@ def run_write(path: str, content: str) -> str:
         return f"Error: {e}"
 
 def run_edit(path: str, old_text: str, new_text: str) -> str:
+    if path == "":
+        return "Error: path cannot be empty"
     if old_text == "" or new_text == "":
         return "Error: old_text and new_text cannot be empty"
     try:
@@ -627,9 +633,9 @@ class MCPClient:
 TOOL_HANDLERS = {
     "bash":       lambda **kw: run_bash(kw.get("command", "")),
     "grep":       lambda **kw: run_grep(kw.get("tool", ""), kw.get("args", "")),
-    "read_file":  lambda **kw: run_read(kw["path"], offset=kw.get("offset"), limit=kw.get("limit")),
-    "write_file": lambda **kw: run_write(kw["path"], kw.get("content", "")),
-    "edit_file":  lambda **kw: run_edit(kw["path"], kw.get("old_text", ""), kw.get("new_text", "")),
+    "read_file":  lambda **kw: run_read(kw.get("path", ""), offset=kw.get("offset"), limit=kw.get("limit")),
+    "write_file": lambda **kw: run_write(kw.get("path", ""), kw.get("content", "")),
+    "edit_file":  lambda **kw: run_edit(kw.get("path", ""), kw.get("old_text", ""), kw.get("new_text", "")),
     "load_skill": lambda **kw: skill_loader.get_content(kw.get("name", "")),
     "arxiv_search": lambda **kw: arxiv_search(kw.get("query", ""), kw.get("max_results", 5)),
     "read_arxiv":   lambda **kw: read_arxiv(kw.get("paper_id", "")),

@@ -81,6 +81,12 @@ def setup_args():
         type=str,
         help="specify tools to use (e.g. bash, read, etc.)",
     )
+    agent_parser.add_argument(
+        "--debug",
+        action="store_true",
+        default=False,
+        help="debug mode",
+    )
 
     # env
     subparsers.add_parser('env', help='Environment mode')
@@ -190,7 +196,7 @@ def main():
         case 'agent':
             from .agent import cli
             tools = [t.strip() for t in args.tool.split(",")] if args.tool else None
-            cli(args.query, args.method, available_tools=tools)
+            cli(args.query, args.method, available_tools=tools, debug=args.debug)
         case _:
             pass
 

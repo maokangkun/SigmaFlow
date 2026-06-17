@@ -31,6 +31,16 @@ class Prompt:
     Bgtask    = "[black on #8B4513]   BGTASK  [/] "
     Unknown   = "[white on #444444]  UNKNOWN  [/] "
     Warning   = "[black on #F7EC4D]  WARNING  [/] "
+    Ended     = "[black on #F68D2E]   ENDED   [/] "
+
+MAX_MODEL_LEN = {
+    "qwen3.6-27b": 262144,
+    "default": 131072,
+}
+MAX_OUT_LEN = {
+    "qwen3.6-27b": 262144,
+    "default": 16384,
+}
 
 # ===== Configuration =====
 WORKDIR = Path.cwd()
@@ -47,7 +57,7 @@ MODEL = os.getenv("MODEL")
 API_KEY = os.getenv("API_KEY")
 ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
-MAX_TOKENS = 8000
+MAX_TOKENS = int(os.getenv("MAX_TOKENS", MAX_OUT_LEN["default"]))
 COMPACT_TOKENS = 2000
 KEEP_RECENT = 10000
 THRESHOLD = 5000000000

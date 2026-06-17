@@ -36,6 +36,7 @@ class Agent:
             available_tools=None,
             retry=3,
             max_turn=1e10,
+            debug=False,
         ):
         self.method = method
         self.model = model
@@ -45,6 +46,7 @@ class Agent:
         self.sub_tools = sub_tools
         self.retry = retry
         self.max_turn = max_turn
+        self.debug = debug
 
         match method:
             case "anthropic":
@@ -136,7 +138,7 @@ class Agent:
                 messages.append({"role": "user", "content": f"<background-results>\n{notif_text}\n</background-results>"})
                 messages.append({"role": "assistant", "content": "Noted background results."})
 
-            knight_rider = KnightRiderStatus("", width=11, color="#5c9cf5", fps=30) if is_print and show_processing else None
+            knight_rider = KnightRiderStatus("", width=11, color="#5c9cf5", fps=30) if is_print and show_processing and not self.debug else None
             tried = 0
             while tried < self.retry:
                 try:
@@ -153,8 +155,8 @@ class Agent:
                             )
                             response.content = sorted(response.content, key=lambda x: 0 if x.type == "thinking" else 1)
                             info["cost_tokens"] += response.usage.input_tokens + response.usage.output_tokens
-                            messages.append((m := {"role": "assistant", "content": response.content}))
-                            info["messages"].append(m)
+                            messages.append({"role": "assistant", "content": response.content})
+                            info["messages"].append({"role": "assistant", "content": [i.dict() for i in response.content]})
                         case "openai":
                             tool_param = {"tools": usable_tools, "tool_choice": "auto"} if usable_tools else {}
                             response = self.client.chat.completions.create(
@@ -166,11 +168,22 @@ class Agent:
                             info["cost_tokens"] += response.usage.total_tokens
                             assert response.choices is not None, f"Response is None: {response}"
                             msg = response.choices[0].message
-                            m = {"role": "assistant", "content": msg.content or ""}
-                            if msg.tool_calls: m["tool_calls"] = msg.tool_calls
+                            m = {"role": "assistant"}
+                            if msg.content: m["content"] = msg.content
+                            if msg.tool_calls: m["tool_calls"] = [t.dict() for t in msg.tool_calls]
                             messages.append(m)
-                            if (r:= msg.reasoning_content if hasattr(msg, 'reasoning_content') else None): m['reasoning_content'] = r
-                            info["messages"].append(m)
+                            if (r:= msg.reasoning_content if hasattr(msg, 'reasoning_content') else None):
+                                if msg.tool_calls:
+                                    m['reasoning_content'] = r
+                                    info["messages"].append(m)
+                                else:
+                                    info["messages"].append(m | {'reasoning_content': r})
+                            if (r:= msg.reasoning if hasattr(msg, 'reasoning') else None):
+                                if msg.tool_calls:
+                                    m['reasoning'] = r
+                                    info["messages"].append(m)
+                                else:
+                                    info["messages"].append(m | {'reasoning': r})
 
                     cost_time = time.time() - start_time
                     if knight_rider: knight_rider.stop()
@@ -215,7 +228,7 @@ class Agent:
                                         time.sleep(0.1)
                                 continue
 
-                            if response.stop_reason == 'max_tokens':
+                            if response.stop_reason == 'max_tokens' or (info["last_response"] is None and response.usage.output_tokens == MAX_TOKENS):
                                 console.print(f"{Prompt.Error}[red]Max tokens reached[/]")
                                 info['error'] = 'Max tokens reached, output may be incomplete'
 
@@ -233,6 +246,11 @@ class Agent:
                             print(f"{Prompt.Assistant}{msg.content}")
                             info["last_response"] = msg.content
                             print(f"{Prompt.Tokens}inp: {response.usage.prompt_tokens}, out: {response.usage.completion_tokens}, time: {cost_time:.2f}s, {(response.usage.completion_tokens or 0) / cost_time:.2f} tokens/s, tools: {sum(not i[-1].startswith('Error:') for i in info['used_tools'])}/{len(info['used_tools'])}, skills: {sum(not i[-1].startswith('Error:') for i in info['used_skills'])}/{len(info['used_skills'])}")
+
+                            if info["last_response"] is None and response.usage.completion_tokens == MAX_TOKENS:
+                                console.print(f"{Prompt.Error}[red]Max tokens reached[/]")
+                                info['error'] = 'Max tokens reached, output may be incomplete'
+
                             break
                     else:
                         if msg.content and msg.content.strip(): print(f"{Prompt.Assistant}{msg.content}")
@@ -312,11 +330,13 @@ class Agent:
                 info["messages"].extend(m)
 
         info["cost_time"] = time.time() - begin_time
+        print(f"{Prompt.Ended}total tokens: {info['cost_tokens']}, time: {info['cost_time']:.2f}s, tools: {len(info['used_tools'])}, skills: {len(info['used_skills'])}")
         return info
 
     @__call__.register(str)
-    def _(self, query: str):
-        return self([{"role": "user", "content": query}])
+    def _(self, query: str, **kw):
+        m = [{"role": "user", "content": query}]
+        return self(m, **kw)
 
     def _process_query(self, query: str):
         if type(query) is str:
