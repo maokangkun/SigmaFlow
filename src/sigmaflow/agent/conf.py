@@ -32,6 +32,8 @@ class Prompt:
     Unknown   = "[white on #444444]  UNKNOWN  [/] "
     Warning   = "[black on #F7EC4D]  WARNING  [/] "
     Ended     = "[black on #F68D2E]   ENDED   [/] "
+    RedLine   = "[red]━[/]"
+    BlueLine  = "[blue]━[/]"
 
 MAX_MODEL_LEN = {
     "qwen3.6-27b": 262144,

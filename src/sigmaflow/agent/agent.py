@@ -220,7 +220,8 @@ class Agent:
                                 else:
                                     print(f"{Prompt.Assistant}{block}")
 
-                            print(f"{Prompt.Tokens}inp: {response.usage.input_tokens}, out: {response.usage.output_tokens}, time: {cost_time:.2f}s, {response.usage.output_tokens / cost_time:.2f} tokens/s, tools: {sum(not i[-1].startswith('Error:') for i in info['used_tools'])}/{len(info['used_tools'])}, skills: {sum(not i[-1].startswith('Error:') for i in info['used_skills'])}/{len(info['used_skills'])}")
+                            ratio = (response.usage.input_tokens + response.usage.output_tokens) / MAX_MODEL_LEN.get(self.model.lower(), MAX_MODEL_LEN['default'])
+                            print(f"{Prompt.Tokens}inp: {response.usage.input_tokens}, out: {response.usage.output_tokens}, time: {cost_time:.2f}s, {response.usage.output_tokens / cost_time:.2f} tokens/s, tools: {sum(not i[-1].startswith('Error:') for i in info['used_tools'])}/{len(info['used_tools'])}, skills: {sum(not i[-1].startswith('Error:') for i in info['used_skills'])}/{len(info['used_skills'])}, context: {Prompt.RedLine*round(ratio*10)}{Prompt.BlueLine*(10 - round(ratio*10))} {ratio:.1%}")
 
                             if not BG.is_finished or BG._notification_queue:
                                 with KnightRiderStatus("run background tasks", width=11, color="#fbd367", fps=30):
@@ -245,7 +246,9 @@ class Agent:
                         else:
                             print(f"{Prompt.Assistant}{msg.content}")
                             info["last_response"] = msg.content
-                            print(f"{Prompt.Tokens}inp: {response.usage.prompt_tokens}, out: {response.usage.completion_tokens}, time: {cost_time:.2f}s, {(response.usage.completion_tokens or 0) / cost_time:.2f} tokens/s, tools: {sum(not i[-1].startswith('Error:') for i in info['used_tools'])}/{len(info['used_tools'])}, skills: {sum(not i[-1].startswith('Error:') for i in info['used_skills'])}/{len(info['used_skills'])}")
+
+                            ratio = response.usage.total_tokens / MAX_MODEL_LEN.get(self.model.lower(), MAX_MODEL_LEN['default'])
+                            print(f"{Prompt.Tokens}inp: {response.usage.prompt_tokens}, out: {response.usage.completion_tokens}, time: {cost_time:.2f}s, {(response.usage.completion_tokens or 0) / cost_time:.2f} tokens/s, tools: {sum(not i[-1].startswith('Error:') for i in info['used_tools'])}/{len(info['used_tools'])}, skills: {sum(not i[-1].startswith('Error:') for i in info['used_skills'])}/{len(info['used_skills'])}, context: {Prompt.RedLine*round(ratio*10)}{Prompt.BlueLine*(10 - round(ratio*10))} {ratio:.1%}")
 
                             if info["last_response"] is None and response.usage.completion_tokens == MAX_TOKENS:
                                 console.print(f"{Prompt.Error}[red]Max tokens reached[/]")
@@ -255,6 +258,15 @@ class Agent:
                     else:
                         if msg.content and msg.content.strip(): print(f"{Prompt.Assistant}{msg.content}")
 
+            match self.method:
+                case "anthropic":
+                    ratio = (response.usage.input_tokens + response.usage.output_tokens) / MAX_MODEL_LEN.get(self.model.lower(), MAX_MODEL_LEN['default'])
+                    print(f"{Prompt.Tokens}inp: {response.usage.input_tokens}, out: {response.usage.output_tokens}, time: {cost_time:.2f}s, {response.usage.output_tokens / cost_time:.2f} tokens/s, tools: {len([b for b in response.content if b.type == "tool_use"])}, context: {Prompt.RedLine*round(ratio*10)}{Prompt.BlueLine*(10 - round(ratio*10))} {ratio:.1%}")
+                case "openai":
+                    ratio = response.usage.total_tokens / MAX_MODEL_LEN.get(self.model.lower(), MAX_MODEL_LEN['default'])
+                    print(f"{Prompt.Tokens}inp: {response.usage.prompt_tokens}, out: {response.usage.completion_tokens}, time: {cost_time:.2f}s, {(response.usage.completion_tokens or 0) / cost_time:.2f} tokens/s, tool calls: {len(msg.tool_calls)}, context: {Prompt.RedLine*round(ratio*10)}{Prompt.BlueLine*(10 - round(ratio*10))} {ratio:.1%}")
+
+            # Tools calling
             results = []
             for block in response.content if self.method == 'anthropic' else msg.tool_calls:
                 match block.type:
