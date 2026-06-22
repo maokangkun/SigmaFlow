@@ -60,9 +60,10 @@ API_KEY = os.getenv("API_KEY")
 ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", MAX_OUT_LEN["default"]))
-COMPACT_TOKENS = 2000
-KEEP_RECENT = 10000
-THRESHOLD = 5000000000
+COMPACT_TOKENS = int(os.getenv("COMPACT_TOKENS", 2048))
+COMPACT_THRESHOLD = int(os.getenv("COMPACT_THRESHOLD", 1e20))
+COMPACT_RATIO = float(os.getenv("COMPACT_RATIO", 0.95))
+KEEP_RECENT_TOOL = int(os.getenv("KEEP_RECENT_TOOL", 1e8))
 RAG_ENDPOINT = os.getenv("RAG_ENDPOINT")
 
 CMD_TIMEOUT = 600
@@ -139,7 +140,7 @@ CHILD_TOOLS = [
                 },
                 "args": {
                     "type": "string",
-                    "description": "Arguments passed after the grep-like command, for example: -n \"pattern\" ."
+                    "description": "Arguments passed after the grep-like command. Do not use the pipe symbol '|' to chain commands. Example: -n \"pattern\" <file>."
                 }
             },
             "required": ["tool", "args"]
@@ -405,6 +406,11 @@ API_ERRORS = [
     'Failed to deserialize the JSON body into the target type: messages[1]: unknown variant `image_url`',
     '用户额度不足',
 ]
+
+SUMMARY_PROMPT = """Summarize this conversation for continuity in the corresponding language. Include: 
+1) Core mission, 2) What was accomplished, 3) Current state, 4) Key decisions made.
+Be concise but preserve critical details (e.g. IDs, error messages, configs, paths). Keep it brief.\n
+"""
 
 @dataclass
 class MCPTool:

@@ -219,36 +219,55 @@ skill_loader = SkillLoader(SKILLS_DIR)
 
 # -- Compactor: compact history --
 class Compactor:
-    def __init__(self, transript_dir: Path, client=None):
+    def __init__(self, transript_dir: Path, client=None, max_model_len=None):
         self.transript_dir = transript_dir
         self.client = client
+        self.max_model_len = max_model_len
 
     # -- Layer 1: tool_compact - replace old tool results with placeholders --
     def tool_compact(self, messages: list) -> list:
-        # Collect (msg_index, part_index, tool_result_dict) for all tool_result entries
+        # Collect tool results while tracking the tool names already seen.
         tool_results = []
-        for msg_idx, msg in enumerate(messages):
-            if msg["role"] == "user" and isinstance(msg.get("content"), list):
-                for part_idx, part in enumerate(msg["content"]):
-                    if isinstance(part, dict) and part.get("type") == "tool_result":
-                        tool_results.append((msg_idx, part_idx, part))
-        if len(tool_results) <= KEEP_RECENT:
-            return messages
-        # Find tool_name for each result by matching tool_use_id in prior assistant messages
         tool_name_map = {}
         for msg in messages:
-            if msg["role"] == "assistant":
-                content = msg.get("content", [])
-                if isinstance(content, list):
-                    for block in content:
-                        if hasattr(block, "type") and block.type == "tool_use":
-                            tool_name_map[block.id] = block.name
-        # Clear old results (keep last KEEP_RECENT)
-        to_clear = tool_results[:-KEEP_RECENT]
-        for _, _, result in to_clear:
-            if isinstance(result.get("content"), str) and len(result["content"]) < 100: continue
-            tool_id = result.get("tool_use_id", "")
-            tool_name = tool_name_map.get(tool_id, "unknown")
+            content = msg.get("content", [])
+            match msg["role"]:
+                case "assistant":
+                    if isinstance(content, list):
+                        for block in content:
+                            if hasattr(block, "type") and block.type == "tool_use":
+                                tool_name_map[block.id] = block.name
+                    for tool_call in msg.get("tool_calls", []):
+                        if isinstance(tool_call, dict):
+                            tool_id = tool_call.get("id")
+                            tool_name = tool_call.get("function", {}).get("name")
+                        else:
+                            tool_id = getattr(tool_call, "id", None)
+                            function = getattr(tool_call, "function", None)
+                            tool_name = getattr(function, "name", None)
+                        if tool_id and tool_name:
+                            tool_name_map[tool_id] = tool_name
+                case "user" if isinstance(content, list):
+                    for part in content:
+                        if isinstance(part, dict) and part.get("type") == "tool_result":
+                            tool_name = tool_name_map.get(
+                                part.get("tool_use_id", ""), "unknown"
+                            )
+                            tool_results.append((part, tool_name))
+                case "tool":
+                    tool_name = tool_name_map.get(
+                        msg.get("tool_call_id", ""), "unknown"
+                    )
+                    tool_results.append((msg, tool_name))
+                case _:
+                    continue
+        if len(tool_results) <= KEEP_RECENT_TOOL:
+            return messages
+        # Clear old results (keep last KEEP_RECENT_TOOL).
+        to_clear = tool_results[:-KEEP_RECENT_TOOL]
+        for result, tool_name in to_clear:
+            if isinstance(result.get("content"), str) and len(result["content"]) < 100:
+                continue
             result["content"] = f"[Previous: used {tool_name}]"
         return messages
 
@@ -263,20 +282,32 @@ class Compactor:
         print(f"{' '*12}transcript saved: {transcript_path}")
         # Ask LLM to summarize
         conversation_text = json.dumps(messages, default=str)
-        with KnightRiderStatus("", width=11, color="#5c9cf5", fps=30):
+        msg = [{
+            "role": "user", 
+            "content": SUMMARY_PROMPT + conversation_text
+        }]
+        # with KnightRiderStatus("", width=11, color="#5c9cf5", fps=30):
+        if self.client.__class__.__name__ == 'Anthropic':
             response = self.client.messages.create(
                 model=MODEL,
-                messages=[{"role": "user", "content":
-                    "Summarize this conversation for continuity. Include: "
-                    "1) What was accomplished, 2) Current state, 3) Key decisions made. "
-                    "Be concise but preserve critical details.\n\n" + conversation_text}],
+                messages=msg,
                 max_tokens=COMPACT_TOKENS,
             )
-        summary = response.content[0].text
-        print(f"{Prompt.Tokens}compress to: {response.usage.output_tokens}")
+            summary = response.content[0].text
+            print(f"{' '*12}summary: {summary}")
+            print(f"{Prompt.Tokens}compress to: {response.usage.output_tokens}")
+        else:
+            response = self.client.chat.completions.create(
+                model=MODEL,
+                messages=msg,
+                max_tokens=COMPACT_TOKENS
+            )
+            summary = response.choices[0].message.content
+            print(f"{' '*12}summary: {summary}")
+            print(f"{Prompt.Tokens}compress to: {response.usage.completion_tokens}")
 
         return [
-            {"role": "user", "content": f"[Conversation compressed. Transcript: {transcript_path}]\n\n{summary}"},
+            {"role": "user", "content": f"[Conversation compressed. Transcript: {transcript_path.name}]\n\n{summary}"},
             {"role": "assistant", "content": "Understood. I have the context from the summary. Continuing."},
         ]
 
@@ -284,12 +315,13 @@ class Compactor:
         """Rough token count: ~4 chars per token."""
         return len(str(messages)) // 4
 
-    def auto_compact(self, messages: list, force=False) -> list:
-        messages = self.tool_compact(messages)
-        if force or (n := self.estimate_tokens(messages)) > THRESHOLD:
-            info = f"{Prompt.Compact}manual compact" if force else f"{Prompt.Compact}estimate tokens: {n}, auto compact triggered"
+    def auto_compact(self, messages: list, force=False, context_ratio=0) -> list:
+        if force or context_ratio >= COMPACT_RATIO or (context_ratio * self.max_model_len) > COMPACT_THRESHOLD:
+            info = f"{Prompt.Compact}manual compact" if force else f"{Prompt.Compact}auto compact triggered"
             print(info)
             messages = self.summary_compact(messages)
+        else:
+            messages = self.tool_compact(messages)
         return messages
 
 # -- TaskManager: CRUD with dependency graph, persisted as JSON files --

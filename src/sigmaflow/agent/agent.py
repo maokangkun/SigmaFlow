@@ -19,7 +19,6 @@ from .conf import *
 
 SYSTEM += skill_loader.get_descriptions()
 SUBAGENT_SYSTEM += skill_loader.get_descriptions()
-# compactor = Compactor(TRANSCRIPT_DIR, client)
 console = Console()
 
 class Agent:
@@ -60,6 +59,13 @@ class Agent:
             case _:
                 raise ValueError(f"Unsupported method: {method}")
 
+        self.config = {
+            "api_method": self.client.__class__.__name__,
+            "base_url": self.client.base_url,
+            "api_key": self.client.api_key,
+            "tools": self.tools,
+        }
+
     def print_info(self, subagent=False):
         print(f"{Prompt.Baseurl}{self.client.base_url}")
         k = self.client.api_key or '*****'
@@ -69,7 +75,7 @@ class Agent:
         tools = CHILD_TOOLS if subagent else self.tools
         print(f"{Prompt.MCP}{','.join(f'{k}: {v}' for k,v in MCP.meta.items()) if MCP.meta else None}")
         print(f"{Prompt.ToolList}{' | '.join(t['name'] if 'name' in t else t['function']['name'] for t in tools)} [{len(tools)}]")
-        print(f"{Prompt.Config}API Method: {self.client.__class__.__name__}, Max Tokens: {MAX_TOKENS}, Compact {{threshhold: {THRESHOLD}, summary token: {COMPACT_TOKENS}, tool keep: {KEEP_RECENT}}}")
+        print(f"{Prompt.Config}API Method: {self.client.__class__.__name__}, Max Tokens: {MAX_TOKENS}, Compact {{threshhold: {COMPACT_THRESHOLD}, summary token: {COMPACT_TOKENS}, tool keep: {KEEP_RECENT_TOOL}}}")
         if not subagent: print(Prompt.Tips)
 
     @singledispatchmethod
@@ -88,6 +94,7 @@ class Agent:
             messages.pop(0)
 
         info = {
+            "config": self.config,
             "messages": [{"role": "system", "content": self.system if not subagent else self.sub_system}]+copy.deepcopy(messages[1:]),
             "last_response": None,
             "cost_tokens": 0,
@@ -124,8 +131,15 @@ class Agent:
         max_turn = max_turn or self.max_turn
         begin_time = time.time()
         manual_compact = False
+        ratio = 0
+        max_model_len = MAX_MODEL_LEN.get(self.model.lower(), MAX_MODEL_LEN['default'])
+        compactor = Compactor(TRANSCRIPT_DIR, self.client, max_model_len)
         while cur_turn < max_turn:
-            # messages[:] = compactor.auto_compact(messages, force=manual_compact)
+            messages[:] = compactor.auto_compact(messages, force=manual_compact, context_ratio=ratio)
+            if messages[0]["role"] == "user" and messages[0]["content"].startswith("[Conversation compressed"):
+                info["messages"].extend(messages)
+                if self.method == "openai":
+                    messages.insert(0, {"role": "system", "content": self.system if not subagent else self.sub_system})
             manual_compact = False
 
             notifs = BG.drain_notifications()
@@ -220,7 +234,7 @@ class Agent:
                                 else:
                                     print(f"{Prompt.Assistant}{block}")
 
-                            ratio = (response.usage.input_tokens + response.usage.output_tokens) / MAX_MODEL_LEN.get(self.model.lower(), MAX_MODEL_LEN['default'])
+                            ratio = (response.usage.input_tokens + response.usage.output_tokens) / max_model_len
                             print(f"{Prompt.Tokens}inp: {response.usage.input_tokens}, out: {response.usage.output_tokens}, time: {cost_time:.2f}s, {response.usage.output_tokens / cost_time:.2f} tokens/s, tools: {sum(not i[-1].startswith('Error:') for i in info['used_tools'])}/{len(info['used_tools'])}, skills: {sum(not i[-1].startswith('Error:') for i in info['used_skills'])}/{len(info['used_skills'])}, context: {Prompt.RedLine*round(ratio*10)}{Prompt.BlueLine*(10 - round(ratio*10))} {ratio:.1%}")
 
                             if not BG.is_finished or BG._notification_queue:
@@ -247,7 +261,7 @@ class Agent:
                             print(f"{Prompt.Assistant}{msg.content}")
                             info["last_response"] = msg.content
 
-                            ratio = response.usage.total_tokens / MAX_MODEL_LEN.get(self.model.lower(), MAX_MODEL_LEN['default'])
+                            ratio = response.usage.total_tokens / max_model_len
                             print(f"{Prompt.Tokens}inp: {response.usage.prompt_tokens}, out: {response.usage.completion_tokens}, time: {cost_time:.2f}s, {(response.usage.completion_tokens or 0) / cost_time:.2f} tokens/s, tools: {sum(not i[-1].startswith('Error:') for i in info['used_tools'])}/{len(info['used_tools'])}, skills: {sum(not i[-1].startswith('Error:') for i in info['used_skills'])}/{len(info['used_skills'])}, context: {Prompt.RedLine*round(ratio*10)}{Prompt.BlueLine*(10 - round(ratio*10))} {ratio:.1%}")
 
                             if info["last_response"] is None and response.usage.completion_tokens == MAX_TOKENS:
@@ -260,10 +274,10 @@ class Agent:
 
             match self.method:
                 case "anthropic":
-                    ratio = (response.usage.input_tokens + response.usage.output_tokens) / MAX_MODEL_LEN.get(self.model.lower(), MAX_MODEL_LEN['default'])
+                    ratio = (response.usage.input_tokens + response.usage.output_tokens) / max_model_len
                     print(f"{Prompt.Tokens}inp: {response.usage.input_tokens}, out: {response.usage.output_tokens}, time: {cost_time:.2f}s, {response.usage.output_tokens / cost_time:.2f} tokens/s, tools: {len([b for b in response.content if b.type == "tool_use"])}, context: {Prompt.RedLine*round(ratio*10)}{Prompt.BlueLine*(10 - round(ratio*10))} {ratio:.1%}")
                 case "openai":
-                    ratio = response.usage.total_tokens / MAX_MODEL_LEN.get(self.model.lower(), MAX_MODEL_LEN['default'])
+                    ratio = response.usage.total_tokens / max_model_len
                     print(f"{Prompt.Tokens}inp: {response.usage.prompt_tokens}, out: {response.usage.completion_tokens}, time: {cost_time:.2f}s, {(response.usage.completion_tokens or 0) / cost_time:.2f} tokens/s, tool calls: {len(msg.tool_calls)}, context: {Prompt.RedLine*round(ratio*10)}{Prompt.BlueLine*(10 - round(ratio*10))} {ratio:.1%}")
 
             # Tools calling
@@ -342,7 +356,7 @@ class Agent:
                 info["messages"].extend(m)
 
         info["cost_time"] = time.time() - begin_time
-        print(f"{Prompt.Ended}total tokens: {info['cost_tokens']}, time: {info['cost_time']:.2f}s, tools: {len(info['used_tools'])}, skills: {len(info['used_skills'])}")
+        print(f"{Prompt.Ended}total tokens: {info['cost_tokens']}, time: {info['cost_time']:.2f}s, tools: {len(info['used_tools'])}, skills: {len(info['used_skills'])}, rounds: {cur_turn}")
         return info
 
     @__call__.register(str)
