@@ -1,14 +1,16 @@
 from rich import print
 from .agent import Agent
-from .logo import print_logo
+from .conf import Prompt, SLASH_CMD
+from .logo import Logo
 from .input import session
-from .conf import *
 
-def cli(query, method='anthropic', available_tools=None, debug=False):
+
+def cli(query, method="anthropic", available_tools=None, debug=False):
     agent = Agent(method, available_tools=available_tools, debug=debug)
 
-    print_logo()
-    agent.print_info()
+    logo = Logo.print()
+    info_lines = agent.print_info()
+    logo.sync_after_output(info_lines)
 
     history = []
     if query:
@@ -16,13 +18,13 @@ def cli(query, method='anthropic', available_tools=None, debug=False):
         print(f"{Prompt.User}{query}")
 
     while True:
-        if history and history[-1]['role'] == 'user':
-            info = agent(history)
+        if history and history[-1]["role"] == "user":
+            agent(history)
 
         try:
             query = session.prompt(
                 Prompt.UserHTML,
-                mouse_support=False,
+                **logo.prompt_options,
                 vi_mode=False,
             ).strip()
         except (EOFError, KeyboardInterrupt):
@@ -33,9 +35,10 @@ def cli(query, method='anthropic', available_tools=None, debug=False):
                 break
             case SLASH_CMD.history:
                 print(f"{Prompt.History}")
-                if history: print(history)
+                if history:
+                    print(history)
             case SLASH_CMD.compact:
-                history = compactor.auto_compact(history, force=True)
+                history = agent.compactor.auto_compact(history, force=True)
             case SLASH_CMD.team:
                 ...
             case SLASH_CMD.inbox:

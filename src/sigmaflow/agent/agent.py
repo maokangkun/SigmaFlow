@@ -59,24 +59,36 @@ class Agent:
             case _:
                 raise ValueError(f"Unsupported method: {method}")
 
+        max_model_len = MAX_MODEL_LEN.get(self.model.lower(), MAX_MODEL_LEN['default'])
+        self.compactor = Compactor(TRANSCRIPT_DIR, self.client, max_model_len)
+
         self.config = {
             "api_method": self.client.__class__.__name__,
             "base_url": self.client.base_url,
             "api_key": self.client.api_key,
+            "max_model_len": max_model_len,
             "tools": self.tools,
         }
 
     def print_info(self, subagent=False):
-        print(f"{Prompt.Baseurl}{self.client.base_url}")
         k = self.client.api_key or '*****'
-        print(f"{Prompt.APIkey}{k[:5]}{'*' *(len(k)-10)}{k[-5:]}")
-        print(f"{Prompt.Model}[green]{self.model}[/]")
-        print(f"{Prompt.System}{self.system if not subagent else SUBAGENT_SYSTEM}")
         tools = CHILD_TOOLS if subagent else self.tools
-        print(f"{Prompt.MCP}{','.join(f'{k}: {v}' for k,v in MCP.meta.items()) if MCP.meta else None}")
-        print(f"{Prompt.ToolList}{' | '.join(t['name'] if 'name' in t else t['function']['name'] for t in tools)} [{len(tools)}]")
-        print(f"{Prompt.Config}API Method: {self.client.__class__.__name__}, Max Tokens: {MAX_TOKENS}, Compact {{threshhold: {COMPACT_THRESHOLD}, summary token: {COMPACT_TOKENS}, tool keep: {KEEP_RECENT_TOOL}}}")
-        if not subagent: print(Prompt.Tips)
+        lines = [
+            f"{Prompt.Baseurl}{self.client.base_url}",
+            f"{Prompt.APIkey}{k[:5]}{'*' *(len(k)-10)}{k[-5:]}",
+            f"{Prompt.Model}[green]{self.model}[/]",
+            f"{Prompt.System}{self.system if not subagent else SUBAGENT_SYSTEM}",
+            f"{Prompt.MCP}{','.join(f'{k}: {v}' for k,v in MCP.meta.items()) if MCP.meta else None}",
+            f"{Prompt.ToolList}{' | '.join(t['name'] if 'name' in t else t['function']['name'] for t in tools)} [{len(tools)}]",
+            f"{Prompt.Config}API Method: {self.client.__class__.__name__}, Max Tokens: {MAX_TOKENS}, Compact {{threshhold: {COMPACT_THRESHOLD}, summary token: {COMPACT_TOKENS}, tool keep: {KEEP_RECENT_TOOL}}}",
+        ]
+        if not subagent:
+            lines.append(Prompt.Tips)
+
+        for line in lines:
+            print(line)
+
+        return lines
 
     @singledispatchmethod
     def __call__(self,
@@ -133,9 +145,8 @@ class Agent:
         manual_compact = False
         ratio = 0
         max_model_len = MAX_MODEL_LEN.get(self.model.lower(), MAX_MODEL_LEN['default'])
-        compactor = Compactor(TRANSCRIPT_DIR, self.client, max_model_len)
         while cur_turn < max_turn:
-            messages[:] = compactor.auto_compact(messages, force=manual_compact, context_ratio=ratio)
+            messages[:] = self.compactor.auto_compact(messages, force=manual_compact, context_ratio=ratio)
             if messages[0]["role"] == "user" and messages[0]["content"].startswith("[Conversation compressed"):
                 info["messages"].extend(messages)
                 if self.method == "openai":
@@ -508,4 +519,3 @@ class Agent:
             case _:
                 raise ValueError(f"Unsupported method: {self.method}")
         return out
-
