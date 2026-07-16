@@ -203,12 +203,14 @@ class Agent:
                                     info["messages"].append(m)
                                 else:
                                     info["messages"].append(m | {'reasoning_content': r})
-                            if (r:= msg.reasoning if hasattr(msg, 'reasoning') else None):
+                            elif (r:= msg.reasoning if hasattr(msg, 'reasoning') else None):
                                 if msg.tool_calls:
                                     m['reasoning'] = r
                                     info["messages"].append(m)
                                 else:
                                     info["messages"].append(m | {'reasoning': r})
+                            else:
+                                info["messages"].append(m)
 
                     cost_time = time.time() - start_time
                     if knight_rider: knight_rider.stop()

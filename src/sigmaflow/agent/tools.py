@@ -213,7 +213,7 @@ class SkillLoader:
         skill = self.skills.get(name)
         if not skill:
             return f"Error: Unknown skill '{name}'. Available: {', '.join(self.skills.keys())}"
-        return f"<skill name=\"{name}\">\n{skill['body']}\n</skill>"
+        return f"<skill name=\"{name}\" path=\"{skill['path']}\">\n{skill['body']}\n</skill>"
 
 skill_loader = SkillLoader(SKILLS_DIR)
 
@@ -624,19 +624,23 @@ class MCPClient:
             "method": "tools/list",
             "params": {}
         }
-        resp = self.session.post(url, json=payload, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        return [
-            MCPTool(
-                name=t["name"],
-                description=t.get("description", ""),
-                input_schema=t.get("inputSchema", {}),
-                server_name=server_name,
-                server_url=url,
-            )
-            for t in data.get("result", {}).get("tools", [])
-        ]
+        try:
+            resp = self.session.post(url, json=payload, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            return [
+                MCPTool(
+                    name=t["name"],
+                    description=t.get("description", ""),
+                    input_schema=t.get("inputSchema", {}),
+                    server_name=server_name,
+                    server_url=url,
+                )
+                for t in data.get("result", {}).get("tools", [])
+            ]
+        except Exception as e:
+            print(f"{Prompt.Error}MCP from {server_name}: {e}")
+            return []
 
     def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         tool = self.tools[tool_name]
