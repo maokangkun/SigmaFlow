@@ -5,8 +5,6 @@ import time
 import json
 import uuid
 import arxiv
-import asyncio
-import aiohttp
 import requests
 import threading
 import subprocess
@@ -16,6 +14,7 @@ from pathlib import Path
 from collections import defaultdict
 from .utils import KnightRiderStatus
 from .conf import *
+from .sciverse_api import SCIVERSE_TOOL_HANDLERS, SCIVERSE_TOOLS
 
 # -- Tools --
 def safe_path(p: str) -> Path:
@@ -635,6 +634,7 @@ class MCPClient:
                     input_schema=t.get("inputSchema", {}),
                     server_name=server_name,
                     server_url=url,
+                    server_headers=server_cfg.get("headers", {})
                 )
                 for t in data.get("result", {}).get("tools", [])
             ]
@@ -654,7 +654,7 @@ class MCPClient:
             }
         }
         try:
-            resp = self.session.post(tool.server_url, json=payload, timeout=60)
+            resp = self.session.post(tool.server_url, json=payload, headers=tool.server_headers, timeout=60)
             resp.raise_for_status()
             data = resp.json()
             return data.get("result", {}).get("content", "")
@@ -688,6 +688,10 @@ TOOL_HANDLERS = {
     "rag":             lambda **kw: rag(kw.get("query", "")),
     "ls":              lambda **kw: run_ls(kw.get("param", "")),
 }
+
+TOOL_HANDLERS.update(SCIVERSE_TOOL_HANDLERS)
+CHILD_TOOLS.extend(SCIVERSE_TOOLS)
+TOOLS.extend(SCIVERSE_TOOLS)
 
 MCP = MCPClient()
 for mcp_tool in MCP.tools.values():

@@ -293,6 +293,7 @@ class Logo:
     height: int
     active: bool
     calibrated: bool = False
+    click_listener_enabled: bool = True
 
     @classmethod
     def print(cls, is_slim=True, pad: str = "", margin=1) -> "Logo":
@@ -422,8 +423,14 @@ class Logo:
 
         return bindings
 
+    def disable_click_listener(self) -> None:
+        self.click_listener_enabled = False
+
     @property
     def prompt_options(self) -> dict[str, object]:
+        if not self.click_listener_enabled:
+            return {"mouse_support": False}
+
         return {
             "mouse_support": True,
             "key_bindings": self.key_bindings(),

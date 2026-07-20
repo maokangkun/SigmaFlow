@@ -14,6 +14,7 @@ def cli(query, method="anthropic", available_tools=None, debug=False):
 
     history = []
     if query:
+        logo.disable_click_listener()
         history.append({"role": "user", "content": query})
         print(f"{Prompt.User}{query}")
 
@@ -29,6 +30,9 @@ def cli(query, method="anthropic", available_tools=None, debug=False):
             ).strip()
         except (EOFError, KeyboardInterrupt):
             break
+
+        if query:
+            logo.disable_click_listener()
 
         match q := query.lower():
             case _ if q in SLASH_CMD.exit:

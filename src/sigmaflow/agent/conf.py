@@ -65,6 +65,7 @@ COMPACT_THRESHOLD = int(os.getenv("COMPACT_THRESHOLD", 1e20))
 COMPACT_RATIO = float(os.getenv("COMPACT_RATIO", 0.95))
 KEEP_RECENT_TOOL = int(os.getenv("KEEP_RECENT_TOOL", 1e8))
 RAG_ENDPOINT = os.getenv("RAG_ENDPOINT")
+Sciverse_API_KEY = os.getenv("Sciverse_API_KEY")
 
 CMD_TIMEOUT = 600
 
@@ -419,6 +420,7 @@ class MCPTool:
     input_schema: Dict[str, Any]
     server_name: str
     server_url: str
+    server_headers: Dict[str, Any]
 
 class SLASH_CMD:
     history = '/history'
