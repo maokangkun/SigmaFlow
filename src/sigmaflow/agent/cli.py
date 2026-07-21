@@ -5,8 +5,8 @@ from .logo import Logo
 from .input import session
 
 
-def cli(query, method="anthropic", available_tools=None, debug=False):
-    agent = Agent(method, available_tools=available_tools, debug=debug)
+def cli(query, method="anthropic", available_tools=None, debug=False, support_tool=False):
+    agent = Agent(method, available_tools=available_tools, debug=debug, support_tool=support_tool)
 
     logo = Logo.print()
     info_lines = agent.print_info()

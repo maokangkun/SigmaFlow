@@ -36,6 +36,7 @@ class Agent:
             retry=3,
             max_turn=1e10,
             debug=False,
+            support_tool=False,
         ):
         self.method = method
         self.model = model
@@ -46,6 +47,10 @@ class Agent:
         self.retry = retry
         self.max_turn = max_turn
         self.debug = debug
+        self.support_tool = support_tool
+
+        if self.support_tool:
+            self.system += '\n\nNote: The agent is allowed to use tools. If the agent needs to use a tool, it should respond with a tool call in the format of <tool_call><function=tool_name><parameter=param_name>param_value</parameter></function></tool_call>. The agent should not provide any other text in its response when using a tool.'
 
         match method:
             case "anthropic":
@@ -270,6 +275,8 @@ class Agent:
                             msg.tool_calls = self._parse_to_openai_toolcall(msg.content)
                         elif 'intern' in self.model.lower() and msg.content and ('```tool' in msg.content or '"tool_calls": [' in msg.content):
                             msg.tool_calls = self._parse_intern_to_openai_toolcall(msg.content)
+                        elif self.support_tool and '<tool_call>' in msg.content and msg.content.endswith('</tool_call>'):
+                            msg.tool_calls = self._parse_to_openai_toolcall(msg.content)
                         else:
                             print(f"{Prompt.Assistant}{msg.content}")
                             info["last_response"] = msg.content

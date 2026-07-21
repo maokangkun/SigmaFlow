@@ -82,6 +82,12 @@ def setup_args():
         help="specify tools to use (e.g. bash, read, etc.)",
     )
     agent_parser.add_argument(
+        "--support-tool",
+        action="store_true",
+        default=False,
+        help="enable support for tool usage in the agent",
+    )
+    agent_parser.add_argument(
         "--debug",
         action="store_true",
         default=False,
@@ -196,7 +202,7 @@ def main():
         case 'agent':
             from .agent import cli
             tools = [t.strip() for t in args.tool.split(",")] if args.tool else None
-            cli(args.query, args.method, available_tools=tools, debug=args.debug)
+            cli(args.query, args.method, available_tools=tools, debug=args.debug, support_tool=args.support_tool)
         case _:
             pass
 
