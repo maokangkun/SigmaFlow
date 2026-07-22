@@ -10,6 +10,7 @@ from rich import print
 from openai import OpenAI
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.syntax import Syntax
 from anthropic import Anthropic
 from pathlib import Path
 from functools import singledispatchmethod
@@ -321,7 +322,18 @@ class Agent:
                                 print(f"{Prompt.Error}Failed to parse function arguments as JSON, using raw string. Function: {func}, Arguments: {inp}")
                                 results.append({"role": "tool", "tool_call_id": block.id, "content": "Error: Failed to parse function arguments as JSON."})
                                 continue
-                        print(f"{Prompt.Assistant}[orange3][italic]tool_use[/]\nname: {func}\ninput: [/]{inp}")
+                        if func == 'write_file' and (t := inp.get('content', '')) and len(t) > 1000:
+                            inp_prt = inp.copy()
+                            inp_prt['content'] = t[:400] + '...' + t[-400:]
+                        elif func == 'edit_file':
+                            inp_prt = inp.copy()
+                            if (t := inp.get('old_text', '')) and len(t) > 1000:
+                                inp_prt['old_text'] = t[:400] + '...' + t[-400:]
+                            if (t := inp.get('new_text', '')) and len(t) > 1000:
+                                inp_prt['new_text'] = t[:400] + '...' + t[-400:]
+                        else:
+                            inp_prt = inp
+                        print(f"{Prompt.Assistant}[orange3][italic]tool_use[/]\nname: {func}\ninput: [/]{inp_prt}")
                     case _:
                         print(f"{Prompt.Assistant}{block}")
 
@@ -340,6 +352,20 @@ class Agent:
                         if len(output) > 1000: out_prt = output[:400]+'\n......\n'+output[-400:]
                     if func in MCP.tools:
                         print(f"{Prompt.MCP}[magenta]{func.upper()}[/]\n{out_prt}")
+                    elif func == "edit_file" and not output.startswith("Error:"):
+                        print(f"{Prompt.Tool}[magenta]{func.upper()}[/]")
+                        self._print_syntax(output, "diff")
+                    elif func in {"read_file", "write_file"} and not output.startswith("Error:"):
+                        code = output if func == "read_file" else inp.get("content", "")
+                        print(f"{Prompt.Tool}[magenta]{func.upper()}[/]")
+                        offset = inp.get("offset")
+                        start_line = offset if offset and code.startswith(f"[{offset} lines skipped]") else 1
+                        self._print_syntax(
+                            code,
+                            Syntax.guess_lexer(inp.get("path", ""), code=code),
+                            start_line=start_line,
+                        )
+                        if func == "write_file": print(out_prt)
                     else:
                         print(f"{Prompt.Tool}[magenta]{func.upper()}[/]\n{out_prt}")
 
@@ -507,6 +533,39 @@ class Agent:
             )
             tool_calls.append(tool_call)
         return tool_calls
+
+    def _print_syntax(self, code: str, lexer: str, start_line: int = 1):
+        if len(code) <= 1000:
+            console.print(Syntax(code, lexer, line_numbers=True, start_line=start_line))
+            return
+
+        lines = code.splitlines(keepends=True)
+        head_count = 0
+        head_length = 0
+        for line in lines:
+            if head_count and head_length + len(line) > 400:
+                break
+            head_count += 1
+            head_length += len(line)
+
+        tail_start = len(lines)
+        tail_length = 0
+        while tail_start > head_count:
+            line = lines[tail_start - 1]
+            if tail_length and tail_length + len(line) > 400:
+                break
+            tail_start -= 1
+            tail_length += len(line)
+
+        if tail_start == head_count:
+            console.print(Syntax(code, lexer, line_numbers=True, start_line=start_line))
+            return
+
+        head = "".join(lines[:head_count]).removesuffix("\n").removesuffix("\r")
+        tail = "".join(lines[tail_start:]).removesuffix("\n").removesuffix("\r")
+        console.print(Syntax(head, lexer, line_numbers=True, start_line=start_line))
+        console.print(Syntax("\n     ... content omitted ...\n", lexer, line_numbers=False))
+        console.print(Syntax(tail, lexer, line_numbers=True, start_line=start_line + tail_start))
 
     def llm(self, query: str) -> str:
         msg = [{"role": "user", "content": self._process_query(query)}]

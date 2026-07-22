@@ -4,6 +4,7 @@ import yaml
 import time
 import json
 import uuid
+import difflib
 import arxiv
 import requests
 import threading
@@ -121,8 +122,16 @@ def run_edit(path: str, old_text: str, new_text: str) -> str:
         content = fp.read_text()
         if old_text not in content:
             return f"Error: old_text not found in {path}"
-        fp.write_text(content.replace(old_text, new_text, 1))
-        return f"Edited {path}"
+        new_content = content.replace(old_text, new_text, 1)
+        fp.write_text(new_content)
+        diff = difflib.unified_diff(
+            content.splitlines(),
+            new_content.splitlines(),
+            fromfile=f"old: {path}",
+            tofile=f"new: {path}",
+            lineterm="",
+        )
+        return "\n".join(diff) or f"Edited {path} (no changes)"
     except Exception as e:
         return f"Error: {e}"
 
@@ -342,7 +351,7 @@ class TaskManager:
 
     def _save(self, task: dict):
         path = self.dir / f"task_{task['id']}.json"
-        path.write_text(json.dumps(task, indent=2))
+        path.write_text(json.dumps(task, indent=2, ensure_ascii=False))
 
     def create(self, subject: str, description: str = "") -> str:
         task = {
@@ -351,10 +360,10 @@ class TaskManager:
         }
         self._save(task)
         self._next_id += 1
-        return json.dumps(task, indent=2)
+        return json.dumps(task, indent=2, ensure_ascii=False)
 
     def get(self, task_id: int) -> str:
-        return json.dumps(self._load(task_id), indent=2)
+        return json.dumps(self._load(task_id), indent=2, ensure_ascii=False)
 
     def update(self, task_id: int, status: str = None,
                add_blocked_by: list = None, add_blocks: list = None) -> str:
@@ -380,7 +389,7 @@ class TaskManager:
                 except ValueError:
                     pass
         self._save(task)
-        return json.dumps(task, indent=2)
+        return json.dumps(task, indent=2, ensure_ascii=False)
 
     def _clear_dependency(self, completed_id: int):
         """Remove completed_id from all other tasks' blockedBy lists."""
