@@ -53,6 +53,7 @@ function App() {
           title: 'Leave it to SigmaFlow',
           subtitle: 'SigmaFlow 是一款革命性的多模态大模型工具，专注于构建智能化的 Agents 和 Workflow 系统。让复杂的AI任务变得简单，让创新想法快速落地。',
           experience: '体验 SigmaFlow',
+          experience_science: '体验 Science',
           download: '下载应用程序'
         },
         useCases: {
@@ -113,6 +114,7 @@ function App() {
           title: 'Leave it to SigmaFlow',
           subtitle: 'SigmaFlow is a revolutionary multimodal large model tool focused on building intelligent Agents and Workflow systems. Making complex AI tasks simple and innovative ideas quickly realized.',
           experience: 'Experience SigmaFlow',
+          experience_science: 'Experience Science',
           download: 'Download App'
         },
         useCases: {
@@ -438,7 +440,16 @@ function App() {
           >
             {t.hero.experience}
           </Button>
-          <Button size="lg" variant="outline" className="px-8 py-3 border-gray-900 text-gray-900 hover:bg-gray-900 hover:text-white">
+          <Button size="lg"
+            className="bg-gray-900 hover:bg-gray-800 px-8 py-3"
+            onClick={() => (window.location.href = "/science/")}
+          >
+            {t.hero.experience_science}
+          </Button>
+          <Button size="lg" variant="outline" 
+            className="px-8 py-3 border-gray-900 text-gray-900 hover:bg-gray-900 hover:text-white"
+            onClick={() => (window.location.href = "https://github.com/maokangkun/SigmaFlow")}
+          >
             {t.hero.download}
           </Button>
         </div>
@@ -472,7 +483,7 @@ function App() {
                 onEnded={() => setIsPlaying(false)}
               >
                 {/* <source src="https://files.manuscdn.com/assets/video/Manus-Chinese-2k-compressed-v2.mp4" type="video/mp4" /> */}
-                <source src="https://resource2.heygen.ai/video/transcode/1c3cd271ad9f40ff9895c9da011fa482/v344cac8c4c754c1097f9e6878d14c38f/1280x720.mp4?response-content-disposition=attachment%3B+filename%2A%3DUTF-8%27%27SigmaFlow%2520Promo.mp4%3B" type="video/mp4" />
+                <source src="https://sigmaflows.github.io/static/images/intro.mp4" type="video/mp4" />
                 您的浏览器不支持视频播放。
               </video>
               {!isPlaying && (

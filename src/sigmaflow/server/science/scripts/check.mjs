@@ -1,0 +1,35 @@
+/** Syntax + pure-function checks. No development dependencies. */
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const files=(await fs.readdir(path.join(root,'js'))).filter(f=>f.endsWith('.js'));
+for(const file of files){const result=spawnSync(process.execPath,['--check',path.join(root,'js',file)],{encoding:'utf8'});if(result.status)throw new Error(result.stderr);console.log('Syntax OK:',file);}
+const local=new Map();const context={CS:{},window:{},localStorage:{getItem:k=>local.get(k),setItem:(k,v)=>local.set(k,v),removeItem:k=>local.delete(k)},EventTarget,Event,console,Date,Math,JSON,Map,Set,setTimeout,URL,Blob};
+context.window=context;vm.createContext(context);
+for(const file of ['data.js','core.js'])vm.runInContext(await fs.readFile(path.join(root,'js',file),'utf8'),context);
+const {CS}=context;
+assert.equal(CS.escape('<img onerror="alert(1)">'),'&lt;img onerror=&quot;alert(1)&quot;&gt;');
+assert.equal(CS.parseCSV('a,b\r\n"x,y","he said ""hi"""\r\n').rows[1][0],'x,y');
+assert.equal(CS.parseCSV('a,b\r\n"x,y","he said ""hi"""\r\n').rows[1][1],'he said "hi"');
+assert.equal(CS.parseCSV('a\n1\n2\n3\n',',',2).rows.length,2);
+assert.equal(CS.parseCSV('a,b\n"hello\nworld",2').rows[1][0],'hello\nworld');
+const seq=CS.sequenceStats('>one\nACGTNN\n>two\nGGCC');
+assert.equal(seq.length,2);assert.equal(seq[0].length,6);assert.equal(seq[0].gc,'50.00');assert.equal(seq[0].ambiguous,2);assert.equal(seq[1].gc,'100.00');
+assert.equal(CS.sequenceStats('NNNN')[0].gc,null);
+assert.throws(()=>CS.sequenceStats('MALFORMED123'));
+assert.throws(()=>CS.sequenceStats(''));
+assert.ok(CS.csvCell('=SUM(A1:A2)').startsWith('"\''));
+console.log('PASS: HTML escaping, CSV parsing/limits, DNA statistics, invalid input, CSV formula escaping.');
+CS.state.projects.push({id:'unit-test',name:'Persistence check'});
+CS.save();
+assert.ok(local.get('sigmaflow-science.workspace.v1').includes('unit-test'));
+CS.state.settings.persist=false; CS.save();
+assert.equal(local.has('sigmaflow-science.workspace.v1'),false);
+assert.equal(local.get('sigmaflow-science.workspace.v1.persist'),'false');
+CS.reset();
+assert.equal(CS.state.projects.some(p=>p.id==='unit-test'),false);
+console.log('PASS: state saving, persistence opt-out, and reset.');

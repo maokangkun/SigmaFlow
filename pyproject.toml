@@ -11,6 +11,7 @@ dependencies = [
     "arxiv",
     "openai",
     "dotenv",
+    "bcrypt",
     "ollama",
     "pandas",
     "Pillow",
@@ -84,6 +85,10 @@ version = {attr = "sigmaflow.version.__version__"}
     "dist/**/*",
 ]
 "sigmaflow.server.admin" = [
+    "dist/*",
+    "dist/**/*",
+]
+"sigmaflow.server.science" = [
     "dist/*",
     "dist/**/*",
 ]

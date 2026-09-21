@@ -1,0 +1,41 @@
+{
+  "tests": [
+    {
+      "test": "Health explicitly identifies a demo backend",
+      "status": "passed"
+    },
+    {
+      "test": "Create and read a task",
+      "status": "passed"
+    },
+    {
+      "test": "SSE emits a valid state snapshot",
+      "status": "passed"
+    },
+    {
+      "test": "Server-side pause and resume",
+      "status": "passed"
+    },
+    {
+      "test": "Cancellation is terminal",
+      "status": "passed"
+    },
+    {
+      "test": "Invalid request validation",
+      "status": "passed"
+    },
+    {
+      "test": "Cross-origin demo writes are rejected",
+      "status": "passed"
+    },
+    {
+      "test": "Server source and unlisted paths are not served",
+      "status": "passed"
+    },
+    {
+      "test": "Static entrypoint and security headers",
+      "status": "passed"
+    }
+  ],
+  "count": 9
+}

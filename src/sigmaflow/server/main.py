@@ -9,6 +9,7 @@ from .api import PipelineAPI
 from .task import TaskAPI
 from .workspace import WorkspaceAPI
 from .admin import AdminAPI
+from .science import ScienceAPI
 
 
 class SPAStaticFiles(StaticFiles):
@@ -34,15 +35,18 @@ class PipelineServer:
         task = TaskAPI(pipeline_manager)
         workspace = WorkspaceAPI(pipeline_manager)
         admin = AdminAPI(pipeline_manager)
+        science = ScienceAPI()
 
         self.app.include_router(api.router)
         self.app.include_router(task.router)
         self.app.include_router(workspace.router)
         self.app.include_router(admin.router)
+        self.app.include_router(science.router)
 
         web_root = Path(f"{__file__[: __file__.rindex('/')]}/website/dist/")
         work_root = Path(f"{__file__[: __file__.rindex('/')]}/comfyui/dist")
         admin_root = Path(f"{__file__[: __file__.rindex('/')]}/admin/dist")
+        sci_root = Path(f"{__file__[: __file__.rindex('/')]}/science/dist")
         
         # Mount static files in order of specificity
         # Admin panel static files
@@ -59,6 +63,14 @@ class PipelineServer:
                 "/workspace/",
                 StaticFiles(directory=work_root, html=True),
                 name="SigmaFlow Workspace",
+            )
+
+        # Science workspace
+        if sci_root.exists():
+            self.app.mount(
+                "/science/",
+                StaticFiles(directory=sci_root, html=True),
+                name="SigmaFlow Science",
             )
         
         # Main website (catch-all)

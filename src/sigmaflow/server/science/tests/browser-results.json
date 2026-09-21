@@ -1,0 +1,66 @@
+{
+  "tests": [
+    {
+      "test": "Home renders with no external asset requests and no horizontal overflow",
+      "status": "passed"
+    },
+    {
+      "test": "Prompt creates a plan and waits for explicit approval",
+      "status": "passed"
+    },
+    {
+      "test": "Task pause freezes progress; logs expand",
+      "status": "passed"
+    },
+    {
+      "test": "Task resumes, survives navigation, completes, and opens results",
+      "status": "passed"
+    },
+    {
+      "test": "Chart filtering, zoom, reset, and point inspection",
+      "status": "passed"
+    },
+    {
+      "test": "Actual Markdown export includes synthetic-data limitations",
+      "status": "passed"
+    },
+    {
+      "test": "Expression result tabs and table filtering",
+      "status": "passed"
+    },
+    {
+      "test": "Local file import, safe quoted CSV preview, selection and record removal",
+      "status": "passed"
+    },
+    {
+      "test": "Projects create/edit/archive correctly; user HTML is escaped",
+      "status": "passed"
+    },
+    {
+      "test": "Literature bookmarks, safe notes, Escape dismissal and modal focus trap",
+      "status": "passed"
+    },
+    {
+      "test": "Real browser-side FASTA statistics and invalid-input handling",
+      "status": "passed"
+    },
+    {
+      "test": "Workflow selection, parameter recording and task cancellation",
+      "status": "passed"
+    },
+    {
+      "test": "High-contrast accessibility preference",
+      "status": "passed"
+    },
+    {
+      "test": "10 routes at 1440px / 768px / 390px and mobile sidebar",
+      "status": "passed"
+    },
+    {
+      "test": "No uncaught browser exceptions; no external network requests in local demo",
+      "status": "passed"
+    }
+  ],
+  "count": 15,
+  "environment": "Chromium headless, standalone HTML via set_content; Node tests cover storage utilities"
+}

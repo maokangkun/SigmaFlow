@@ -1,0 +1,110 @@
+/* Shared state and safe local utilities. */
+(() => {
+  'use strict';
+  const key = 'sigmaflow-science.workspace.v1';
+  const clone = x => JSON.parse(JSON.stringify(x));
+  CS.escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  CS.uid = (prefix = 'id') => prefix + '-' + (globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2, 9));
+  CS.formatBytes = bytes => { if (!bytes) return '0 B'; const units = ['B', 'KB', 'MB', 'GB']; const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), 3); return `${(bytes / 1024 ** i).toFixed(i ? 1 : 0)} ${units[i]}`; };
+  CS.today = () => new Date().toISOString().slice(0, 10);
+  CS.time = value => new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  CS.date = value => new Date(value).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+  CS.relative = value => { const delta = Math.max(0, Date.now() - new Date(value).getTime()); return delta < 60000 ? '刚刚' : delta < 3600000 ? `${Math.floor(delta / 60000)} 分钟前` : delta < 86400000 ? `${Math.floor(delta / 3600000)} 小时前` : CS.date(value); };
+  CS.download = (name, body, type = 'text/plain;charset=utf-8') => {
+    const blob = body instanceof Blob ? body : new Blob([body], { type });
+    const url = URL.createObjectURL(blob); const a = document.createElement('a');
+    a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  };
+  CS.csvCell = value => {
+    let str = String(value ?? '');
+    // Prevent spreadsheet formula interpretation when exporting user-provided values.
+    if (/^[=+@\-\t\r]/.test(str)) str = "'" + str;
+    return '"' + str.replace(/"/g, '""') + '"';
+  };
+  CS.parseCSV = (text, delimiter = ',', maxRows = 101) => {
+    const rows = []; let row = [], field = '', quoted = false;
+    text = text.replace(/^\uFEFF/, '');
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (c === '"') { if (quoted && text[i + 1] === '"') { field += '"'; i++; } else quoted = !quoted; }
+      else if (c === delimiter && !quoted) { row.push(field); field = ''; }
+      else if ((c === '\n' || c === '\r') && !quoted) {
+        if (c === '\r' && text[i + 1] === '\n') i++;
+        row.push(field); if (row.some(v => v.trim() !== '')) rows.push(row); row = []; field = '';
+        if (rows.length >= maxRows) return { rows, limited: true };
+      } else field += c;
+    }
+    if (field || row.length) { row.push(field); rows.push(row); }
+    return { rows, limited: false, incompleteQuote: quoted };
+  };
+  CS.sequenceStats = text => {
+    if (!text.trim()) throw new Error('请先输入 DNA 序列或 FASTA 文本。');
+    if (text.length > 1000000) throw new Error('本地工具最多处理 1 MB 文本，请使用后端处理大文件。');
+    let entries = [], current = { name: 'sequence_1', sequence: '' };
+    for (const line of text.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      if (line.startsWith('>')) { if (current.sequence) entries.push(current); current = { name: line.slice(1).trim() || 'unnamed', sequence: '' }; }
+      else current.sequence += line.replace(/\s/g, '').toUpperCase();
+    }
+    if (current.sequence) entries.push(current);
+    if (!entries.length) throw new Error('未找到序列正文。');
+    entries = entries.map(entry => {
+      if (/[^ACGTRYSWKMBDHVN]/.test(entry.sequence)) throw new Error('仅接受 DNA IUPAC 字符 A/C/G/T/R/Y/S/W/K/M/B/D/H/V/N；请检查非序列文本。');
+      const counts = Object.fromEntries(['A', 'C', 'G', 'T', 'N'].map(base => [base, entry.sequence.split(base).length - 1]));
+      const canonical = counts.A + counts.C + counts.G + counts.T;
+      return { name: entry.name, length: entry.sequence.length, counts, ambiguous: entry.sequence.length - canonical, gc: canonical ? ((counts.G + counts.C) / canonical * 100).toFixed(2) : null };
+    });
+    return entries;
+  };
+  CS.defaults = () => ({
+    version: 1, projects: clone(CS.data.projects), datasets: clone(CS.data.datasets), runs: [],
+    bookmarks: [], notes: {}, projectId: 'pr-pbmc', currentRunId: null,
+    settings: { persist: true, contrast: false, reducedMotion: false, mode: 'local', endpoint: '/api', inspector: true }
+  });
+  let stored;
+  try { stored = JSON.parse(localStorage.getItem(key) || 'null'); } catch { CS.storageUnavailable = true; }
+  CS.state = CS.defaults();
+  if (stored?.version === 1) {
+    for (const field of ['projects', 'datasets', 'runs', 'bookmarks']) if (Array.isArray(stored[field])) CS.state[field] = stored[field];
+    if (stored.settings && typeof stored.settings === 'object') Object.assign(CS.state.settings, stored.settings);
+    if (stored.notes && typeof stored.notes === 'object') CS.state.notes = stored.notes;
+    CS.state.projectId = stored.projectId || 'pr-pbmc'; CS.state.currentRunId = stored.currentRunId || null;
+  }
+  try { if (localStorage.getItem(key + '.persist') === 'false') CS.state.settings.persist = false; } catch {}
+  // A browser refresh must not silently restart an execution.
+  CS.state.runs.forEach(run => { if (['running', 'connecting'].includes(run.status)) { run.status = run.transport === 'remote' ? 'error' : 'paused'; run.reloaded = true; if (run.transport === 'remote') run.error = '页面已重新加载；服务端任务可能继续运行。请重连以同步状态。'; } });
+  CS.ui = {
+    route: 'home', mobileSidebar: false, composer: '', attachments: [],
+    filters: { data: '', dataTab: 'all', project: '', projectTab: 'active', literature: '', paperTab: 'all', tools: '', toolTab: 'all' },
+    datasetSelection: new Set(), resultTab: 'overview', markerSearch: '', group: 'all', zoom: 1,
+    workflowId: 'singlecell', workflowCategory: 'all', datasetId: 'ds-pbmc', organism: 'Homo sapiens', advanced: false,
+    minGenes: 200, maxMito: 20, activeTool: 'sequence', sequence: CS.data.sampleFASTA, sequenceResult: null,
+    modal: null, expandedLogs: new Set(), selectedCell: null, note: '', apiHealth: null
+  };
+  CS.files = new Map(); // File objects only live in memory; raw file bytes never enter localStorage.
+  CS.save = () => {
+    try {
+      localStorage.setItem(key + '.persist', String(CS.state.settings.persist));
+      if (!CS.state.settings.persist) { localStorage.removeItem(key); return; }
+      const state = { ...CS.state, runs: CS.state.runs.slice(-40) };
+      localStorage.setItem(key, JSON.stringify(state));
+    } catch { CS.storageUnavailable = true; }
+  };
+  CS.reset = () => { try { localStorage.removeItem(key); localStorage.removeItem(key + '.persist'); } catch {} CS.state = CS.defaults(); CS.files.clear(); CS.ui.attachments = []; CS.ui.datasetSelection.clear(); CS.save(); };
+  CS.currentRun = () => CS.state.runs.find(r => r.id === CS.state.currentRunId);
+  CS.currentProject = () => CS.state.projects.find(p => p.id === CS.state.projectId) || CS.state.projects[0];
+  CS.workflow = id => CS.data.workflows.find(w => w.id === id) || CS.data.workflows[0];
+  CS.statusLabel = status => ({ awaiting: '等待确认', running: '执行中', paused: '已暂停', cancelled: '已取消', complete: '已完成', error: '连接异常', connecting: '连接中' }[status] || status);
+  CS.bus = new EventTarget();
+  CS.emit = type => CS.bus.dispatchEvent(new Event(type));
+  CS.toast = (message, type = 'success') => {
+    const node = document.createElement('div'); node.className = 'toast ' + type;
+    node.innerHTML = CS.icon(type === 'error' ? 'info' : 'checkcircle') + `<span>${CS.escape(message)}</span>`;
+    document.getElementById('toast-root').append(node); setTimeout(() => node.remove(), 4200);
+  };
+  CS.report = run => {
+    const project = CS.state.projects.find(p => p.id === (run?.projectId || CS.state.projectId));
+    return `# SigmaFlow Science · 演示分析记录\n\n> 本报告是界面演示，不是真实生物学分析结果。所有图表与分析指标均为合成示例。\n\n## 项目\n${project?.name || '未指定'}\n\n## 研究问题\n${run?.prompt || 'PBMC 单细胞图谱交互演示'}\n\n## 执行状态\n${run ? CS.statusLabel(run.status) : '示例预览'}\n\n## 输入记录\n${(run?.datasetIds || ['ds-pbmc']).map(id => '- ' + (CS.state.datasets.find(d => d.id === id)?.name || id)).join('\n')}\n\n## 流程\n${(run?.steps || CS.workflow('singlecell').steps.map(s => ({title:s[0]}))).map((s, i) => `${i + 1}. ${s.title}`).join('\n')}\n\n## 参数\n\`\`\`json\n${JSON.stringify(run?.config || {}, null, 2)}\n\`\`\`\n\n## 说明与限制\n- 没有对上传文件执行单细胞、差异表达或任何模型推理。\n- 图表为固定种子生成的合成数据，不支持科研或临床结论。\n- 本地序列统计是独立的真实浏览器计算，与演示分析流程不同。\n- 原始文件仅保留在当前页面内存，不会由演示流程上传。\n\n生成时间：${new Date().toISOString()}\n`;
+  };
+})();

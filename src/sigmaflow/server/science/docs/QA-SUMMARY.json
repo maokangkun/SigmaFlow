@@ -1,0 +1,14 @@
+{
+  "syntax_and_unit_tests": "passed",
+  "browser_interaction_groups": 15,
+  "api_protocol_groups": 9,
+  "responsive_widths": [
+    1440,
+    768,
+    390
+  ],
+  "rendering": "Chromium headless, standalone HTML injected into browser",
+  "implementation": "Native HTML/CSS/JavaScript; no external runtime or build dependencies",
+  "agent_backend": "Explicit demo; no real LLM or bioinformatics computation",
+  "production_security_audit": false
+}

@@ -220,6 +220,7 @@ class Agent:
 
                     cost_time = time.time() - start_time
                     if knight_rider: knight_rider.stop()
+                    info['error'] = None
                     break
                 except Exception as e:
                     if knight_rider: knight_rider.stop()

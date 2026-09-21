@@ -1,0 +1,7 @@
+sample_id,group,donor,batch
+S01,control,donor_01,batch_1
+S02,control,donor_02,batch_1
+S03,control,donor_03,batch_2
+S04,condition,donor_04,batch_1
+S05,condition,donor_05,batch_2
+S06,condition,donor_06,batch_2

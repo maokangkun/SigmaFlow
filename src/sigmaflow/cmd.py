@@ -128,7 +128,7 @@ def build_pm(args):
     """Construct a PipelineManager instance using parsed args."""
     from .managers import PipelineManager, PromptManager
 
-    if args.prompt:
+    if hasattr(args, 'prompt') and args.prompt:
         prompt_manager = PromptManager(prompts_dir=args.prompt)
     else:
         prompt_manager = None
@@ -148,15 +148,18 @@ def build_server(args=None):
     """
     from .server import PipelineServer
 
-    if args is None:
-        try:
-            data = json.loads(os.getenv("SIGMAFLOW_CMD_ARGS", "{}"))
-        except Exception:
-            data = {}
+    try:
+        data = json.loads(os.getenv("SIGMAFLOW_CMD_ARGS", "{}"))
+    except Exception:
+        data = {}
 
+    if args is None:
         class Dummy: pass
         args = Dummy()
-        for key in ["mode", "llm", "rag", "pipeline_dir", "prompt"]: setattr(args, key, data.get(key))
+    
+    for key in ["mode", "llm", "rag", "pipeline_dir", "prompt"]:
+        if not hasattr(args, key):
+            setattr(args, key, data.get(key))
 
     server = PipelineServer(pipeline_manager=build_pm(args))
     return server.app

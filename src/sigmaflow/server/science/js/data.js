@@ -1,0 +1,73 @@
+/* All charts/measurements in this dataset are SYNTHETIC UI fixtures. */
+CS.data = {
+  projects: [
+    { id: 'pr-pbmc', name: 'pbmc_atlas', description: '外周血单细胞图谱 · 交互演示项目', icon: 'cells', tags: ['scRNA-seq', '演示'], created: '2026-09-16', updated: '2026-09-20', archived: false },
+    { id: 'pr-plant', name: 'arabidopsis_rnaseq', description: '拟南芥转录组探索 · 项目模板', icon: 'leaf', tags: ['RNA-seq', '植物'], created: '2026-09-14', updated: '2026-09-19', archived: false },
+    { id: 'pr-notes', name: 'protein_notes', description: '蛋白质研究文献与数据整理', icon: 'network', tags: ['文献', '结构'], created: '2026-09-10', updated: '2026-09-18', archived: false }
+  ],
+  datasets: [
+    { id: 'ds-pbmc', name: 'PBMC_demo.h5ad', format: 'H5AD', size: 128345678, source: 'demo', description: '合成单细胞演示数据；不包含真实 H5AD 文件', projectId: 'pr-pbmc', added: '2026-09-20', cells: '2,680', genes: '13,714' },
+    { id: 'ds-meta', name: 'sample_metadata.csv', format: 'CSV', size: 4280, source: 'demo', description: '6 个虚构样本的元信息示例', projectId: 'pr-pbmc', added: '2026-09-20' },
+    { id: 'ds-plant', name: 'arabidopsis_counts.csv', format: 'CSV', size: 87342, source: 'demo', description: '表达计数表结构示例；所有数值为合成数据', projectId: 'pr-plant', added: '2026-09-19' },
+    { id: 'ds-dna', name: 'synthetic_example.fasta', format: 'FASTA', size: 88, source: 'demo', description: '人工构造短序列，仅用于格式与 GC 统计演示', projectId: 'pr-notes', added: '2026-09-18' }
+  ],
+  workflows: [
+    { id: 'singlecell', title: '单细胞 RNA-seq 分析', sub: '从数据检查到细胞图谱', icon: 'cells', category: '单细胞', time: '约 15 秒演示', steps: [
+      ['数据与元信息检查', '检查演示文件结构、样本字段与输入记录', 'input.inspect', '示例对象：2,680 cells × 13,714 genes'],
+      ['质量控制概览', '展示合成数据的质控指标与过滤摘要', 'qc.summary', '演示质控摘要已准备；未处理本地文件'],
+      ['降维与聚类展示', '加载固定种子的二维点云与分组', 'embedding.preview', '已加载合成嵌入点；这不是实际 UMAP 计算'],
+      ['表达特征可视化', '展示合成表达矩阵与分组标签', 'expression.preview', '示例分组 5 个；表达量均为演示值'],
+      ['生成可追溯报告', '汇总任务配置、演示图表与数据来源', 'report.export', '演示报告已生成，可导出 Markdown / JSON']
+    ]},
+    { id: 'rnaseq', title: '转录组数据探索', sub: '表格预览、分组与表达展示', icon: 'chart', category: '转录组', time: '约 15 秒演示', steps: [
+      ['检查输入记录', '确认表达矩阵与元数据字段', 'input.inspect', '元数据结构演示完成'],
+      ['查看数据分组', '组织虚构样本分组', 'sample.preview', '两个虚构分组，每组 3 个示例样本'],
+      ['表达图表演示', '加载合成表达矩阵', 'expression.preview', '已生成合成热图，不代表实际差异分析'],
+      ['导出探索记录', '汇总配置与演示步骤', 'report.export', '演示记录已生成']
+    ]},
+    { id: 'literature', title: '文献证据整理', sub: '检索词、文献卡片与阅读清单', icon: 'book', category: '文献', time: '约 10 秒演示', steps: [
+      ['整理研究问题', '记录检索关键词与纳入范围', 'query.prepare', '已记录问题，尚未执行在线检索'],
+      ['加载示例文献', '展示内置、可打开原文的文献记录', 'library.preview', '已加载 2 篇预置文献；不是实时检索结果'],
+      ['组织阅读清单', '按主题整理可追溯来源', 'evidence.organize', '阅读清单已准备，不生成未经验证的结论'],
+      ['导出引用信息', '生成 Markdown 阅读记录', 'report.export', '文献清单可导出']
+    ]},
+    { id: 'quality', title: '数据格式与质控计划', sub: '在执行之前，先检查数据', icon: 'shield', category: '通用', time: '约 10 秒演示', steps: [
+      ['登记文件信息', '记录名称、格式与文件大小', 'input.inspect', '文件元信息已登记'],
+      ['制定检查清单', '展示字段、缺失值与格式检查项', 'checklist.prepare', '检查项已准备；矩阵内容未执行分析'],
+      ['记录分析计划', '保存配置与输入来源', 'report.export', '计划记录可导出']
+    ]}
+  ],
+  groups: [
+    { name: 'T cells', count: 980, color: '#8b88b7', center: [275, 145], spread: [78, 45] },
+    { name: 'B cells', count: 620, color: '#7e9cb4', center: [465, 130], spread: [51, 39] },
+    { name: 'NK cells', count: 450, color: '#87a99c', center: [165, 285], spread: [55, 46] },
+    { name: 'Monocytes', count: 330, color: '#c0a38b', center: [415, 292], spread: [68, 36] },
+    { name: 'Dendritic', count: 300, color: '#b38ea4', center: [545, 235], spread: [30, 28] }
+  ],
+  markers: [
+    { gene: 'CD3D', group: 'T cells', value: 2.84, fraction: '86.2%' },
+    { gene: 'IL7R', group: 'T cells', value: 2.26, fraction: '72.1%' },
+    { gene: 'MS4A1', group: 'B cells', value: 3.12, fraction: '89.4%' },
+    { gene: 'CD79A', group: 'B cells', value: 2.73, fraction: '83.5%' },
+    { gene: 'NKG7', group: 'NK cells', value: 3.43, fraction: '91.0%' },
+    { gene: 'GNLY', group: 'NK cells', value: 2.51, fraction: '79.7%' },
+    { gene: 'LYZ', group: 'Monocytes', value: 3.18, fraction: '92.3%' },
+    { gene: 'FCER1A', group: 'Dendritic', value: 1.94, fraction: '68.8%' }
+  ],
+  papers: [
+    { id: 'paper-scanpy', title: 'SCANPY: large-scale single-cell gene expression data analysis', authors: 'Wolf F. A., Angerer P. & Theis F. J.', journal: 'Genome Biology', year: 2018, doi: '10.1186/s13059-017-1382-0', tags: ['单细胞', 'Python', '方法'], note: '单细胞分析工具的原始方法论文。此卡片为预置阅读资料，不是本次在线检索结果。' },
+    { id: 'paper-practices', title: 'Current best practices in single-cell RNA-seq analysis: a tutorial', authors: 'Luecken M. D. & Theis F. J.', journal: 'Molecular Systems Biology', year: 2019, doi: '10.15252/msb.20188746', tags: ['单细胞', '工作流', '教程'], note: '单细胞 RNA-seq 分析实践教程。请打开原文阅读适用范围与限制。' }
+  ],
+  tools: [
+    { id: 'sequence', name: '序列基础统计', description: '在浏览器内计算长度、GC 比例与 N 数量', icon: 'dna', category: '本地工具', local: true },
+    { id: 'csv', name: '表格预览', description: '本地查看 CSV / TSV 的前 100 行', icon: 'database', category: '本地工具', local: true },
+    { id: 'ncbi', name: 'NCBI', description: '公共生物医学数据与检索', icon: 'database', category: '公共资源', url: 'https://www.ncbi.nlm.nih.gov/' },
+    { id: 'ensembl', name: 'Ensembl', description: '基因组注释与浏览', icon: 'leaf', category: '公共资源', url: 'https://www.ensembl.org/' },
+    { id: 'uniprot', name: 'UniProt', description: '蛋白质知识库', icon: 'network', category: '公共资源', url: 'https://www.uniprot.org/' },
+    { id: 'pdb', name: 'RCSB PDB', description: '公开的三维结构数据', icon: 'layers', category: '公共资源', url: 'https://www.rcsb.org/' },
+    { id: 'scanpy', name: 'Scanpy 文档', description: '分析方法与 Python API 参考', icon: 'cells', category: '方法文档', url: 'https://scanpy.readthedocs.io/' },
+    { id: 'pubmed', name: 'PubMed', description: '检索与阅读生物医学文献', icon: 'book', category: '公共资源', url: 'https://pubmed.ncbi.nlm.nih.gov/' }
+  ],
+  sampleCSV: 'sample_id,group,donor,batch\nS01,control,donor_01,batch_1\nS02,control,donor_02,batch_1\nS03,control,donor_03,batch_2\nS04,condition,donor_04,batch_1\nS05,condition,donor_05,batch_2\nS06,condition,donor_06,batch_2\n',
+  sampleFASTA: '>synthetic_demo_01\nACGTACGTGGCCAATTACGTNNACGTGCAATGCA\n>synthetic_demo_02\nGGCCAAAATTTTGGCC\n'
+};

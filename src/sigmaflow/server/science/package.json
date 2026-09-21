@@ -1,0 +1,15 @@
+{
+  "name": "sigmaflow-science-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal, local-first SigmaFlow Science research workspace. Zero runtime dependencies.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "node server.mjs",
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/check.mjs"
+  },
+  "license": "MIT"
+}
