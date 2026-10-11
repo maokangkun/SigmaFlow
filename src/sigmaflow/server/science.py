@@ -719,6 +719,9 @@ class ScienceAPI:
             queue: asyncio.Queue = asyncio.Queue()
             subscribed: Set[str] = set()
             pump: Optional[asyncio.Task] = None
+            # 正在进行的 chat.send 流式任务; 生成期间接收循环继续处理
+            # 其他 action(ping/run.subscribe 等), 不再被长生成阻塞。
+            chat_tasks: Set[asyncio.Task] = set()
 
             async def reply(event: str, request_id, data=None):
                 message: Dict[str, Any] = {"event": event, "data": data if data is not None else {}}
@@ -927,32 +930,49 @@ class ScienceAPI:
                     if not messages:
                         await fail(request_id, "消息列表为空")
                         return
-                    loop = asyncio.get_running_loop()
-                    chat_queue: asyncio.Queue = asyncio.Queue()
-                    def work():
-                        try:
-                            _stream_agent_chat(base_url, api_key, model_name, messages,
-                                lambda d: loop.call_soon_threadsafe(chat_queue.put_nowait, ("delta", d)),
-                                lambda t: loop.call_soon_threadsafe(chat_queue.put_nowait, ("think", t)))
-                            loop.call_soon_threadsafe(chat_queue.put_nowait, ("done", None))
-                        except Exception as err:
-                            loop.call_soon_threadsafe(chat_queue.put_nowait, ("error", str(err)))
-                    worker = asyncio.create_task(asyncio.to_thread(work))
-                    content = []
-                    while True:
-                        kind, value = await chat_queue.get()
-                        if kind == "delta":
-                            content.append(value)
-                            await ws.send_json({"event": "chat.delta", "requestId": request_id, "data": {"delta": value}})
-                        elif kind == "think":
-                            await ws.send_json({"event": "chat.think", "requestId": request_id, "data": {"delta": value}})
-                        elif kind == "done":
-                            await ws.send_json({"event": "chat.done", "requestId": request_id, "data": {"content": "".join(content)}})
-                            break
-                        else:
-                            await fail(request_id, value)
-                            break
-                    await worker
+
+                    async def stream_chat() -> None:
+                        loop = asyncio.get_running_loop()
+                        chat_queue: asyncio.Queue = asyncio.Queue()
+                        content: list = []
+                        closed = False
+
+                        def work():
+                            try:
+                                _stream_agent_chat(base_url, api_key, model_name, messages,
+                                    lambda d: loop.call_soon_threadsafe(chat_queue.put_nowait, ("delta", d)),
+                                    lambda t: loop.call_soon_threadsafe(chat_queue.put_nowait, ("think", t)))
+                                loop.call_soon_threadsafe(chat_queue.put_nowait, ("done", None))
+                            except Exception as err:
+                                loop.call_soon_threadsafe(chat_queue.put_nowait, ("error", str(err)))
+
+                        worker = asyncio.create_task(asyncio.to_thread(work))
+                        while not closed:
+                            kind, value = await chat_queue.get()
+                            if kind == "delta":
+                                content.append(value)
+                                event, message = "chat.delta", {"event": "chat.delta", "requestId": request_id, "data": {"delta": value}}
+                            elif kind == "think":
+                                event, message = "chat.think", {"event": "chat.think", "requestId": request_id, "data": {"delta": value}}
+                            elif kind == "done":
+                                event, message = "chat.done", {"event": "chat.done", "requestId": request_id, "data": {"content": "".join(content)}}
+                            else:
+                                event, message = "error", {"event": "error", "requestId": request_id, "data": {"error": value}}
+                            try:
+                                await ws.send_json(message)
+                            except Exception:
+                                # 客户端已断开: 停止向 socket 写, 但继续排空队列直到生成线程结束,
+                                # 避免 call_soon_threadsafe 回调堆积。
+                                closed = True
+                            if event in ("chat.done", "error"):
+                                break
+                        await worker
+
+                    # 在后台任务中流式输出, 接收循环立即可继续处理后续消息。
+                    # 并发的 chat.send 通过 requestId 区分, 互不干扰。
+                    chat_task = asyncio.create_task(stream_chat())
+                    chat_tasks.add(chat_task)
+                    chat_task.add_done_callback(chat_tasks.discard)
                 else:
                     await fail(request_id, f"Unknown action: {action}")
 
@@ -974,6 +994,8 @@ class ScienceAPI:
             finally:
                 if pump:
                     pump.cancel()
+                for task in chat_tasks:
+                    task.cancel()
                 for run_id in subscribed:
                     self.manager.unsubscribe(run_id, queue)
 
@@ -1195,9 +1217,9 @@ def _run_agent_chat(base_url: str, api_key: str, model_name: str, messages: list
     try:
         from sigmaflow.agent.agent import Agent
     except ModuleNotFoundError:
-        # 未 pip install 时回退到源码目录: 本文件位于 src/sigmaflow/server/, 上溯 4 级即 src 根
+        # 未 pip install 时回退到源码目录: 本文件位于 src/sigmaflow/server/, 上溯 3 级即 src 根
         import sys as _sys
-        _src_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        _src_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         if _src_root not in _sys.path:
             _sys.path.insert(0, _src_root)
         from sigmaflow.agent.agent import Agent
