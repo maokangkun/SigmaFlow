@@ -412,13 +412,13 @@ function App() {
           </div>
           <Button
             className="bg-gray-900 hover:bg-gray-700"
-            onClick={() => (window.location.href = "/workspace/")}
+            onClick={() => (window.location.href = "./workspace/")}
           >
             {t.nav.start}
           </Button>
           <Button
             className="bg-gray-900 hover:bg-gray-700"
-            onClick={() => window.open("/admin/", "_blank")}
+            onClick={() => window.open("./admin/", "_blank")}
           >
             {t.nav.admin}
           </Button>
@@ -436,13 +436,13 @@ function App() {
         <div className="flex justify-center space-x-4 mb-12">
           <Button size="lg"
             className="bg-gray-900 hover:bg-gray-800 px-8 py-3"
-            onClick={() => (window.location.href = "/workspace/")}
+            onClick={() => (window.location.href = "./workspace/")}
           >
             {t.hero.experience}
           </Button>
           <Button size="lg"
             className="bg-gray-900 hover:bg-gray-800 px-8 py-3"
-            onClick={() => (window.location.href = "/science/")}
+            onClick={() => (window.location.href = "./science/")}
           >
             {t.hero.experience_science}
           </Button>

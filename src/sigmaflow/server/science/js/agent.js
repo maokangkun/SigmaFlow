@@ -1,9 +1,141 @@
-/* Human-in-the-loop demo state machine + optional HTTP/SSE adapter.
+/* Human-in-the-loop demo state machine + transport adapter.
+ * Prefers a WebSocket connection (/api/ws) and falls back to HTTP + SSE.
  * No LLM, bioinformatics binary, shell command or uploaded file is executed here.
  */
 (() => {
   'use strict';
   const activeSources = new Map();
+
+  // ---------------------------------------------------------------- transport
+
+  CS.api = {
+    url(path) {
+      const base = CS.state.settings.endpoint.trim().replace(/\/$/, '');
+      if (base.startsWith('/') && !base.startsWith('//')) {
+        if (location.protocol === 'file:') throw new Error('接口模式请通过 npm run dev 打开网页，而非 file://');
+        return base + path;
+      }
+      const parsed = new URL(base);
+      if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error('接口地址必须是无账号密码、查询参数的 HTTP(S) 地址');
+      if (parsed.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname)) throw new Error('非本机接口必须使用 HTTPS');
+      return base + path;
+    },
+    wsUrl() {
+      const base = CS.state.settings.endpoint.trim().replace(/\/$/, '');
+      if (base.startsWith('/') && !base.startsWith('//')) {
+        if (location.protocol === 'file:') throw new Error('接口模式请通过 npm run dev 打开网页，而非 file://');
+        return (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + base + '/ws';
+      }
+      const parsed = new URL(base);
+      if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error('接口地址必须是无账号密码、查询参数的 HTTP(S) 地址');
+      if (parsed.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname)) throw new Error('非本机接口必须使用 HTTPS');
+      return parsed.protocol.replace('https', 'wss').replace('http', 'ws') + '//' + parsed.host + parsed.pathname + '/ws';
+    },
+    async request(path, options = {}) {
+      const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 15000);
+      try {
+        const response = await fetch(CS.api.url(path), { ...options, credentials: 'include', headers: { 'Content-Type': 'application/json', ...options.headers }, signal: controller.signal });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } finally { clearTimeout(timer); }
+    }
+  };
+
+  // Model-config operations prefer the WebSocket channel (immune to CORS
+  // preflight failures); HTTP fetch is the fallback when WS is unavailable.
+  CS.api.modelCall = async (wsAction, httpMethod, httpPath, body) => {
+    if (await CS.api.ws.connect()) {
+      // GET 路径参数(如 /conversations/{id}/content)转成 WS payload, 后端按 data 取用
+      const payload = { ...(body || {}) };
+      if (httpMethod === 'GET') {
+        const m = httpPath.match(/^\/conversations\/([^/]+)\/content$/);
+        if (m) payload.id = decodeURIComponent(m[1]);
+      }
+      return CS.api.ws.send(wsAction, payload);
+    }
+    return CS.api.request(httpPath, { method: httpMethod, body: body ? JSON.stringify(body) : undefined });
+  };
+  CS.api.chat = async (messages, onDelta, onThink) => {
+    if (await CS.api.ws.connect()) {
+      const data = await CS.api.ws.chat({ modelId: CS.state.settings.modelId, messages }, onDelta, onThink);
+      return data.content;
+    }
+    const data = await CS.api.request('/chat', { method: 'POST', body: JSON.stringify({ modelId: CS.state.settings.modelId, messages }) });
+    return data.content;
+  };
+  CS.api.friendlyError = error => /fetch/i.test(error.message)
+    ? '无法连接服务器：请确认 sigmaflow serve 已启动、接口地址与页面同源（如 /api），并已重启到最新代码。'
+    : error.message;
+
+  // WebSocket transport: one long-lived connection, request/reply matched by
+  // requestId, interleaved with pushed "state" snapshots for subscribed runs.
+  CS.api.ws = {
+    socket: null, state: 'closed', seq: 0, connecting: null, failedAt: 0,
+    pending: new Map(), onState: new Map(),
+    open() { return this.socket && this.socket.readyState === 1; },
+    connect(timeout = 3500) {
+      if (this.open()) return Promise.resolve(true);
+      if (this.connecting) return this.connecting;
+      if (Date.now() - this.failedAt < 30000) return Promise.resolve(false);
+      this.connecting = new Promise(resolve => {
+        let settled = false;
+        const finish = ok => { if (!settled) { settled = true; this.connecting = null; if (!ok) this.failedAt = Date.now(); resolve(ok); } };
+        let socket;
+        try { socket = new WebSocket(CS.api.wsUrl()); }
+        catch { return finish(false); }
+        const timer = setTimeout(() => finish(false), timeout);
+        socket.onopen = () => { clearTimeout(timer); this.socket = socket; this.state = 'open'; this.failedAt = 0; finish(true); };
+        socket.onmessage = event => {
+          let message;
+          try { message = JSON.parse(event.data); } catch { return; }
+          if (message.event === 'state' && message.data?.id) {
+            const handler = CS.api.ws.onState.get(message.data.id);
+            if (handler) handler(message.data);
+          } else if (message.requestId && CS.api.ws.pending.has(message.requestId)) {
+            const entry = CS.api.ws.pending.get(message.requestId);
+            if (message.event === 'chat.think' && entry.onThink) { entry.onThink(message.data?.delta || ''); return; }
+            if (message.event === 'chat.delta' && entry.onDelta) { entry.onDelta(message.data?.delta || ''); return; }
+            CS.api.ws.pending.delete(message.requestId);
+            clearTimeout(entry.timer);
+            message.event === 'error' ? entry.reject(new Error(message.data?.error || '接口返回错误')) : entry.resolve(message.data);
+          }
+        };
+        socket.onclose = () => { if (this.socket === socket) { this.socket = null; this.state = 'closed'; } CS.api.ws._fail(new Error('WebSocket 连接已关闭。')); };
+        socket.onerror = () => { clearTimeout(timer); finish(false); };
+      });
+      return this.connecting;
+    },
+    _fail(reason) {
+      for (const entry of this.pending.values()) { clearTimeout(entry.timer); entry.reject(reason); }
+      this.pending.clear();
+      for (const handler of this.onState.values()) handler(null, reason);
+    },
+    send(action, payload = {}, timeout = 10000) {
+      if (!this.open()) return Promise.reject(new Error('WebSocket 未连接。'));
+      const requestId = String(++this.seq);
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => { CS.api.ws.pending.delete(requestId); reject(new Error('WebSocket 响应超时。')); }, timeout);
+        this.pending.set(requestId, { resolve, reject, timer });
+        this.socket.send(JSON.stringify({ action, requestId, ...payload }));
+      });
+    },
+    chat(payload, onDelta, onThink) {
+      if (!this.open()) return Promise.reject(new Error('WebSocket 未连接。'));
+      const requestId = String(++this.seq);
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => { CS.api.ws.pending.delete(requestId); reject(new Error('模型响应超时。')); }, 180000);
+        this.pending.set(requestId, { resolve, reject, timer, onDelta, onThink });
+        this.socket.send(JSON.stringify({ action: 'chat.send', requestId, ...payload }));
+      });
+    },
+    bind(run) {
+      if (!run?.remoteId) return;
+      this.onState.set(run.remoteId, (data, error) => error ? CS.agent.disconnect(run, error) : CS.agent.applyState(run, data));
+    }
+  };
+
+  // ---------------------------------------------------------------- agent
+
   CS.agent = {
     create(prompt, workflowId = 'singlecell', datasetIds = [], config = {}) {
       const workflow = CS.workflow(workflowId);
@@ -16,22 +148,60 @@
       };
       CS.state.runs.push(run); CS.state.currentRunId = run.id; CS.save(); return run;
     },
+    applyState(run, data) {
+      if (!['running', 'paused', 'complete', 'cancelled', 'error'].includes(data.status)) throw new Error('Invalid task status');
+      if (!Array.isArray(data.steps) || data.steps.length !== run.steps.length) throw new Error('Invalid step count');
+      run.status = data.status;
+      run.progress = Math.max(0, Math.min(100, Number(data.progress) || 0));
+      data.steps.forEach((step, i) => {
+        run.steps[i].progress = Math.max(0, Math.min(100, Number(step.progress) || 0));
+        run.steps[i].status = ['waiting','running','complete'].includes(step.status) ? step.status : 'waiting';
+        if (typeof step.output === 'string') run.steps[i].output = step.output.slice(0, 5000);
+      });
+      if (['complete', 'cancelled', 'error'].includes(run.status)) {
+        activeSources.get(run.id)?.close(); activeSources.delete(run.id);
+        if (run.remoteId) CS.api.ws.onState.delete(run.remoteId);
+      }
+      CS.save(); CS.emit('render');
+    },
+    disconnect(run, error) {
+      if (!['complete', 'cancelled', 'error'].includes(run.status)) {
+        run.status = 'error'; run.error = error?.message || '事件连接中断，请重试。'; CS.save(); CS.emit('render');
+      }
+    },
     async approve(run) {
       if (!run || !['awaiting', 'paused', 'error'].includes(run.status)) return;
       run.reloaded = false;
       if (run.transport === 'remote') {
-        run.status = 'connecting'; CS.emit('render');
-        try {
-          if (!run.remoteId) {
-            const response = await CS.api.request('/runs', { method: 'POST', body: JSON.stringify({ prompt: run.prompt, workflowId: run.workflowId, projectId: run.projectId, datasetIds: run.datasetIds, config: run.config, steps: run.steps.map(({ title, description, tool }) => ({ title, description, tool })) }) });
-            if (!response.id) throw new Error('服务响应缺少任务 id');
-            run.remoteId = response.id;
-          } else {
-            const snapshot = await CS.api.request(`/runs/${encodeURIComponent(run.remoteId)}`);
-            if (!['complete', 'cancelled'].includes(snapshot.status)) await CS.api.request(`/runs/${encodeURIComponent(run.remoteId)}/control`, { method: 'POST', body: JSON.stringify({ action: 'resume' }) });
-          }
-          CS.agent.listen(run);
-        } catch (error) { run.status = 'error'; run.error = error.message; CS.toast('Agent 接口连接失败：' + error.message, 'error'); }
+        run.status = 'connecting';        CS.emit('render');
+        if (await CS.api.ws.connect()) {
+          run.channel = 'ws';
+          try {
+            if (!run.remoteId) {
+              const created = await CS.api.ws.send('run.create', { prompt: run.prompt, workflowId: run.workflowId, projectId: run.projectId, datasetIds: run.datasetIds, config: run.config, steps: run.steps.map(({ title, description, tool }) => ({ title, description, tool })) });
+              run.remoteId = created.id;
+            } else {
+              const snapshot = await CS.api.ws.send('run.get', { id: run.remoteId });
+              if (!['complete', 'cancelled'].includes(snapshot.status)) await CS.api.ws.send('run.control', { id: run.remoteId, control: 'resume' });
+              CS.agent.applyState(run, snapshot);
+            }
+            CS.api.ws.bind(run);
+            CS.api.ws.send('run.subscribe', { id: run.remoteId }).catch(() => {});
+          } catch (error) { run.status = 'error'; run.error = error.message; CS.toast('Agent 接口连接失败：' + error.message, 'error'); }
+        } else {
+          run.channel = 'sse';
+          try {
+            if (!run.remoteId) {
+              const response = await CS.api.request('/runs', { method: 'POST', body: JSON.stringify({ prompt: run.prompt, workflowId: run.workflowId, projectId: run.projectId, datasetIds: run.datasetIds, config: run.config, steps: run.steps.map(({ title, description, tool }) => ({ title, description, tool })) }) });
+              if (!response.id) throw new Error('服务响应缺少任务 id');
+              run.remoteId = response.id;
+            } else {
+              const snapshot = await CS.api.request(`/runs/${encodeURIComponent(run.remoteId)}`);
+              if (!['complete', 'cancelled'].includes(snapshot.status)) await CS.api.request(`/runs/${encodeURIComponent(run.remoteId)}/control`, { method: 'POST', body: JSON.stringify({ action: 'resume' }) });
+            }
+            CS.agent.listen(run);
+          } catch (error) { run.status = 'error'; run.error = error.message; CS.toast('Agent 接口连接失败：' + error.message, 'error'); }
+        }
       } else run.status = 'running';
       CS.save(); CS.emit('render');
     },
@@ -41,18 +211,8 @@
       activeSources.set(run.id, source);
       source.addEventListener('state', event => {
         try {
-          const data = JSON.parse(event.data);
-          if (!['running', 'paused', 'complete', 'cancelled', 'error'].includes(data.status)) throw new Error('Invalid task status');
-          if (!Array.isArray(data.steps) || data.steps.length !== run.steps.length) throw new Error('Invalid step count');
-          run.status = data.status;
-          run.progress = Math.max(0, Math.min(100, Number(data.progress) || 0));
-          data.steps.forEach((step, i) => {
-            run.steps[i].progress = Math.max(0, Math.min(100, Number(step.progress) || 0));
-            run.steps[i].status = ['waiting','running','complete'].includes(step.status) ? step.status : 'waiting';
-            if (typeof step.output === 'string') run.steps[i].output = step.output.slice(0, 5000);
-          });
+          CS.agent.applyState(run, JSON.parse(event.data));
           if (['complete', 'cancelled', 'error'].includes(run.status)) { source.close(); activeSources.delete(run.id); }
-          CS.save(); CS.emit('render');
         } catch (error) { source.close(); run.status = 'error'; run.error = '无法解析事件：' + error.message; CS.save(); CS.emit('render'); }
       });
       source.onerror = () => { source.close(); activeSources.delete(run.id); if (run.status !== 'complete') { run.status = 'error'; run.error = '事件连接中断，请重试。'; CS.save(); CS.emit('render'); } };
@@ -60,9 +220,15 @@
     async control(run, action) {
       if (!run) return;
       try {
-        if (run.transport === 'remote' && run.remoteId) await CS.api.request(`/runs/${encodeURIComponent(run.remoteId)}/control`, { method: 'POST', body: JSON.stringify({ action }) });
+        if (run.transport === 'remote' && run.remoteId) {
+          if (run.channel === 'ws' && CS.api.ws.open()) await CS.api.ws.send('run.control', { id: run.remoteId, control: action });
+          else await CS.api.request(`/runs/${encodeURIComponent(run.remoteId)}/control`, { method: 'POST', body: JSON.stringify({ action }) });
+        }
         run.status = { pause: 'paused', resume: 'running', cancel: 'cancelled' }[action];
-        if (action === 'cancel') { activeSources.get(run.id)?.close(); activeSources.delete(run.id); }
+        if (action === 'cancel') {
+          if (run.channel === 'ws') CS.api.ws.onState.delete(run.remoteId);
+          activeSources.get(run.id)?.close(); activeSources.delete(run.id);
+        }
       } catch (error) { CS.toast(error.message, 'error'); }
       CS.save(); CS.emit('render');
     },
@@ -79,27 +245,6 @@
         changed = true;
       }
       if (changed) { CS.save(); CS.emit('render'); }
-    }
-  };
-  CS.api = {
-    url(path) {
-      const base = CS.state.settings.endpoint.trim().replace(/\/$/, '');
-      if (base.startsWith('/') && !base.startsWith('//')) {
-        if (location.protocol === 'file:') throw new Error('接口模式请通过 npm run dev 打开网页，而非 file://');
-        return base + path;
-      }
-      const parsed = new URL(base);
-      if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error('接口地址必须是无账号密码、查询参数的 HTTP(S) 地址');
-      if (parsed.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname)) throw new Error('非本机接口必须使用 HTTPS');
-      return base + path;
-    },
-    async request(path, options = {}) {
-      const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 15000);
-      try {
-        const response = await fetch(CS.api.url(path), { ...options, credentials: 'include', headers: { 'Content-Type': 'application/json', ...options.headers }, signal: controller.signal });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return await response.json();
-      } finally { clearTimeout(timer); }
     }
   };
   setInterval(() => CS.agent.tick(), 700);

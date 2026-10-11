@@ -4,15 +4,31 @@
   const e = CS.escape, i = CS.icon, H = CS.viewHelpers;
   const allowedRoutes = Object.keys(CS.views).filter(x => !['sidebar','topbar','composer','inspector','scatterPanel','reportDocument','sequenceTool'].includes(x));
   let uploadContext = 'data', modalReturnFocus = null;
-  const readRoute = () => {
+  const parseHash = () => {
     const value = location.hash.replace(/^#\/?/, '').split('?')[0];
-    return allowedRoutes.includes(value) ? value : 'home';
+    const [seg, id] = value.split('/');
+    if (seg === 'chat' && id) return { route: 'chat', id };
+    return { route: allowedRoutes.includes(value) ? value : 'home', id: null };
   };
-  CS.navigate = route => {
+  const readRoute = () => parseHash().route;
+  const applyRoute = () => {
+    const { route, id } = parseHash();
+    if (route === 'chat' && id && CS.state.currentRunId !== id) {
+      CS.state.currentRunId = id;
+      const run = CS.state.runs.find(r => r.id === id);
+      if (run?.projectId) CS.state.projectId = run.projectId;
+      if (!run) loadRemoteConversation(id);
+    }
+    return route;
+  };
+  CS.navigate = (route, runId) => {
     CS.ui.mobileSidebar = false;
+    CS.ui.userMenu = false;
     if (!allowedRoutes.includes(route)) route = 'home';
-    if (readRoute() === route && CS.ui.route === route) CS.render();
-    else location.hash = '/' + route;
+    const id = route === 'chat' ? (runId || CS.state.currentRunId || null) : null;
+    const hash = '#/' + route + (id ? '/' + id : '');
+    if (location.hash === hash) CS.render();
+    else location.hash = hash;
   };
   CS.render = () => {
     const active = document.activeElement;
@@ -24,7 +40,8 @@
     document.documentElement.dataset.contrast = CS.state.settings.contrast ? 'high' : 'normal';
     document.documentElement.dataset.motion = CS.state.settings.reducedMotion ? 'reduced' : 'normal';
     const page = CS.views[CS.ui.route] || CS.views.home;
-    document.getElementById('app').innerHTML = `<div class="app-shell">${CS.views.sidebar()}<main id="main" class="main-shell" tabindex="-1">${CS.views.topbar()}${page()}</main></div>`;
+    const fullscreen = CS.ui.route === 'settings';
+    document.getElementById('app').innerHTML = `<div class="app-shell">${fullscreen ? '' : CS.views.sidebar()}<main id="main" class="main-shell ${fullscreen ? 'main-fullscreen' : ''}" tabindex="-1"><header class="topbar ${fullscreen ? 'topbar-fullscreen' : 'topbar-menu'}"${fullscreen ? ' style="height:auto;align-items:flex-start"' : ''}>${fullscreen ? `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:12px;"><button type="button" class="text-button" data-nav="home">${i('arrowleft','',14)}<span>返回工作空间</span></button></div><div class="topbar-status"></div>` : `<div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div>`}</header>${page()}</main></div>`;
     const sidebar = document.querySelector('.sidebar-scroll'); if (sidebar) sidebar.scrollTop = sidebarScroll;
     const conversation = document.querySelector('.conversation'); if (conversation) conversation.scrollTop = conversationScroll;
     const inspector = document.querySelector('.inspector'); if (inspector) inspector.scrollTop = inspectorScroll;
@@ -37,15 +54,127 @@
     if (CS.ui.modal) { app.inert = true; app.setAttribute('aria-hidden', 'true'); }
   };
   CS.bus.addEventListener('render', () => CS.render());
+  // 对话区滚动条: 滚动时短暂显示, 停止后隐藏
+  let _scrollbarTimer = null;
+  window.addEventListener('scroll', event => {
+    const el = event.target;
+    if (!(el instanceof Element) || !el.classList?.contains('conversation')) return;
+    el.classList.add('is-scrolling');
+    clearTimeout(_scrollbarTimer);
+    _scrollbarTimer = setTimeout(() => el.classList.remove('is-scrolling'), 900);
+  }, true);
+
   window.addEventListener('hashchange', () => {
-    CS.ui.route = readRoute(); CS.ui.mobileSidebar = false; CS.closeModal(); CS.render(); window.scrollTo(0, 0);
+    CS.ui.route = applyRoute(); CS.ui.mobileSidebar = false; CS.closeModal(); CS.render(); window.scrollTo(0, 0);
     document.title = 'SigmaFlow Science · ' + ({ home: '科研工作空间', chat: 'Agent 对话', data: '数据集', projects: '项目', workflows: '工作流', results: '分析结果', literature: '文献', tools: '生物工具', tasks: '任务队列', settings: '设置', help: '帮助' }[CS.ui.route] || '工作空间');
   });
 
+  const loadRemoteConversation = async id => {
+    const fetchContent = () => CS.api.modelCall('conversation.content', 'GET', `/conversations/${encodeURIComponent(id)}/content`);
+    try {
+      let data;
+      try { data = await fetchContent(); }
+      catch (first) { await new Promise(r => setTimeout(r, 800)); data = await fetchContent(); }  // WS抖动重试一次
+      if (!data.content?.length) { CS.toast('该会话在服务端没有同步到消息内容。', 'error'); return; }
+      const meta = CS.ui.conversations.find(c => c.id === id) || {};
+      const run = { id, kind: 'chat', title: meta.title || data.title || '会话', projectId: data.projectId, prompt: '', datasetIds: [], config: {},
+              messages: data.content.map(m => ({ role: m.role, content: m.content, at: new Date().toISOString() })),
+              steps: [], createdAt: meta.createdAt ? new Date(meta.createdAt).toISOString() : new Date().toISOString(), status: 'complete', progress: 0, transport: 'chat', isDemo: false };
+      CS.state.runs.push(run);
+      if (data.projectId) CS.state.projectId = data.projectId;
+      if (CS.state.currentRunId !== id) { CS.state.currentRunId = id; CS.save(); CS.navigate('chat', id); }
+      else CS.save();
+      CS.render();
+      CS.toast('已从服务端加载该会话内容。');
+    } catch (error) { CS.toast('加载会话内容失败：' + CS.api.friendlyError(error), 'error'); }
+  };
+  const startChat = prompt => {
+    const run = {
+      id: CS.uid('run'), kind: 'chat', title: prompt.slice(0, 24) || '新会话',
+      projectId: CS.state.projectId, prompt, datasetIds: [...CS.ui.attachments], config: {},
+      messages: [], steps: [], createdAt: new Date().toISOString(), status: 'complete',
+      progress: 0, transport: 'chat', isDemo: false,
+    };
+    CS.state.runs.push(run); CS.state.currentRunId = run.id; CS.save();
+    CS.agent.registerConversation(run);
+    CS.ui.composer = ''; CS.ui.attachments = []; CS.ui.expandedLogs.clear();
+    CS.navigate('chat', run.id);
+    sendChatMessage(run, prompt, run.datasetIds);
+  };
+  let _chatRenderAt = 0;
+  const scrollToLatest = () => {
+    const conversation = document.querySelector('.conversation');
+    if (conversation) conversation.scrollTop = conversation.scrollHeight;
+    CS.ui.canJumpLatest = false;
+  };
+  // 监听对话区滚动: 离开底部 80px 以上时显示"跳到最新"按钮
+  document.addEventListener('scroll', ev => {
+    const el = ev.target;
+    if (!el.classList?.contains('conversation')) return;
+    const show = el.scrollHeight - el.scrollTop - el.clientHeight >= 80;  // 离底部远 → 显示
+    if (show !== CS.ui.canJumpLatest) { CS.ui.canJumpLatest = show; CS.render(); }
+  }, true);
+  // 会话内容同步到服务端（供其他浏览器打开）; 失败后延迟重试一次
+  const syncConversation = async (run, retry = true) => {
+    const conv = CS.ui.conversations.find(c => c.id === run.id);
+    const payload = {
+      id: run.id, title: run.title, projectId: run.projectId,
+      pinned: !!conv?.pinned, archived: !!conv?.archived,
+      content: run.messages.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({ role: m.role, content: m.content })),
+    };
+    try { await CS.api.modelCall('conversation.save', 'POST', '/conversations', payload); }
+    catch { if (retry) setTimeout(() => syncConversation(run, false), 3000); }
+  };
+  const sendChatMessage = async (run, text, datasetIds) => {
+    run.messages.push({ role: 'user', content: text, datasetIds: [...datasetIds], at: new Date().toISOString() });
+    const reply = { role: 'assistant', content: '', streaming: true, at: new Date().toISOString() };
+    run.messages.push(reply);
+    CS.save(); CS.render();
+    setTimeout(scrollToLatest, 20);
+    let timerInterval = null;
+    const finishTimer = () => {
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = null;
+      delete reply.streaming;
+      reply.elapsed = Date.now() - new Date(reply.at).getTime();  // 总耗时(ms)
+      if (reply.reasoning) reply.reasoningMs = Date.now() - new Date(reply.at).getTime();
+      reply.at = new Date().toISOString();
+      CS.ui.thinkingText = '';
+    };
+    try {
+      const history = run.messages.filter(m => !m.streaming).map(m => ({ role: m.role, content: m.content }));
+      timerInterval = setInterval(() => {
+        if (!reply.streaming) { clearInterval(timerInterval); return; }
+        // 只匹配本轮的活跃计时元素(完成标签是 elapsed-done, 无 data-start)
+        const el = document.querySelector('.elapsed-timer[data-start="' + CSS.escape(reply.at) + '"]');
+        if (el) el.textContent = CS.elapsed(el.dataset.start);
+      }, 1000);
+      CS.ui.thinkingText = '';
+      const content = await CS.api.chat(history, delta => {
+        reply.content += delta;
+        const now = Date.now();
+        if (now - _chatRenderAt > 120) { _chatRenderAt = now; CS.render(); scrollToLatest(); }
+      }, think => {
+        reply.reasoning = (reply.reasoning || '') + think;
+        CS.ui.thinkingText = reply.reasoning;
+        const now = Date.now();
+        if (now - _chatRenderAt > 120) { _chatRenderAt = now; CS.render(); scrollToLatest(); }
+      });
+      reply.content = content;
+    } catch (error) {
+      const msg = '连接失败：' + CS.api.friendlyError(error);
+      reply.content = reply.content ? reply.content + '\n\n---\n\n' + msg : msg;
+    }
+    finishTimer();
+    CS.save(); CS.render();
+    setTimeout(scrollToLatest, 20);
+    syncConversation(run);
+  };
   const openNewTask = (prompt, workflowId = 'singlecell', ids = []) => {
-    CS.agent.create(prompt, workflowId, ids, { organism: CS.ui.organism, minGenes: Number(CS.ui.minGenes), maxMito: Number(CS.ui.maxMito), synthetic: true });
+    const run = CS.agent.create(prompt, workflowId, ids, { organism: CS.ui.organism, minGenes: Number(CS.ui.minGenes), maxMito: Number(CS.ui.maxMito), synthetic: true });
     CS.ui.composer = ''; CS.ui.attachments = []; CS.ui.expandedLogs.clear();
     CS.closeModal(); CS.navigate('chat');
+    CS.agent.registerConversation(run);
   };
   const inferWorkflow = prompt => /文献|论文|综述|literature|paper/i.test(prompt) ? 'literature' : /格式|质控|缺失|quality/i.test(prompt) ? 'quality' : /拟南芥|转录组|rnaseq|RNA-seq/i.test(prompt) && !/单细胞/.test(prompt) ? 'rnaseq' : 'singlecell';
   const copyText = async text => {
@@ -86,6 +215,10 @@
       const p = modal.project || {}; title = p.id ? '编辑研究项目' : '新的研究，从这里开始';
       body = `<form id="project-form" data-form="project"><div class="field"><label for="project-name">项目名称</label><input id="project-name" name="name" value="${e(p.name || '')}" placeholder="例如 immune_cell_atlas" maxlength="60" required autocomplete="off"></div><div class="field"><label for="project-description">项目描述</label><textarea id="project-description" name="description" placeholder="这个项目希望回答什么问题？" rows="3" maxlength="240">${e(p.description || '')}</textarea></div><div class="field"><label for="project-tags">标签</label><input id="project-tags" name="tags" value="${e((p.tags || []).join(', '))}" placeholder="单细胞, 文献, 方法" maxlength="100"><span class="hint">用英文或中文逗号分隔，最多 5 个标签。</span></div></form>`;
       footer = `${p.id ? H.btn('archive-project',p.archived ? '恢复项目' : '归档项目','folder','flat',`data-id="${e(p.id)}"`) : ''}${H.btn('close-modal','取消','','flat')}<button class="btn primary" type="submit" form="project-form">${i('check','',15)} 保存项目</button>`;
+    } else if (modal.type === 'remote-project') {
+      title = '连接远程项目';
+      body = `<form id="remote-project-form" data-form="remote-project"><div class="field"><label for="remote-project-name">项目名称</label><input id="remote-project-name" name="name" placeholder="例如 team_shared_atlas" maxlength="60" required autocomplete="off"></div><div class="field"><label for="remote-project-address">远程地址</label><input id="remote-project-address" name="address" placeholder="https://sigmaflow.example.org/share/…" spellcheck="false"></div><span class="hint">连接后项目会列在本机项目列表中，数据仍保存在远端。</span></form>`;
+      footer = `${H.btn('close-modal','取消','','flat')}<button class="btn primary" type="submit" form="remote-project-form">${i('external','',15)} 连接</button>`;
     } else if (modal.type === 'preview') {
       title = modal.dataset.name; wide = true;
       body = `<div class="row gap-6 mb-20">${H.pill(modal.dataset.format)}${H.pill(CS.formatBytes(modal.dataset.size))}${H.pill(modal.dataset.source === 'demo' ? '演示数据' : '本地文件',modal.dataset.source === 'demo' ? 'purple' : 'green')}</div>${modal.loading ? '<p class="muted">正在读取本地预览…</p>' : modal.table ? `<div class="table-wrap"><table><thead><tr>${modal.table[0].map(col => `<th>${e(col)}</th>`).join('')}</tr></thead><tbody>${modal.table.slice(1).map(row => `<tr>${row.map(col => `<td title="${e(col)}">${e(col)}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="tiny muted mt-12">显示 ${Math.max(0,modal.table.length-1)} 行数据 · 最多预览前 100 行 / 64 KB，不代表完整文件。</p>` : modal.text !== undefined ? `<div class="file-preview"><pre>${e(modal.text)}</pre></div>` : H.notice(modal.message || '此格式仅登记文件元信息。请接入专用后端后进行矩阵解析。')}<div class="mt-20">${H.notice(modal.dataset.description || '已在本地导入的研究文件。')}</div>`;
@@ -162,6 +295,166 @@
   };
   const actions = {
     'toggle-sidebar': () => { CS.ui.mobileSidebar = !CS.ui.mobileSidebar; CS.render(); },
+    'toggle-user-menu': () => { CS.ui.userMenu = !CS.ui.userMenu; CS.render(); },
+    'toggle-model-menu': () => { CS.ui.modelMenu = !CS.ui.modelMenu; CS.render(); },
+    'pick-model': async id => {
+      const model = CS.ui.models.find(x => x.id === id);
+      if (!model) { CS.ui.modelMenu = false; CS.render(); return; }
+      CS.state.settings.modelId = model.id; CS.state.settings.model = model.model;
+      CS.ui.modelMenu = false; emitRender();
+      try { await CS.api.modelCall('model.save', 'POST', '/models', { id: model.id, providerId: model.providerId, model: model.model, isDefault: true }); CS.agent.loadModels(); }
+      catch (error) { CS.toast('切换默认模型失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'toggle-project-menu': () => { CS.ui.projectMenu = !CS.ui.projectMenu; CS.render(); },
+    'clear-project': () => { CS.state.projectId = null; CS.ui.projectMenu = false; CS.save(); CS.render(); },
+    'pick-project': id => { CS.state.projectId = id; CS.ui.projectMenu = false; CS.save(); CS.render(); },
+    'toggle-project': id => { CS.ui.expandedProject = CS.ui.expandedProject === id ? null : id; CS.render(); },
+    'toggle-project-settings': id => { CS.ui.projectSettingsMenu = CS.ui.projectSettingsMenu === id ? null : id; CS.render(); },
+    'copy-message': id => {
+      const run = CS.currentRun(); const m = run?.messages[Number(id)];
+      if (!m) return;
+      navigator.clipboard?.writeText(m.content).then(() => CS.toast('已复制到剪贴板。')).catch(() => CS.toast('复制失败。', 'error'));
+    },
+    'edit-message': id => {
+      const run = CS.currentRun(); const idx = Number(id);
+      if (!run || !run.messages[idx]) return;
+      CS.ui.composer = run.messages[idx].content;
+      run.messages.splice(idx);  // 截断该消息及其后的回复，重新编辑发送
+      CS.save(); CS.render();
+      document.querySelector('.composer-input, textarea')?.focus();
+    },
+    'branch-chat': id => {
+      const run = CS.currentRun(); const idx = Number(id);
+      if (!run) return;
+      const branch = {
+        ...run, id: CS.uid('run'), kind: 'chat',
+        title: (run.title.slice(0, 20) + ' ·分支'), messages: JSON.parse(JSON.stringify(run.messages.slice(0, idx + 1))),
+        createdAt: new Date().toISOString(),
+      };
+      CS.state.runs.push(branch); CS.state.currentRunId = branch.id; CS.save();
+      CS.agent.registerConversation(branch);
+      CS.render(); CS.toast('已从该消息创建分支聊天。');
+    },
+    'toggle-pin-conversation': id => {
+      const conv = CS.ui.conversations.find(c => c.id === id); if (!conv) return;
+      conv.pinned = !conv.pinned;
+      CS.emit('render');
+      CS.api.modelCall('conversation.save', 'POST', '/conversations', { id: conv.id, title: conv.title, projectId: conv.projectId, pinned: conv.pinned, archived: !!conv.archived }).catch(() => {});
+    },
+    'archive-conversation': id => {
+      const conv = CS.ui.conversations.find(c => c.id === id); if (!conv) return;
+      conv.archived = true;
+      CS.emit('render');
+      CS.api.modelCall('conversation.save', 'POST', '/conversations', { id: conv.id, title: conv.title, projectId: conv.projectId, pinned: !!conv.pinned, archived: true }).then(() => CS.agent.loadConversations()).catch(() => {});
+    },
+    'delete-project': id => {
+      const project = CS.state.projects.find(p => p.id === id); if (!project) return;
+      CS.ui.projectSettingsMenu = null;
+      CS.showModal('confirm',{title:'删除项目？',message:'将删除项目「' + project.name + '」。其下会话不会删除，转为未归属项目的会话。此操作不可撤销。',confirmAction:'confirm-delete-project',confirmLabel:'删除',danger:true,projectId:id});
+    },
+    'confirm-delete-project': async () => {
+      const id = CS.ui.modal?.projectId; if (!id) return;
+      try {
+        const data = await CS.api.modelCall('project.delete', 'DELETE', `/projects/${encodeURIComponent(id)}`);
+        CS.state.projects = CS.state.projects.filter(p => p.id !== id);
+        CS.ui.conversations = data.conversations || CS.ui.conversations;
+        if (CS.state.projectId === id) CS.state.projectId = null;
+        if (CS.ui.expandedProject === id) CS.ui.expandedProject = null;
+        CS.save(); CS.closeModal(); CS.render(); CS.toast('项目已删除。');
+      } catch (error) { CS.toast('删除失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'toggle-thinking': () => { CS.ui.thinkingOpen = !CS.ui.thinkingOpen; CS.render(); },
+    'jump-latest': () => { CS.ui.canJumpLatest = false; CS.render(); scrollToLatest(); },
+    'open-conversation': id => {
+      if (!CS.state.runs.some(r => r.id === id) && !CS.ui.conversations.some(c => c.id === id)) { CS.toast('该会话不存在。', 'error'); return; }
+      CS.navigate('chat', id);
+    },
+    'connect-project': () => { CS.ui.projectMenu = false; CS.showModal('remote-project'); },
+    'submit-remote-project': () => {},
+    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); },
+    'configure-model': () => { CS.ui.modelMenu = false; CS.ui.settingsTab = 'agent'; CS.navigate('settings'); },
+    'add-provider': () => { CS.ui.edit = { type: 'provider', id: null }; CS.render(); },
+    'edit-provider': id => { CS.ui.edit = { type: 'provider', id }; CS.render(); },
+    'delete-provider': id => { CS.ui.pendingDelete = id; CS.showModal('confirm',{title:'删除服务商？',message:'将删除该服务商及其下所有模型配置。此操作不可撤销。',confirmAction:'confirm-delete-provider',confirmLabel:'删除',danger:true}); },
+    'confirm-delete-provider': async () => {
+      const id = CS.ui.pendingDelete; CS.ui.pendingDelete = null;
+      try {
+        const data = await CS.api.modelCall('provider.delete', 'DELETE', `/providers/${encodeURIComponent(id)}`);
+        CS.ui.providers = data.providers || []; CS.ui.models = data.models || [];
+        if (CS.ui.edit?.id === id) CS.ui.edit = null;
+        if (!CS.ui.models.some(m => m.id === CS.state.settings.modelId)) { const def = CS.ui.models.find(m => m.isDefault) || CS.ui.models[0]; CS.state.settings.modelId = def?.id || null; CS.state.settings.model = def?.model || ''; }
+        CS.save(); CS.render(); CS.toast('服务商已删除。');
+      } catch (error) { CS.toast('删除失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'save-provider': async () => {
+      const name = document.getElementById('provider-name')?.value.trim() || '';
+      const baseUrl = document.getElementById('provider-base-url')?.value.trim() || '';
+      const apiKey = document.getElementById('provider-api-key')?.value.trim() || '';
+      if (!baseUrl) { CS.toast('接口地址不能为空。','error'); return; }
+      if (!/^https?:\/\//i.test(baseUrl)) { CS.toast('接口地址必须是 http(s):// 开头的 URL。','error'); return; }
+      CS.ui.testing = true; CS.render();
+      try {
+        await CS.api.modelCall('provider.save', 'POST', '/providers', { id: CS.ui.edit?.id || undefined, name, baseUrl, apiKey: apiKey || undefined });
+        CS.ui.edit = null;
+        await CS.agent.loadModels();
+        CS.toast('服务商已保存。');
+      } catch (error) { CS.toast('保存失败：' + CS.api.friendlyError(error), 'error'); }
+      finally { CS.ui.testing = false; emitRender(); }
+    },
+    'add-model': id => { CS.ui.edit = { type: 'model', id: null }; CS.ui.providerModels = null; CS.ui.draftModelName = ''; CS.ui.draftProviderId = id || null; CS.render(); },
+    'edit-model': id => { const m = CS.ui.models.find(x => x.id === id); CS.ui.edit = { type: 'model', id }; CS.ui.providerModels = null; CS.ui.draftModelName = m?.model || ''; CS.ui.draftProviderId = m?.providerId || null; CS.render(); },
+    'cancel-edit': () => { CS.ui.edit = null; CS.ui.providerModels = null; CS.render(); },
+    'delete-model': id => { CS.ui.pendingDelete = id; CS.showModal('confirm',{title:'删除模型？',message:'将从服务端删除此模型配置。此操作不可撤销。',confirmAction:'confirm-delete-model',confirmLabel:'删除',danger:true}); },
+    'confirm-delete-model': async () => {
+      const id = CS.ui.pendingDelete; CS.ui.pendingDelete = null;
+      try {
+        const data = await CS.api.modelCall('model.delete', 'DELETE', `/models/${encodeURIComponent(id)}`);
+        CS.ui.models = data.models || [];
+        if (CS.state.settings.modelId === id) { const def = CS.ui.models.find(m => m.isDefault) || CS.ui.models[0]; CS.state.settings.modelId = def?.id || null; CS.state.settings.model = def?.model || ''; }
+        CS.save(); CS.render(); CS.toast('模型已删除。');
+      } catch (error) { CS.toast('删除失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'save-model': async () => {
+      const providerId = document.getElementById('model-provider')?.value || CS.ui.draftProviderId;
+      const model = document.getElementById('model-name')?.value.trim() || '';
+      if (!providerId) { CS.toast('请选择服务商。','error'); return; }
+      if (!model) { CS.toast('模型名称不能为空。','error'); return; }
+      CS.ui.testing = true; CS.render();
+      try {
+        await CS.api.modelCall('model.save', 'POST', '/models', { id: CS.ui.edit?.id || undefined, providerId, model, isDefault: true });
+        CS.ui.edit = null; CS.ui.providerModels = null; CS.ui.draftModelName = '';
+        await CS.agent.loadModels();
+        CS.toast('模型已保存。');
+      } catch (error) { CS.toast('保存失败：' + CS.api.friendlyError(error), 'error'); }
+      finally { CS.ui.testing = false; emitRender(); }
+    },
+    'fetch-provider-models': async () => {
+      const pid = document.getElementById('model-provider')?.value || CS.ui.draftProviderId;
+      const current = document.getElementById('model-name')?.value || '';
+      if (current !== '') CS.ui.draftModelName = current;
+      if (pid) CS.ui.draftProviderId = pid;
+      CS.ui.providerModels = { loading: true, list: null, error: null };
+      CS.render();
+      try {
+        const result = await CS.api.modelCall('provider.models', 'POST', '/providers/list-models', { id: CS.ui.draftProviderId });
+        CS.ui.providerModels = result.ok ? { loading: false, list: result.models } : { loading: false, list: null, error: result.error || '获取失败' };
+      } catch (error) { CS.ui.providerModels = { loading: false, list: null, error: error.message }; }
+      CS.render();
+    },
+    'dd-toggle': id => { CS.ui.dropdown = CS.ui.dropdown === id ? null : id; CS.render(); },
+    'dd-pick-provider': id => { CS.ui.draftProviderId = id; CS.ui.dropdown = null; CS.render(); },
+    'dd-pick-model': name => { CS.ui.draftModelName = name; CS.ui.dropdown = null; CS.render(); },
+    'test-provider': async id => {
+      const provider = CS.ui.providers.find(x => x.id === id); if (!provider) return;
+      CS.ui.testing = true; CS.render();
+      try {
+        const result = await CS.api.modelCall('provider.test', 'POST', '/providers/test', { id });
+        CS.ui.apiHealth = `服务商 ${provider.name}：${result.ok ? '连接成功 · ' + result.latencyMs + ' ms' + (result.modelCount ? ' · ' + result.modelCount + ' 个模型' : '') : '连接失败 · ' + (result.error || 'HTTP ' + result.status)}`;
+        CS.toast(CS.ui.apiHealth);
+      } catch (error) { CS.toast('测试失败：' + CS.api.friendlyError(error), 'error'); }
+      finally { CS.ui.testing = false; CS.render(); }
+    },
+    'logout': () => { CS.state.username = ''; CS.ui.userMenu = false; CS.save(); CS.render(); CS.toast('已退出登录。'); },
     'go-home': () => CS.navigate('home'), 'go-data': () => CS.navigate('data'), 'go-workflows': () => CS.navigate('workflows'),
     'new-project': () => CS.showModal('project'),
     'edit-project': id => CS.showModal('project',{project:CS.state.projects.find(p=>p.id===id)}),
@@ -250,22 +543,32 @@
     'export-workspace': () => CS.download('sigmaflow_science_workspace.json',JSON.stringify({...CS.state,exportedAt:new Date().toISOString(),containsOriginalFiles:false},null,2),'application/json'),
     'reset-workspace': () => CS.showModal('confirm',{title:'清空并恢复示例？',message:'将清除本地的项目、对话、笔记、任务和文件记录，恢复初始示例。此操作不可撤销，不影响电脑上的原文件。',confirmAction:'confirm-reset',confirmLabel:'清空并恢复',danger:true}),
     'confirm-reset': () => { CS.state.runs.forEach(r=>{ if(['running','paused','connecting'].includes(r.status)) CS.agent.control(r,'cancel'); }); CS.reset(); CS.closeModal(); CS.navigate('home'); CS.toast('已恢复初始演示工作空间。'); },
-    'save-api': () => {
-      const mode=document.getElementById('agent-mode').value; const endpoint=document.getElementById('api-endpoint').value.trim();
-      if (!endpoint) { CS.toast('接口地址不能为空。','error'); return; }
-      const old=CS.state.settings.endpoint; CS.state.settings.endpoint=endpoint;
-      try { if(mode==='remote') CS.api.url('/health'); }
-      catch(error){CS.state.settings.endpoint=old;CS.toast(error.message,'error');return;}
-      CS.state.settings.mode=mode; CS.ui.apiHealth=null; emitRender(); CS.toast('接口配置已保存，新建任务将使用新的运行模式。');
-    },
     'test-api': async () => {
-      const old=CS.state.settings.endpoint; CS.state.settings.endpoint=document.getElementById('api-endpoint').value.trim();
-      try { const data=await CS.api.request('/health'); if(data.status!=='ok') throw new Error('health.status 不为 ok'); CS.ui.apiHealth='连接成功'+(data.demo ? ' · 模拟服务' : ''); CS.toast(CS.ui.apiHealth); }
-      catch(error){CS.ui.apiHealth='连接失败';CS.toast('接口不可用：'+error.message,'error');}
-      finally{CS.state.settings.endpoint=old;CS.render();}
+      CS.ui.testing=true; CS.render();
+      try {
+        const start=performance.now();
+        await CS.api.request('/health');
+        const ms=Math.round(performance.now()-start);
+        const model=CS.ui.models.find(x => x.id === CS.state.settings.modelId) || CS.ui.models.find(x => x.isDefault) || CS.ui.models[0];
+        let provider='';
+        if (model) {
+          const result=await CS.api.modelCall('provider.test', 'POST', '/providers/test', { id: model.providerId });
+          provider=' · 模型 '+result.latencyMs+' ms'+(result.ok ? (result.modelCount ? '（'+result.modelCount+' 个可用模型）' : '') : '（失败：'+(result.error || 'HTTP '+result.status)+'）');
+        }
+        CS.state.settings.latency=ms; CS.state.settings.lastTest='ok';
+        CS.ui.apiHealth=`连接成功 · 服务 ${ms} ms`+provider;
+        CS.toast(CS.ui.apiHealth);
+      }
+      catch(error){ CS.state.settings.latency=null; CS.state.settings.lastTest='fail'; CS.ui.apiHealth='连接失败'; CS.toast('接口不可用：'+CS.api.friendlyError(error),'error'); }
+      finally{ CS.ui.testing=false; CS.save(); CS.render(); }
     }
   };
   document.addEventListener('click', async event => {
+    if (CS.ui.userMenu && !event.target.closest('.workspace-chip')) { CS.ui.userMenu = false; CS.render(); }
+    if (CS.ui.modelMenu && !event.target.closest('.model-select')) { CS.ui.modelMenu = false; CS.render(); }
+    if (CS.ui.projectMenu && !event.target.closest('.composer-project')) { CS.ui.projectMenu = false; CS.render(); }
+    if (CS.ui.projectSettingsMenu && !event.target.closest('.project-link')) { CS.ui.projectSettingsMenu = null; CS.render(); }
+    if (CS.ui.dropdown && !event.target.closest('.dd-wrap')) { CS.ui.dropdown = null; CS.render(); }
     const nav = event.target.closest('[data-nav]');
     if (nav) {
       event.preventDefault();
@@ -281,11 +584,15 @@
     const form=event.target; const type=form.dataset.form; if(!type) return; event.preventDefault();
     if(type==='composer') {
       const prompt=CS.ui.composer.trim(); if(!prompt) return;
-      if(CS.ui.route==='chat' && CS.currentRun()) {
-        const run=CS.currentRun(); run.messages.push({role:'user',content:prompt,datasetIds:[...CS.ui.attachments],at:new Date().toISOString()});
+      const active=CS.currentRun();
+      if(CS.ui.route==='chat' && active?.kind === 'chat') {
+        CS.ui.composer=''; CS.ui.attachments=[]; CS.save();
+        sendChatMessage(active,prompt,[]);
+      } else if(CS.ui.route==='chat' && active) {
+        const run=active; run.messages.push({role:'user',content:prompt,datasetIds:[...CS.ui.attachments],at:new Date().toISOString()});
         run.messages.push({role:'assistant',content:'这是演示对话，不是模型生成的科研解释。当前任务的输入、计划和步骤都可在上方查看；结果中的点云与表达值为合成示例。要获取真实分析，请通过服务端接入模型与经过验证的分析工作流。',at:new Date().toISOString()});
         CS.ui.composer=''; CS.ui.attachments=[]; CS.save(); CS.render(); setTimeout(()=>document.querySelector('.chat-composer')?.scrollIntoView({block:'end'}),20);
-      } else openNewTask(prompt,inferWorkflow(prompt),CS.ui.attachments);
+      } else startChat(prompt);
     } else if(type==='project') {
       const name=document.getElementById('project-name').value.trim(); const description=document.getElementById('project-description').value.trim(); const tags=document.getElementById('project-tags').value.split(/[,，]/).map(t=>t.trim()).filter(Boolean).slice(0,5);
       if(!name) {CS.toast('项目名称不能为空。','error');return;}
@@ -294,6 +601,16 @@
       if(id) Object.assign(CS.state.projects.find(p=>p.id===id),{name,description,tags,updated:CS.today()});
       else { const project={id:CS.uid('pr'),name,description,tags,icon:'folder',created:CS.today(),updated:CS.today(),archived:false};CS.state.projects.push(project);CS.state.projectId=project.id; }
       CS.save();CS.closeModal();CS.navigate('projects');CS.toast('项目已保存。');
+      const saved=CS.state.projects.find(p=>p.id===id||CS.state.projects[CS.state.projects.length-1]===p);
+      CS.api.modelCall('project.save','POST','/projects',{id:saved.id,name:saved.name,description:saved.description||'',tags:saved.tags||[],icon:saved.icon||'folder'}).catch(()=>{});
+    } else if(type==='remote-project') {
+      const name=document.getElementById('remote-project-name').value.trim(); const address=document.getElementById('remote-project-address').value.trim();
+      if(!name) {CS.toast('项目名称不能为空。','error');return;}
+      if(!address) {CS.toast('远程地址不能为空。','error');return;}
+      const project={id:CS.uid('pr'),name,description:'远程项目 · '+address,tags:['远程'],icon:'folder',remote:address,created:CS.today(),updated:CS.today(),archived:false};
+      CS.state.projects.push(project);CS.state.projectId=project.id;
+      CS.save();CS.closeModal();CS.render();CS.toast('已连接远程项目。');
+      CS.api.modelCall('project.save','POST','/projects',{id:project.id,name,description:project.description,tags:['远程'],icon:'folder',remote:address}).catch(()=>{});
     } else if(type==='note') {
       const text=document.getElementById('paper-note-text').value; CS.state.notes[CS.ui.modal.id]=text;CS.save();CS.closeModal();CS.render();CS.toast('阅读笔记已保存。');
     }
@@ -305,6 +622,7 @@
     else if(searchBindings[id]) {CS.ui.filters[searchBindings[id]]=target.value;CS.render();}
     else if(id==='marker-search') {CS.ui.markerSearch=target.value;CS.render();}
     else if(id==='sequence-input') CS.ui.sequence=target.value;
+    else if(id==='model-name') CS.ui.draftModelName=target.value;
     else if(id==='pubmed-query') CS.ui.pubmedQuery=target.value;
     else if(id==='min-genes') CS.ui.minGenes=target.value;
     else if(id==='max-mito') CS.ui.maxMito=target.value;
@@ -315,12 +633,11 @@
     else if(target.dataset.checkDataset){const id=target.dataset.checkDataset;target.checked ? CS.ui.datasetSelection.add(id) : CS.ui.datasetSelection.delete(id);CS.render();}
     else if(target.id==='select-all-data'){
       const f=CS.ui.filters;CS.state.datasets.filter(d=>(f.dataTab==='all'||d.source===f.dataTab)&&(d.name+d.format+d.description).toLowerCase().includes(f.data.toLowerCase())).forEach(d=>target.checked?CS.ui.datasetSelection.add(d.id):CS.ui.datasetSelection.delete(d.id));CS.render();
-    } else if(target.id==='agent-selector' && target.value==='settings') CS.navigate('settings');
-    else if(target.id==='workflow-dataset') CS.ui.datasetId=target.value;
+    } else if(target.id==='workflow-dataset') CS.ui.datasetId=target.value;
     else if(target.id==='workflow-organism') CS.ui.organism=target.value;
   });
   document.addEventListener('keydown',event=>{
-    if(event.key==='Escape'){if(CS.ui.modal)CS.closeModal();else if(CS.ui.mobileSidebar){CS.ui.mobileSidebar=false;CS.render();}return;}
+    if(event.key==='Escape'){if(CS.ui.modal)CS.closeModal();else if(CS.ui.userMenu){CS.ui.userMenu=false;CS.render();}else if(CS.ui.modelMenu){CS.ui.modelMenu=false;CS.render();}else if(CS.ui.mobileSidebar){CS.ui.mobileSidebar=false;CS.render();}return;}
     if(event.altKey && event.key.toLowerCase()==='n'){event.preventDefault();CS.state.currentRunId=null;CS.ui.composer='';CS.ui.attachments=[];CS.save();CS.navigate('home');return;}
     if(event.target.id==='composer-text' && event.key==='Enter' && !event.shiftKey && !event.isComposing){event.preventDefault();event.target.closest('form').requestSubmit();}
     if(event.key==='Tab' && CS.ui.modal){
@@ -339,6 +656,76 @@
     else CS.toast('请在数据页面或文件导入区域拖入文件。','error');
   });
   window.addEventListener('error',event=>{console.error('[SigmaFlow Science]',event.message);});
-  CS.ui.route=readRoute();CS.render();
+  CS.agent.loadModels = async () => {
+    try {
+      const [pv, md] = await Promise.all([
+        CS.api.modelCall('provider.list', 'GET', '/providers'),
+        CS.api.modelCall('model.list', 'GET', '/models'),
+      ]);
+      CS.ui.providers = Array.isArray(pv.providers) ? pv.providers : [];
+      CS.ui.models = Array.isArray(md.models) ? md.models : [];
+      CS.ui.modelsLoaded = true;
+      if (CS.ui.models.length && !CS.ui.models.some(m => m.id === CS.state.settings.modelId)) {
+        const def = CS.ui.models.find(m => m.isDefault) || CS.ui.models[0];
+        CS.state.settings.modelId = def.id; CS.state.settings.model = def.model;
+      }
+      CS.save(); CS.emit('render');
+    } catch (error) { CS.ui.modelsLoaded = false; }
+  };
+  CS.ui.route=applyRoute();CS.render();
+  // 服务地址自动探测：依次尝试 当前地址 -> 页面前缀推导地址 -> /api，取第一个健康可达者。
+  // 必须等它完成再加载模型列表，否则首次访问（无痕窗口/新设备）会用错误地址拉取。
+  CS.api.detectEndpoint = async () => {
+    const probe = async base => { try { const r = await fetch(base.replace(/\/$/, '') + '/health'); if (!r.ok) return false; return (await r.json()).status === 'ok'; } catch { return false; } };
+    const match = location.pathname.match(/^(\/[a-zA-Z0-9_-]+)\/science\/?$/);
+    const candidates = [];
+    if (CS.state.settings.endpoint) candidates.push(CS.state.settings.endpoint);
+    if (match) candidates.push(match[1] + '/api');
+    if (!candidates.includes('/api')) candidates.push('/api');
+    for (const base of [...new Set(candidates)]) {
+      if (await probe(base)) {
+        if (CS.state.settings.endpoint !== base) {
+          CS.state.settings.endpoint = base; CS.save(); CS.render();
+          // 地址已变：重置 WS 状态，让后续连接用新地址
+          CS.api.ws.failedAt = 0;
+          const stale = CS.api.ws.socket; CS.api.ws.socket = null; CS.api.ws.state = 'closed';
+          if (stale) { try { stale.close(); } catch {} }
+          CS.toast('服务接口地址已自动设为 ' + base);
+        }
+        return;
+      }
+    }
+  };
+  CS.agent.loadProjects = async () => {
+    try {
+      let data = await CS.api.modelCall('project.list', 'GET', '/projects');
+      if (!data.projects?.length && CS.state.projects.length) {
+        for (const p of CS.state.projects.filter(x => !x.archived)) {
+          await CS.api.modelCall('project.save', 'POST', '/projects', { id: p.id, name: p.name, description: p.description || '', tags: p.tags || [], icon: p.icon || 'folder', remote: p.remote || null }).catch(() => {});
+        }
+        data = await CS.api.modelCall('project.list', 'GET', '/projects');
+      }
+      CS.state.projects = (data.projects || []).map(p => ({ ...p, created: p.createdAt ? new Date(p.createdAt).toISOString().slice(0, 10) : CS.today(), updated: p.updatedAt ? new Date(p.updatedAt).toISOString().slice(0, 10) : CS.today(), archived: false }));
+      if (CS.state.projects.length && !CS.state.projects.some(p => p.id === CS.state.projectId)) CS.state.projectId = CS.state.projects[0].id;
+      CS.save(); CS.emit('render');
+    } catch (error) { /* 服务器不可用时保持本地项目列表 */ }
+  };
+  CS.agent.loadConversations = async () => {
+    try {
+      const data = await CS.api.modelCall('conversation.list', 'GET', '/conversations');
+      CS.ui.conversations = Array.isArray(data.conversations) ? data.conversations : [];
+      CS.emit('render');
+    } catch (error) { /* 忽略：服务器不可用时保留旧列表 */ }
+  };
+  CS.agent.registerConversation = run => {
+    if (!run) return;
+    CS.ui.conversations.unshift({ id: run.id, title: run.title, projectId: run.projectId, createdAt: Date.now(), updatedAt: Date.now() });
+    const payload = { id: run.id, title: run.title, projectId: run.projectId };
+    const real = (run.messages || []).filter(m => m.role === 'user' || m.role === 'assistant' && m.content);
+    if (real.length) payload.content = real.map(m => ({ role: m.role, content: m.content }));  // 空则不带 → 服务端保留已有
+    CS.api.modelCall('conversation.save', 'POST', '/conversations', payload)
+      .then(() => CS.agent.loadConversations()).catch(() => {});
+  };
+  CS.api.detectEndpoint().finally(() => { CS.agent.loadModels(); CS.agent.loadProjects().then(() => CS.agent.loadConversations()); });
   if(CS.storageUnavailable)CS.toast('浏览器存储不可用，当前仅在内存运行。','error');
 })();

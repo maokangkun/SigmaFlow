@@ -14,8 +14,9 @@ from .science import ScienceAPI
 
 class SPAStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope):
+        is_entry = not path or path.endswith("index.html") or path.endswith("/")
         try:
-            return await super().get_response(path, scope)
+            res = await super().get_response(path, scope)
         except StarletteHTTPException as exc:
             if exc.status_code != HTTP_404_NOT_FOUND:
                 raise
@@ -24,12 +25,25 @@ class SPAStaticFiles(StaticFiles):
             index_path = Path(self.directory) / "index.html"
             if not index_path.exists():
                 raise
-            return FileResponse(index_path)
+            res = FileResponse(index_path)
+        # SPA 入口不可缓存: 浏览器每次都重新协商, 保证拿到最新前端代码
+        if is_entry and getattr(res, "status_code", 0) == 200:
+            res.headers["Cache-Control"] = "no-cache"
+        return res
 
 
 class PipelineServer:
     def __init__(self, pipeline_manager=None):
         self.app = FastAPI(title="Sigmaflow Server")
+
+        @self.app.middleware("http")
+        async def spa_no_cache(request, call_next):
+            response = await call_next(request)
+            # 设置页等 SPA 入口禁止缓存, 保证浏览器总能拿到最新前端代码
+            if request.url.path.endswith("index.html") or request.url.path.rstrip("/") == "/science":
+                response.headers["Cache-Control"] = "no-cache"
+            return response
+
 
         api = PipelineAPI(pipeline_manager)
         task = TaskAPI(pipeline_manager)

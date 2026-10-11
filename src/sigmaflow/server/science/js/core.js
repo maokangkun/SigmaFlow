@@ -8,6 +8,55 @@
   CS.formatBytes = bytes => { if (!bytes) return '0 B'; const units = ['B', 'KB', 'MB', 'GB']; const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), 3); return `${(bytes / 1024 ** i).toFixed(i ? 1 : 0)} ${units[i]}`; };
   CS.today = () => new Date().toISOString().slice(0, 10);
   CS.time = value => new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+CS.elapsedMs = ms => {
+  const s = Math.max(0, Math.round(Number(ms) / 1000));
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm' + String(s % 60).padStart(2, '0') + 's';
+  const h = Math.floor(m / 60);
+  return h + 'h' + String(m % 60).padStart(2, '0') + 'm' + String(s % 60).padStart(2, '0') + 's';
+};
+CS.elapsed = start => {
+  const s = Math.max(0, Math.floor((Date.now() - new Date(start).getTime()) / 1000));
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm' + String(s % 60).padStart(2, '0') + 's';
+  const h = Math.floor(m / 60);
+  return h + 'h' + String(m % 60).padStart(2, '0') + 'm' + String(s % 60).padStart(2, '0') + 's';
+};
+CS.datetime = value => {
+  const d = new Date(value);
+  const date = d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+  const time = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  return `${date} ${time}`;
+};
+CS.markdown = text => {
+  // DOM 白名单消毒: 只保留安全的标签与属性, 拒绝一切事件属性与 javascript:/data: URL。
+  // 相比正则方案, DOM 解析不存在实体编码(如 &#111;nerror)等绕过方式。
+  const doc = new DOMParser().parseFromString(marked.parse(String(text ?? ''), { breaks: true }), 'text/html');
+  const allowedTags = new Set(['A','B','I','EM','STRONG','U','S','DEL','SUP','SUB','P','BR','UL','OL','LI','BLOCKQUOTE','CODE','PRE','H1','H2','H3','H4','H5','H6','HR','TABLE','THEAD','TBODY','TR','TH','TD','SPAN','DIV','IMG','INPUT']);
+  const safeUrl = value => {
+    try { const u = new URL(value, location.href); return ['http:', 'https:', 'mailto:'].includes(u.protocol) ? u.href : null; }
+    catch { return null; }
+  };
+  doc.body.querySelectorAll('*').forEach(el => {
+    if (!allowedTags.has(el.tagName)) { el.replaceWith(...el.childNodes); return; }
+    [...el.attributes].forEach(attr => {
+      const name = attr.name.toLowerCase();
+      let keep = false;
+      if (el.tagName === 'A' && name === 'href') keep = true;
+      if (el.tagName === 'IMG' && (name === 'src' || name === 'alt')) keep = true;
+      if (el.tagName === 'INPUT' && ['checked', 'disabled', 'type'].includes(name)) keep = true;
+      if (!keep) { el.removeAttribute(attr.name); return; }
+      if (name === 'href' || name === 'src') {
+        const safe = safeUrl(attr.value);
+        if (safe === null) el.removeAttribute(attr.name);
+        else el.setAttribute(name, safe);
+      }
+    });
+  });
+  return doc.body.innerHTML;
+};
   CS.date = value => new Date(value).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
   CS.relative = value => { const delta = Math.max(0, Date.now() - new Date(value).getTime()); return delta < 60000 ? '刚刚' : delta < 3600000 ? `${Math.floor(delta / 60000)} 分钟前` : delta < 86400000 ? `${Math.floor(delta / 3600000)} 小时前` : CS.date(value); };
   CS.download = (name, body, type = 'text/plain;charset=utf-8') => {
@@ -60,7 +109,8 @@
   CS.defaults = () => ({
     version: 1, projects: clone(CS.data.projects), datasets: clone(CS.data.datasets), runs: [],
     bookmarks: [], notes: {}, projectId: 'pr-pbmc', currentRunId: null,
-    settings: { persist: true, contrast: false, reducedMotion: false, mode: 'local', endpoint: '/api', inspector: true }
+    settings: { persist: true, contrast: false, reducedMotion: false, mode: 'local', endpoint: '/sigmaflow/api', inspector: true, model: 'openrouter/free', modelId: null, apiKey: '', lastTest: null },
+    username: ''
   });
   let stored;
   try { stored = JSON.parse(localStorage.getItem(key) || 'null'); } catch { CS.storageUnavailable = true; }
@@ -80,7 +130,8 @@
     datasetSelection: new Set(), resultTab: 'overview', markerSearch: '', group: 'all', zoom: 1,
     workflowId: 'singlecell', workflowCategory: 'all', datasetId: 'ds-pbmc', organism: 'Homo sapiens', advanced: false,
     minGenes: 200, maxMito: 20, activeTool: 'sequence', sequence: CS.data.sampleFASTA, sequenceResult: null,
-    modal: null, expandedLogs: new Set(), selectedCell: null, note: '', apiHealth: null
+    modal: null, expandedLogs: new Set(), selectedCell: null, note: '', apiHealth: null,
+    userMenu: false, modelMenu: false, projectMenu: false, projectSettingsMenu: null, expandedProject: null, conversations: [], settingsTab: 'appearance', models: [], providers: [], edit: null, providerModels: null, draftModelName: '', draftProviderId: null, dropdown: null, pendingDelete: null, modelsLoaded: false, thinkingOpen: false, thinkingText: '', canJumpLatest: false
   };
   CS.files = new Map(); // File objects only live in memory; raw file bytes never enter localStorage.
   CS.save = () => {

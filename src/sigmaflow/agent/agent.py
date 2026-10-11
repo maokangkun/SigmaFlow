@@ -38,7 +38,9 @@ class Agent:
             max_turn=1e10,
             debug=False,
             support_tool=False,
+            on_delta=None,
         ):
+        self.on_delta = on_delta  # 流式回调: 每收到一段增量文本时调用 on_delta(text)
         self.method = method
         self.model = model
         self.system = system
@@ -105,7 +107,10 @@ class Agent:
         is_print=True, 
         show_processing=True, 
         max_turn=None,
+        on_delta=None,
     ):
+        if on_delta is not None:
+            self.on_delta = on_delta
         if self.method == "openai" and messages[0]["role"] != "system":
             messages.insert(0, {"role": "system", "content": self.system if not subagent else self.sub_system})
         elif self.method == "anthropic" and messages[0]["role"] == "system":
@@ -143,7 +148,7 @@ class Agent:
                 m['content'] = self._process_query(m['content'])
 
         T = self.sub_tools if subagent else self.tools
-        usable_tools = T if tools is None else [t for t in T if t.get('name', t.get('function', {}).get('name')) in tools]
+        usable_tools = [] if not self.support_tool else (T if tools is None else [t for t in T if t.get('name', t.get('function', {}).get('name')) in tools])
 
         cur_turn = len([m for m in messages if m['role'] == 'assistant'])
         max_turn = max_turn or self.max_turn
@@ -188,6 +193,66 @@ class Agent:
                             info["cost_tokens"] += response.usage.input_tokens + response.usage.output_tokens
                             messages.append({"role": "assistant", "content": response.content})
                             info["messages"].append({"role": "assistant", "content": [i.dict() for i in response.content]})
+                        case "openai" if self.on_delta is not None and not usable_tools:
+                            # 流式路径: 逐块推送增量文本/思考, 同时累积完整响应供后续逻辑使用
+                            class _DeltaMsg:
+                                pass
+
+                            class _DeltaUsage:
+                                def __init__(self):
+                                    self.total_tokens = 0
+                                    self.prompt_tokens = 0
+                                    self.completion_tokens = 0
+
+                            response_text_parts, reasoning_parts = [], []
+                            usage = _DeltaUsage()
+                            stream_kwargs = {"stream": True, "stream_options": {"include_usage": True}}
+                            try:
+                                _stream = self.client.chat.completions.create(
+                                    model=self.model,
+                                    messages=messages,
+                                    max_tokens=MAX_TOKENS,
+                                    **stream_kwargs
+                                )
+                            except Exception:
+                                # 部分兼容网关不支持 stream_options, 去掉后重试
+                                _stream = self.client.chat.completions.create(
+                                    model=self.model,
+                                    messages=messages,
+                                    max_tokens=MAX_TOKENS,
+                                    stream=True,
+                                )
+                            for chunk in _stream:
+                                if getattr(chunk, "usage", None):
+                                    usage.total_tokens = getattr(chunk.usage, "total_tokens", 0) or 0
+                                    usage.prompt_tokens = getattr(chunk.usage, "prompt_tokens", 0) or 0
+                                    usage.completion_tokens = getattr(chunk.usage, "completion_tokens", 0) or 0
+                                choices = getattr(chunk, "choices", None)
+                                if not choices:
+                                    continue
+                                delta = choices[0].delta
+                                think = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+                                if think:
+                                    info.setdefault("reasoning_parts", []).append(think)
+                                    try:
+                                        self.on_delta(None, think)
+                                    except Exception:
+                                        pass
+                                piece = getattr(delta, "content", None)
+                                if piece:
+                                    response_text_parts.append(piece)
+                                    try:
+                                        self.on_delta(piece)
+                                    except Exception:
+                                        pass
+                            info["cost_tokens"] += usage.total_tokens
+                            msg = _DeltaMsg()
+                            msg.content = "".join(response_text_parts)
+                            msg.tool_calls = None
+                            response = _DeltaMsg()
+                            response.usage = usage
+                            response.choices = [_DeltaMsg()]
+                            response.choices[0].message = msg
                         case "openai":
                             tool_param = {"tools": usable_tools, "tool_choice": "auto"} if usable_tools else {}
                             response = self.client.chat.completions.create(
@@ -196,7 +261,9 @@ class Agent:
                                 max_tokens=MAX_TOKENS,
                                 **tool_param
                             )
-                            info["cost_tokens"] += response.usage.total_tokens
+                            if isinstance(response, str) or not hasattr(response, "usage"):
+                                raise ValueError(f"Unexpected response from provider: {str(response)[:200]}")
+                            info["cost_tokens"] += getattr(response.usage, "total_tokens", 0) if response.usage else 0
                             assert response.choices is not None, f"Response is None: {response}"
                             msg = response.choices[0].message
                             m = {"role": "assistant"}
@@ -283,10 +350,11 @@ class Agent:
                             print(f"{Prompt.Assistant}{msg.content}")
                             info["last_response"] = msg.content
 
-                            ratio = response.usage.total_tokens / max_model_len
-                            print(f"{Prompt.Tokens}inp: {response.usage.prompt_tokens}, out: {response.usage.completion_tokens}, time: {cost_time:.2f}s, {(response.usage.completion_tokens or 0) / cost_time:.2f} tokens/s, tools: {sum(not i[-1].startswith('Error:') for i in info['used_tools'])}/{len(info['used_tools'])}, skills: {sum(not i[-1].startswith('Error:') for i in info['used_skills'])}/{len(info['used_skills'])}, context: {Prompt.RedLine*round(ratio*10)}{Prompt.BlueLine*(10 - round(ratio*10))} {ratio:.1%}")
+                            _usage = response.usage if hasattr(response.usage, 'total_tokens') else None
+                            ratio = _usage.total_tokens / max_model_len if _usage else 0
+                            print(f"{Prompt.Tokens}inp: {_usage.prompt_tokens if _usage else '?'}, out: {_usage.completion_tokens if _usage else '?'}, time: {cost_time:.2f}s, {(_usage.completion_tokens or 0) / cost_time if _usage else 0:.2f} tokens/s, tools: {sum(not i[-1].startswith('Error:') for i in info['used_tools'])}/{len(info['used_tools'])}, skills: {sum(not i[-1].startswith('Error:') for i in info['used_skills'])}/{len(info['used_skills'])}, context: {Prompt.RedLine*round(ratio*10)}{Prompt.BlueLine*(10 - round(ratio*10))} {ratio:.1%}")
 
-                            if info["last_response"] is None and response.usage.completion_tokens == MAX_TOKENS:
+                            if info["last_response"] is None and _usage and _usage.completion_tokens == MAX_TOKENS:
                                 console.print(f"{Prompt.Error}[red]Max tokens reached[/]")
                                 info['error'] = 'Max tokens reached, output may be incomplete'
 
@@ -297,9 +365,10 @@ class Agent:
             match self.method:
                 case "anthropic":
                     ratio = (response.usage.input_tokens + response.usage.output_tokens) / max_model_len
-                    print(f"{Prompt.Tokens}inp: {response.usage.input_tokens}, out: {response.usage.output_tokens}, time: {cost_time:.2f}s, {response.usage.output_tokens / cost_time:.2f} tokens/s, tools: {len([b for b in response.content if b.type == "tool_use"])}, context: {Prompt.RedLine*round(ratio*10)}{Prompt.BlueLine*(10 - round(ratio*10))} {ratio:.1%}")
+                    tool_count = len([b for b in response.content if b.type == "tool_use"])
+                    print(f"{Prompt.Tokens}inp: {response.usage.input_tokens}, out: {response.usage.output_tokens}, time: {cost_time:.2f}s, {response.usage.output_tokens / cost_time:.2f} tokens/s, tools: {tool_count}, context: {Prompt.RedLine*round(ratio*10)}{Prompt.BlueLine*(10 - round(ratio*10))} {ratio:.1%}")
                 case "openai":
-                    ratio = response.usage.total_tokens / max_model_len
+                    ratio = response.usage.total_tokens / max_model_len if response.usage else 0
                     print(f"{Prompt.Tokens}inp: {response.usage.prompt_tokens}, out: {response.usage.completion_tokens}, time: {cost_time:.2f}s, {(response.usage.completion_tokens or 0) / cost_time:.2f} tokens/s, tool calls: {len(msg.tool_calls)}, context: {Prompt.RedLine*round(ratio*10)}{Prompt.BlueLine*(10 - round(ratio*10))} {ratio:.1%}")
 
             # Tools calling
