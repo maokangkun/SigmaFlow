@@ -58,13 +58,18 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
 .chat-main{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .chat-title{flex-shrink:0;margin-bottom:20px}
 .conversation{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 7px 20px 0;}
-.chat-composer{position:static;flex-shrink:0;margin-top:12px}
+.chat-composer{position:relative;flex-shrink:0;margin-top:12px}
 .inspector{max-height:100%;overflow:auto;}
 .run-card[data-phase="awaiting"] .step{min-height:51px;padding-bottom:11px}
 @media(max-width:800px){.chat-page{height:calc(100dvh - 65px)}}
 @media(max-width:560px){.chat-page{height:calc(100dvh - 60px)}.chat-title{margin-bottom:15px}.conversation{padding-right:3px}.chat-composer{margin-top:10px}.run-card[data-phase="awaiting"] .step{min-height:54px}.step-log{font-size:8px}}
 .dd-wrap{position:relative;display:inline-flex;align-items:center}.model-menu.dd-down{top:calc(100% + 8px);left:0;right:auto;bottom:auto;min-width:230px;max-height:260px;overflow:auto}.model-menu.dd-down .model-menu-item{white-space:normal;line-height:1.5}.setting-row.no-divider{border-bottom:none}.setting-row.compact{padding:5px 0}.setting-row.compact p{margin-top:2px}.dd-wrap .model-select-btn{max-width:none}.composer-home{position:relative}.composer-project{position:absolute;top:-38px;left:0;z-index:50}.composer-project .model-menu{min-width:200px}.project-select-btn{max-width:240px}.conversation-list{display:block;margin:2px 0 8px 22px}
 .conversation-link{width:100%;box-sizing:border-box}.conversation-link{display:flex;align-items:center;gap:8px;padding:6px 8px;font-size:11px;color:var(--muted);border-radius:8px;text-align:left;cursor:pointer;background:transparent;border:0}.conversation-link:hover{background:var(--inset)}.conversation-link.selected{color:var(--ink);font-weight:500}.conversation-link span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.conversation-link .icon{width:13px;height:13px;flex-shrink:0}.conversation-empty{padding:4px 8px 8px 22px}.project-icon{display:inline-flex;align-items:center;flex-shrink:0;color:var(--faint)}.project-icon .icon:last-child{display:none}.project-select-btn:hover .project-icon .icon:first-child{display:none}.project-select-btn:hover .project-icon .icon:last-child{display:inline}.project-icon:hover{color:var(--ink)}.project-row{position:relative;width:100%}.project-link .project-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.project-link .project-actions{display:none;align-items:center;gap:1px;margin-left:auto}.project-link:hover .project-actions{display:inline-flex}.project-link:hover .nav-count{display:none}.project-link .project-actions .icon-btn{height:auto;width:auto;padding:3px;border-radius:4px}.project-link .project-actions .icon-btn:hover{background:var(--inset)}.project-settings-menu{top:calc(100% + 4px);right:6px;bottom:auto;left:auto;min-width:120px}.project-settings-menu .model-menu-item.danger{color:#c0392b}.conversation-link .conversation-title{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 会话生成中状态: 会话名右侧绿点 */
+.conversation-link .conv-dot{flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 2px color-mix(in srgb,var(--green) 18%,transparent);animation:conv-dot-pulse 1.5s ease-in-out infinite}
+.conversation-link .conv-dot:hover{animation:none}
+@keyframes conv-dot-pulse{0%,100%{opacity:1}50%{opacity:.3}}
+@media(prefers-reduced-motion:reduce){.conv-dot{animation:none}}
 .conversation-link .conversation-actions{display:none;align-items:center;gap:1px;margin-left:auto;flex:0 0 auto;width:max-content}.conversation-link:hover .conversation-actions{display:inline-flex}.conversation-link .conversation-actions.has-pinned{display:inline-flex}.conversation-link .conversation-actions{flex:0 0 auto}.conversation-link .conversation-actions .icon-btn{flex:0 0 auto;height:auto;width:auto;min-width:0;padding:1px;border-radius:4px}.conversation-link .conversation-actions .icon-btn:hover{background:var(--inset)}.conversation-link .conversation-actions.has-pinned .icon-btn[data-action='toggle-pin-conversation']{color:var(--accent)}
 /* 对话区滚动条: 无箭头按钮, 静止时隐藏, 滚动时浮现 */
 /* Firefox (标准属性) */
@@ -130,6 +135,7 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
 .elapsed-timer{font-size:10px;color:var(--faint);font-variant-numeric:tabular-nums;font-weight:400;margin-left:4px}
 /* 完成后的耗时标签: 更弱化, 不再竞争注意力 */
 .elapsed-timer.elapsed-done{color:var(--faint);opacity:.85}
+.tok-rate{font-size:10px;color:var(--faint);font-variant-numeric:tabular-nums;font-weight:400;margin-left:4px}
 /* 思考行(dsh ReasoningRow): 图标+标题+分隔点+流式摘要, 扫光动画 */
 .think-root{display:flex;flex-direction:column;margin:2px 0 6px}
 .think-root:not([data-expanded]){contain:size layout;height:24px;overflow:hidden}
@@ -148,8 +154,8 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
 .think-root[data-state=running] .think-row:after{content:"";position:absolute;left:0;top:0;bottom:0;width:300px;background:linear-gradient(90deg,transparent 0%,color-mix(in srgb,var(--bg) 60%,transparent) 55%,transparent 100%);pointer-events:none;animation:think-sweep 2.6s ease-out infinite}
 @keyframes think-sweep{0%{left:-300px}90%,to{left:100%}}
 @media(prefers-reduced-motion:reduce){.think-root[data-state=running] .think-row:after{animation:none}}
-/* 跳到最新按钮: 对话区右下角浮动 */
+/* 跳到最新按钮: 锚定聊天框, 浮动在输入框正上方 */
 .chat-page{position:relative}
-.jump-latest{position:absolute;right:calc(50% - 425px - 52px);bottom:132px;width:36px;height:36px;border-radius:50%;background:var(--surface);border:1px solid var(--line);color:var(--muted);display:inline-flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.08);z-index:5;transition:background .12s,color .12s}
+.jump-latest{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(100% + 10px);width:36px;height:36px;border-radius:50%;background:var(--surface);border:1px solid var(--line);color:var(--muted);display:inline-flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.08);z-index:5;transition:background .12s,color .12s}
 .jump-latest:hover{background:var(--inset);color:var(--ink)}
-@media(max-width:900px){.jump-latest{right:20px;bottom:120px}}
+.jump-latest[hidden]{display:none}

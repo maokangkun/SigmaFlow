@@ -30,6 +30,57 @@
     if (location.hash === hash) CS.render();
     else location.hash = hash;
   };
+  // 生成中状态: 标签页 icon 旋转提示。
+  // Chrome 会把 SVG favicon 静态栅格化、不执行其中的 CSS 动画,
+  // 因此用 canvas 逐帧绘制旋转 logo 并切换 favicon(约 12 帧/秒)。
+  const _faviconEl = document.querySelector('#favicon');
+  const _faviconStatic = _faviconEl ? _faviconEl.href : '';
+  const _faviconCanvas = document.createElement('canvas');
+  _faviconCanvas.width = _faviconCanvas.height = 64;
+  const _faviconCtx = _faviconCanvas.getContext('2d');
+  let _faviconImg = null, _faviconBusy = null, _faviconTimer = null, _faviconAngle = 0;
+  const _faviconFrame = () => {
+    if (!_faviconImg || !_faviconEl) return;
+    const ctx = _faviconCtx, size = 64;
+    ctx.clearRect(0, 0, size, size);
+    // DNA logo: 静止, 缩小居中
+    const logo = size * 0.55;
+    ctx.drawImage(_faviconImg, (size - logo) / 2, (size - logo) / 2, logo, logo);
+    // 绿色彗尾进度环: 底轨 + 尾部渐亮的弧段
+    const r = size * 0.44;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, r, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(84,134,120,.18)';
+    ctx.lineWidth = size * 0.08;
+    ctx.stroke();
+    const segs = 24, span = Math.PI * 1.35;
+    for (let k = 0; k < segs; k++) {
+      const a0 = _faviconAngle + span * k / segs, a1 = _faviconAngle + span * (k + 1) / segs;
+      ctx.beginPath();
+      ctx.arc(size / 2, size / 2, r, a0, a1 + 0.02);
+      ctx.strokeStyle = `rgba(84,134,120,${(0.12 + 0.88 * (k / segs)).toFixed(3)})`;
+      ctx.lineWidth = size * 0.08;
+      ctx.stroke();
+    }
+    _faviconAngle = (_faviconAngle + 0.15) % (Math.PI * 2);  // 一圈约 3.1s
+    _faviconEl.href = _faviconCanvas.toDataURL('image/png');
+  };
+  const syncFavicon = () => {
+    const busy = CS.state.runs.some(r => (r.messages || []).some(m => m.streaming));
+    if (busy === _faviconBusy) return;
+    _faviconBusy = busy;
+    if (busy) {
+      if (!_faviconTimer) _faviconTimer = setInterval(_faviconFrame, 80);
+    } else {
+      if (_faviconTimer) { clearInterval(_faviconTimer); _faviconTimer = null; }
+      if (_faviconEl) _faviconEl.href = _faviconStatic;
+    }
+  };
+  if (_faviconEl) {
+    _faviconImg = new Image();
+    _faviconImg.src = _faviconStatic;
+  }
   CS.render = () => {
     const active = document.activeElement;
     const focus = active?.id ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
@@ -52,6 +103,7 @@
     window.scrollTo(x, y);
     const app = document.getElementById('app');
     if (CS.ui.modal) { app.inert = true; app.setAttribute('aria-hidden', 'true'); }
+    syncFavicon();
   };
   CS.bus.addEventListener('render', () => CS.render());
   // 对话区滚动条: 滚动时短暂显示, 停止后隐藏
@@ -107,12 +159,47 @@
     if (conversation) conversation.scrollTop = conversation.scrollHeight;
     CS.ui.canJumpLatest = false;
   };
-  // 监听对话区滚动: 离开底部 80px 以上时显示"跳到最新"按钮
+  // 用户已向上翻阅时不要抢滚动: 只有贴近底部才跟随新内容滚到底,
+  // 否则流式期间的每次重渲染都会把用户的滚动位置拉回底部, 表现为滚动卡顿。
+  const nearBottom = () => {
+    const el = document.querySelector('.conversation');
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
+  // 流式期间只更新正在生成的那条消息, 避免整页 innerHTML 重建(长会话下每次
+  // 100ms+, 会把主线程占满, 表现为滚动掉帧)。结构变化(思考区出现等)时返回
+  // false, 由调用方退回全量渲染。
+  const updateStreamingDom = reply => {
+    const contentEl = document.querySelector(`.agent-intro[data-stream-at="${CSS.escape(reply.at)}"]`);
+    const body = contentEl?.closest('.agent-body');
+    if (!contentEl || !body) return false;
+    const hasThink = !!(CS.ui.thinkingText || reply.reasoning);
+    const thinkRoot = body.querySelector('.think-root');
+    if (hasThink !== !!thinkRoot) return false;
+    if (thinkRoot) {
+      thinkRoot.dataset.state = reply.content ? 'ok' : 'running';
+      const title = thinkRoot.querySelector('.think-title');
+      if (title) title.textContent = reply.content ? '已深度思考' : '思考中';
+      const summary = thinkRoot.querySelector('.think-summary-text');
+      if (summary) summary.textContent = (CS.ui.thinkingText || '').split('\n').filter(Boolean).slice(-1)[0] || '';
+      const thinkBody = thinkRoot.querySelector('.think-body');
+      if (thinkBody) thinkBody.textContent = CS.ui.thinkingText || '';
+    }
+    contentEl.innerHTML = CS.markdown(reply.content);
+    return true;
+  };
+  // 监听对话区滚动: 离开底部 80px 以上时显示"跳到最新"按钮。
+  // 只切换按钮的 hidden 属性, 不要在这里 CS.render() —— 全量 innerHTML 重建
+  // 会销毁滚动容器, 打断 Chrome 的滚动手势锁定(scroll latching),
+  // 表现为滚轮滚一段就冻住、必须动一下鼠标才能继续。
   document.addEventListener('scroll', ev => {
     const el = ev.target;
     if (!el.classList?.contains('conversation')) return;
     const show = el.scrollHeight - el.scrollTop - el.clientHeight >= 80;  // 离底部远 → 显示
-    if (show !== CS.ui.canJumpLatest) { CS.ui.canJumpLatest = show; CS.render(); }
+    if (show === CS.ui.canJumpLatest) return;
+    CS.ui.canJumpLatest = show;
+    const btn = document.querySelector('.jump-latest');
+    if (btn) btn.hidden = !show;
   }, true);
   // 会话内容同步到服务端（供其他浏览器打开）; 失败后延迟重试一次
   const syncConversation = async (run, retry = true) => {
@@ -148,17 +235,21 @@
         // 只匹配本轮的活跃计时元素(完成标签是 elapsed-done, 无 data-start)
         const el = document.querySelector('.elapsed-timer[data-start="' + CSS.escape(reply.at) + '"]');
         if (el) el.textContent = CS.elapsed(el.dataset.start);
+        const rate = document.querySelector('.tok-rate[data-start="' + CSS.escape(reply.at) + '"]');
+        if (rate) { const text = CS.tokRateText(reply); if (text) rate.textContent = text; }
       }, 1000);
       CS.ui.thinkingText = '';
       const content = await CS.api.chat(history, delta => {
         reply.content += delta;
+        reply.tokens = (reply.tokens || 0) + 1;  // 每个流式分片约 1 token
         const now = Date.now();
-        if (now - _chatRenderAt > 120) { _chatRenderAt = now; CS.render(); scrollToLatest(); }
+        if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom(); if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       }, think => {
         reply.reasoning = (reply.reasoning || '') + think;
+        reply.tokens = (reply.tokens || 0) + 1;
         CS.ui.thinkingText = reply.reasoning;
         const now = Date.now();
-        if (now - _chatRenderAt > 120) { _chatRenderAt = now; CS.render(); scrollToLatest(); }
+        if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom(); if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       });
       reply.content = content;
     } catch (error) {

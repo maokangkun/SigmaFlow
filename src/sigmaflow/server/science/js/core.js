@@ -24,13 +24,27 @@ CS.elapsed = start => {
   const h = Math.floor(m / 60);
   return h + 'h' + String(m % 60).padStart(2, '0') + 'm' + String(s % 60).padStart(2, '0') + 's';
 };
+CS.tokRateText = m => {
+  if (!m || !m.tokens) return '';
+  const seconds = m.streaming ? (Date.now() - new Date(m.at).getTime()) / 1000 : (m.elapsed || 0) / 1000;
+  if (seconds <= 0) return '';
+  return (m.tokens / seconds).toFixed(1) + ' tok/s';
+};
+CS.tokRateTag = m => {
+  const text = CS.tokRateText(m);
+  if (!text) return '';
+  return `<span class="tok-rate"${m.streaming ? ` data-start="${m.at}"` : ''}>${text}</span>`;
+};
 CS.datetime = value => {
   const d = new Date(value);
   const date = d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
   const time = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
   return `${date} ${time}`;
 };
+const _markdownCache = new Map();  // key: 原文, value: 消毒后 HTML; 流式重渲染时命中缓存, 避免整段会话反复解析
 CS.markdown = text => {
+  const _mdKey = String(text ?? '');
+  if (_markdownCache.has(_mdKey)) return _markdownCache.get(_mdKey);
   // DOM 白名单消毒: 只保留安全的标签与属性, 拒绝一切事件属性与 javascript:/data: URL。
   // 相比正则方案, DOM 解析不存在实体编码(如 &#111;nerror)等绕过方式。
   const doc = new DOMParser().parseFromString(marked.parse(String(text ?? ''), { breaks: true }), 'text/html');
@@ -55,7 +69,10 @@ CS.markdown = text => {
       }
     });
   });
-  return doc.body.innerHTML;
+  const html = doc.body.innerHTML;
+  if (_markdownCache.size > 500) _markdownCache.clear();  // 上限保护, 防止超长会话内存膨胀
+  _markdownCache.set(_mdKey, html);
+  return html;
 };
   CS.date = value => new Date(value).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
   CS.relative = value => { const delta = Math.max(0, Date.now() - new Date(value).getTime()); return delta < 60000 ? '刚刚' : delta < 3600000 ? `${Math.floor(delta / 60000)} 分钟前` : delta < 86400000 ? `${Math.floor(delta / 3600000)} 小时前` : CS.date(value); };
@@ -124,6 +141,9 @@ CS.markdown = text => {
   try { if (localStorage.getItem(key + '.persist') === 'false') CS.state.settings.persist = false; } catch {}
   // A browser refresh must not silently restart an execution.
   CS.state.runs.forEach(run => { if (['running', 'connecting'].includes(run.status)) { run.status = run.transport === 'remote' ? 'error' : 'paused'; run.reloaded = true; if (run.transport === 'remote') run.error = '页面已重新加载；服务端任务可能继续运行。请重连以同步状态。'; } });
+  // 清除刷新前残留的流式标记: 消息以 streaming:true 落盘后, 若中途刷新页面,
+  // 没有对应的生成循环来清除它, 会让 favicon/绿点永远误判为"生成中"。
+  CS.state.runs.forEach(run => (run.messages || []).forEach(m => { delete m.streaming; }));
   CS.ui = {
     route: 'home', mobileSidebar: false, composer: '', attachments: [],
     filters: { data: '', dataTab: 'all', project: '', projectTab: 'active', literature: '', paperTab: 'all', tools: '', toolTab: 'all' },

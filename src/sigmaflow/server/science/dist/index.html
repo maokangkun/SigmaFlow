@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f2f3f5">
   <meta name="description" content="SigmaFlow Science — 简约、可追溯的生物科研 AI 工作空间。">
   <title>SigmaFlow Science · 科研工作空间</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M9 3C9 17 23 15 23 29M23 3C23 17 9 15 9 29M10 7h12M12 12h8M12 20h8M10 25h12' fill='none' stroke='%237675b5' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="icon" id="favicon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M9 3C9 17 23 15 23 29M23 3C23 17 9 15 9 29M10 7h12M12 12h8M12 20h8M10 25h12' fill='none' stroke='%237675b5' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
   <!-- No external fonts, scripts, tracking or image assets. -->
   <style>
 /* css/tokens.css */
@@ -123,13 +123,18 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
 .chat-main{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .chat-title{flex-shrink:0;margin-bottom:20px}
 .conversation{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 7px 20px 0;}
-.chat-composer{position:static;flex-shrink:0;margin-top:12px}
+.chat-composer{position:relative;flex-shrink:0;margin-top:12px}
 .inspector{max-height:100%;overflow:auto;}
 .run-card[data-phase="awaiting"] .step{min-height:51px;padding-bottom:11px}
 @media(max-width:800px){.chat-page{height:calc(100dvh - 65px)}}
 @media(max-width:560px){.chat-page{height:calc(100dvh - 60px)}.chat-title{margin-bottom:15px}.conversation{padding-right:3px}.chat-composer{margin-top:10px}.run-card[data-phase="awaiting"] .step{min-height:54px}.step-log{font-size:8px}}
 .dd-wrap{position:relative;display:inline-flex;align-items:center}.model-menu.dd-down{top:calc(100% + 8px);left:0;right:auto;bottom:auto;min-width:230px;max-height:260px;overflow:auto}.model-menu.dd-down .model-menu-item{white-space:normal;line-height:1.5}.setting-row.no-divider{border-bottom:none}.setting-row.compact{padding:5px 0}.setting-row.compact p{margin-top:2px}.dd-wrap .model-select-btn{max-width:none}.composer-home{position:relative}.composer-project{position:absolute;top:-38px;left:0;z-index:50}.composer-project .model-menu{min-width:200px}.project-select-btn{max-width:240px}.conversation-list{display:block;margin:2px 0 8px 22px}
 .conversation-link{width:100%;box-sizing:border-box}.conversation-link{display:flex;align-items:center;gap:8px;padding:6px 8px;font-size:11px;color:var(--muted);border-radius:8px;text-align:left;cursor:pointer;background:transparent;border:0}.conversation-link:hover{background:var(--inset)}.conversation-link.selected{color:var(--ink);font-weight:500}.conversation-link span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.conversation-link .icon{width:13px;height:13px;flex-shrink:0}.conversation-empty{padding:4px 8px 8px 22px}.project-icon{display:inline-flex;align-items:center;flex-shrink:0;color:var(--faint)}.project-icon .icon:last-child{display:none}.project-select-btn:hover .project-icon .icon:first-child{display:none}.project-select-btn:hover .project-icon .icon:last-child{display:inline}.project-icon:hover{color:var(--ink)}.project-row{position:relative;width:100%}.project-link .project-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.project-link .project-actions{display:none;align-items:center;gap:1px;margin-left:auto}.project-link:hover .project-actions{display:inline-flex}.project-link:hover .nav-count{display:none}.project-link .project-actions .icon-btn{height:auto;width:auto;padding:3px;border-radius:4px}.project-link .project-actions .icon-btn:hover{background:var(--inset)}.project-settings-menu{top:calc(100% + 4px);right:6px;bottom:auto;left:auto;min-width:120px}.project-settings-menu .model-menu-item.danger{color:#c0392b}.conversation-link .conversation-title{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 会话生成中状态: 会话名右侧绿点 */
+.conversation-link .conv-dot{flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 2px color-mix(in srgb,var(--green) 18%,transparent);animation:conv-dot-pulse 1.5s ease-in-out infinite}
+.conversation-link .conv-dot:hover{animation:none}
+@keyframes conv-dot-pulse{0%,100%{opacity:1}50%{opacity:.3}}
+@media(prefers-reduced-motion:reduce){.conv-dot{animation:none}}
 .conversation-link .conversation-actions{display:none;align-items:center;gap:1px;margin-left:auto;flex:0 0 auto;width:max-content}.conversation-link:hover .conversation-actions{display:inline-flex}.conversation-link .conversation-actions.has-pinned{display:inline-flex}.conversation-link .conversation-actions{flex:0 0 auto}.conversation-link .conversation-actions .icon-btn{flex:0 0 auto;height:auto;width:auto;min-width:0;padding:1px;border-radius:4px}.conversation-link .conversation-actions .icon-btn:hover{background:var(--inset)}.conversation-link .conversation-actions.has-pinned .icon-btn[data-action='toggle-pin-conversation']{color:var(--accent)}
 /* 对话区滚动条: 无箭头按钮, 静止时隐藏, 滚动时浮现 */
 /* Firefox (标准属性) */
@@ -195,6 +200,7 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
 .elapsed-timer{font-size:10px;color:var(--faint);font-variant-numeric:tabular-nums;font-weight:400;margin-left:4px}
 /* 完成后的耗时标签: 更弱化, 不再竞争注意力 */
 .elapsed-timer.elapsed-done{color:var(--faint);opacity:.85}
+.tok-rate{font-size:10px;color:var(--faint);font-variant-numeric:tabular-nums;font-weight:400;margin-left:4px}
 /* 思考行(dsh ReasoningRow): 图标+标题+分隔点+流式摘要, 扫光动画 */
 .think-root{display:flex;flex-direction:column;margin:2px 0 6px}
 .think-root:not([data-expanded]){contain:size layout;height:24px;overflow:hidden}
@@ -213,11 +219,11 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
 .think-root[data-state=running] .think-row:after{content:"";position:absolute;left:0;top:0;bottom:0;width:300px;background:linear-gradient(90deg,transparent 0%,color-mix(in srgb,var(--bg) 60%,transparent) 55%,transparent 100%);pointer-events:none;animation:think-sweep 2.6s ease-out infinite}
 @keyframes think-sweep{0%{left:-300px}90%,to{left:100%}}
 @media(prefers-reduced-motion:reduce){.think-root[data-state=running] .think-row:after{animation:none}}
-/* 跳到最新按钮: 对话区右下角浮动 */
+/* 跳到最新按钮: 锚定聊天框, 浮动在输入框正上方 */
 .chat-page{position:relative}
-.jump-latest{position:absolute;right:calc(50% - 425px - 52px);bottom:132px;width:36px;height:36px;border-radius:50%;background:var(--surface);border:1px solid var(--line);color:var(--muted);display:inline-flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.08);z-index:5;transition:background .12s,color .12s}
+.jump-latest{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(100% + 10px);width:36px;height:36px;border-radius:50%;background:var(--surface);border:1px solid var(--line);color:var(--muted);display:inline-flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.08);z-index:5;transition:background .12s,color .12s}
 .jump-latest:hover{background:var(--inset);color:var(--ink)}
-@media(max-width:900px){.jump-latest{right:20px;bottom:120px}}
+.jump-latest[hidden]{display:none}
 </style>
 </head>
 <body>
@@ -403,13 +409,27 @@ CS.elapsed = start => {
   const h = Math.floor(m / 60);
   return h + 'h' + String(m % 60).padStart(2, '0') + 'm' + String(s % 60).padStart(2, '0') + 's';
 };
+CS.tokRateText = m => {
+  if (!m || !m.tokens) return '';
+  const seconds = m.streaming ? (Date.now() - new Date(m.at).getTime()) / 1000 : (m.elapsed || 0) / 1000;
+  if (seconds <= 0) return '';
+  return (m.tokens / seconds).toFixed(1) + ' tok/s';
+};
+CS.tokRateTag = m => {
+  const text = CS.tokRateText(m);
+  if (!text) return '';
+  return `<span class="tok-rate"${m.streaming ? ` data-start="${m.at}"` : ''}>${text}</span>`;
+};
 CS.datetime = value => {
   const d = new Date(value);
   const date = d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
   const time = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
   return `${date} ${time}`;
 };
+const _markdownCache = new Map();  // key: 原文, value: 消毒后 HTML; 流式重渲染时命中缓存, 避免整段会话反复解析
 CS.markdown = text => {
+  const _mdKey = String(text ?? '');
+  if (_markdownCache.has(_mdKey)) return _markdownCache.get(_mdKey);
   // DOM 白名单消毒: 只保留安全的标签与属性, 拒绝一切事件属性与 javascript:/data: URL。
   // 相比正则方案, DOM 解析不存在实体编码(如 &#111;nerror)等绕过方式。
   const doc = new DOMParser().parseFromString(marked.parse(String(text ?? ''), { breaks: true }), 'text/html');
@@ -434,7 +454,10 @@ CS.markdown = text => {
       }
     });
   });
-  return doc.body.innerHTML;
+  const html = doc.body.innerHTML;
+  if (_markdownCache.size > 500) _markdownCache.clear();  // 上限保护, 防止超长会话内存膨胀
+  _markdownCache.set(_mdKey, html);
+  return html;
 };
   CS.date = value => new Date(value).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
   CS.relative = value => { const delta = Math.max(0, Date.now() - new Date(value).getTime()); return delta < 60000 ? '刚刚' : delta < 3600000 ? `${Math.floor(delta / 60000)} 分钟前` : delta < 86400000 ? `${Math.floor(delta / 3600000)} 小时前` : CS.date(value); };
@@ -503,6 +526,9 @@ CS.markdown = text => {
   try { if (localStorage.getItem(key + '.persist') === 'false') CS.state.settings.persist = false; } catch {}
   // A browser refresh must not silently restart an execution.
   CS.state.runs.forEach(run => { if (['running', 'connecting'].includes(run.status)) { run.status = run.transport === 'remote' ? 'error' : 'paused'; run.reloaded = true; if (run.transport === 'remote') run.error = '页面已重新加载；服务端任务可能继续运行。请重连以同步状态。'; } });
+  // 清除刷新前残留的流式标记: 消息以 streaming:true 落盘后, 若中途刷新页面,
+  // 没有对应的生成循环来清除它, 会让 favicon/绿点永远误判为"生成中"。
+  CS.state.runs.forEach(run => (run.messages || []).forEach(m => { delete m.streaming; }));
   CS.ui = {
     route: 'home', mobileSidebar: false, composer: '', attachments: [],
     filters: { data: '', dataTab: 'all', project: '', projectTab: 'active', literature: '', paperTab: 'all', tools: '', toolTab: 'all' },
@@ -3321,21 +3347,22 @@ CS.markdown = text => {
     const active = CS.ui.route;
     const nav = [ ['home','message','新对话'], ['literature','book','文献'], ['data','database','数据集'], ['workflows','workflow','工作流'], ['results','chart','分析结果'], ['tools','grid','生物工具'], ['tasks','queue','任务队列'] ];
     const running = CS.state.runs.filter(r => ['running','paused','awaiting','connecting'].includes(r.status)).length;
+    const streaming = new Set(CS.state.runs.filter(r => (r.messages || []).some(m => m.streaming)).map(r => r.id));
     return `${CS.ui.mobileSidebar ? '<button class="sidebar-scrim" aria-label="关闭菜单" data-action="toggle-sidebar"></button>' : ''}<aside class="sidebar ${CS.ui.mobileSidebar ? 'open' : ''}" aria-label="主导航">
       <a class="brand" href="#/home" aria-label="SigmaFlow Science 首页">${i('dna')}<span>SigmaFlow Science</span></a>
       <div class="sidebar-scroll"><nav class="nav-list">${nav.map(([route, icon, title]) => `<button type="button" data-nav="${route}" class="nav-item ${active === route || (route === 'home' && active === 'chat') ? 'active' : ''}" ${active === route ? 'aria-current="page"' : ''}>${i(icon)}<span>${title}</span>${route === 'tasks' && running ? `<span class="nav-count">${running}</span>` : ''}</button>`).join('')}</nav>
       <section class="sidebar-section"><div class="sidebar-section-label"><button type="button" class="text-button muted small" data-nav="projects">项目</button>${iconBtn('new-project','plus','新建项目')}</div>
-        ${CS.state.projects.filter(p => !p.archived).map(p => { const convs = CS.ui.conversations.filter(c => c.projectId === p.id); return `<div class="project-row"><button type="button" class="project-link ${CS.ui.expandedProject === p.id ? 'expanded' : ''}" data-action="toggle-project" data-id="${e(p.id)}" title="${e(p.name)}">${i(CS.ui.expandedProject === p.id ? 'chevron' : 'folder')}<span class="project-name">${e(p.name)}</span><span class="project-actions"><span class="icon-btn" role="button" data-action="edit-project" data-id="${e(p.id)}" title="编辑项目">${i('edit','',14)}</span><span class="icon-btn" role="button" data-action="toggle-project-settings" data-id="${e(p.id)}" title="项目设置">${i('settings','',14)}</span></span>${convs.length ? `<span class="nav-count">${convs.length}</span>` : ''}</button>${CS.ui.projectSettingsMenu === p.id ? `<div class="model-menu project-settings-menu"><button type="button" class="model-menu-item" data-action="edit-project" data-id="${e(p.id)}"><span>编辑项目</span></button><button type="button" class="model-menu-item" data-action="archive-project" data-id="${e(p.id)}"><span>归档项目</span></button><div class="menu-divider"></div><button type="button" class="model-menu-item danger" data-action="delete-project" data-id="${e(p.id)}"><span>删除项目</span></button></div>` : ''}</div>${CS.ui.expandedProject === p.id ? `<div class="conversation-list">${convs.length ? convs.filter(c => !c.archived).map(c => `<button type="button" class="conversation-link ${CS.state.currentRunId === c.id ? 'selected' : ''}" data-action="open-conversation" data-id="${e(c.id)}" title="${e(c.title)}">${i('message')}<span class="conversation-title">${e(c.title)}</span><span class="conversation-actions${c.pinned ? ' has-pinned' : ''}"><span class="icon-btn" role="button" data-action="toggle-pin-conversation" data-id="${e(c.id)}" title="${c.pinned ? '取消置顶' : '置顶'}">${i(c.pinned ? 'x' : 'up','',12)}</span><span class="icon-btn" role="button" data-action="archive-conversation" data-id="${e(c.id)}" title="归档">${i('archive','',12)}</span></span></button>`).join('') : '<div class="conversation-empty small muted">暂无会话</div>'}</div>` : ''}`; }).join('')}
+        ${CS.state.projects.filter(p => !p.archived).map(p => { const convs = CS.ui.conversations.filter(c => c.projectId === p.id); return `<div class="project-row"><button type="button" class="project-link ${CS.ui.expandedProject === p.id ? 'expanded' : ''}" data-action="toggle-project" data-id="${e(p.id)}" title="${e(p.name)}">${i(CS.ui.expandedProject === p.id ? 'chevron' : 'folder')}<span class="project-name">${e(p.name)}</span><span class="project-actions"><span class="icon-btn" role="button" data-action="edit-project" data-id="${e(p.id)}" title="编辑项目">${i('edit','',14)}</span><span class="icon-btn" role="button" data-action="toggle-project-settings" data-id="${e(p.id)}" title="项目设置">${i('settings','',14)}</span></span>${convs.length ? `<span class="nav-count">${convs.length}</span>` : ''}</button>${CS.ui.projectSettingsMenu === p.id ? `<div class="model-menu project-settings-menu"><button type="button" class="model-menu-item" data-action="edit-project" data-id="${e(p.id)}"><span>编辑项目</span></button><button type="button" class="model-menu-item" data-action="archive-project" data-id="${e(p.id)}"><span>归档项目</span></button><div class="menu-divider"></div><button type="button" class="model-menu-item danger" data-action="delete-project" data-id="${e(p.id)}"><span>删除项目</span></button></div>` : ''}</div>${CS.ui.expandedProject === p.id ? `<div class="conversation-list">${convs.length ? convs.filter(c => !c.archived).map(c => `<button type="button" class="conversation-link ${CS.state.currentRunId === c.id ? 'selected' : ''}" data-action="open-conversation" data-id="${e(c.id)}" title="${e(c.title)}">${i('message')}<span class="conversation-title">${e(c.title)}</span>${streaming.has(c.id) ? '<span class="conv-dot" title="生成中"></span>' : ''}<span class="conversation-actions${c.pinned ? ' has-pinned' : ''}"><span class="icon-btn" role="button" data-action="toggle-pin-conversation" data-id="${e(c.id)}" title="${c.pinned ? '取消置顶' : '置顶'}">${i(c.pinned ? 'x' : 'up','',12)}</span><span class="icon-btn" role="button" data-action="archive-conversation" data-id="${e(c.id)}" title="归档">${i('archive','',12)}</span></span></button>`).join('') : '<div class="conversation-empty small muted">暂无会话</div>'}</div>` : ''}`; }).join('')}
         <button type="button" class="project-link" data-nav="projects">${i('more')}<span>查看全部项目</span></button>
       </section>
       <section class="sidebar-section"><div class="sidebar-section-label"><button type="button" class="text-button muted small" data-action="toggle-unassigned">会话</button></div>
-        ${(() => { const loose = CS.ui.conversations.filter(c => !c.projectId).slice(0, 8); return loose.length ? loose.filter(c => !c.archived).map(c => `<button type="button" class="conversation-link ${CS.state.currentRunId === c.id ? 'selected' : ''}" data-action="open-conversation" data-id="${e(c.id)}" title="${e(c.title)}">${i('message')}<span class="conversation-title">${e(c.title)}</span><span class="conversation-actions${c.pinned ? ' has-pinned' : ''}"><span class="icon-btn" role="button" data-action="toggle-pin-conversation" data-id="${e(c.id)}" title="${c.pinned ? '取消置顶' : '置顶'}">${i(c.pinned ? 'x' : 'up','',12)}</span><span class="icon-btn" role="button" data-action="archive-conversation" data-id="${e(c.id)}" title="归档">${i('archive','',12)}</span></span></button>`).join('') : '<div class="conversation-empty small muted">暂无未归属项目的会话</div>'; })()}
+        ${(() => { const loose = CS.ui.conversations.filter(c => !c.projectId).slice(0, 8); return loose.length ? loose.filter(c => !c.archived).map(c => `<button type="button" class="conversation-link ${CS.state.currentRunId === c.id ? 'selected' : ''}" data-action="open-conversation" data-id="${e(c.id)}" title="${e(c.title)}">${i('message')}<span class="conversation-title">${e(c.title)}</span>${streaming.has(c.id) ? '<span class="conv-dot" title="生成中"></span>' : ''}<span class="conversation-actions${c.pinned ? ' has-pinned' : ''}"><span class="icon-btn" role="button" data-action="toggle-pin-conversation" data-id="${e(c.id)}" title="${c.pinned ? '取消置顶' : '置顶'}">${i(c.pinned ? 'x' : 'up','',12)}</span><span class="icon-btn" role="button" data-action="archive-conversation" data-id="${e(c.id)}" title="归档">${i('archive','',12)}</span></span></button>`).join('') : '<div class="conversation-empty small muted">暂无未归属项目的会话</div>'; })()}
       </section></div>
       <div class="sidebar-bottom"><div class="workspace-chip" data-action="toggle-user-menu"><div class="workspace-monogram">${(CS.state.username || 'CS').slice(0,2).toUpperCase()}</div><div class="grow"><div class="name">${e(CS.state.username || '未登录用户')}</div><div class="sub">科研工作空间</div></div>${i('chevron','',12)}${CS.ui.userMenu ? `<div class="user-menu"><button class="menu-item" data-nav="settings">${i('settings','',15)}<span>设置</span><kbd>⌘,</kbd></button><button class="menu-item" data-nav="help">${i('help','',15)}<span>帮助与文档</span></button><div class="menu-divider"></div><button class="menu-item danger" data-action="logout">${i('logout','',15)}<span>退出登录</span></button></div>` : ''}</div></div>
     </aside>`;
   };
   V.topbar = () => `<div class="topbar"><div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div></div>`;
-  V.composer = (home = false) => `<div class="${home ? 'composer-home' : 'chat-composer'}">${home ? `<div class="composer-project"><button type="button" class="model-select-btn project-select-btn" data-action="toggle-project-menu" aria-haspopup="listbox" aria-expanded="${!!CS.ui.projectMenu}">${CS.state.projectId ? `<span class="project-icon" data-action="clear-project" title="取消项目关联">${i('folder','',13)}${i('x','',13)}</span>` : i('folder','',13)}<span>${e(CS.state.projects.find(p => p.id === CS.state.projectId)?.name || '选择项目')}</span>${i('down','',13)}</button>${CS.ui.projectMenu ? `<div class="model-menu dd-down" role="menu">${CS.state.projects.filter(p => !p.archived).map(p => `<button type="button" class="model-menu-item" role="menuitem" data-action="pick-project" data-id="${e(p.id)}"><span>${e(p.name)}</span>${CS.state.projectId === p.id ? i('check','',13) : ''}</button>`).join('')}<div class="menu-divider"></div><button type="button" class="model-menu-item" data-action="new-project">${i('plus','',14)}<span>新建项目</span></button><button type="button" class="model-menu-item" data-action="connect-project">${i('external','',14)}<span>连接远程项目</span></button></div>` : ''}</div>` : ''}<form class="composer" data-form="composer">
+  V.composer = (home = false) => `<div class="${home ? 'composer-home' : 'chat-composer'}">${!home ? `<button type="button" class="jump-latest" data-action="jump-latest" title="跳到最新消息"${CS.ui.canJumpLatest ? '' : ' hidden'}>${i('down', '', 14)}</button>` : ''}${home ? `<div class="composer-project"><button type="button" class="model-select-btn project-select-btn" data-action="toggle-project-menu" aria-haspopup="listbox" aria-expanded="${!!CS.ui.projectMenu}">${CS.state.projectId ? `<span class="project-icon" data-action="clear-project" title="取消项目关联">${i('folder','',13)}${i('x','',13)}</span>` : i('folder','',13)}<span>${e(CS.state.projects.find(p => p.id === CS.state.projectId)?.name || '选择项目')}</span>${i('down','',13)}</button>${CS.ui.projectMenu ? `<div class="model-menu dd-down" role="menu">${CS.state.projects.filter(p => !p.archived).map(p => `<button type="button" class="model-menu-item" role="menuitem" data-action="pick-project" data-id="${e(p.id)}"><span>${e(p.name)}</span>${CS.state.projectId === p.id ? i('check','',13) : ''}</button>`).join('')}<div class="menu-divider"></div><button type="button" class="model-menu-item" data-action="new-project">${i('plus','',14)}<span>新建项目</span></button><button type="button" class="model-menu-item" data-action="connect-project">${i('external','',14)}<span>连接远程项目</span></button></div>` : ''}</div>` : ''}<form class="composer" data-form="composer">
     ${CS.ui.attachments.length ? `<div class="attachment-list">${CS.ui.attachments.map(id => { const d = CS.state.datasets.find(x => x.id === id); return d ? `<span class="attachment">${i('file')}<span>${e(d.name)}</span>${iconBtn('remove-attachment','x','移除附件',`data-id="${e(id)}"`)}</span>` : ''; }).join('')}</div>` : ''}
     <textarea id="composer-text" aria-label="研究问题" placeholder="${home ? '描述你的科研问题…' : '继续提问，或调整分析计划…'}" rows="3" maxlength="6000">${e(CS.ui.composer)}</textarea>
     <div class="composer-toolbar"><div class="composer-tools">${btn('add-attachment','','plus','', 'aria-label="添加附件" title="添加附件"')}${btn('add-attachment','文件','paperclip')}${btn('choose-dataset','数据集','database')}${btn('choose-tools','工具','grid')}</div><div class="composer-submit"><div class="model-select"><button type="button" class="model-select-btn" data-action="toggle-model-menu" aria-haspopup="listbox" aria-expanded="${!!CS.ui.modelMenu}">${e(CS.state.settings.model || 'openrouter/free')}${i('down','',13)}</button>${CS.ui.modelMenu ? `<div class="model-menu" role="listbox">${(CS.ui.models.length ? CS.ui.models : [{ id: '', model: CS.state.settings.model || 'openrouter/free' }]).map(m => `<button type="button" class="model-menu-item" role="option" aria-selected="${CS.state.settings.modelId === m.id}" data-action="pick-model" data-id="${e(m.id)}"><span>${e(m.model)}</span>${CS.state.settings.modelId === m.id ? i('check','',13) : ''}</button>`).join('')}<div class="menu-divider"></div><button type="button" class="model-menu-item" data-action="configure-model">${i('settings','',14)}<span>配置模型…</span></button></div>` : ''}</div><button type="submit" class="send-button" aria-label="发送研究问题" title="发送 · Enter" ${!CS.ui.composer.trim() ? 'disabled' : ''}>${i('up', '', 19)}</button></div></div>
@@ -3352,7 +3379,7 @@ CS.markdown = text => {
     if (run.kind === 'chat') {
       const bubble = m => { const idxOf = run.messages.indexOf(m); return m.role === 'user'
         ? `<div class="msg-block user-block"><div class="user-message">${e(m.content)}${m.datasetIds?.length ? `<div class="attachment-list mt-12">${m.datasetIds.map(id => `<span class="attachment">${i('file')}${e(CS.state.datasets.find(d => d.id === id)?.name || id)}</span>`).join('')}</div>` : ''}</div><div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span><span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="edit-message" data-id="${idxOf}" title="修改">${i('edit','',13)}</span></span></div></div>`
-        : `<div class="msg-block agent-block"><div class="agent-message"><div class="agent-avatar${m.streaming ? ' avatar-pulsing' : ' '}">${i('dna','',21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${m.streaming ? ` <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}</div>${(m.streaming ? (CS.ui.thinkingText || m.reasoning) && CS.ui.thinkingText !== undefined : m.reasoning) ? `
+        : `<div class="msg-block agent-block"><div class="agent-message"><div class="agent-avatar${m.streaming ? ' avatar-pulsing' : ' '}">${i('dna','',21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${m.streaming ? ` <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${(m.streaming ? (CS.ui.thinkingText || m.reasoning) && CS.ui.thinkingText !== undefined : m.reasoning) ? `
           <div class="think-root${m.streaming && !m.content ? ' think-live' : ''}" data-state="${m.streaming && !m.content ? 'running' : 'ok'}" data-expanded="${!!CS.ui.thinkingOpen || undefined}">
             <button type="button" class="think-row" data-action="toggle-thinking" aria-expanded="${!!CS.ui.thinkingOpen}">
               <span class="think-leading">${i(m.streaming && !m.content ? 'spark' : 'spark', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span>
@@ -3362,10 +3389,9 @@ CS.markdown = text => {
             </button>
             ${CS.ui.thinkingOpen ? `<div class="think-body">${e(m.streaming ? CS.ui.thinkingText : (m.reasoning || ''))}</div>` : ''}
           </div>` : ''}
-          <div class="agent-intro md-body">${CS.markdown(m.content)}</div>${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span><span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="branch-chat" data-id="${idxOf}" title="分支到新聊天">${i('workflow','',13)}</span></span></div>`}</div></div></div>`; };
+          <div class="agent-intro md-body"${m.streaming ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(m.content)}</div>${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.role === 'assistant' && m.tokens ? CS.tokRateTag(m) : ''}<span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="branch-chat" data-id="${idxOf}" title="分支到新聊天">${i('workflow','',13)}</span></span></div>`}</div></div></div>`; };
       return `<section class="page chat-page"><div class="chat-layout no-inspector"><div class="chat-main chat-main-chat"><header class="chat-title chat-title-compact"><div><h1>${e(run.title)}</h1><p class="small muted">${e(CS.state.projects.find(p => p.id === run.projectId)?.name || '未指定项目')} <span class="faint"> / </span> ${e(CS.state.settings.model || '默认模型')}</p></div></header>
       <div class="conversation">${run.messages.map(bubble).join('')}</div>
-      ${CS.ui.canJumpLatest ? `<button type="button" class="jump-latest" data-action="jump-latest" title="跳到最新消息">${i('down', '', 14)}</button>` : ''}
       ${V.composer(false)}</div></div></section>`;
     }
     const waiting = run.status === 'awaiting'; const completed = run.status === 'complete';
@@ -3380,7 +3406,7 @@ CS.markdown = text => {
       </ol><div class="run-actions"><span class="run-note">${run.reloaded ? run.transport === 'remote' ? '页面已重载，请重连同步服务端状态。' : '页面曾重新加载，执行已暂停。' : completed ? '执行记录已保存在当前工作空间。' : '仅在确认后执行。演示模式不会产生模型费用。'}</span><div class="row gap-6">${controls}${cancel}${completed ? btn('open-results','查看结果','arrow','primary') : ''}${run.status === 'cancelled' ? btn('restart-run','重新规划','refresh','flat') : ''}</div></div></div>
       ${run.status === 'error' ? `<div class="mt-12">${notice(run.error || '连接中断，请检查接口配置。')}</div>` : ''}
       ${completed ? `<div class="result-file">${tile('file')}<div class="grow"><strong>analysis_record.md</strong><div class="sub">演示记录 · 包含输入、步骤、参数与限制</div></div>${iconBtn('export-report','download','导出报告')}</div>` : ''}
-      </div></div>${run.messages.map(m => m.role === 'user' ? `<div class="user-message">${e(m.content)}${m.datasetIds?.length ? `<div class="attachment-list mt-12">${m.datasetIds.map(id => `<span class="attachment">${i('file')}${e(CS.state.datasets.find(d => d.id === id)?.name || id)}</span>`).join('')}</div>` : ''}<div class="message-meta">${CS.time(m.at)}</div></div>` : `<div class="agent-message"><div class="agent-avatar${m.streaming ? ' avatar-pulsing' : ' '}">${i('dna','',21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${m.streaming ? ` <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}</div><p class="agent-intro">${e(m.content)}</p></div></div>`).join('')}</div>${V.composer(false)}</div>
+      </div></div>${run.messages.map(m => m.role === 'user' ? `<div class="user-message">${e(m.content)}${m.datasetIds?.length ? `<div class="attachment-list mt-12">${m.datasetIds.map(id => `<span class="attachment">${i('file')}${e(CS.state.datasets.find(d => d.id === id)?.name || id)}</span>`).join('')}</div>` : ''}<div class="message-meta">${CS.time(m.at)}</div></div>` : `<div class="agent-message"><div class="agent-avatar${m.streaming ? ' avatar-pulsing' : ' '}">${i('dna','',21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${m.streaming ? ` <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div><p class="agent-intro">${e(m.content)}</p></div></div>`).join('')}</div>${V.composer(false)}</div>
       ${V.inspector(run)}</div></section>`;
   };
   V.inspector = run => `<aside class="inspector" aria-label="任务详情"><div class="panel panel-pad"><div class="row-between"><h3>任务详情</h3>${i('panel','muted',15)}</div><div class="section-label">输入上下文</div>${run.datasetIds.length ? run.datasetIds.map(id => `<div class="inspector-file">${i('file')}<span>${e(CS.state.datasets.find(d => d.id === id)?.name || id)}</span></div>`).join('') : '<p class="small muted">无附件 · 使用合成示例</p>'}<hr class="divider"><div class="info-pairs"><span>工作流</span><span>${e(CS.workflow(run.workflowId).category)}</span><span>运行环境</span><span>${run.transport === 'local' ? '浏览器模拟' : (run.channel === 'ws' ? 'WebSocket' : 'HTTP / SSE')}</span><span>输入文件</span><span>${run.datasetIds.length} 份记录</span><span>流程步骤</span><span>${run.steps.length} 步</span><span>创建时间</span><span>${CS.time(run.createdAt)}</span></div><div class="section-label">执行边界</div><p class="small muted">不执行代码，不上传文件，不调用真实模型。结果用于演示交互与页面状态。</p></div><div class="panel panel-pad"><h3>相关资料</h3><a class="inspector-resource" href="https://scanpy.readthedocs.io/" target="_blank" rel="noopener noreferrer"><span>Scanpy 文档</span>${i('external','',12)}</a><a class="inspector-resource" href="https://www.ncbi.nlm.nih.gov/" target="_blank" rel="noopener noreferrer"><span>NCBI 公共资源</span>${i('external','',12)}</a><button class="inspector-resource full" style="background:none" data-nav="literature"><span>项目文献清单</span>${i('arrow','',12)}</button></div>${notice('人工确认 → 可查看的执行日志 → 可追溯的输出。')}</aside>`;
@@ -3497,6 +3523,57 @@ CS.markdown = text => {
     if (location.hash === hash) CS.render();
     else location.hash = hash;
   };
+  // 生成中状态: 标签页 icon 旋转提示。
+  // Chrome 会把 SVG favicon 静态栅格化、不执行其中的 CSS 动画,
+  // 因此用 canvas 逐帧绘制旋转 logo 并切换 favicon(约 12 帧/秒)。
+  const _faviconEl = document.querySelector('#favicon');
+  const _faviconStatic = _faviconEl ? _faviconEl.href : '';
+  const _faviconCanvas = document.createElement('canvas');
+  _faviconCanvas.width = _faviconCanvas.height = 64;
+  const _faviconCtx = _faviconCanvas.getContext('2d');
+  let _faviconImg = null, _faviconBusy = null, _faviconTimer = null, _faviconAngle = 0;
+  const _faviconFrame = () => {
+    if (!_faviconImg || !_faviconEl) return;
+    const ctx = _faviconCtx, size = 64;
+    ctx.clearRect(0, 0, size, size);
+    // DNA logo: 静止, 缩小居中
+    const logo = size * 0.55;
+    ctx.drawImage(_faviconImg, (size - logo) / 2, (size - logo) / 2, logo, logo);
+    // 绿色彗尾进度环: 底轨 + 尾部渐亮的弧段
+    const r = size * 0.44;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, r, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(84,134,120,.18)';
+    ctx.lineWidth = size * 0.08;
+    ctx.stroke();
+    const segs = 24, span = Math.PI * 1.35;
+    for (let k = 0; k < segs; k++) {
+      const a0 = _faviconAngle + span * k / segs, a1 = _faviconAngle + span * (k + 1) / segs;
+      ctx.beginPath();
+      ctx.arc(size / 2, size / 2, r, a0, a1 + 0.02);
+      ctx.strokeStyle = `rgba(84,134,120,${(0.12 + 0.88 * (k / segs)).toFixed(3)})`;
+      ctx.lineWidth = size * 0.08;
+      ctx.stroke();
+    }
+    _faviconAngle = (_faviconAngle + 0.15) % (Math.PI * 2);  // 一圈约 3.1s
+    _faviconEl.href = _faviconCanvas.toDataURL('image/png');
+  };
+  const syncFavicon = () => {
+    const busy = CS.state.runs.some(r => (r.messages || []).some(m => m.streaming));
+    if (busy === _faviconBusy) return;
+    _faviconBusy = busy;
+    if (busy) {
+      if (!_faviconTimer) _faviconTimer = setInterval(_faviconFrame, 80);
+    } else {
+      if (_faviconTimer) { clearInterval(_faviconTimer); _faviconTimer = null; }
+      if (_faviconEl) _faviconEl.href = _faviconStatic;
+    }
+  };
+  if (_faviconEl) {
+    _faviconImg = new Image();
+    _faviconImg.src = _faviconStatic;
+  }
   CS.render = () => {
     const active = document.activeElement;
     const focus = active?.id ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
@@ -3519,6 +3596,7 @@ CS.markdown = text => {
     window.scrollTo(x, y);
     const app = document.getElementById('app');
     if (CS.ui.modal) { app.inert = true; app.setAttribute('aria-hidden', 'true'); }
+    syncFavicon();
   };
   CS.bus.addEventListener('render', () => CS.render());
   // 对话区滚动条: 滚动时短暂显示, 停止后隐藏
@@ -3574,12 +3652,47 @@ CS.markdown = text => {
     if (conversation) conversation.scrollTop = conversation.scrollHeight;
     CS.ui.canJumpLatest = false;
   };
-  // 监听对话区滚动: 离开底部 80px 以上时显示"跳到最新"按钮
+  // 用户已向上翻阅时不要抢滚动: 只有贴近底部才跟随新内容滚到底,
+  // 否则流式期间的每次重渲染都会把用户的滚动位置拉回底部, 表现为滚动卡顿。
+  const nearBottom = () => {
+    const el = document.querySelector('.conversation');
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
+  // 流式期间只更新正在生成的那条消息, 避免整页 innerHTML 重建(长会话下每次
+  // 100ms+, 会把主线程占满, 表现为滚动掉帧)。结构变化(思考区出现等)时返回
+  // false, 由调用方退回全量渲染。
+  const updateStreamingDom = reply => {
+    const contentEl = document.querySelector(`.agent-intro[data-stream-at="${CSS.escape(reply.at)}"]`);
+    const body = contentEl?.closest('.agent-body');
+    if (!contentEl || !body) return false;
+    const hasThink = !!(CS.ui.thinkingText || reply.reasoning);
+    const thinkRoot = body.querySelector('.think-root');
+    if (hasThink !== !!thinkRoot) return false;
+    if (thinkRoot) {
+      thinkRoot.dataset.state = reply.content ? 'ok' : 'running';
+      const title = thinkRoot.querySelector('.think-title');
+      if (title) title.textContent = reply.content ? '已深度思考' : '思考中';
+      const summary = thinkRoot.querySelector('.think-summary-text');
+      if (summary) summary.textContent = (CS.ui.thinkingText || '').split('\n').filter(Boolean).slice(-1)[0] || '';
+      const thinkBody = thinkRoot.querySelector('.think-body');
+      if (thinkBody) thinkBody.textContent = CS.ui.thinkingText || '';
+    }
+    contentEl.innerHTML = CS.markdown(reply.content);
+    return true;
+  };
+  // 监听对话区滚动: 离开底部 80px 以上时显示"跳到最新"按钮。
+  // 只切换按钮的 hidden 属性, 不要在这里 CS.render() —— 全量 innerHTML 重建
+  // 会销毁滚动容器, 打断 Chrome 的滚动手势锁定(scroll latching),
+  // 表现为滚轮滚一段就冻住、必须动一下鼠标才能继续。
   document.addEventListener('scroll', ev => {
     const el = ev.target;
     if (!el.classList?.contains('conversation')) return;
     const show = el.scrollHeight - el.scrollTop - el.clientHeight >= 80;  // 离底部远 → 显示
-    if (show !== CS.ui.canJumpLatest) { CS.ui.canJumpLatest = show; CS.render(); }
+    if (show === CS.ui.canJumpLatest) return;
+    CS.ui.canJumpLatest = show;
+    const btn = document.querySelector('.jump-latest');
+    if (btn) btn.hidden = !show;
   }, true);
   // 会话内容同步到服务端（供其他浏览器打开）; 失败后延迟重试一次
   const syncConversation = async (run, retry = true) => {
@@ -3615,17 +3728,21 @@ CS.markdown = text => {
         // 只匹配本轮的活跃计时元素(完成标签是 elapsed-done, 无 data-start)
         const el = document.querySelector('.elapsed-timer[data-start="' + CSS.escape(reply.at) + '"]');
         if (el) el.textContent = CS.elapsed(el.dataset.start);
+        const rate = document.querySelector('.tok-rate[data-start="' + CSS.escape(reply.at) + '"]');
+        if (rate) { const text = CS.tokRateText(reply); if (text) rate.textContent = text; }
       }, 1000);
       CS.ui.thinkingText = '';
       const content = await CS.api.chat(history, delta => {
         reply.content += delta;
+        reply.tokens = (reply.tokens || 0) + 1;  // 每个流式分片约 1 token
         const now = Date.now();
-        if (now - _chatRenderAt > 120) { _chatRenderAt = now; CS.render(); scrollToLatest(); }
+        if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom(); if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       }, think => {
         reply.reasoning = (reply.reasoning || '') + think;
+        reply.tokens = (reply.tokens || 0) + 1;
         CS.ui.thinkingText = reply.reasoning;
         const now = Date.now();
-        if (now - _chatRenderAt > 120) { _chatRenderAt = now; CS.render(); scrollToLatest(); }
+        if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom(); if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       });
       reply.content = content;
     } catch (error) {
