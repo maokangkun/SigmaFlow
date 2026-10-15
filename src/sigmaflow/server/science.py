@@ -105,6 +105,11 @@ class SkillsUpdateIn(BaseModel):
     reset: Optional[bool] = None
 
 
+class MCPIn(BaseModel):
+    servers: Optional[list] = None
+    reset: Optional[bool] = None
+
+
 def _test_provider(base_url: str, api_key: str) -> dict:
     """Ping `{base_url}/models` on the provider and report real latency."""
     url = base_url.rstrip("/") + "/models"
@@ -181,7 +186,9 @@ _TOOL_ALIASES: Dict[str, str] = {}
 
 
 def _agent_tools_module():
-    """Load sigmaflow.agent.tools with the same sys.path fallback as _run_agent_chat."""
+    """Load sigmaflow.agent.tools with the same sys.path fallback as _run_agent_chat;
+    publish the current MCP server config first so import-time wiring sees it."""
+    _sync_mcp_env()
     try:
         from sigmaflow.agent import tools
     except ModuleNotFoundError:
@@ -597,6 +604,147 @@ def _build_skill_overrides(items: list, known: Dict[str, dict]) -> Dict[str, dic
         if entry:
             overrides[skill_id] = entry
     return overrides
+
+
+# ==================== MCP 服务配置 ====================
+# 设置页可增删改 MCP 服务器 (名称/地址/启用开关), 落盘到 <science_dir>/mcp.json;
+# 内置服务器 (medical-apis) 在首次运行时种子化; 生效路径: 导入 agent 工具模块前通过
+# MCP_ENDPOINT 环境变量注入, 已导入时在保存后重建 MCPClient 并重挂其工具
+
+_MCP_REBUILD_LOCK = threading.Lock()
+
+
+def _mcp_config_path() -> str:
+    return os.path.join(_science_data_root(), "mcp.json")
+
+
+def _builtin_mcp_servers() -> Dict[str, dict]:
+    """Built-in MCP servers shipped as a package asset next to the science app."""
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "science", "mcp_servers.json"), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return {}
+    servers = data.get("servers") if isinstance(data, dict) else None
+    if not isinstance(servers, dict):
+        return {}
+    return {str(k): dict(v) for k, v in servers.items() if isinstance(v, dict) and v.get("url")}
+
+
+def _load_mcp_servers() -> Dict[str, dict]:
+    try:
+        with open(_mcp_config_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return _builtin_mcp_servers()
+    servers = data.get("servers") if isinstance(data, dict) else None
+    if not isinstance(servers, dict):
+        return _builtin_mcp_servers()
+    return {str(k): dict(v) for k, v in servers.items() if isinstance(v, dict)}
+
+
+def _save_mcp_servers(servers: Dict[str, dict]) -> None:
+    path = _mcp_config_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump({"servers": servers}, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+
+
+def _seed_mcp_config() -> None:
+    if not os.path.exists(_mcp_config_path()):
+        _save_mcp_servers(_builtin_mcp_servers())
+
+
+def _active_mcp_servers() -> Dict[str, dict]:
+    """Enabled servers in the wire format MCP_CONF expects (enabled flag stripped)."""
+    servers = _load_mcp_servers()
+    active = {}
+    for name, cfg in servers.items():
+        if cfg.get("enabled") is False or not str(cfg.get("url") or "").strip():
+            continue
+        active[name] = {k: v for k, v in cfg.items() if k != "enabled"}
+    return active
+
+
+def _sync_mcp_env() -> None:
+    """Publish enabled MCP servers via MCP_ENDPOINT so the agent tools module picks
+    them up at import; also refresh the in-memory conf if already imported."""
+    active = _active_mcp_servers()
+    os.environ["MCP_ENDPOINT"] = json.dumps(active, ensure_ascii=False)
+    try:
+        import sigmaflow.agent.conf as agent_conf
+        agent_conf.MCP_CONF = {"mcpServers": active}
+    except Exception:
+        pass
+
+
+def _rebuild_agent_mcp() -> dict:
+    """Re-apply MCP config to an already-imported agent tools module: re-list tools
+    over the network, rewire TOOLS/CHILD_TOOLS/TOOL_HANDLERS and return the new client."""
+    _sync_mcp_env()
+    try:
+        import sigmaflow.agent.tools as tools_mod
+    except Exception:
+        return {}
+    with _MCP_REBUILD_LOCK:
+        active = _active_mcp_servers()
+        # MCP_CONF 在 tools 模块里是独立绑定(from .conf import *), 必须在重建前刷新, 否则新客户端仍用旧配置
+        tools_mod.MCP_CONF = {"mcpServers": active}
+        old = tools_mod.MCP
+        old_names = set(old.tools.keys())
+        for name in old_names:
+            tools_mod.TOOL_HANDLERS.pop(name, None)
+        tools_mod.TOOLS[:] = [t for t in tools_mod.TOOLS if t.get("name") not in old_names]
+        tools_mod.CHILD_TOOLS[:] = [t for t in tools_mod.CHILD_TOOLS if t.get("name") not in old_names]
+        client = tools_mod.MCPClient()
+        tools_mod.MCP = client
+        for mcp_tool in client.tools.values():
+            t = {"name": mcp_tool.name, "description": mcp_tool.description, "input_schema": mcp_tool.input_schema}
+            tools_mod.CHILD_TOOLS.append(dict(t))
+            tools_mod.TOOLS.append(dict(t))
+            tools_mod.TOOL_HANDLERS[mcp_tool.name] = (lambda n: lambda **kw: client.call_tool(n, kw))(mcp_tool.name)
+    return client.tools
+
+
+def _mcp_listing() -> list:
+    builtin = _builtin_mcp_servers()
+    servers = _load_mcp_servers()
+    out = []
+    for name, cfg in servers.items():
+        out.append({
+            "id": name,
+            "name": name,
+            "url": str(cfg.get("url") or ""),
+            "enabled": cfg.get("enabled") is not False,
+            "builtin": name in builtin,
+            "modified": builtin.get(name) != cfg,
+        })
+    return out
+
+
+def _build_mcp_servers(items: list, reset: bool) -> Dict[str, dict]:
+    """Validate the submitted MCP server list and convert it into the stored config."""
+    if reset:
+        return _builtin_mcp_servers()
+    servers: Dict[str, dict] = {}
+    for item in items or []:
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=400, detail="Invalid mcp payload")
+        name = str(item.get("name") or "").strip()[:64]
+        if not name:
+            raise HTTPException(status_code=400, detail="MCP 服务器名称不能为空")
+        url = str(item.get("url") or "").strip()[:500]
+        if not url.startswith(("http://", "https://")):
+            raise HTTPException(status_code=400, detail=f"MCP 地址需要以 http(s):// 开头: {name}")
+        if name in servers:
+            raise HTTPException(status_code=400, detail=f"MCP 服务器名称重复: {name}")
+        entry = {"url": url}
+        if item.get("enabled") is False:
+            entry["enabled"] = False
+        servers[name] = entry
+    return servers
 
 
 class ScienceModelStore:
@@ -1142,6 +1290,21 @@ class ScienceAPI:
             if isinstance(loader, _ScienceSkillView):
                 await asyncio.to_thread(loader.rebuild)
             return {"skills": _skill_listing(defaults, overrides)}
+
+        @router.get("/mcp")
+        async def list_mcp():
+            _seed_mcp_config()
+            return {"servers": _mcp_listing()}
+
+        @router.post("/mcp")
+        async def save_mcp(payload: MCPIn, request: Request):
+            _check_origin(request)
+            servers = _build_mcp_servers(payload.servers or [], reset=bool(payload.reset))
+            await asyncio.to_thread(_save_mcp_servers, servers)
+            # 重建 MCPClient 会真实调用各服务器的 tools/list, 放到线程里避免阻塞事件循环
+            await asyncio.to_thread(_rebuild_agent_mcp)
+            _AGENT_CONTEXT_SIZES.clear()
+            return {"servers": _mcp_listing()}
 
         @router.get("/conversations")
         async def list_conversations():

@@ -214,6 +214,21 @@ POST /api/skills   → {"skills": [...]}   # 保存全量列表；{"reset": true
 
 `id` 为技能原始名称（来自 SKILL.md frontmatter）。写操作要求同源（跨域返回 403）。
 
+### 6b. MCP 服务配置（服务端存储）
+
+设置页可增删改 MCP 服务器（名称/地址/启用开关），落盘到
+`<science_dir>/mcp.json`。内置服务器随应用分发（`server/science/mcp_servers.json`），
+首次运行种子化；目前自带 `medical-apis`。保存后服务端重连各启用的服务器拉取工具清单，
+工具并入 Agent 工具列表（也会出现在 `/api/tools` 中）并占用上下文；禁用或移除的服务器不参与会话。
+
+```http
+GET  /api/mcp   → {"servers": [{id, name, url, enabled, builtin, modified}]}
+POST /api/mcp   → {"servers": [...]}   # 保存全量列表；{"reset": true} 恢复内置
+```
+
+规则：名称非空、去重、≤ 64 字符；地址需以 http(s):// 开头、≤ 500 字符；`enabled: false` 表示禁用。
+保存会真实连接各启用的服务器（tools/list），可能需要数秒。写操作要求同源（跨域返回 403）。
+
 ### 7. 暂停、继续、取消
 
 ```http

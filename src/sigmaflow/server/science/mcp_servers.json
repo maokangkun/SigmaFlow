@@ -1,0 +1,7 @@
+{
+  "servers": {
+    "medical-apis": {
+      "url": "https://mcp.cloud.curiloo.com/tools/unified/mcp"
+    }
+  }
+}

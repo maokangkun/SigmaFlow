@@ -267,6 +267,16 @@
       CS.render();
     } catch (error) { CS.toast('技能列表加载失败：' + CS.api.friendlyError(error), 'error'); }
   };
+  // MCP 服务设置: 同样懒加载; 草稿每行带稳定 key (新增行用临时 key, 保存时以名称为准)
+  CS.loadAgentMcp = async () => {
+    if (CS.ui.mcpServers) return;
+    try {
+      const d = await CS.api.request('/mcp');
+      CS.ui.mcpServers = d.servers || [];
+      if (!CS.ui.mcpDraft) CS.ui.mcpDraft = CS.ui.mcpServers.map(s => ({ ...s, key: s.id }));
+      CS.render();
+    } catch (error) { CS.toast('MCP 配置加载失败：' + CS.api.friendlyError(error), 'error'); }
+  };
   // 参数编辑框: 透明 textarea 叠在高亮 pre 上, 输入时刷新高亮; 高度由 sizeSchemaEditors 统一管理
   CS.sizeSchemaEditors = () => {
     document.querySelectorAll('.schema-editor').forEach(ed => {
@@ -652,7 +662,7 @@
     },
     'connect-project': () => { CS.ui.projectMenu = false; CS.showModal('remote-project'); },
     'submit-remote-project': () => {},
-    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') CS.loadAgentTools(); if (id === 'skills') CS.loadAgentSkills(); },
+    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') CS.loadAgentTools(); if (id === 'skills') CS.loadAgentSkills(); if (id === 'mcp') CS.loadAgentMcp(); },
     'configure-model': () => { CS.ui.modelMenu = false; CS.ui.settingsTab = 'agent'; CS.navigate('settings'); },
     'add-provider': () => { CS.ui.edit = { type: 'provider', id: null }; CS.render(); },
     'edit-provider': id => { CS.ui.edit = { type: 'provider', id }; CS.render(); },
@@ -739,6 +749,45 @@
         await CS.refreshContextInfo();
         CS.render();
         CS.toast('技能设置已恢复默认。');
+      } catch (error) { CS.toast('恢复失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'mcp-toggle': key => {
+      const s = (CS.ui.mcpDraft || []).find(x => x.key === key);
+      if (!s) return;
+      s.enabled = !s.enabled;
+      CS.render();
+    },
+    'mcp-remove': key => {
+      CS.ui.mcpDraft = (CS.ui.mcpDraft || []).filter(x => x.key !== key);
+      CS.render();
+    },
+    'add-mcp': () => {
+      CS.ui.mcpDraft = (CS.ui.mcpDraft || []).concat([{ id: '', key: `new-${Date.now()}`, name: '', url: '', enabled: true, builtin: false, modified: false }]);
+      CS.render();
+    },
+    'save-mcp': async () => {
+      const draft = CS.ui.mcpDraft || [];
+      if (draft.some(s => !s.name.trim())) { CS.toast('MCP 服务器名称不能为空。', 'error'); return; }
+      if (draft.some(s => !s.url.trim())) { CS.toast('MCP 地址不能为空。', 'error'); return; }
+      try {
+        const body = { servers: draft.map(s => ({ name: s.name, url: s.url, enabled: s.enabled })) };
+        const d = await CS.api.request('/mcp', { method: 'POST', body: JSON.stringify(body) });
+        CS.ui.mcpServers = d.servers || [];
+        CS.ui.mcpDraft = null;
+        await CS.refreshContextInfo();
+        CS.render();
+        CS.toast('MCP 配置已保存，下一次会话生效。');
+      } catch (error) { CS.toast('保存失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'reset-mcp': async () => {
+      if (!confirm('清除全部 MCP 服务器并恢复内置配置？')) return;
+      try {
+        const d = await CS.api.request('/mcp', { method: 'POST', body: JSON.stringify({ reset: true }) });
+        CS.ui.mcpServers = d.servers || [];
+        CS.ui.mcpDraft = null;
+        await CS.refreshContextInfo();
+        CS.render();
+        CS.toast('MCP 配置已恢复默认。');
       } catch (error) { CS.toast('恢复失败：' + CS.api.friendlyError(error), 'error'); }
     },
     'delete-model': id => { CS.ui.pendingDelete = id; CS.showModal('confirm',{title:'删除模型？',message:'将从服务端删除此模型配置。此操作不可撤销。',confirmAction:'confirm-delete-model',confirmLabel:'删除',danger:true}); },
@@ -1007,6 +1056,7 @@
     else if(id==='max-mito') CS.ui.maxMito=target.value;
     else if(target.dataset?.toolId){ const t=(CS.ui.toolDraft||[]).find(x=>x.id===target.dataset.toolId); if(t) t[target.dataset.field]=target.value; if(target.dataset.field==='schema') CS.syncSchemaHighlight(target); }
     else if(target.dataset?.skillId){ const s=(CS.ui.skillDraft||[]).find(x=>x.id===target.dataset.skillId); if(s) s[target.dataset.field]=target.value; }
+    else if(target.dataset?.mcpId){ const s=(CS.ui.mcpDraft||[]).find(x=>x.key===target.dataset.mcpId); if(s) s[target.dataset.field]=target.value; }
   });
   // 窗口尺寸变化会改变软换行位置, 重新计算两层高度
   window.addEventListener('resize', () => CS.sizeSchemaEditors());
