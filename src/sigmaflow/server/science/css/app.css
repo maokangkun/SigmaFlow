@@ -242,12 +242,21 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
   .ctx-pct{display:none}
   .ctx-pop{right:auto;left:0}
 }
-/* Agent 工具设置: 每条工具一行, 左侧标签+输入框, 右侧启用开关 */
+/* Agent 工具设置: 每条工具一行, 标签与标题左对齐, 右侧启用开关; 参数为带高亮的多行编辑框 */
 .tool-setting-row{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:14px 0;border-bottom:1px solid var(--line-soft)}
 .tool-setting-row:last-child{border-bottom:none}
 .tool-setting-main{display:flex;flex-direction:column;gap:8px;min-width:0;flex:1}
 .tool-setting-side{display:flex;flex-direction:column;align-items:center;gap:8px;flex-shrink:0;padding-top:2px}
 .tool-field{display:grid;grid-template-columns:64px 1fr;gap:10px;align-items:center}
-.tool-field-label{font-size:11px;color:var(--muted);text-align:right}
-.tool-name-input,.tool-desc-input,.tool-schema-input{width:100%;padding:7px 10px;font-size:12px}
-.tool-schema-input{font-family:var(--mono);font-size:11px}
+.tool-field-top{align-items:start}
+.tool-field-label{font-size:11px;color:var(--muted);text-align:left}
+.tool-field-top .tool-field-label{padding-top:9px}
+.tool-name-input,.tool-desc-input{width:100%;padding:7px 10px;font-size:12px}
+/* 参数编辑框: 高亮 pre 在下, 透明 textarea 在上, 两层逐字对齐 */
+.schema-editor{position:relative;border:1px solid var(--line);border-radius:10px;background:var(--inset)}
+.schema-editor .schema-highlight{position:absolute;inset:0;margin:0;padding:8px 10px;font-family:var(--mono);font-size:11px;line-height:1.6;white-space:pre;overflow:hidden;pointer-events:none;color:var(--muted)}
+.schema-editor .tool-schema-input{position:relative;display:block;width:100%;background:transparent;border:0;color:transparent;caret-color:var(--ink);resize:none;font-family:var(--mono);font-size:11px;line-height:1.6;padding:8px 10px;white-space:pre;overflow:auto}
+.j-key{color:var(--accent)}
+.j-str{color:var(--green)}
+.j-num{color:var(--blue)}
+.j-kw{color:var(--red)}

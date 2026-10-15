@@ -16,6 +16,14 @@
 
   CS.views = {};
   const V = CS.views;
+  // 参数 schema: 格式化展示 + 轻量 JSON 高亮(键/字符串/数字/布尔与 null), 未匹配字符保持原样保证逐字对齐;
+  // 仅转义 &<>(保留引号字面量供正则匹配), 结果只用于 pre 文本与无属性 span
+  V.prettyJSON = text => { try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text || ''; } };
+  V.hlJSON = text => text.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])).replace(/("(?:\\.|[^"\\])*")(\s*:)|("(?:\\.|[^"\\])*")|\b(true|false|null)\b|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g, (m, key, colon, str, kw, num) => key ? `<span class="j-key">${key}</span>${colon}` : str ? `<span class="j-str">${str}</span>` : kw ? `<span class="j-kw">${kw}</span>` : num ? `<span class="j-num">${num}</span>` : m);
+  const schemaDirty = (a, b) => {
+    if (a === b) return false;
+    try { return JSON.stringify(JSON.parse(a)) !== JSON.stringify(JSON.parse(b)); } catch { return a !== b; }
+  };
   V.sidebar = () => {
     const active = CS.ui.route;
     const nav = [ ['home','message','新对话'], ['literature','book','文献'], ['data','database','数据集'], ['workflows','workflow','工作流'], ['results','chart','分析结果'], ['tools','grid','生物工具'], ['tasks','queue','任务队列'] ];
@@ -172,9 +180,9 @@
         if (!list.length) return `<div class="panel settings-section"><h2>Agent 工具</h2><p class="small muted mb-20">当前环境没有可配置的内置工具。</p></div>`;
         const rows = list.map(t => {
           const orig = (CS.ui.agentTools || []).find(x => x.id === t.id);
-          const dirty = !orig || orig.name !== t.name || orig.description !== t.description || orig.schema !== t.schema || !!orig.enabled !== !!t.enabled;
+          const dirty = !orig || orig.name !== t.name || orig.description !== t.description || schemaDirty(orig.schema, t.schema) || !!orig.enabled !== !!t.enabled;
           const custom = (t.modified || dirty) ? pill('自定义') : '';
-          return `<div class="tool-setting-row" data-idx="${e(t.id)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">名称</span><input class="tool-name-input" data-tool-id="${e(t.id)}" data-field="name" value="${e(t.name)}" maxlength="64" spellcheck="false"></div><div class="tool-field"><span class="tool-field-label">描述</span><input class="tool-desc-input" data-tool-id="${e(t.id)}" data-field="description" value="${e(t.description)}" maxlength="2000" spellcheck="false"></div><div class="tool-field"><span class="tool-field-label">参数</span><input class="tool-schema-input mono" data-tool-id="${e(t.id)}" data-field="schema" value="${e(t.schema)}" maxlength="8000" spellcheck="false"></div></div><div class="tool-setting-side">${custom}<button type="button" role="switch" aria-checked="${!!t.enabled}" class="switch" data-action="tool-toggle" data-id="${e(t.id)}" aria-label="启用 ${e(t.id)}"></button></div></div>`;
+          return `<div class="tool-setting-row" data-idx="${e(t.id)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">名称</span><input class="tool-name-input" data-tool-id="${e(t.id)}" data-field="name" value="${e(t.name)}" maxlength="64" spellcheck="false"></div><div class="tool-field"><span class="tool-field-label">描述</span><input class="tool-desc-input" data-tool-id="${e(t.id)}" data-field="description" value="${e(t.description)}" maxlength="2000" spellcheck="false"></div><div class="tool-field tool-field-top"><span class="tool-field-label">参数</span><div class="schema-editor"><pre class="schema-highlight" aria-hidden="true">${V.hlJSON(V.prettyJSON(t.schema))}\n</pre><textarea class="tool-schema-input mono" data-tool-id="${e(t.id)}" data-field="schema" rows="6" spellcheck="false" wrap="off">${e(V.prettyJSON(t.schema))}</textarea></div></div></div><div class="tool-setting-side">${custom}<button type="button" role="switch" aria-checked="${!!t.enabled}" class="switch" data-action="tool-toggle" data-id="${e(t.id)}" aria-label="启用 ${e(t.id)}"></button></div></div>`;
         }).join('');
         return `<div class="panel settings-section"><div class="row-between"><h2>Agent 工具</h2>${pill('服务端存储')}</div><p class="small muted mb-20">设置 Agent 会话可用的内置工具: 启用开关、名称、描述与参数 schema 随下一次请求生效; 禁用的工具不再发给模型, 也不再占用上下文。参数 schema 需为合法 JSON 对象。</p>${rows}<div class="settings-actions row wrap">${btn('save-tools','保存','check','primary')}${btn('reset-tools','恢复默认','refresh','flat')}</div></div>`;
       })(),

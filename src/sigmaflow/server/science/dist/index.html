@@ -307,15 +307,24 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
   .ctx-pct{display:none}
   .ctx-pop{right:auto;left:0}
 }
-/* Agent 工具设置: 每条工具一行, 左侧标签+输入框, 右侧启用开关 */
+/* Agent 工具设置: 每条工具一行, 标签与标题左对齐, 右侧启用开关; 参数为带高亮的多行编辑框 */
 .tool-setting-row{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:14px 0;border-bottom:1px solid var(--line-soft)}
 .tool-setting-row:last-child{border-bottom:none}
 .tool-setting-main{display:flex;flex-direction:column;gap:8px;min-width:0;flex:1}
 .tool-setting-side{display:flex;flex-direction:column;align-items:center;gap:8px;flex-shrink:0;padding-top:2px}
 .tool-field{display:grid;grid-template-columns:64px 1fr;gap:10px;align-items:center}
-.tool-field-label{font-size:11px;color:var(--muted);text-align:right}
-.tool-name-input,.tool-desc-input,.tool-schema-input{width:100%;padding:7px 10px;font-size:12px}
-.tool-schema-input{font-family:var(--mono);font-size:11px}
+.tool-field-top{align-items:start}
+.tool-field-label{font-size:11px;color:var(--muted);text-align:left}
+.tool-field-top .tool-field-label{padding-top:9px}
+.tool-name-input,.tool-desc-input{width:100%;padding:7px 10px;font-size:12px}
+/* 参数编辑框: 高亮 pre 在下, 透明 textarea 在上, 两层逐字对齐 */
+.schema-editor{position:relative;border:1px solid var(--line);border-radius:10px;background:var(--inset)}
+.schema-editor .schema-highlight{position:absolute;inset:0;margin:0;padding:8px 10px;font-family:var(--mono);font-size:11px;line-height:1.6;white-space:pre;overflow:hidden;pointer-events:none;color:var(--muted)}
+.schema-editor .tool-schema-input{position:relative;display:block;width:100%;background:transparent;border:0;color:transparent;caret-color:var(--ink);resize:none;font-family:var(--mono);font-size:11px;line-height:1.6;padding:8px 10px;white-space:pre;overflow:auto}
+.j-key{color:var(--accent)}
+.j-str{color:var(--green)}
+.j-num{color:var(--blue)}
+.j-kw{color:var(--red)}
 
 </style>
 </head>
@@ -3509,6 +3518,14 @@ CS.markdown = text => {
 
   CS.views = {};
   const V = CS.views;
+  // 参数 schema: 格式化展示 + 轻量 JSON 高亮(键/字符串/数字/布尔与 null), 未匹配字符保持原样保证逐字对齐;
+  // 仅转义 &<>(保留引号字面量供正则匹配), 结果只用于 pre 文本与无属性 span
+  V.prettyJSON = text => { try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text || ''; } };
+  V.hlJSON = text => text.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])).replace(/("(?:\\.|[^"\\])*")(\s*:)|("(?:\\.|[^"\\])*")|\b(true|false|null)\b|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g, (m, key, colon, str, kw, num) => key ? `<span class="j-key">${key}</span>${colon}` : str ? `<span class="j-str">${str}</span>` : kw ? `<span class="j-kw">${kw}</span>` : num ? `<span class="j-num">${num}</span>` : m);
+  const schemaDirty = (a, b) => {
+    if (a === b) return false;
+    try { return JSON.stringify(JSON.parse(a)) !== JSON.stringify(JSON.parse(b)); } catch { return a !== b; }
+  };
   V.sidebar = () => {
     const active = CS.ui.route;
     const nav = [ ['home','message','新对话'], ['literature','book','文献'], ['data','database','数据集'], ['workflows','workflow','工作流'], ['results','chart','分析结果'], ['tools','grid','生物工具'], ['tasks','queue','任务队列'] ];
@@ -3665,9 +3682,9 @@ CS.markdown = text => {
         if (!list.length) return `<div class="panel settings-section"><h2>Agent 工具</h2><p class="small muted mb-20">当前环境没有可配置的内置工具。</p></div>`;
         const rows = list.map(t => {
           const orig = (CS.ui.agentTools || []).find(x => x.id === t.id);
-          const dirty = !orig || orig.name !== t.name || orig.description !== t.description || orig.schema !== t.schema || !!orig.enabled !== !!t.enabled;
+          const dirty = !orig || orig.name !== t.name || orig.description !== t.description || schemaDirty(orig.schema, t.schema) || !!orig.enabled !== !!t.enabled;
           const custom = (t.modified || dirty) ? pill('自定义') : '';
-          return `<div class="tool-setting-row" data-idx="${e(t.id)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">名称</span><input class="tool-name-input" data-tool-id="${e(t.id)}" data-field="name" value="${e(t.name)}" maxlength="64" spellcheck="false"></div><div class="tool-field"><span class="tool-field-label">描述</span><input class="tool-desc-input" data-tool-id="${e(t.id)}" data-field="description" value="${e(t.description)}" maxlength="2000" spellcheck="false"></div><div class="tool-field"><span class="tool-field-label">参数</span><input class="tool-schema-input mono" data-tool-id="${e(t.id)}" data-field="schema" value="${e(t.schema)}" maxlength="8000" spellcheck="false"></div></div><div class="tool-setting-side">${custom}<button type="button" role="switch" aria-checked="${!!t.enabled}" class="switch" data-action="tool-toggle" data-id="${e(t.id)}" aria-label="启用 ${e(t.id)}"></button></div></div>`;
+          return `<div class="tool-setting-row" data-idx="${e(t.id)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">名称</span><input class="tool-name-input" data-tool-id="${e(t.id)}" data-field="name" value="${e(t.name)}" maxlength="64" spellcheck="false"></div><div class="tool-field"><span class="tool-field-label">描述</span><input class="tool-desc-input" data-tool-id="${e(t.id)}" data-field="description" value="${e(t.description)}" maxlength="2000" spellcheck="false"></div><div class="tool-field tool-field-top"><span class="tool-field-label">参数</span><div class="schema-editor"><pre class="schema-highlight" aria-hidden="true">${V.hlJSON(V.prettyJSON(t.schema))}\n</pre><textarea class="tool-schema-input mono" data-tool-id="${e(t.id)}" data-field="schema" rows="6" spellcheck="false" wrap="off">${e(V.prettyJSON(t.schema))}</textarea></div></div></div><div class="tool-setting-side">${custom}<button type="button" role="switch" aria-checked="${!!t.enabled}" class="switch" data-action="tool-toggle" data-id="${e(t.id)}" aria-label="启用 ${e(t.id)}"></button></div></div>`;
         }).join('');
         return `<div class="panel settings-section"><div class="row-between"><h2>Agent 工具</h2>${pill('服务端存储')}</div><p class="small muted mb-20">设置 Agent 会话可用的内置工具: 启用开关、名称、描述与参数 schema 随下一次请求生效; 禁用的工具不再发给模型, 也不再占用上下文。参数 schema 需为合法 JSON 对象。</p>${rows}<div class="settings-actions row wrap">${btn('save-tools','保存','check','primary')}${btn('reset-tools','恢复默认','refresh','flat')}</div></div>`;
       })(),
@@ -3939,6 +3956,14 @@ CS.markdown = text => {
   CS.refreshContextInfo = async () => {
     try { CS.ui.contextInfo = await CS.api.request('/context-info'); } catch {}
     CS.updateContextRing();
+  };
+  // 参数编辑框: 透明 textarea 叠在高亮 pre 上, 输入与滚动实时同步
+  CS.syncSchemaHighlight = ta => {
+    const pre = ta.closest('.schema-editor')?.querySelector('.schema-highlight');
+    if (!pre) return;
+    pre.innerHTML = `${CS.views.hlJSON(CS.views.prettyJSON(ta.value))}\n`;
+    pre.scrollTop = ta.scrollTop;
+    pre.scrollLeft = ta.scrollLeft;
   };
   const updateStreamingDom = reply => {
     const contentEl = document.querySelector(`.agent-intro[data-stream-at="${CSS.escape(reply.at)}"]`);
@@ -4633,8 +4658,12 @@ CS.markdown = text => {
     else if(id==='pubmed-query') CS.ui.pubmedQuery=target.value;
     else if(id==='min-genes') CS.ui.minGenes=target.value;
     else if(id==='max-mito') CS.ui.maxMito=target.value;
-    else if(target.dataset?.toolId){ const t=(CS.ui.toolDraft||[]).find(x=>x.id===target.dataset.toolId); if(t) t[target.dataset.field]=target.value; }
+    else if(target.dataset?.toolId){ const t=(CS.ui.toolDraft||[]).find(x=>x.id===target.dataset.toolId); if(t) t[target.dataset.field]=target.value; if(target.dataset.field==='schema') CS.syncSchemaHighlight(target); }
   });
+  // scroll 不冒泡, 用捕获阶段统一接管参数编辑框的滚动同步
+  document.addEventListener('scroll', event => {
+    if (event.target?.classList?.contains('tool-schema-input')) CS.syncSchemaHighlight(event.target);
+  }, true);
   document.addEventListener('change',event=>{
     const target=event.target;
     if(target.id==='file-input'){handleFiles(target.files);}

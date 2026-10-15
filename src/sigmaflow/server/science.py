@@ -301,14 +301,15 @@ def _build_tool_overrides(items: list, known: Dict[str, dict]) -> Dict[str, dict
             entry["enabled"] = False
         schema_text = str(item.get("schema") or "").strip()
         if schema_text:
-            if len(schema_text) > 8000:
-                raise HTTPException(status_code=400, detail=f"工具 {tool_id} 参数 schema 过长")
             try:
                 schema = json.loads(schema_text)
             except Exception:
                 raise HTTPException(status_code=400, detail=f"工具 {tool_id} 参数 schema 不是合法 JSON")
             if not isinstance(schema, dict):
                 raise HTTPException(status_code=400, detail=f"工具 {tool_id} 参数 schema 必须是 JSON 对象")
+            # 长度按解析结果的紧凑形式计算, 允许前端提交带缩进的格式化文本
+            if len(json.dumps(schema, ensure_ascii=False, separators=(",", ":"))) > 8000:
+                raise HTTPException(status_code=400, detail=f"工具 {tool_id} 参数 schema 过长")
             if schema != (known[tool_id].get("input_schema") or {}):
                 entry["schema"] = schema
         if entry:

@@ -255,6 +255,14 @@
     try { CS.ui.contextInfo = await CS.api.request('/context-info'); } catch {}
     CS.updateContextRing();
   };
+  // 参数编辑框: 透明 textarea 叠在高亮 pre 上, 输入与滚动实时同步
+  CS.syncSchemaHighlight = ta => {
+    const pre = ta.closest('.schema-editor')?.querySelector('.schema-highlight');
+    if (!pre) return;
+    pre.innerHTML = `${CS.views.hlJSON(CS.views.prettyJSON(ta.value))}\n`;
+    pre.scrollTop = ta.scrollTop;
+    pre.scrollLeft = ta.scrollLeft;
+  };
   const updateStreamingDom = reply => {
     const contentEl = document.querySelector(`.agent-intro[data-stream-at="${CSS.escape(reply.at)}"]`);
     const body = contentEl?.closest('.agent-body');
@@ -948,8 +956,12 @@
     else if(id==='pubmed-query') CS.ui.pubmedQuery=target.value;
     else if(id==='min-genes') CS.ui.minGenes=target.value;
     else if(id==='max-mito') CS.ui.maxMito=target.value;
-    else if(target.dataset?.toolId){ const t=(CS.ui.toolDraft||[]).find(x=>x.id===target.dataset.toolId); if(t) t[target.dataset.field]=target.value; }
+    else if(target.dataset?.toolId){ const t=(CS.ui.toolDraft||[]).find(x=>x.id===target.dataset.toolId); if(t) t[target.dataset.field]=target.value; if(target.dataset.field==='schema') CS.syncSchemaHighlight(target); }
   });
+  // scroll 不冒泡, 用捕获阶段统一接管参数编辑框的滚动同步
+  document.addEventListener('scroll', event => {
+    if (event.target?.classList?.contains('tool-schema-input')) CS.syncSchemaHighlight(event.target);
+  }, true);
   document.addEventListener('change',event=>{
     const target=event.target;
     if(target.id==='file-input'){handleFiles(target.files);}
