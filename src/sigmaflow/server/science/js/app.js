@@ -177,7 +177,18 @@
       if (!data.content?.length) { CS.toast('该会话在服务端没有同步到消息内容。', 'error'); return; }
       const meta = CS.ui.conversations.find(c => c.id === id) || {};
       const run = { id, kind: 'chat', title: meta.title || data.title || '会话', projectId: data.projectId, prompt: '', datasetIds: [], config: {},
-              messages: data.content.map(m => ({ role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) })),
+              messages: data.content.map(m => {
+                const msg = { role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) };
+                // 旧格式记录压平了时间线, 加载时重建为 think/tool/text 块以便按时间线展示
+                if (msg.role === 'assistant' && (msg.reasoning || msg.tools?.length)) {
+                  const blocks = [];
+                  if (msg.reasoning) blocks.push({ type: 'think', text: msg.reasoning });
+                  for (const t of msg.tools || []) blocks.push({ type: 'tool', name: t.name, args: t.args, result: t.result });
+                  if (msg.content) blocks.push({ type: 'text', text: msg.content });
+                  msg.blocks = blocks;
+                }
+                return msg;
+              }),
               steps: [], createdAt: meta.createdAt ? new Date(meta.createdAt).toISOString() : new Date().toISOString(), status: 'complete', progress: 0, transport: 'chat', isDemo: false };
       CS.state.runs.push(run);
       if (data.projectId) CS.state.projectId = data.projectId;
@@ -305,22 +316,26 @@
     CS.sizeSchemaEditors();
   };
   const updateStreamingDom = reply => {
+    // 时间线增量更新: 块类型签名没变时只就地更新生长中的块, 避免整页重渲染;
+    // 签名变化(新块出现)则返回 false 让调用方全量渲染
     const contentEl = document.querySelector(`.agent-intro[data-stream-at="${CSS.escape(reply.at)}"]`);
     const body = contentEl?.closest('.agent-body');
     if (!contentEl || !body) return false;
-    const hasThink = !!(CS.ui.thinkingText || reply.reasoning);
-    const thinkRoot = body.querySelector('.think-root');
-    if (hasThink !== !!thinkRoot) return false;
-    if (thinkRoot) {
-      thinkRoot.dataset.state = reply.content ? 'ok' : 'running';
-      const title = thinkRoot.querySelector('.think-title');
-      if (title) title.textContent = reply.content ? '已深度思考' : '思考中';
-      const summary = thinkRoot.querySelector('.think-summary-text');
-      if (summary) summary.textContent = CS.ui.thinkingText || '';
-      const thinkBody = thinkRoot.querySelector('.think-body');
-      if (thinkBody) thinkBody.textContent = CS.ui.thinkingText || reply.reasoning || '';
+    const blocks = reply.blocks || [];
+    if (body.dataset.blockSig !== blocks.map(b => b.type).join(',')) return false;
+    const last = blocks[blocks.length - 1];
+    if (last && last.type === 'text') {
+      contentEl.innerHTML = CS.markdown(last.text);
+      return true;
     }
-    contentEl.innerHTML = CS.markdown(reply.content);
+    // 最后一块是思考/工具: 就地更新其摘要行与(展开时的)思考正文
+    const liveRoot = body.querySelector('.think-root[data-live="1"]');
+    if (liveRoot && last) {
+      const summary = liveRoot.querySelector('.think-summary-text');
+      if (summary) summary.textContent = last.type === 'think' ? last.text : JSON.stringify(last.args || {}).slice(0, 160);
+      const thinkBody = liveRoot.querySelector('.think-body');
+      if (thinkBody) thinkBody.textContent = last.text || '';
+    }
     return true;
   };
   // 监听对话区滚动: 离开底部 80px 以上时显示"跳到最新"按钮。
@@ -350,7 +365,34 @@
   };
   const sendChatMessage = async (run, text, datasetIds) => {
     run.messages.push({ role: 'user', content: text, datasetIds: [...datasetIds], at: new Date().toISOString() });
-    const reply = { role: 'assistant', content: '', streaming: true, at: new Date().toISOString() };
+    // blocks: 按到达顺序的时间线段(think/tool/text), loop 会话里多轮交替不会互相覆盖;
+    // content/reasoning/tools 是从 blocks 汇出的镜像, 兼容历史/持久化/复制等旧读方
+    const mirror = () => {
+      reply.content = reply.blocks.filter(b => b.type === 'text').map(b => b.text).join('');
+      reply.reasoning = reply.blocks.filter(b => b.type === 'think').map(b => b.text).join('');
+      reply.tools = reply.blocks.filter(b => b.type === 'tool').map(b => ({ name: b.name, args: b.args, result: b.result }));
+    };
+    const lastBlock = () => reply.blocks[reply.blocks.length - 1];
+    const pushThink = think => {
+      const last = lastBlock();
+      if (last && last.type === 'think') last.text += think;
+      else reply.blocks.push({ type: 'think', text: think });
+    };
+    const pushDelta = delta => {
+      const last = lastBlock();
+      if (last && last.type === 'text') last.text += delta;
+      else reply.blocks.push({ type: 'text', text: delta });
+    };
+    const pushTool = t => {
+      // 每次工具调用独立成块, 不再合并进之前的工具列表
+      if (t.kind === 'call') reply.blocks.push({ type: 'tool', name: t.name, args: t.args, result: null });
+      else {
+        const ent = [...reply.blocks].reverse().find(b => b.type === 'tool' && b.name === t.name && b.result == null);
+        if (ent) ent.result = t.result;
+        else reply.blocks.push({ type: 'tool', name: t.name, result: t.result });
+      }
+    };
+    const reply = { role: 'assistant', content: '', blocks: [], streaming: true, at: new Date().toISOString() };
     run.messages.push(reply);
     CS.save(); CS.render();
     setTimeout(scrollToLatest, 20);
@@ -395,31 +437,28 @@
         return cjk + (s.length - cjk) / 4;
       };
       const toolEvent = t => {
-        reply.tools = reply.tools || [];
-        if (t.kind === 'call') {
-          reply.tools.push({ name: t.name, args: t.args, running: true });
-        } else {
-          const ent = [...reply.tools].reverse().find(x => x.name === t.name && x.running);
-          if (ent) { ent.result = t.result; ent.running = false; }
-          else reply.tools.push({ name: t.name, result: t.result });
-        }
+        pushTool(t);
+        mirror();
         const follow = nearBottom();
         CS.render();
         if (follow) scrollToLatest();
       };
       const done = await CS.api.chat(history, delta => {
-        reply.content += delta;
+        pushDelta(delta);
+        mirror();
         reply.tokens = (reply.tokens || 0) + estTokens(delta);
         const now = Date.now();
         if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom(); if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       }, think => {
-        reply.reasoning = (reply.reasoning || '') + think;
+        pushThink(think);
+        mirror();
         reply.tokens = (reply.tokens || 0) + estTokens(think);
         CS.ui.thinkingText = reply.reasoning;
         const now = Date.now();
         if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom(); if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       }, toolEvent);
-      reply.content = done.content;
+      // 正文以流式时间线为准(保留各轮文本); 服务端最终内容仅在本地没收到任何文本时兑底
+      if (!reply.content && typeof done.content === 'string') reply.content = done.content;
       if (done.tokens) reply.tokens = done.tokens;  // 真实 usage(含思考 token), 覆盖流式粗估
       if (done.promptTokens) reply.promptTokens = done.promptTokens;
     } catch (error) {
@@ -429,6 +468,7 @@
       reply.error = { message: msg, detail: error?.stack ? (msg + '\n\n' + error.stack) : msg };
     }
     finishTimer();
+    reply.blocks = reply.blocks.filter(b => b.type === 'tool' || !!b.text);  // 丢弃中途产生的空段
     CS.save(); CS.render();
     setTimeout(scrollToLatest, 20);
     syncConversation(run);
@@ -663,6 +703,7 @@
     },
     'stop-generation': () => { CS.api.ws.stopChats(); },
     'toggle-thinking': (id, el) => _toggleAnchored(el, () => { CS.ui.thinkingOpen = !CS.ui.thinkingOpen; }),
+    'toggle-block': (id, el) => _toggleAnchored(el, () => { CS.ui.blockOpen[id] = !CS.ui.blockOpen[id]; }),
     'toggle-tools': (id, el) => _toggleAnchored(el, () => { CS.ui.toolsOpen = !CS.ui.toolsOpen; }),
     'toggle-error': (id, el) => _toggleAnchored(el, () => { CS.ui.errorOpen = !CS.ui.errorOpen; }),
     'jump-latest': () => { CS.ui.canJumpLatest = false; CS.render(); scrollToLatest(); },

@@ -702,7 +702,7 @@ CS.markdown = text => {
     workflowId: 'singlecell', workflowCategory: 'all', datasetId: 'ds-pbmc', organism: 'Homo sapiens', advanced: false,
     minGenes: 200, maxMito: 20, activeTool: 'sequence', sequence: CS.data.sampleFASTA, sequenceResult: null,
     modal: null, expandedLogs: new Set(), selectedCell: null, note: '', apiHealth: null,
-    userMenu: false, modelMenu: false, projectMenu: false, projectSettingsMenu: null, expandedProjects: new Set(), conversations: [], settingsTab: 'appearance', models: [], providers: [], edit: null, providerModels: null, draftModelName: '', draftProviderId: null, dropdown: null, pendingDelete: null, modelsLoaded: false, thinkingOpen: false, thinkingText: '', toolsOpen: false, errorOpen: false, canJumpLatest: false, contextInfo: null, contextMenu: false, agentTools: null, toolDraft: null, toolGroupsCollapsed: null, agentSkills: null, skillDraft: null, mcpServers: null, mcpDraft: null, systemPrompt: null, syspromptDraft: null
+    userMenu: false, modelMenu: false, projectMenu: false, projectSettingsMenu: null, expandedProjects: new Set(), conversations: [], settingsTab: 'appearance', models: [], providers: [], edit: null, providerModels: null, draftModelName: '', draftProviderId: null, dropdown: null, pendingDelete: null, modelsLoaded: false, thinkingOpen: false, thinkingText: '', toolsOpen: false, errorOpen: false, blockOpen: {}, canJumpLatest: false, contextInfo: null, contextMenu: false, agentTools: null, toolDraft: null, toolGroupsCollapsed: null, agentSkills: null, skillDraft: null, mcpServers: null, mcpDraft: null, systemPrompt: null, syspromptDraft: null
   };
   CS.files = new Map(); // File objects only live in memory; raw file bytes never enter localStorage.
   CS.save = () => {
@@ -3592,17 +3592,48 @@ CS.markdown = text => {
     if (run.kind === 'chat') {
       const bubble = m => { const idxOf = run.messages.indexOf(m); return m.role === 'user'
         ? `<div class="msg-block user-block"><div class="user-message">${e(m.content)}${m.datasetIds?.length ? `<div class="attachment-list mt-12">${m.datasetIds.map(id => `<span class="attachment">${i('file')}${e(CS.state.datasets.find(d => d.id === id)?.name || id)}</span>`).join('')}</div>` : ''}</div><div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span><span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="edit-message" data-id="${idxOf}" title="修改">${i('edit','',13)}</span></span></div></div>`
-        : `<div class="msg-block agent-block"><div class="agent-message"><div class="agent-avatar${m.streaming ? ' avatar-pulsing' : ' '}">${i('dna','',21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${m.streaming && m.tokens ? ` <span class="tok-down" data-start="${m.at}">↓ ${CS.num(m.tokens)}</span>` : (m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span>` : '')}${m.streaming ? ` <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${(m.streaming ? (CS.ui.thinkingText || m.reasoning) && CS.ui.thinkingText !== undefined : m.reasoning) ? `
+        : (() => {
+            const blockMeta = t => t.name === 'bash' ? {icon: 'terminal', label: '终端'} : {icon: 'code', label: '工具'};
+            const bkey = bi => `${m.at || idxOf}|${bi}`;
+            const blockOpen = bi => !!CS.ui.blockOpen[bkey(bi)];
+            const blocks = Array.isArray(m.blocks) ? m.blocks : null;
+            const lastIdx = blocks ? blocks.length - 1 : -1;
+            // 新格式: 按时间线逐块渲染(think/text/tool 各占一块, 按到达顺序排列);
+            // 旧格式(压平的 reasoning/tools/content)走原有渲染, 兼容服务端历史会话
+            let segments;
+            if (!blocks) {
+              segments = `${(m.streaming ? (CS.ui.thinkingText || m.reasoning) && CS.ui.thinkingText !== undefined : m.reasoning) ? `
           <div class="think-root${m.streaming && !m.content ? ' think-live' : ''}" data-state="${m.streaming && !m.content ? 'running' : 'ok'}"${CS.ui.thinkingOpen ? ' data-expanded="true"' : ''}>
             <button type="button" class="think-row" data-action="toggle-thinking" aria-expanded="${!!CS.ui.thinkingOpen}">
-              <span class="think-leading">${i(m.streaming && !m.content ? 'spark' : 'spark', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span>
+              <span class="think-leading">${i('spark', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span>
               <span class="think-title">${m.streaming && !m.content ? '思考中' : '已深度思考'}</span>
               <span class="think-separator" aria-hidden="true"></span>
               <span class="think-summary" data-follow-end="${m.streaming && !m.content ? '' : undefined}"><span class="think-summary-text">${e((m.streaming && !m.content ? (CS.ui.thinkingText || '') : (m.reasoning || '').split('\n').filter(Boolean)[0]) || '')}</span></span>
             </button>
             ${CS.ui.thinkingOpen ? `<div class="think-body">${e(m.streaming ? (CS.ui.thinkingText || m.reasoning || '') : (m.reasoning || ''))}</div>` : ''}
           </div>` : ''}
-          ${(m.tools || []).length ? (() => { const meta = t => t.name === 'bash' ? {icon: 'terminal', label: '终端'} : {icon: 'code', label: '工具'}; const running = m.tools.some(t => t.running); const last = m.tools[m.tools.length - 1]; const mt = meta(last); return `<div class="think-root tool-root${running ? ' think-live' : ''}" data-state="${running ? 'running' : 'ok'}"${CS.ui.toolsOpen ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-tools" aria-expanded="${!!CS.ui.toolsOpen}"><span class="think-leading">${i(mt.icon, '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${mt.label} ${e(last.name)} · ${m.tools.length} 次调用${running ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(m.tools.map(t => t.name).join(', '))}</span></span></button>${CS.ui.toolsOpen ? `<div class="tool-list">${m.tools.map(t => `<div class="tool-item${t.running ? ' tool-running' : ''}"><div class="tool-head"><code>${e(t.name)}</code><span class="tool-args">${e(JSON.stringify(t.args || {}).slice(0, 160))}</span>${t.running ? '<span class="tool-status">运行中…</span>' : ''}</div>${t.result != null ? `<pre class="tool-result">${e(String(t.result).slice(0, 600))}${String(t.result).length > 600 ? '\n…' : ''}</pre>` : ''}</div>`).join('')}</div>` : ''}</div>`; })() : ''}          ${(m.error ? (() => { const err = typeof m.error === 'string' ? { message: m.error } : m.error || {}; const summary = String(err.message || '未知错误').split('\n')[0]; const detail = err.detail || err.message || ''; return `<div class="think-root error-root"${CS.ui.errorOpen ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-error" aria-expanded="${!!CS.ui.errorOpen}"><span class="think-leading">${i('alert', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">请求出错</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(summary)}</span></span></button>${CS.ui.errorOpen ? `<div class="error-body"><pre class="error-detail">${e(detail)}</pre></div>` : ''}</div>`; })() : '')}<div class="agent-intro md-body"${m.streaming ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(m.content)}</div>${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.role === 'assistant' && m.tokens ? `<span class="message-meta">${CS.num(m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="branch-chat" data-id="${idxOf}" title="分支到新聊天">${i('workflow','',13)}</span></span></div>`}</div></div></div>`; };
+          ${(m.tools || []).length ? (() => { const meta = blockMeta(m.tools[m.tools.length - 1]); const running = m.tools.some(t => t.running); const last = m.tools[m.tools.length - 1]; return `<div class="think-root tool-root${running ? ' think-live' : ''}" data-state="${running ? 'running' : 'ok'}"${CS.ui.toolsOpen ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-tools" aria-expanded="${!!CS.ui.toolsOpen}"><span class="think-leading">${i(meta.icon, '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${meta.label} ${e(last.name)} · ${m.tools.length} 次调用${running ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(m.tools.map(t => t.name).join(', '))}</span></span></button>${CS.ui.toolsOpen ? `<div class="tool-list">${m.tools.map(t => `<div class="tool-item${t.running ? ' tool-running' : ''}"><div class="tool-head"><code>${e(t.name)}</code><span class="tool-args">${e(JSON.stringify(t.args || {}).slice(0, 160))}</span>${t.running ? '<span class="tool-status">运行中…</span>' : ''}</div>${t.result != null ? `<pre class="tool-result">${e(String(t.result).slice(0, 600))}${String(t.result).length > 600 ? '\n…' : ''}</pre>` : ''}</div>`).join('')}</div>` : ''}</div>`; })() : ''}
+          <div class="agent-intro md-body"${m.streaming ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(m.content)}</div>`;
+            } else {
+              // 单块渲染: 思考/工具块可折叠(状态存 CS.ui.blockOpen), 正文块渲染 markdown
+              const seg = (b, bi) => {
+                const live = m.streaming && bi === lastIdx;
+                if (b.type === 'text') return `<div class="agent-intro md-body"${live ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(b.text)}</div>`;
+                if (b.type === 'think') {
+                  const open = blockOpen(bi);
+                  return `<div class="think-root${live ? ' think-live' : ''}" data-state="${live ? 'running' : 'ok'}"${live ? ' data-live="1"' : ''}${open ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-block" data-id="${e(bkey(bi))}" aria-expanded="${open}"><span class="think-leading">${i('spark', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${live ? '思考中' : '已深度思考'}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"${live ? ' data-follow-end=""' : ''}><span class="think-summary-text">${e(live ? b.text : ((b.text || '').split('\n').filter(Boolean)[0] || ''))}</span></span></button>${open ? `<div class="think-body"${live ? ' data-live-think="1"' : ''}>${e(b.text)}</div>` : ''}</div>`;
+                }
+                const meta = blockMeta(b);
+                const open = blockOpen(bi);
+                return `<div class="think-root tool-root${live ? ' think-live' : ''}" data-state="${live ? 'running' : 'ok'}"${open ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-block" data-id="${e(bkey(bi))}" aria-expanded="${open}"><span class="think-leading">${i(meta.icon, '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${meta.label} ${e(b.name)}${live ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(JSON.stringify(b.args || {}).slice(0, 160))}</span></span></button>${open ? `<div class="tool-list"><div class="tool-item${live ? ' tool-running' : ''}"><div class="tool-head"><code>${e(b.name)}</code><span class="tool-args">${e(JSON.stringify(b.args || {}).slice(0, 160))}</span>${live ? '<span class="tool-status">运行中…</span>' : ''}</div>${b.result != null ? `<pre class="tool-result">${e(String(b.result).slice(0, 600))}${String(b.result).length > 600 ? '\n…' : ''}</pre>` : ''}</div></div>` : ''}</div>`;
+              };
+              const tailText = blocks.length && blocks[lastIdx].type === 'text';
+              // 流式期间最后一块不是正文时补一个空正文占位, 供增量更新定位与底部跟随
+              segments = `${blocks.map(seg).join('')}${m.streaming && !tailText ? `<div class="agent-intro md-body" data-stream-at="${e(m.at)}"></div>` : ''}`;
+            }
+            const err = m.error ? (typeof m.error === 'string' ? { message: m.error } : m.error || {}) : null;
+            return `<div class="msg-block agent-block"><div class="agent-message"><div class="agent-avatar${m.streaming ? ' avatar-pulsing' : ' '}">${i('dna','',21)}</div><div class="agent-body"${blocks ? ` data-block-sig="${e(blocks.map(b => b.type).join(','))}"` : ''}><div class="agent-name">SigmaFlow Science${m.streaming && m.tokens ? ` <span class="tok-down" data-start="${m.at}">↓ ${CS.num(m.tokens)}</span>` : (m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span>` : '')}${m.streaming ? ` <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${segments}${err ? `<div class="think-root error-root"${CS.ui.errorOpen ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-error" aria-expanded="${!!CS.ui.errorOpen}"><span class="think-leading">${i('alert', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">请求出错</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(String(err.message || '未知错误').split('\n')[0])}</span></span></button>${CS.ui.errorOpen ? `<div class="error-body"><pre class="error-detail">${e(err.detail || err.message || '')}</pre></div>` : ''}</div>` : ''}${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.role === 'assistant' && m.tokens ? `<span class="message-meta">${CS.num(m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="branch-chat" data-id="${idxOf}" title="分支到新聊天">${i('workflow','',13)}</span></span></div>`}</div></div></div>`;
+          })(); };
       return `<section class="page chat-page"><div class="chat-layout no-inspector"><div class="chat-main chat-main-chat"><header class="chat-title chat-title-compact"><div><h1>${e(run.title)}</h1><p class="small muted">${e(CS.state.projects.find(p => p.id === run.projectId)?.name || '未指定项目')} <span class="faint"> / </span> ${e(CS.state.settings.model || '默认模型')}</p></div></header>
       <div class="conversation">${run.messages.map(bubble).join('')}</div>
       ${V.composer(false)}</div></div></section>`;
@@ -3945,7 +3976,18 @@ CS.markdown = text => {
       if (!data.content?.length) { CS.toast('该会话在服务端没有同步到消息内容。', 'error'); return; }
       const meta = CS.ui.conversations.find(c => c.id === id) || {};
       const run = { id, kind: 'chat', title: meta.title || data.title || '会话', projectId: data.projectId, prompt: '', datasetIds: [], config: {},
-              messages: data.content.map(m => ({ role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) })),
+              messages: data.content.map(m => {
+                const msg = { role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) };
+                // 旧格式记录压平了时间线, 加载时重建为 think/tool/text 块以便按时间线展示
+                if (msg.role === 'assistant' && (msg.reasoning || msg.tools?.length)) {
+                  const blocks = [];
+                  if (msg.reasoning) blocks.push({ type: 'think', text: msg.reasoning });
+                  for (const t of msg.tools || []) blocks.push({ type: 'tool', name: t.name, args: t.args, result: t.result });
+                  if (msg.content) blocks.push({ type: 'text', text: msg.content });
+                  msg.blocks = blocks;
+                }
+                return msg;
+              }),
               steps: [], createdAt: meta.createdAt ? new Date(meta.createdAt).toISOString() : new Date().toISOString(), status: 'complete', progress: 0, transport: 'chat', isDemo: false };
       CS.state.runs.push(run);
       if (data.projectId) CS.state.projectId = data.projectId;
@@ -4073,22 +4115,26 @@ CS.markdown = text => {
     CS.sizeSchemaEditors();
   };
   const updateStreamingDom = reply => {
+    // 时间线增量更新: 块类型签名没变时只就地更新生长中的块, 避免整页重渲染;
+    // 签名变化(新块出现)则返回 false 让调用方全量渲染
     const contentEl = document.querySelector(`.agent-intro[data-stream-at="${CSS.escape(reply.at)}"]`);
     const body = contentEl?.closest('.agent-body');
     if (!contentEl || !body) return false;
-    const hasThink = !!(CS.ui.thinkingText || reply.reasoning);
-    const thinkRoot = body.querySelector('.think-root');
-    if (hasThink !== !!thinkRoot) return false;
-    if (thinkRoot) {
-      thinkRoot.dataset.state = reply.content ? 'ok' : 'running';
-      const title = thinkRoot.querySelector('.think-title');
-      if (title) title.textContent = reply.content ? '已深度思考' : '思考中';
-      const summary = thinkRoot.querySelector('.think-summary-text');
-      if (summary) summary.textContent = CS.ui.thinkingText || '';
-      const thinkBody = thinkRoot.querySelector('.think-body');
-      if (thinkBody) thinkBody.textContent = CS.ui.thinkingText || reply.reasoning || '';
+    const blocks = reply.blocks || [];
+    if (body.dataset.blockSig !== blocks.map(b => b.type).join(',')) return false;
+    const last = blocks[blocks.length - 1];
+    if (last && last.type === 'text') {
+      contentEl.innerHTML = CS.markdown(last.text);
+      return true;
     }
-    contentEl.innerHTML = CS.markdown(reply.content);
+    // 最后一块是思考/工具: 就地更新其摘要行与(展开时的)思考正文
+    const liveRoot = body.querySelector('.think-root[data-live="1"]');
+    if (liveRoot && last) {
+      const summary = liveRoot.querySelector('.think-summary-text');
+      if (summary) summary.textContent = last.type === 'think' ? last.text : JSON.stringify(last.args || {}).slice(0, 160);
+      const thinkBody = liveRoot.querySelector('.think-body');
+      if (thinkBody) thinkBody.textContent = last.text || '';
+    }
     return true;
   };
   // 监听对话区滚动: 离开底部 80px 以上时显示"跳到最新"按钮。
@@ -4118,7 +4164,34 @@ CS.markdown = text => {
   };
   const sendChatMessage = async (run, text, datasetIds) => {
     run.messages.push({ role: 'user', content: text, datasetIds: [...datasetIds], at: new Date().toISOString() });
-    const reply = { role: 'assistant', content: '', streaming: true, at: new Date().toISOString() };
+    // blocks: 按到达顺序的时间线段(think/tool/text), loop 会话里多轮交替不会互相覆盖;
+    // content/reasoning/tools 是从 blocks 汇出的镜像, 兼容历史/持久化/复制等旧读方
+    const mirror = () => {
+      reply.content = reply.blocks.filter(b => b.type === 'text').map(b => b.text).join('');
+      reply.reasoning = reply.blocks.filter(b => b.type === 'think').map(b => b.text).join('');
+      reply.tools = reply.blocks.filter(b => b.type === 'tool').map(b => ({ name: b.name, args: b.args, result: b.result }));
+    };
+    const lastBlock = () => reply.blocks[reply.blocks.length - 1];
+    const pushThink = think => {
+      const last = lastBlock();
+      if (last && last.type === 'think') last.text += think;
+      else reply.blocks.push({ type: 'think', text: think });
+    };
+    const pushDelta = delta => {
+      const last = lastBlock();
+      if (last && last.type === 'text') last.text += delta;
+      else reply.blocks.push({ type: 'text', text: delta });
+    };
+    const pushTool = t => {
+      // 每次工具调用独立成块, 不再合并进之前的工具列表
+      if (t.kind === 'call') reply.blocks.push({ type: 'tool', name: t.name, args: t.args, result: null });
+      else {
+        const ent = [...reply.blocks].reverse().find(b => b.type === 'tool' && b.name === t.name && b.result == null);
+        if (ent) ent.result = t.result;
+        else reply.blocks.push({ type: 'tool', name: t.name, result: t.result });
+      }
+    };
+    const reply = { role: 'assistant', content: '', blocks: [], streaming: true, at: new Date().toISOString() };
     run.messages.push(reply);
     CS.save(); CS.render();
     setTimeout(scrollToLatest, 20);
@@ -4163,31 +4236,28 @@ CS.markdown = text => {
         return cjk + (s.length - cjk) / 4;
       };
       const toolEvent = t => {
-        reply.tools = reply.tools || [];
-        if (t.kind === 'call') {
-          reply.tools.push({ name: t.name, args: t.args, running: true });
-        } else {
-          const ent = [...reply.tools].reverse().find(x => x.name === t.name && x.running);
-          if (ent) { ent.result = t.result; ent.running = false; }
-          else reply.tools.push({ name: t.name, result: t.result });
-        }
+        pushTool(t);
+        mirror();
         const follow = nearBottom();
         CS.render();
         if (follow) scrollToLatest();
       };
       const done = await CS.api.chat(history, delta => {
-        reply.content += delta;
+        pushDelta(delta);
+        mirror();
         reply.tokens = (reply.tokens || 0) + estTokens(delta);
         const now = Date.now();
         if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom(); if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       }, think => {
-        reply.reasoning = (reply.reasoning || '') + think;
+        pushThink(think);
+        mirror();
         reply.tokens = (reply.tokens || 0) + estTokens(think);
         CS.ui.thinkingText = reply.reasoning;
         const now = Date.now();
         if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom(); if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       }, toolEvent);
-      reply.content = done.content;
+      // 正文以流式时间线为准(保留各轮文本); 服务端最终内容仅在本地没收到任何文本时兑底
+      if (!reply.content && typeof done.content === 'string') reply.content = done.content;
       if (done.tokens) reply.tokens = done.tokens;  // 真实 usage(含思考 token), 覆盖流式粗估
       if (done.promptTokens) reply.promptTokens = done.promptTokens;
     } catch (error) {
@@ -4197,6 +4267,7 @@ CS.markdown = text => {
       reply.error = { message: msg, detail: error?.stack ? (msg + '\n\n' + error.stack) : msg };
     }
     finishTimer();
+    reply.blocks = reply.blocks.filter(b => b.type === 'tool' || !!b.text);  // 丢弃中途产生的空段
     CS.save(); CS.render();
     setTimeout(scrollToLatest, 20);
     syncConversation(run);
@@ -4431,6 +4502,7 @@ CS.markdown = text => {
     },
     'stop-generation': () => { CS.api.ws.stopChats(); },
     'toggle-thinking': (id, el) => _toggleAnchored(el, () => { CS.ui.thinkingOpen = !CS.ui.thinkingOpen; }),
+    'toggle-block': (id, el) => _toggleAnchored(el, () => { CS.ui.blockOpen[id] = !CS.ui.blockOpen[id]; }),
     'toggle-tools': (id, el) => _toggleAnchored(el, () => { CS.ui.toolsOpen = !CS.ui.toolsOpen; }),
     'toggle-error': (id, el) => _toggleAnchored(el, () => { CS.ui.errorOpen = !CS.ui.errorOpen; }),
     'jump-latest': () => { CS.ui.canJumpLatest = false; CS.render(); scrollToLatest(); },
