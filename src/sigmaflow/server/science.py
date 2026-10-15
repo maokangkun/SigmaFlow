@@ -277,6 +277,16 @@ def _effective_agent_tools() -> list:
     return tools
 
 
+def _tool_origin(name: str) -> str:
+    """Origin of a tool for the settings grouping: MCP server name for tools exposed
+    by the active MCP client, 'builtin' for the agent package's own tools."""
+    try:
+        tool = _agent_tools_module().MCP.tools.get(name)
+        return tool.server_name if tool else "builtin"
+    except Exception:
+        return "builtin"
+
+
 def _tool_listing(defaults: list, overrides: Dict[str, dict]) -> list:
     """Settings-page view of the tool set: original id plus effective name/description/schema/enabled."""
     out = []
@@ -290,6 +300,7 @@ def _tool_listing(defaults: list, overrides: Dict[str, dict]) -> list:
             "enabled": override.get("enabled") is not False,
             "schema": json.dumps(schema, ensure_ascii=False, separators=(",", ":")),
             "modified": bool(override),
+            "origin": _tool_origin(t["name"]),
         })
     return out
 

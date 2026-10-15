@@ -265,3 +265,11 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
 .sysprompt-builtin{margin-top:12px}
 .sysprompt-builtin summary{cursor:pointer;user-select:none}
 .sysprompt-builtin-pre{max-height:280px;overflow:auto;padding:10px 12px;font-size:11px;line-height:1.7;white-space:pre-wrap;word-break:break-word;background:var(--inset);border:1px solid var(--line-soft);border-radius:10px;color:var(--muted)}
+/* Agent 工具设置: 按来源归组后两栏排布; 单组时占满整行 */
+.tool-groups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start;margin-bottom:14px}
+.tool-group{min-width:0}
+.tool-group.lone{grid-column:1/-1}
+.tool-group-header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 2px 8px;border-bottom:1px solid var(--line-soft);margin-bottom:10px}
+.tool-group-title{font-size:12px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:7px}
+.tool-group-title::before{content:"";width:8px;height:8px;border-radius:3px;background:var(--accent);opacity:.75}
+.tool-group:nth-child(1) .tool-group-title::before{background:var(--blue)}

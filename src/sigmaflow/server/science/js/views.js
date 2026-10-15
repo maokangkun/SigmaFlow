@@ -174,17 +174,26 @@
     const ddPickItems = CS.ui.providerModels?.list || [];
     const sections = {
       tools: (() => {
-        // Agent 工具设置: 列表懒加载; 未保存的修改存 toolDraft, 重渲染不丢
+        // Agent 工具设置: 列表懒加载; 未保存的修改存 toolDraft, 重渲染不丢;
+        // 按 origin 归组(内置 / 各 MCP 服务器), 组间两栏排布, 组内保持原顺序
         const list = CS.ui.toolDraft || CS.ui.agentTools;
         if (!list) return `<div class="panel settings-section"><h2>Agent 工具</h2><p class="small muted mb-20">正在加载工具列表…</p></div>`;
         if (!list.length) return `<div class="panel settings-section"><h2>Agent 工具</h2><p class="small muted mb-20">当前环境没有可配置的内置工具。</p></div>`;
-        const rows = list.map(t => {
+        const groups = [];
+        for (const t of list) {
+          const origin = t.origin || 'builtin';
+          let g = groups.find(x => x.origin === origin);
+          if (!g) groups.push(g = { origin, label: origin === 'builtin' ? '内置工具' : `MCP · ${origin}`, tools: [] });
+          g.tools.push(t);
+        }
+        const row = t => {
           const orig = (CS.ui.agentTools || []).find(x => x.id === t.id);
           const dirty = !orig || orig.name !== t.name || orig.description !== t.description || schemaDirty(orig.schema, t.schema) || !!orig.enabled !== !!t.enabled;
           const custom = (t.modified || dirty) ? pill('自定义') : '';
           return `<div class="tool-setting-row" data-idx="${e(t.id)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">名称</span><input class="tool-name-input" data-tool-id="${e(t.id)}" data-field="name" value="${e(t.name)}" maxlength="64" spellcheck="false"></div><div class="tool-field"><span class="tool-field-label">描述</span><input class="tool-desc-input" data-tool-id="${e(t.id)}" data-field="description" value="${e(t.description)}" maxlength="2000" spellcheck="false"></div><div class="tool-field tool-field-top"><span class="tool-field-label">参数</span><div class="schema-editor"><pre class="schema-highlight" aria-hidden="true">${V.hlJSON(V.prettyJSON(t.schema))}\n</pre><textarea class="tool-schema-input mono" data-tool-id="${e(t.id)}" data-field="schema" rows="6" spellcheck="false">${e(V.prettyJSON(t.schema))}</textarea></div></div></div><div class="tool-setting-side">${custom}<button type="button" role="switch" aria-checked="${!!t.enabled}" class="switch" data-action="tool-toggle" data-id="${e(t.id)}" aria-label="启用 ${e(t.id)}"></button></div></div>`;
-        }).join('');
-        return `<div class="panel settings-section"><div class="row-between"><h2>Agent 工具</h2>${pill('服务端存储')}</div><p class="small muted mb-20">设置 Agent 会话可用的内置工具: 启用开关、名称、描述与参数 schema 随下一次请求生效; 禁用的工具不再发给模型, 也不再占用上下文。参数 schema 需为合法 JSON 对象。</p>${rows}<div class="settings-actions row wrap">${btn('save-tools','保存','check','primary')}${btn('reset-tools','恢复默认','refresh','flat')}</div></div>`;
+        };
+        const groupBlocks = groups.map(g => `<div class="tool-group ${groups.length === 1 ? 'lone' : ''}"><div class="tool-group-header"><span class="tool-group-title">${e(g.label)}</span><span class="tiny muted">${g.tools.length} 个工具</span></div>${g.tools.map(row).join('')}</div>`).join('');
+        return `<div class="panel settings-section"><div class="row-between"><h2>Agent 工具</h2>${pill('服务端存储')}</div><p class="small muted mb-20">按来源分组展示 Agent 会话可用的工具(内置与各 MCP 服务器): 启用开关、名称、描述与参数 schema 随下一次请求生效; 禁用的工具不再发给模型, 也不再占用上下文。参数 schema 需为合法 JSON 对象。</p><div class="tool-groups">${groupBlocks}</div><div class="settings-actions row wrap">${btn('save-tools','保存','check','primary')}${btn('reset-tools','恢复默认','refresh','flat')}</div></div>`;
       })(),
       skills: (() => {
         // Agent 技能设置: 与工具设定同构, 未保存的修改存 skillDraft, 重渲染不丢
