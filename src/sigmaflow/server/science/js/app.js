@@ -147,6 +147,8 @@
     const savedTop = conv ? conv.scrollTop : 0;
     const hadConv = !!conv;
     _origRender();
+    // 工具设置的参数编辑框需要按内容自适应高度, 在每次渲染后同步
+    CS.sizeSchemaEditors();
     const el = document.getElementById('sys-stats');
     if (el && _sysStatsHtml) el.innerHTML = _sysStatsHtml;
     if (hadConv) { const fresh = document.querySelector('.conversation'); if (fresh) fresh.scrollTop = savedTop; }
@@ -255,13 +257,22 @@
     try { CS.ui.contextInfo = await CS.api.request('/context-info'); } catch {}
     CS.updateContextRing();
   };
-  // 参数编辑框: 透明 textarea 叠在高亮 pre 上, 输入与滚动实时同步
+  // 参数编辑框: 透明 textarea 叠在高亮 pre 上, 输入时刷新高亮; 高度由 sizeSchemaEditors 统一管理
+  CS.sizeSchemaEditors = () => {
+    document.querySelectorAll('.schema-editor').forEach(ed => {
+      const ta = ed.querySelector('.tool-schema-input');
+      if (!ta) return;
+      ta.style.height = 'auto';
+      ta.style.height = `${ta.scrollHeight}px`;
+      const pre = ed.querySelector('.schema-highlight');
+      if (pre) pre.style.height = `${ta.scrollHeight}px`;
+    });
+  };
   CS.syncSchemaHighlight = ta => {
     const pre = ta.closest('.schema-editor')?.querySelector('.schema-highlight');
     if (!pre) return;
     pre.innerHTML = `${CS.views.hlJSON(CS.views.prettyJSON(ta.value))}\n`;
-    pre.scrollTop = ta.scrollTop;
-    pre.scrollLeft = ta.scrollLeft;
+    CS.sizeSchemaEditors();
   };
   const updateStreamingDom = reply => {
     const contentEl = document.querySelector(`.agent-intro[data-stream-at="${CSS.escape(reply.at)}"]`);
@@ -958,10 +969,8 @@
     else if(id==='max-mito') CS.ui.maxMito=target.value;
     else if(target.dataset?.toolId){ const t=(CS.ui.toolDraft||[]).find(x=>x.id===target.dataset.toolId); if(t) t[target.dataset.field]=target.value; if(target.dataset.field==='schema') CS.syncSchemaHighlight(target); }
   });
-  // scroll 不冒泡, 用捕获阶段统一接管参数编辑框的滚动同步
-  document.addEventListener('scroll', event => {
-    if (event.target?.classList?.contains('tool-schema-input')) CS.syncSchemaHighlight(event.target);
-  }, true);
+  // 窗口尺寸变化会改变软换行位置, 重新计算两层高度
+  window.addEventListener('resize', () => CS.sizeSchemaEditors());
   document.addEventListener('change',event=>{
     const target=event.target;
     if(target.id==='file-input'){handleFiles(target.files);}

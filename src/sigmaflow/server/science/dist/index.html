@@ -317,10 +317,10 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
 .tool-field-label{font-size:11px;color:var(--muted);text-align:left}
 .tool-field-top .tool-field-label{padding-top:9px}
 .tool-name-input,.tool-desc-input{width:100%;padding:7px 10px;font-size:12px}
-/* 参数编辑框: 高亮 pre 在下, 透明 textarea 在上, 两层逐字对齐 */
-.schema-editor{position:relative;border:1px solid var(--line);border-radius:10px;background:var(--inset)}
-.schema-editor .schema-highlight{position:absolute;inset:0;margin:0;padding:8px 10px;font-family:var(--mono);font-size:11px;line-height:1.6;white-space:pre;overflow:hidden;pointer-events:none;color:var(--muted)}
-.schema-editor .tool-schema-input{position:relative;display:block;width:100%;background:transparent;border:0;color:transparent;caret-color:var(--ink);resize:none;font-family:var(--mono);font-size:11px;line-height:1.6;padding:8px 10px;white-space:pre;overflow:auto}
+/* 参数编辑框: 高亮 pre 与透明 textarea 同宽软换行, 内容自增高, 由外层容器统一滚动 */
+.schema-editor{position:relative;max-height:280px;overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--inset)}
+.schema-editor .schema-highlight{position:absolute;top:0;left:0;right:0;margin:0;padding:8px 10px;font-family:var(--mono);font-size:11px;line-height:1.6;white-space:pre-wrap;word-break:break-all;overflow:hidden;pointer-events:none;color:var(--muted)}
+.schema-editor .tool-schema-input{position:relative;display:block;width:100%;background:transparent;border:0;color:transparent;caret-color:var(--ink);resize:none;overflow:hidden;font-family:var(--mono);font-size:11px;line-height:1.6;padding:8px 10px;white-space:pre-wrap;word-break:break-all}
 .j-key{color:var(--accent)}
 .j-str{color:var(--green)}
 .j-num{color:var(--blue)}
@@ -3684,7 +3684,7 @@ CS.markdown = text => {
           const orig = (CS.ui.agentTools || []).find(x => x.id === t.id);
           const dirty = !orig || orig.name !== t.name || orig.description !== t.description || schemaDirty(orig.schema, t.schema) || !!orig.enabled !== !!t.enabled;
           const custom = (t.modified || dirty) ? pill('自定义') : '';
-          return `<div class="tool-setting-row" data-idx="${e(t.id)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">名称</span><input class="tool-name-input" data-tool-id="${e(t.id)}" data-field="name" value="${e(t.name)}" maxlength="64" spellcheck="false"></div><div class="tool-field"><span class="tool-field-label">描述</span><input class="tool-desc-input" data-tool-id="${e(t.id)}" data-field="description" value="${e(t.description)}" maxlength="2000" spellcheck="false"></div><div class="tool-field tool-field-top"><span class="tool-field-label">参数</span><div class="schema-editor"><pre class="schema-highlight" aria-hidden="true">${V.hlJSON(V.prettyJSON(t.schema))}\n</pre><textarea class="tool-schema-input mono" data-tool-id="${e(t.id)}" data-field="schema" rows="6" spellcheck="false" wrap="off">${e(V.prettyJSON(t.schema))}</textarea></div></div></div><div class="tool-setting-side">${custom}<button type="button" role="switch" aria-checked="${!!t.enabled}" class="switch" data-action="tool-toggle" data-id="${e(t.id)}" aria-label="启用 ${e(t.id)}"></button></div></div>`;
+          return `<div class="tool-setting-row" data-idx="${e(t.id)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">名称</span><input class="tool-name-input" data-tool-id="${e(t.id)}" data-field="name" value="${e(t.name)}" maxlength="64" spellcheck="false"></div><div class="tool-field"><span class="tool-field-label">描述</span><input class="tool-desc-input" data-tool-id="${e(t.id)}" data-field="description" value="${e(t.description)}" maxlength="2000" spellcheck="false"></div><div class="tool-field tool-field-top"><span class="tool-field-label">参数</span><div class="schema-editor"><pre class="schema-highlight" aria-hidden="true">${V.hlJSON(V.prettyJSON(t.schema))}\n</pre><textarea class="tool-schema-input mono" data-tool-id="${e(t.id)}" data-field="schema" rows="6" spellcheck="false">${e(V.prettyJSON(t.schema))}</textarea></div></div></div><div class="tool-setting-side">${custom}<button type="button" role="switch" aria-checked="${!!t.enabled}" class="switch" data-action="tool-toggle" data-id="${e(t.id)}" aria-label="启用 ${e(t.id)}"></button></div></div>`;
         }).join('');
         return `<div class="panel settings-section"><div class="row-between"><h2>Agent 工具</h2>${pill('服务端存储')}</div><p class="small muted mb-20">设置 Agent 会话可用的内置工具: 启用开关、名称、描述与参数 schema 随下一次请求生效; 禁用的工具不再发给模型, 也不再占用上下文。参数 schema 需为合法 JSON 对象。</p>${rows}<div class="settings-actions row wrap">${btn('save-tools','保存','check','primary')}${btn('reset-tools','恢复默认','refresh','flat')}</div></div>`;
       })(),
@@ -3849,6 +3849,8 @@ CS.markdown = text => {
     const savedTop = conv ? conv.scrollTop : 0;
     const hadConv = !!conv;
     _origRender();
+    // 工具设置的参数编辑框需要按内容自适应高度, 在每次渲染后同步
+    CS.sizeSchemaEditors();
     const el = document.getElementById('sys-stats');
     if (el && _sysStatsHtml) el.innerHTML = _sysStatsHtml;
     if (hadConv) { const fresh = document.querySelector('.conversation'); if (fresh) fresh.scrollTop = savedTop; }
@@ -3957,13 +3959,22 @@ CS.markdown = text => {
     try { CS.ui.contextInfo = await CS.api.request('/context-info'); } catch {}
     CS.updateContextRing();
   };
-  // 参数编辑框: 透明 textarea 叠在高亮 pre 上, 输入与滚动实时同步
+  // 参数编辑框: 透明 textarea 叠在高亮 pre 上, 输入时刷新高亮; 高度由 sizeSchemaEditors 统一管理
+  CS.sizeSchemaEditors = () => {
+    document.querySelectorAll('.schema-editor').forEach(ed => {
+      const ta = ed.querySelector('.tool-schema-input');
+      if (!ta) return;
+      ta.style.height = 'auto';
+      ta.style.height = `${ta.scrollHeight}px`;
+      const pre = ed.querySelector('.schema-highlight');
+      if (pre) pre.style.height = `${ta.scrollHeight}px`;
+    });
+  };
   CS.syncSchemaHighlight = ta => {
     const pre = ta.closest('.schema-editor')?.querySelector('.schema-highlight');
     if (!pre) return;
     pre.innerHTML = `${CS.views.hlJSON(CS.views.prettyJSON(ta.value))}\n`;
-    pre.scrollTop = ta.scrollTop;
-    pre.scrollLeft = ta.scrollLeft;
+    CS.sizeSchemaEditors();
   };
   const updateStreamingDom = reply => {
     const contentEl = document.querySelector(`.agent-intro[data-stream-at="${CSS.escape(reply.at)}"]`);
@@ -4660,10 +4671,8 @@ CS.markdown = text => {
     else if(id==='max-mito') CS.ui.maxMito=target.value;
     else if(target.dataset?.toolId){ const t=(CS.ui.toolDraft||[]).find(x=>x.id===target.dataset.toolId); if(t) t[target.dataset.field]=target.value; if(target.dataset.field==='schema') CS.syncSchemaHighlight(target); }
   });
-  // scroll 不冒泡, 用捕获阶段统一接管参数编辑框的滚动同步
-  document.addEventListener('scroll', event => {
-    if (event.target?.classList?.contains('tool-schema-input')) CS.syncSchemaHighlight(event.target);
-  }, true);
+  // 窗口尺寸变化会改变软换行位置, 重新计算两层高度
+  window.addEventListener('resize', () => CS.sizeSchemaEditors());
   document.addEventListener('change',event=>{
     const target=event.target;
     if(target.id==='file-input'){handleFiles(target.files);}
