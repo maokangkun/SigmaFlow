@@ -63,5 +63,6 @@ CS.icons = {
   arrowleft: '<path d="m14 5-7 7 7 7"/>',
   keyboard: '<rect x="2" y="5" width="20" height="14" rx="3"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M10 13h.01M14 13h.01M18 13h.01M7 16h10"/>',
   logout: '<path d="M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4M16 17l5-5-5-5M21 12H9"/>',
+  alert: '<path d="M12 3.5 2.5 20.5h19L12 3.5Z"/><path d="M12 10v4.5M12 17.6h.01"/>',
 };
 CS.icon = (name, cls = '', size = 18) => `<svg class="icon ${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${CS.icons[name] || CS.icons.grid}</svg>`;

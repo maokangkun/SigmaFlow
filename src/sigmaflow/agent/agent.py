@@ -39,8 +39,10 @@ class Agent:
             debug=False,
             support_tool=False,
             on_delta=None,
+            on_tool=None,
         ):
         self.on_delta = on_delta  # 流式回调: 每收到一段增量文本时调用 on_delta(text)
+        self.on_tool = on_tool  # 工具事件回调: on_tool({"kind": "call"|"result", "name": ..., ...})
         self.method = method
         self.model = model
         self.system = system
@@ -121,6 +123,8 @@ class Agent:
             "messages": [{"role": "system", "content": self.system if not subagent else self.sub_system}]+copy.deepcopy(messages[1:]),
             "last_response": None,
             "cost_tokens": 0,
+            "completion_tokens": 0,  # 辅助上屏 tok/s 统计: 与 cost_tokens 分开, 只计补全侧
+            "prompt_tokens": 0,  # 输入侧 token, 多轮工具循环时逐轮累加
             "cost_time": 0,
             "used_tools": [],
             "used_skills": [],
@@ -191,10 +195,15 @@ class Agent:
                             )
                             response.content = sorted(response.content, key=lambda x: 0 if x.type == "thinking" else 1)
                             info["cost_tokens"] += response.usage.input_tokens + response.usage.output_tokens
+                            info["prompt_tokens"] += getattr(response.usage, "input_tokens", 0) or 0
+                            info["completion_tokens"] += getattr(response.usage, "output_tokens", 0) or 0
                             messages.append({"role": "assistant", "content": response.content})
                             info["messages"].append({"role": "assistant", "content": [i.dict() for i in response.content]})
-                        case "openai" if self.on_delta is not None and not usable_tools:
-                            # 流式路径: 逐块推送增量文本/思考, 同时累积完整响应供后续逻辑使用
+                        case "openai" if self.on_delta is not None:
+                            import sys as _sys; print("DBG: STREAMING CASE", file=_sys.stderr)
+                            # 流式路径: 逐块推送增量文本/思考, 同时累积完整响应供后续逻辑使用。
+                            # 支持工具调用: 增量聚合 tool_calls 分片, 聚合结果走与非流式
+                            # 分支相同的工具执行路径。
                             class _DeltaMsg:
                                 pass
 
@@ -204,9 +213,17 @@ class Agent:
                                     self.prompt_tokens = 0
                                     self.completion_tokens = 0
 
+                            class _ToolCall:
+                                def __init__(self, id, name, arguments):
+                                    self.id, self.type = id, "function"
+                                    self.function = type("F", (), {"name": name, "arguments": arguments})()
+
                             response_text_parts, reasoning_parts = [], []
+                            tool_calls_acc: list = []
                             usage = _DeltaUsage()
                             stream_kwargs = {"stream": True, "stream_options": {"include_usage": True}}
+                            if usable_tools:
+                                stream_kwargs |= {"tools": usable_tools, "tool_choice": "auto"}
                             try:
                                 _stream = self.client.chat.completions.create(
                                     model=self.model,
@@ -216,11 +233,13 @@ class Agent:
                                 )
                             except Exception:
                                 # 部分兼容网关不支持 stream_options, 去掉后重试
+                                _fallback = dict(stream_kwargs)
+                                _fallback.pop("stream_options", None)
                                 _stream = self.client.chat.completions.create(
                                     model=self.model,
                                     messages=messages,
                                     max_tokens=MAX_TOKENS,
-                                    stream=True,
+                                    **_fallback
                                 )
                             for chunk in _stream:
                                 if getattr(chunk, "usage", None):
@@ -245,10 +264,31 @@ class Agent:
                                         self.on_delta(piece)
                                     except Exception:
                                         pass
+                                for tc in (getattr(delta, "tool_calls", None) or []):
+                                    if tc.index is None:
+                                        tc.index = len(tool_calls_acc)
+                                    while len(tool_calls_acc) <= tc.index:
+                                        tool_calls_acc.append({"id": None, "type": "function", "function": {"name": "", "arguments": ""}})
+                                    if tc.id:
+                                        tool_calls_acc[tc.index]["id"] = tc.id
+                                    if getattr(tc.function, "name", None):
+                                        tool_calls_acc[tc.index]["function"]["name"] += tc.function.name
+                                    if getattr(tc.function, "arguments", None):
+                                        tool_calls_acc[tc.index]["function"]["arguments"] += tc.function.arguments
                             info["cost_tokens"] += usage.total_tokens
+                            info["prompt_tokens"] += usage.prompt_tokens or 0
+                            info["completion_tokens"] += usage.completion_tokens or 0
                             msg = _DeltaMsg()
                             msg.content = "".join(response_text_parts)
-                            msg.tool_calls = None
+                            msg.tool_calls = [_ToolCall(t["id"], t["function"]["name"], t["function"]["arguments"]) for t in tool_calls_acc] or None
+                            if msg.tool_calls:
+                                # 与非流式分支一致: 工具调用轮的 assistant 消息要写回 messages,
+                                # 供下一轮连同 tool 结果一起发送
+                                m = {"role": "assistant"}
+                                if msg.content: m["content"] = msg.content
+                                m["tool_calls"] = tool_calls_acc
+                                messages.append(m)
+                                info["messages"].append(m)
                             response = _DeltaMsg()
                             response.usage = usage
                             response.choices = [_DeltaMsg()]
@@ -264,6 +304,8 @@ class Agent:
                             if isinstance(response, str) or not hasattr(response, "usage"):
                                 raise ValueError(f"Unexpected response from provider: {str(response)[:200]}")
                             info["cost_tokens"] += getattr(response.usage, "total_tokens", 0) if response.usage else 0
+                            info["prompt_tokens"] += getattr(response.usage, "prompt_tokens", 0) if response.usage else 0
+                            info["completion_tokens"] += getattr(response.usage, "completion_tokens", 0) if response.usage else 0
                             assert response.choices is not None, f"Response is None: {response}"
                             msg = response.choices[0].message
                             m = {"role": "assistant"}
@@ -408,6 +450,11 @@ class Agent:
                         print(f"{Prompt.Assistant}{block}")
 
                 if block.type in ["tool_use", "function"] and func:
+                    if self.on_tool is not None:
+                        try:
+                            self.on_tool({"kind": "call", "name": func, "args": inp if isinstance(inp, dict) else str(inp)})
+                        except Exception:
+                            pass
                     manual_compact = func == "compact"
                     if func == "task":
                         console.rule("Subagent Started", style="bold red")
@@ -439,6 +486,11 @@ class Agent:
                     else:
                         print(f"{Prompt.Tool}[magenta]{func.upper()}[/]\n{out_prt}")
 
+                    if self.on_tool is not None:
+                        try:
+                            self.on_tool({"kind": "result", "name": func, "result": str(output)[:2000]})
+                        except Exception:
+                            pass
                     match self.method:
                         case "anthropic":
                             results.append({"type": "tool_result", "tool_use_id": block.id, "content": output})

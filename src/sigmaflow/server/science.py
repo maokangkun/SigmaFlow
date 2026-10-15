@@ -14,6 +14,7 @@ contract stays unchanged.
 
 import asyncio
 import json
+import math
 import os
 import time
 import uuid
@@ -71,6 +72,7 @@ class ModelIn(BaseModel):
     providerId: str = ""
     model: str = ""
     isDefault: bool = False
+    contextWindow: Optional[int] = None
 
 
 class ProjectIn(BaseModel):
@@ -80,6 +82,7 @@ class ProjectIn(BaseModel):
     tags: Optional[list] = None
     icon: str = "folder"
     remote: Optional[str] = None
+    dir: Optional[str] = None
 
 
 class ConversationIn(BaseModel):
@@ -144,6 +147,18 @@ def _list_provider_models(base_url: str, api_key: str) -> dict:
     except Exception:
         pass
     return {"ok": True, "models": sorted(set(names)), "error": None}
+
+
+def _model_context_window(model_name: str, override: Optional[int] = None) -> int:
+    """Resolve a model's context window (tokens). Explicit configuration
+    takes precedence; otherwise fall back to the agent's per-model table."""
+    if override and override > 0:
+        return int(override)
+    try:
+        from sigmaflow.agent.conf import MAX_MODEL_LEN
+        return int(MAX_MODEL_LEN.get((model_name or "").lower(), MAX_MODEL_LEN.get("default", 131072)))
+    except Exception:
+        return 131072
 
 
 class ScienceModelStore:
@@ -281,6 +296,7 @@ class ScienceModelStore:
             "model": model.get("model") or "",
             "keyHint": provider.get("keyHint"),
             "isDefault": bool(model.get("isDefault")),
+            "contextWindow": _model_context_window(model.get("model"), model.get("contextWindow")),
             "createdAt": model.get("createdAt"),
             "updatedAt": model.get("updatedAt"),
         }
@@ -317,6 +333,11 @@ class ScienceModelStore:
         model["isDefault"] = bool(payload.isDefault) or not any(
             m.get("isDefault") for m in self.models.values() if m["id"] != model["id"]
         )
+        # contextWindow 仅接受正整数, 其余取值一律清除该字段
+        if payload.contextWindow and payload.contextWindow > 0:
+            model["contextWindow"] = int(payload.contextWindow)
+        else:
+            model.pop("contextWindow", None)
         if model["isDefault"]:
             for other in self.models.values():
                 other["isDefault"] = other["id"] == model["id"]
@@ -501,6 +522,10 @@ class ScienceAPI:
                 "transports": {"http": True, "sse": True, "websocket": "/api/ws"},
             }
 
+        @router.get("/system")
+        async def system_stats():
+            return await asyncio.to_thread(_system_stats)
+
         @router.post("/runs")
         async def create_run(payload: RunCreate, request: Request):
             _check_origin(request)
@@ -568,6 +593,12 @@ class ScienceAPI:
         async def list_models():
             return {"models": self.model_store.list_models()}
 
+        @router.get("/context-info")
+        async def context_info():
+            """Token estimate of the agent's fixed request overhead (system
+            prompt + tool definitions), used by the ring widget."""
+            return await asyncio.to_thread(_agent_context_sizes)
+
         @router.post("/models")
         async def save_model(payload: ModelIn, request: Request):
             _check_origin(request)
@@ -589,6 +620,23 @@ class ScienceAPI:
         async def list_projects():
             return {"projects": self.project_store.list_projects()}
 
+        @router.get("/fs/dirs")
+        async def list_dirs(request: Request, path: str = ""):
+            _check_origin(request)
+            root = os.environ.get("SIGMAFLOW_PROJECTS_DIR") or os.path.join(os.path.expanduser("~"), "projects")
+            base = os.path.realpath(os.path.expanduser(path)) if path else os.path.realpath(root)
+            dirs, error = [], ""
+            try:
+                for entry in os.scandir(base):
+                    if entry.is_dir() and not entry.name.startswith("."):
+                        dirs.append({"name": entry.name, "path": entry.path})
+            except OSError:
+                error = "目录不存在或不可访问"
+            dirs.sort(key=lambda d: d["name"].lower())
+            parent = os.path.dirname(base.rstrip("/")) or "/"
+            return {"root": root, "path": base, "parent": parent if parent != base else None,
+                    "dirs": dirs, "error": error}
+
         @router.post("/projects")
         async def save_project(payload: ProjectIn, request: Request):
             _check_origin(request)
@@ -608,10 +656,11 @@ class ScienceAPI:
             base_url, api_key, model_name = _resolve_chat(self.model_store, payload.modelId)
             messages = [m for m in (payload.messages or []) if isinstance(m, dict)]
             try:
-                content = await asyncio.to_thread(_run_agent_chat, base_url, api_key, model_name, messages)
+                stats: dict = {}
+                content = await asyncio.to_thread(_run_agent_chat, base_url, api_key, model_name, messages, None, None, None, stats)
             except RuntimeError as err:
                 raise HTTPException(status_code=400, detail=str(err))
-            return {"content": content}
+            return {"content": content, "tokens": stats.get("completion_tokens") or 0, "promptTokens": stats.get("prompt_tokens") or 0}
 
         @router.get("/conversations")
         async def list_conversations():
@@ -722,6 +771,8 @@ class ScienceAPI:
             # 正在进行的 chat.send 流式任务; 生成期间接收循环继续处理
             # 其他 action(ping/run.subscribe 等), 不再被长生成阻塞。
             chat_tasks: Set[asyncio.Task] = set()
+            # 请求级停止标记: chat.stop 置 True, 流式循环轮询后自行收尾
+            chat_stops: dict = {}
 
             async def reply(event: str, request_id, data=None):
                 message: Dict[str, Any] = {"event": event, "data": data if data is not None else {}}
@@ -840,6 +891,8 @@ class ScienceAPI:
                     await reply("provider.models", request_id, result)
                 elif action == "model.list":
                     await reply("model.list", request_id, {"models": self.model_store.list_models()})
+                elif action == "context.info":
+                    await reply("context.info", request_id, await asyncio.to_thread(_agent_context_sizes))
                 elif action == "model.save":
                     try:
                         payload = ModelIn(
@@ -847,6 +900,7 @@ class ScienceAPI:
                             providerId=data.get("providerId", ""),
                             model=data.get("model", ""),
                             isDefault=bool(data.get("isDefault")),
+                            contextWindow=data.get("contextWindow") or None,
                         )
                     except Exception:
                         await fail(request_id, "Invalid model payload")
@@ -920,6 +974,11 @@ class ScienceAPI:
                         await fail(request_id, "Conversation not found")
                         return
                     await reply("conversation.deleted", request_id, {"conversations": self.project_store.list_conversations()})
+                elif action == "chat.stop":
+                    # 置位停止标记, 流式循环会在收尾时补发 chat.done
+                    if request_id in chat_stops:
+                        chat_stops[request_id] = True
+                    await reply("chat.stop.ack", request_id, {"stopped": True})
                 elif action == "chat.send":
                     try:
                         base_url, api_key, model_name = _resolve_chat(self.model_store, data.get("modelId"))
@@ -930,46 +989,63 @@ class ScienceAPI:
                     if not messages:
                         await fail(request_id, "消息列表为空")
                         return
-
+                    # 同一 requestId 重发前先复位停止标记
+                    chat_stops[request_id] = False
+                    # 工作线程阻塞产出事件, 经线程安全回调投递回队列
                     async def stream_chat() -> None:
                         loop = asyncio.get_running_loop()
                         chat_queue: asyncio.Queue = asyncio.Queue()
                         content: list = []
+                        stats: dict = {}
                         closed = False
-
+                        # 事件元组 (kind, value): delta/think/tool/done/error
                         def work():
                             try:
                                 _stream_agent_chat(base_url, api_key, model_name, messages,
                                     lambda d: loop.call_soon_threadsafe(chat_queue.put_nowait, ("delta", d)),
-                                    lambda t: loop.call_soon_threadsafe(chat_queue.put_nowait, ("think", t)))
+                                    lambda t: loop.call_soon_threadsafe(chat_queue.put_nowait, ("think", t)),
+                                    lambda e: loop.call_soon_threadsafe(chat_queue.put_nowait, ("tool", e)),
+                                    stats)
                                 loop.call_soon_threadsafe(chat_queue.put_nowait, ("done", None))
                             except Exception as err:
                                 loop.call_soon_threadsafe(chat_queue.put_nowait, ("error", str(err)))
-
+                        # to_thread 在默认执行器中运行 work, 不阻塞事件循环
                         worker = asyncio.create_task(asyncio.to_thread(work))
                         while not closed:
+                            if chat_stops.get(request_id):
+                                # 客户端请求停止: 直接补发 chat.done(stopped=true)
+                                closed = True
+                                try:
+                                    await ws.send_json({"event": "chat.done", "requestId": request_id,
+                                                        "data": {"content": "".join(content), "stopped": True}})
+                                except Exception:
+                                    pass
+                                break
                             kind, value = await chat_queue.get()
                             if kind == "delta":
                                 content.append(value)
                                 event, message = "chat.delta", {"event": "chat.delta", "requestId": request_id, "data": {"delta": value}}
                             elif kind == "think":
                                 event, message = "chat.think", {"event": "chat.think", "requestId": request_id, "data": {"delta": value}}
+                            elif kind == "tool":
+                                event, message = "chat.tool", {"event": "chat.tool", "requestId": request_id, "data": {"tool": value}}
                             elif kind == "done":
-                                event, message = "chat.done", {"event": "chat.done", "requestId": request_id, "data": {"content": "".join(content)}}
+                                event, message = "chat.done", {"event": "chat.done", "requestId": request_id, "data": {"content": "".join(content), "tokens": stats.get("completion_tokens") or 0, "promptTokens": stats.get("prompt_tokens") or 0}}
                             else:
                                 event, message = "error", {"event": "error", "requestId": request_id, "data": {"error": value}}
                             try:
                                 await ws.send_json(message)
                             except Exception:
-                                # 客户端已断开: 停止向 socket 写, 但继续排空队列直到生成线程结束,
-                                # 避免 call_soon_threadsafe 回调堆积。
+                                # 发送失败一般意味着客户端已断开
+                                # 置位 closed 以退出循环并回收工作线程
                                 closed = True
                             if event in ("chat.done", "error"):
                                 break
                         await worker
-
-                    # 在后台任务中流式输出, 接收循环立即可继续处理后续消息。
-                    # 并发的 chat.send 通过 requestId 区分, 互不干扰。
+                        chat_stops.pop(request_id, None)
+                    # 流式任务与请求解耦: handle 立即返回, 事件异步推送
+                    # 停止通过 chat_stops 轮询生效, 不强杀工作线程
+                    # 任务句柄收进 chat_tasks, 服务退出时统一取消
                     chat_task = asyncio.create_task(stream_chat())
                     chat_tasks.add(chat_task)
                     chat_task.add_done_callback(chat_tasks.discard)
@@ -1107,6 +1183,7 @@ class ScienceProjectStore:
         project["tags"] = [_clip(t, 50) for t in (payload.tags or [])][:5]
         project["icon"] = _clip(payload.icon or "folder", 50)
         project["remote"] = _clip(payload.remote, 500) if payload.remote else None
+        project["dir"] = _clip(payload.dir, 500) if payload.dir else None
         project["updatedAt"] = now
         self._save()
         return self._public_project(project)
@@ -1147,7 +1224,7 @@ class ScienceProjectStore:
             conv = {"id": payload.id or f"cn-{uuid.uuid4().hex[:12]}", "createdAt": now}
             self.conversations[conv["id"]] = conv
         conv["title"] = _clip(payload.title, 300) or "新会话"
-        conv["projectId"] = payload.projectId if (payload.projectId and payload.projectId in self.projects) else None
+        conv["projectId"] = payload.projectId if  payload.projectId and payload.projectId in self.projects else  None
         if payload.pinned is not None:
             conv["pinned"] = bool(payload.pinned)
         elif "pinned" not in conv:
@@ -1156,12 +1233,43 @@ class ScienceProjectStore:
             conv["archived"] = bool(payload.archived)
         elif "archived" not in conv:
             conv["archived"] = False
-        if payload.content:  # 空列表/None 都视为"不更新内容", 防止空的注册请求清掉已同步的对话
+        if payload.content:
             keep = []
             for msg in payload.content[-100:]:
                 if not isinstance(msg, dict):
                     continue
-                keep.append({"role": _clip(str(msg.get("role", "")), 16), "content": _clip(str(msg.get("content", "")), 20000)})
+                item: dict[str, str] = {"role": _clip(str(msg.get("role", "")), 16), "content": _clip(str(msg.get("content", "")), 20000)}
+                # 保留思考与工具调用记录, 便于前端回放
+                # 每条消息截断到固定长度, 防止历史无限膨胀
+                reasoning = msg.get("reasoning")
+                if isinstance(reasoning, str) and reasoning.strip():
+                    item["reasoning"] = _clip(reasoning, 20000)
+                tools = msg.get("tools")
+                if isinstance(tools, list):
+                    saved_tools = []
+                    for t in tools:
+                        if not isinstance(t, dict):
+                            continue
+                        saved_tools.append({"name":
+                                    _clip(str(t.get("name", "")), 200),
+                            "args": t.get("args") if isinstance(t.get("args"), (dict, list)) else {},
+                            "result": _clip(str(t.get("result", "")), 5000)
+                        })
+                    if saved_tools:
+                        item["tools"] = saved_tools
+                if msg.get("tokens") is not None:
+                    item["tokens"] = msg.get("tokens")
+                if msg.get("promptTokens") is not None:
+                    item["promptTokens"] = msg.get("promptTokens")
+                if msg.get("error") is not None:
+                    _err = msg.get("error")
+                    if isinstance(_err, dict):
+                        item["error"] = {"message": _clip(str(_err.get("message", "")), 2000), "detail": _clip(str(_err.get("detail", "")), 20000)}
+                    else:
+                        item["error"] = {"message": _clip(str(_err), 2000)}
+                if msg.get("elapsed") is not None:
+                    item["elapsed"] = msg.get("elapsed")
+                keep.append(item)
             conv["content"] = keep
         conv["updatedAt"] = now
         self._save()
@@ -1207,17 +1315,18 @@ def _make_chat_delta_callback(on_delta, on_reasoning):
     return _cb
 
 
-def _run_agent_chat(base_url: str, api_key: str, model_name: str, messages: list, on_delta=None, on_reasoning=None) -> str:
+def _run_agent_chat(base_url: str, api_key: str, model_name: str, messages: list, on_delta=None, on_reasoning=None, on_tool=None, stats: dict = None) -> str:
     """Run a chat through the SigmaFlow agent/agent.Agent stack.
 
     Builds an Agent (openai-compatible method) against the configured
     provider, prepends the agent system prompt, and returns the final
-    assistant text. Tool support is off for the web chat path.
+    assistant text. Tool/MCP/skill support is enabled: tools execute on
+    this server (bash, file IO, MCP servers, load_skill).
     """
     try:
         from sigmaflow.agent.agent import Agent
     except ModuleNotFoundError:
-        # 未 pip install 时回退到源码目录: 本文件位于 src/sigmaflow/server/, 上溯 3 级即 src 根
+        # 兼容直接以源码目录运行: 把仓库根目录加入 sys.path
         import sys as _sys
         _src_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         if _src_root not in _sys.path:
@@ -1225,28 +1334,34 @@ def _run_agent_chat(base_url: str, api_key: str, model_name: str, messages: list
         from sigmaflow.agent.agent import Agent
 
     convo = [{"role": m.get("role"), "content": m.get("content", "")} for m in messages if m.get("role") in ("user", "assistant")]
-    # cur_turn counts prior assistant messages, so give the loop enough headroom
-    max_turn = max(1, sum(1 for m in convo if m["role"] == "assistant") + 1)
+    # 仅保留 user/assistant 两类角色, 其余消息直接丢弃
+    # 轮次上限按助手消息数加预留余量, 防止无限循环
+    max_turn = max(1, sum(1 for m in convo if m["role"] == "assistant") + 17)
     agent = Agent(
         method="openai",
         model=model_name,
         base_url=base_url,
         api_key=api_key or "sk-empty",
-        support_tool=False,
-        retry=2,               # 快速失败, 不要把错误拖成分钟级等待
+        support_tool=True,
+        retry=2,
         max_turn=max_turn,
-        on_delta=_make_chat_delta_callback(on_delta, on_reasoning),  # 流式回调(文本/思考)
+        on_delta=_make_chat_delta_callback(on_delta, on_reasoning),
+        on_tool=on_tool,
     )
-    agent.client.timeout = 90   # 单次请求 90s 超时(openai 默认 600s, 会让前端像"永不结束")
+    agent.client.timeout = 90
     agent.client.max_retries = 1
     info = agent(convo, is_print=False, max_turn=max_turn)
+    if stats is not None and isinstance(info, dict):
+        # 回填本次请求的 token 用量, 供 /chat 返回统计
+        stats["completion_tokens"] = info.get("completion_tokens") or 0
+        stats["prompt_tokens"] = info.get("prompt_tokens") or 0
     last = info["last_response"] if isinstance(info, dict) else None
 
     if not last:
         raise RuntimeError("模型没有返回内容")
     if isinstance(last, str):
         return last
-    # openai-style response object
+
     choice = getattr(last, "choices", None)
     if choice:
         return choice[0].message.content or ""
@@ -1256,12 +1371,47 @@ def _run_agent_chat(base_url: str, api_key: str, model_name: str, messages: list
     return str(content or "")
 
 
-def _stream_agent_chat(base_url: str, api_key: str, model_name: str, messages: list, on_delta, on_reasoning=None):
+_AGENT_CONTEXT_SIZES: Dict[str, int] = {}
+
+
+def _agent_context_sizes() -> Dict[str, int]:
+    """Estimate the token cost of the agent's fixed request overhead:
+    the system prompt and the (OpenAI-format) tool definitions.
+
+    Rebuilds the exact payloads `_run_agent_chat` sends (method=openai,
+    support_tool=True) and estimates tokens from character counts. The
+    divisor was calibrated against real glm-5.3 usage numbers (a full
+    fresh-request overhead of ~2780 prompt tokens).
+    """
+    if _AGENT_CONTEXT_SIZES:
+        return _AGENT_CONTEXT_SIZES
+    try:
+        from sigmaflow.agent.agent import Agent
+    except ModuleNotFoundError:
+        # 同 _run_agent_chat: 兜底把仓库根目录加入 sys.path
+        import sys as _sys
+        _src_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        if _src_root not in _sys.path:
+            _sys.path.insert(0, _src_root)
+        from sigmaflow.agent.agent import Agent
+
+    agent = Agent(method="openai", model="estimate", base_url="http://127.0.0.1:9/v1",
+                  api_key="sk-empty", support_tool=True)
+    tools_wire = json.dumps(agent.tools, ensure_ascii=False, separators=(",", ":"))
+    sizes = {
+        "systemTokens": math.ceil(len(agent.system) / 3.7),
+        "toolsTokens": math.ceil(len(tools_wire) / 3.7),
+    }
+    _AGENT_CONTEXT_SIZES.update(sizes)
+    return sizes
+
+
+def _stream_agent_chat(base_url: str, api_key: str, model_name: str, messages: list, on_delta, on_reasoning=None, on_tool=None, stats: dict = None):
     """Streaming chat. Runs synchronously on the caller's worker thread
     (the WS handler invokes it via asyncio.to_thread); on_delta is called
     on this same thread and forwarded into the asyncio queue by the
     caller with loop.call_soon_threadsafe."""
-    return _run_agent_chat(base_url, api_key, model_name, messages, on_delta=on_delta, on_reasoning=on_reasoning)
+    return _run_agent_chat(base_url, api_key, model_name, messages, on_delta=on_delta, on_reasoning=on_reasoning, on_tool=on_tool, stats=stats)
 
 
 def _check_origin(request: Request):
@@ -1270,3 +1420,105 @@ def _check_origin(request: Request):
     host = request.headers.get("host", "")
     if origin and origin not in (f"http://{host}", f"https://{host}"):
         raise HTTPException(status_code=403, detail="Cross-origin writes are disabled in the demo server")
+# ==================== 系统状态面板 ====================
+# 全局缓存: 网速上次采样与 GPU 最近一次查询结果
+# nvidia-smi 结果缓存 5 秒, 避免每次 /system 请求都 fork 子进程
+# 网速按两次请求间隔内的计数差值估算
+# 首次请求没有基准, 网速恒为 0
+_sys_state: Dict[str, Any] = {"net": None, "gpu_at": 0.0, "gpu": None}
+
+
+def _gpu_stats() -> list:
+    """nvidia-smi 查询 GPU 利用率/显存; 不可用时静默返回空列表(结果缓存 5s)。"""
+    now = time.time()
+    if _sys_state["gpu"] is not None and now - _sys_state["gpu_at"] < 5:
+        return _sys_state["gpu"]
+    gpus: list = []
+    try:
+        import subprocess
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,utilization.gpu,memory.used,memory.total",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=3, check=True).stdout
+        for line in out.strip().splitlines():
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) == 4:
+                gpus.append({"name": parts[0], "usage": float(parts[1]),
+                             "mem_used_gb": round(float(parts[2]) / 1024, 1),
+                             "mem_total_gb": round(float(parts[3]) / 1024, 1)})
+    except Exception:
+        gpus = []
+    _sys_state["gpu"], _sys_state["gpu_at"] = gpus, now
+    return gpus
+
+
+def _system_stats() -> Dict[str, Any]:
+    """Chat 页状态栏数据: 系统 / CPU / 内存 / 磁盘 / GPU / 网速。"""
+    import platform
+    import psutil
+    # 发行版名称优先取 PRETTY_NAME
+    # 读取失败时保留 uname 兜底
+    os_name = f"{platform.system()} {platform.release()}"
+    try:
+        with open("/etc/os-release", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("PRETTY_NAME="):
+                    os_name = line.split("=", 1)[1].strip().strip('"')
+                    break
+    except Exception:
+        pass
+    # CPU 型号取自 /proc/cpuinfo
+    # 缺文件时保留空串
+    cpu_model = ""
+    try:
+        with open("/proc/cpuinfo", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("model name"):
+                    cpu_model = line.split(":", 1)[1].strip()
+                    break
+    except Exception:
+        pass
+    # 磁盘统计指向数据目录, /data 作为常见数据盘一并展示
+    # 同一设备只统计一次
+    disk_path = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
+        os.path.expanduser("~"), ".sigmaflow", "science")
+    disks: list = []
+    disk = {"used_gb": 0, "total_gb": 0, "percent": 0, "path": disk_path}
+    seen_devs: set = set()
+    for path in (disk_path, "/data"):
+        try:
+            du = psutil.disk_usage(path)
+            dev = os.stat(path).st_dev
+            if dev in seen_devs:
+                continue
+            seen_devs.add(dev)
+            disks.append({"used_gb": round(du.used / 2**30, 1), "total_gb": round(du.total / 2**30, 1),
+                          "percent": du.percent, "path": path})
+        except Exception:
+            continue
+    if disks:
+        disk = disks[0]
+    # 无可用磁盘统计时使用零值占位
+    # 网速按两次采样差值估算
+    up_bps = down_bps = 0.0
+    net = psutil.net_io_counters()
+    prev = _sys_state.get("net")
+    if prev:
+        dt = time.time() - prev[0]
+        if dt > 0:
+            up_bps = max(0,  net.bytes_sent - prev[1].bytes_sent ) / dt
+            down_bps = max(0,  net.bytes_recv - prev[1].bytes_recv ) / dt
+    _sys_state["net"] = (time.time(), net)
+    # 快照存入全局状态, 供下次计算差值
+    vm = psutil.virtual_memory()
+    return {
+        "os": os_name,
+        "cpu": {"model": cpu_model, "cores": psutil.cpu_count() or 0,
+                "usage": psutil.cpu_percent(interval=None)},
+        "memory": {"used_gb": round((vm.total - vm.available) / 2**30, 1),
+                   "total_gb": round(vm.total / 2**30, 1), "percent": vm.percent},
+        "disk": disk,
+        "disks": disks,
+        "gpus": _gpu_stats(),
+        "net": {"up_bps": round(up_bps, 1), "down_bps": round(down_bps, 1)},
+    }

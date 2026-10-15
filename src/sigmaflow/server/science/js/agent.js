@@ -32,7 +32,7 @@
       return parsed.protocol.replace('https', 'wss').replace('http', 'ws') + '//' + parsed.host + parsed.pathname + '/ws';
     },
     async request(path, options = {}) {
-      const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 15000);
+      const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), options.timeout || 15000);
       try {
         const response = await fetch(CS.api.url(path), { ...options, credentials: 'include', headers: { 'Content-Type': 'application/json', ...options.headers }, signal: controller.signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -55,13 +55,13 @@
     }
     return CS.api.request(httpPath, { method: httpMethod, body: body ? JSON.stringify(body) : undefined });
   };
-  CS.api.chat = async (messages, onDelta, onThink) => {
+  CS.api.chat = async (messages, onDelta, onThink, onTool) => {
     if (await CS.api.ws.connect()) {
-      const data = await CS.api.ws.chat({ modelId: CS.state.settings.modelId, messages }, onDelta, onThink);
-      return data.content;
+      const data = await CS.api.ws.chat({ modelId: CS.state.settings.modelId, messages }, onDelta, onThink, onTool);
+      return { content: data.content, tokens: data.tokens || 0, promptTokens: data.promptTokens || 0 };
     }
-    const data = await CS.api.request('/chat', { method: 'POST', body: JSON.stringify({ modelId: CS.state.settings.modelId, messages }) });
-    return data.content;
+    const data = await CS.api.request('/chat', { method: 'POST', timeout: 600000, body: JSON.stringify({ modelId: CS.state.settings.modelId, messages }) });
+    return { content: data.content, tokens: data.tokens || 0, promptTokens: data.promptTokens || 0 };
   };
   CS.api.friendlyError = error => /fetch/i.test(error.message)
     ? '无法连接服务器：请确认 sigmaflow serve 已启动、接口地址与页面同源（如 /api），并已重启到最新代码。'
@@ -71,7 +71,7 @@
   // requestId, interleaved with pushed "state" snapshots for subscribed runs.
   CS.api.ws = {
     socket: null, state: 'closed', seq: 0, connecting: null, failedAt: 0,
-    pending: new Map(), onState: new Map(),
+    pending: new Map(), onState: new Map(), activeChats: new Set(),
     open() { return this.socket && this.socket.readyState === 1; },
     connect(timeout = 3500) {
       if (this.open()) return Promise.resolve(true);
@@ -93,9 +93,15 @@
             if (handler) handler(message.data);
           } else if (message.requestId && CS.api.ws.pending.has(message.requestId)) {
             const entry = CS.api.ws.pending.get(message.requestId);
+            // 长推理场景下生成可持续很久: 每收到新分片就重置空闲计时,
+            // 只在连续无活动超过阈值时才判定超时
+            if (message.event === 'chat.delta' || message.event === 'chat.think' || message.event === 'chat.tool') entry.resetTimer && entry.resetTimer();
+            if (message.event === 'chat.stop.ack') { return; }  // 停止确认不是聊天回复, 等真正的 chat.done
             if (message.event === 'chat.think' && entry.onThink) { entry.onThink(message.data?.delta || ''); return; }
+            if (message.event === 'chat.tool' && entry.onTool) { entry.onTool(message.data?.tool || {}); return; }
             if (message.event === 'chat.delta' && entry.onDelta) { entry.onDelta(message.data?.delta || ''); return; }
             CS.api.ws.pending.delete(message.requestId);
+            CS.api.ws.activeChats.delete(message.requestId);
             clearTimeout(entry.timer);
             message.event === 'error' ? entry.reject(new Error(message.data?.error || '接口返回错误')) : entry.resolve(message.data);
           }
@@ -108,6 +114,7 @@
     _fail(reason) {
       for (const entry of this.pending.values()) { clearTimeout(entry.timer); entry.reject(reason); }
       this.pending.clear();
+      this.activeChats.clear();
       for (const handler of this.onState.values()) handler(null, reason);
     },
     send(action, payload = {}, timeout = 10000) {
@@ -119,14 +126,29 @@
         this.socket.send(JSON.stringify({ action, requestId, ...payload }));
       });
     },
-    chat(payload, onDelta, onThink) {
+    chat(payload, onDelta, onThink, onTool) {
       if (!this.open()) return Promise.reject(new Error('WebSocket 未连接。'));
       const requestId = String(++this.seq);
+      this.activeChats.add(requestId);
+      const ws = this;  // Promise executor 内 this 不指向 CS.api.ws
       return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => { CS.api.ws.pending.delete(requestId); reject(new Error('模型响应超时。')); }, 180000);
-        this.pending.set(requestId, { resolve, reject, timer, onDelta, onThink });
-        this.socket.send(JSON.stringify({ action: 'chat.send', requestId, ...payload }));
+        // 空闲超时而非总时长上限: 只要模型还在持续产出就不误杀,
+        // 只折断真正卡死的连接
+        const idleMs = ws.chatIdleTimeout || 180000;
+        const fail = () => { CS.api.ws.pending.delete(requestId); CS.api.ws.activeChats.delete(requestId); reject(new Error('模型响应超时。')); };
+        const entry = { resolve, reject, timer: null, resetTimer: null, onDelta, onThink, onTool };
+        entry.timer = setTimeout(fail, idleMs);
+        entry.resetTimer = () => { clearTimeout(entry.timer); entry.timer = setTimeout(fail, idleMs); };
+        CS.api.ws.pending.set(requestId, entry);
+        ws.socket.send(JSON.stringify({ action: 'chat.send', requestId, ...payload }));
       });
+    },
+    // 停止所有进行中的生成: 服务端以已生成内容收尾并下发 chat.done
+    stopChats() {
+      if (!this.socket || this.state !== 'open') return;
+      for (const requestId of this.activeChats) {
+        try { this.socket.send(JSON.stringify({ action: 'chat.stop', requestId })); } catch { /* 连接已断时忽略 */ }
+      }
     },
     bind(run) {
       if (!run?.remoteId) return;

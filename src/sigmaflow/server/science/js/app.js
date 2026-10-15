@@ -81,7 +81,7 @@
     _faviconImg = new Image();
     _faviconImg.src = _faviconStatic;
   }
-  CS.render = () => {
+  const _origRender = () => {
     const active = document.activeElement;
     const focus = active?.id ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
     const x = window.scrollX, y = window.scrollY;
@@ -106,6 +106,51 @@
     syncFavicon();
   };
   CS.bus.addEventListener('render', () => CS.render());
+
+  // 服务器状态栏(输入框下方): 轮询 /system, 直接改 DOM 不触发重渲染
+  const fmtBps = v => v >= 1048576 ? (v / 1048576).toFixed(1) + 'MB/s'
+    : v >= 1024 ? (v / 1024).toFixed(1) + 'KB/s' : Math.round(v) + 'B/s';
+  const sysBar = (pct, cls = '') =>
+    `<span class="sys-bar ${cls}${pct >= 90 ? ' warn' : ''}"><span style="width:${Math.max(0, Math.min(100, pct)).toFixed(0)}%"></span></span>`;
+  let _sysStatsHtml = null;
+  const updateSysStats = async () => {
+    const el = document.getElementById('sys-stats');
+    if (!el) return;
+    try {
+      const s = await CS.api.request('/system');
+      const segs = [
+        `<span class="sys-seg sys-os" title="${CS.escape(s.os)}">${CS.escape(s.os)}</span>`,
+        `<span class="sys-seg" title="${CS.escape(s.cpu.model)}">CPU ${s.cpu.cores}核 ${sysBar(s.cpu.usage)} ${Math.round(s.cpu.usage)}%</span>`,
+        `<span class="sys-seg" title="内存占用">内存 ${s.memory.used_gb}/${s.memory.total_gb}GB ${sysBar(s.memory.percent)}</span>`,
+        ...((s.disks || [s.disk]).map((d, i) =>
+          `<span class="sys-seg" title="磁盘占用 (${CS.escape(d.path)})">${i ? CS.escape(d.path) : '磁盘'} ${d.used_gb}/${d.total_gb}GB ${sysBar(d.percent)}</span>`)),
+        `<span class="sys-seg" title="网速">网速 ↑${fmtBps(s.net.up_bps)} ↓${fmtBps(s.net.down_bps)}</span>`,
+      ].join('');
+      const gpus = (s.gpus || []).map((g, idx) =>
+        `<span class="sys-gpu" title="GPU${idx} · ${CS.escape(g.name)} · 显存 ${g.mem_used_gb}/${g.mem_total_gb}GB (${Math.round(g.mem_used_gb / g.mem_total_gb * 100)}%) · 利用率 ${Math.round(g.usage)}%">`
+        + `<b>${idx}</b>${sysBar(g.mem_used_gb / g.mem_total_gb * 100, 'mem')}${sysBar(g.usage, 'util')}</span>`).join('');
+      const gpuModel = s.gpus?.length
+        ? `<span class="sys-seg sys-gpu-model" title="${CS.escape(s.gpus[0].name)}">${CS.escape(s.gpus[0].name.replace(/^NVIDIA\s+/i, ''))}${s.gpus.length > 1 ? ` ×${s.gpus.length}` : ''}</span>`
+        : '';
+      el.innerHTML = `<span class="sys-line sys-line1">${segs}</span>`
+        + (s.gpus?.length ? `<span class="sys-line sys-gpus" title="每卡: 上条=显存(绿), 下条=利用率(紫), ≥90% 变红">${gpuModel}${gpus}</span>` : '');
+      _sysStatsHtml = el.innerHTML;
+    } catch { /* 后端不可达时保持现状, 下轮再试 */ }
+  };
+  setInterval(() => { if (document.getElementById('sys-stats')) updateSysStats(); }, 3000);
+  updateSysStats();
+  // 全量重渲染会重建空的 sys-stats 容器, 用缓存内容立即回填, 避免对话生成期间状态栏闪空
+  // 全量重渲染会重建 .conversation 容器导致滚动位置丢失(如展开思考/工具块时页面跳走)。
+  // 渲染前记录 scrollTop, 渲染后恢复; 显式的 scrollToLatest() 在渲染返回后仍会覆盖为新位置。
+  CS.render = function() {
+    const conv = document.querySelector('.conversation');
+    const savedTop = conv ? conv.scrollTop : 0;
+    const hadConv = !!conv;
+    _origRender();
+    const el = document.getElementById('sys-stats');
+    if (el && _sysStatsHtml) el.innerHTML = _sysStatsHtml;
+    if (hadConv) { const fresh = document.querySelector('.conversation'); if (fresh) fresh.scrollTop = savedTop; }
+  };
   // 对话区滚动条: 滚动时短暂显示, 停止后隐藏
   let _scrollbarTimer = null;
   window.addEventListener('scroll', event => {
@@ -130,7 +175,7 @@
       if (!data.content?.length) { CS.toast('该会话在服务端没有同步到消息内容。', 'error'); return; }
       const meta = CS.ui.conversations.find(c => c.id === id) || {};
       const run = { id, kind: 'chat', title: meta.title || data.title || '会话', projectId: data.projectId, prompt: '', datasetIds: [], config: {},
-              messages: data.content.map(m => ({ role: m.role, content: m.content, at: new Date().toISOString() })),
+              messages: data.content.map(m => ({ role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) })),
               steps: [], createdAt: meta.createdAt ? new Date(meta.createdAt).toISOString() : new Date().toISOString(), status: 'complete', progress: 0, transport: 'chat', isDemo: false };
       CS.state.runs.push(run);
       if (data.projectId) CS.state.projectId = data.projectId;
@@ -169,6 +214,33 @@
   // 流式期间只更新正在生成的那条消息, 避免整页 innerHTML 重建(长会话下每次
   // 100ms+, 会把主线程占满, 表现为滚动掉帧)。结构变化(思考区出现等)时返回
   // false, 由调用方退回全量渲染。
+  // 上下文圆环的轻量更新: 输入草稿变化时不整页重渲染, 直接改环弧/百分比/浮层数字
+  CS.updateContextRing = () => {
+    const btn = document.querySelector('.ctx-ring-btn');
+    const pop = document.querySelector('.ctx-pop');
+    if (!btn && !pop) return;
+    const u = CS.contextUsage();
+    if (btn) {
+      const R = 9, C = 2 * Math.PI * R;
+      const on = C * Math.max(u.pct, 2) / 100;
+      const fill = btn.querySelector('.ctx-fill');
+      if (fill) fill.setAttribute('stroke-dashoffset', (C - on).toFixed(2));
+      const pctEl = btn.querySelector('.ctx-pct');
+      if (pctEl) pctEl.textContent = u.pct + '%';
+      btn.dataset.level = u.pct >= 90 ? 'danger' : u.pct >= 60 ? 'warn' : 'ok';
+      btn.title = `上下文已用 ~${u.pct}% · 点击查看详情`;
+    }
+    if (pop) {
+      const win = u.window, seg = t => Math.max(0, Math.min(100, t / win * 100)).toFixed(2) + '%';
+      const q = k => pop.querySelector(`[data-ctx="${k}"]`);
+      const setText = (k, v) => { const el = q(k); if (el) el.textContent = v; };
+      const setWidth = (k, v) => { const el = q(k); if (el) el.style.width = v; };
+      setText('pct', u.pct + '%');
+      setText('cap', `${CS.kfmt(u.total)} / ${CS.kfmt(win).slice(1)}`);
+      setWidth('w-sys', seg(u.sysT)); setWidth('w-tools', seg(u.toolT)); setWidth('w-msgs', seg(u.msgsT));
+      setText('v-sys', CS.kfmt(u.sysT)); setText('v-tools', CS.kfmt(u.toolT)); setText('v-msgs', CS.kfmt(u.msgsT));
+    }
+  };
   const updateStreamingDom = reply => {
     const contentEl = document.querySelector(`.agent-intro[data-stream-at="${CSS.escape(reply.at)}"]`);
     const body = contentEl?.closest('.agent-body');
@@ -181,9 +253,9 @@
       const title = thinkRoot.querySelector('.think-title');
       if (title) title.textContent = reply.content ? '已深度思考' : '思考中';
       const summary = thinkRoot.querySelector('.think-summary-text');
-      if (summary) summary.textContent = (CS.ui.thinkingText || '').split('\n').filter(Boolean).slice(-1)[0] || '';
+      if (summary) summary.textContent = CS.ui.thinkingText || '';
       const thinkBody = thinkRoot.querySelector('.think-body');
-      if (thinkBody) thinkBody.textContent = CS.ui.thinkingText || '';
+      if (thinkBody) thinkBody.textContent = CS.ui.thinkingText || reply.reasoning || '';
     }
     contentEl.innerHTML = CS.markdown(reply.content);
     return true;
@@ -207,7 +279,8 @@
     const payload = {
       id: run.id, title: run.title, projectId: run.projectId,
       pinned: !!conv?.pinned, archived: !!conv?.archived,
-      content: run.messages.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({ role: m.role, content: m.content })),
+      content: run.messages.filter(m => m.role === 'user' || m.role === 'assistant')
+        .map(m => ({ role: m.role, content: m.content, at: m.at, ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) })),
     };
     try { await CS.api.modelCall('conversation.save', 'POST', '/conversations', payload); }
     catch { if (retry) setTimeout(() => syncConversation(run, false), 3000); }
@@ -232,29 +305,65 @@
       const history = run.messages.filter(m => !m.streaming).map(m => ({ role: m.role, content: m.content }));
       timerInterval = setInterval(() => {
         if (!reply.streaming) { clearInterval(timerInterval); return; }
+        // 流式期间上下文占用也在增长, 顺带同步圆环显示
+        CS.updateContextRing();
         // 只匹配本轮的活跃计时元素(完成标签是 elapsed-done, 无 data-start)
         const el = document.querySelector('.elapsed-timer[data-start="' + CSS.escape(reply.at) + '"]');
         if (el) el.textContent = CS.elapsed(el.dataset.start);
-        const rate = document.querySelector('.tok-rate[data-start="' + CSS.escape(reply.at) + '"]');
-        if (rate) { const text = CS.tokRateText(reply); if (text) rate.textContent = text; }
+        // 纯正文流没有结构变化, name 行不会因思考块出现而重渲染,
+        // 需要在这里动态补建缺失的 ↓ 累计/token 速率标签。
+        const downSel = '.tok-down[data-start="' + CSS.escape(reply.at) + '"]';
+        const down = document.querySelector(downSel);
+        if (reply.tokens) {
+          if (down) down.textContent = '↓ ' + CS.num(reply.tokens);
+          else if (el) el.insertAdjacentHTML('beforebegin', `<span class="tok-down" data-start="${reply.at}">↓ ${CS.num(reply.tokens)}</span>`);
+        }
+        const rateSel = '.tok-rate[data-start="' + CSS.escape(reply.at) + '"]';
+        const rate = document.querySelector(rateSel);
+        const rateText = CS.tokRateText(reply);
+        if (rate) { if (rateText) rate.textContent = rateText; }
+        else if (rateText && el) el.insertAdjacentHTML('afterend', `<span class="tok-rate" data-start="${reply.at}">${rateText}</span>`);
       }, 1000);
       CS.ui.thinkingText = '';
-      const content = await CS.api.chat(history, delta => {
+      // 流式期间的实时 tok 估算: CJK 约 1 token/字, 其他约 4 字符/token。
+      // 只用于生成中的实时标签, 完成后被服务端真实 usage 覆盖。
+      const estTokens = s => {
+        const cjk = (s.match(/[\u3400-\u9fff\u3000-\u303f\uff00-\uffef]/g) || []).length;
+        return cjk + (s.length - cjk) / 4;
+      };
+      const toolEvent = t => {
+        reply.tools = reply.tools || [];
+        if (t.kind === 'call') {
+          reply.tools.push({ name: t.name, args: t.args, running: true });
+        } else {
+          const ent = [...reply.tools].reverse().find(x => x.name === t.name && x.running);
+          if (ent) { ent.result = t.result; ent.running = false; }
+          else reply.tools.push({ name: t.name, result: t.result });
+        }
+        const follow = nearBottom();
+        CS.render();
+        if (follow) scrollToLatest();
+      };
+      const done = await CS.api.chat(history, delta => {
         reply.content += delta;
-        reply.tokens = (reply.tokens || 0) + 1;  // 每个流式分片约 1 token
+        reply.tokens = (reply.tokens || 0) + estTokens(delta);
         const now = Date.now();
         if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom(); if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       }, think => {
         reply.reasoning = (reply.reasoning || '') + think;
-        reply.tokens = (reply.tokens || 0) + 1;
+        reply.tokens = (reply.tokens || 0) + estTokens(think);
         CS.ui.thinkingText = reply.reasoning;
         const now = Date.now();
         if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom(); if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
-      });
-      reply.content = content;
+      }, toolEvent);
+      reply.content = done.content;
+      if (done.tokens) reply.tokens = done.tokens;  // 真实 usage(含思考 token), 覆盖流式粗估
+      if (done.promptTokens) reply.promptTokens = done.promptTokens;
     } catch (error) {
-      const msg = '连接失败：' + CS.api.friendlyError(error);
-      reply.content = reply.content ? reply.content + '\n\n---\n\n' + msg : msg;
+      // 失败不再伪装成正文追在 content 里, 而是挂到 error 字段,
+      // 由红色错误块呈现(可展开看详情), 已流出的部分正文保持原样
+      const msg = CS.api.friendlyError(error);
+      reply.error = { message: msg, detail: error?.stack ? (msg + '\n\n' + error.stack) : msg };
     }
     finishTimer();
     CS.save(); CS.render();
@@ -304,7 +413,7 @@
       body = `<p class="small muted mb-20">选择后打开对应的本地工具或分析配置。你尚未发送的问题会保留。</p>${CS.data.workflows.map(w => `<button class="dataset-picker-row" data-action="pick-workflow" data-id="${w.id}">${H.tile(w.icon)}<div class="grow"><strong>${e(w.title)}</strong><p>${e(w.sub)} · 演示</p></div>${i('arrow','',16)}</button>`).join('')}<button class="dataset-picker-row" data-action="choose-sequence-tool">${H.tile('dna','green')}<div class="grow"><strong>DNA 基础统计</strong><p>浏览器内真实计算长度与 GC 比例</p></div>${i('arrow','',16)}</button>`;
     } else if (modal.type === 'project') {
       const p = modal.project || {}; title = p.id ? '编辑研究项目' : '新的研究，从这里开始';
-      body = `<form id="project-form" data-form="project"><div class="field"><label for="project-name">项目名称</label><input id="project-name" name="name" value="${e(p.name || '')}" placeholder="例如 immune_cell_atlas" maxlength="60" required autocomplete="off"></div><div class="field"><label for="project-description">项目描述</label><textarea id="project-description" name="description" placeholder="这个项目希望回答什么问题？" rows="3" maxlength="240">${e(p.description || '')}</textarea></div><div class="field"><label for="project-tags">标签</label><input id="project-tags" name="tags" value="${e((p.tags || []).join(', '))}" placeholder="单细胞, 文献, 方法" maxlength="100"><span class="hint">用英文或中文逗号分隔，最多 5 个标签。</span></div></form>`;
+      body = `<form id="project-form" data-form="project"><div class="field"><label for="project-name">项目名称</label><input id="project-name" name="name" value="${e(p.name || '')}" placeholder="例如 immune_cell_atlas" maxlength="60" required autocomplete="off"></div><div class="field"><label for="project-dir">项目目录</label><div class="dir-row"><input id="project-dir" value="${e(CS.ui.modal.pickedDir || p.dir || '')}" placeholder="选择文件夹，或输入名称后使用默认路径" readonly autocomplete="off"><button type="button" class="btn small-btn" data-action="browse-dir">浏览</button></div><div id="dir-listing"></div><span class="hint">选择文件夹后以其名称作为项目名；只填名称时使用默认路径下的同名文件夹。</span></div><div class="field"><label for="project-description">项目描述</label><textarea id="project-description" name="description" placeholder="这个项目希望回答什么问题？" rows="3" maxlength="240">${e(p.description || '')}</textarea></div><div class="field"><label for="project-tags">标签</label><input id="project-tags" name="tags" value="${e((p.tags || []).join(', '))}" placeholder="单细胞, 文献, 方法" maxlength="100"><span class="hint">用英文或中文逗号分隔，最多 5 个标签。</span></div></form>`;
       footer = `${p.id ? H.btn('archive-project',p.archived ? '恢复项目' : '归档项目','folder','flat',`data-id="${e(p.id)}"`) : ''}${H.btn('close-modal','取消','','flat')}<button class="btn primary" type="submit" form="project-form">${i('check','',15)} 保存项目</button>`;
     } else if (modal.type === 'remote-project') {
       title = '连接远程项目';
@@ -384,22 +493,57 @@
     const text = [columns.join(','),...rows.map(d => columns.map(col => CS.csvCell(d[col])).join(','))].join('\r\n');
     CS.download('dataset_metadata.csv','\uFEFF'+text,'text/csv;charset=utf-8'); CS.toast('已导出所选文件元信息。');
   };
+  const _loadDirListing = async path => {
+    const box = document.getElementById('dir-listing');
+    if (!box) return;
+    box.innerHTML = '<p class="small muted">读取目录…</p>';
+    try {
+      const d = await CS.api.request('/fs/dirs?path=' + encodeURIComponent(path));
+      CS.ui.projectsRoot = CS.ui.projectsRoot || d.root;
+      box.dataset.parent = d.parent || '';
+      box.dataset.path = d.path;
+      box.innerHTML = `<div class="dir-list"><div class="dir-list-head"><span class="dir-list-path" title="${e(d.path)}">${e(d.path)}</span>`
+        + (d.parent ? `<button type="button" class="text-button muted small" data-action="dir-parent">上一级</button>` : '')
+        + `<button type="button" class="text-button muted small" data-action="dir-cancel">收起</button></div>`
+        + `<div class="menu-divider"></div>`
+        + (d.error ? `<div class="dir-empty">${e(d.error)}</div>` : '')
+        + (d.dirs.length ? `<div class="dir-list-body">${d.dirs.map(x => `<button type="button" class="dir-item" data-action="dir-navigate" data-id="${e(x.path)}">${i('folder','',14)}<span>${e(x.name)}</span></button>`).join('')}</div>` : (d.error ? '' : '<div class="dir-empty">此目录下没有子文件夹</div>'))
+        + `<div class="menu-divider"></div><button type="button" class="btn small-btn dir-pick-btn" data-action="dir-pick" data-id="${e(d.path)}">选择此文件夹作为项目目录</button></div>`;
+    } catch (err) {
+      box.innerHTML = '<p class="small">读取目录失败：' + e(CS.api.friendlyError(err)) + '</p>';
+    }
+  };
+  // 展开/收起思考或工具块: 全量重渲染后把被点击的行锚回原视口位置,
+  // 否则上方同类块同时展开增高(展开态是全局的)会把点击行挤出视野。
+  const _toggleAnchored = (row, mutate) => {
+    const block = row?.closest('.msg-block');
+    const idx = block ? [...block.parentElement.children].indexOf(block) : -1;
+    const rowTop = row?.getBoundingClientRect().top;
+    mutate();
+    CS.render();
+    if (!row || idx < 0) return;
+    const freshConv = document.querySelector('.conversation');
+    const freshBlock = freshConv?.children[idx];
+    const freshRow = freshBlock ? freshBlock.querySelector('[data-action="' + row.dataset.action + '"]') : null;
+    if (freshRow && freshConv) freshConv.scrollTop += freshRow.getBoundingClientRect().top - rowTop;
+  };
   const actions = {
     'toggle-sidebar': () => { CS.ui.mobileSidebar = !CS.ui.mobileSidebar; CS.render(); },
     'toggle-user-menu': () => { CS.ui.userMenu = !CS.ui.userMenu; CS.render(); },
     'toggle-model-menu': () => { CS.ui.modelMenu = !CS.ui.modelMenu; CS.render(); },
+    'toggle-context-menu': () => { CS.ui.contextMenu = !CS.ui.contextMenu; CS.ui.modelMenu = false; CS.render(); },
     'pick-model': async id => {
       const model = CS.ui.models.find(x => x.id === id);
       if (!model) { CS.ui.modelMenu = false; CS.render(); return; }
       CS.state.settings.modelId = model.id; CS.state.settings.model = model.model;
       CS.ui.modelMenu = false; emitRender();
-      try { await CS.api.modelCall('model.save', 'POST', '/models', { id: model.id, providerId: model.providerId, model: model.model, isDefault: true }); CS.agent.loadModels(); }
+      try { await CS.api.modelCall('model.save', 'POST', '/models', { id: model.id, providerId: model.providerId, model: model.model, isDefault: true, contextWindow: model.contextWindow || null }); CS.agent.loadModels(); }
       catch (error) { CS.toast('切换默认模型失败：' + CS.api.friendlyError(error), 'error'); }
     },
     'toggle-project-menu': () => { CS.ui.projectMenu = !CS.ui.projectMenu; CS.render(); },
     'clear-project': () => { CS.state.projectId = null; CS.ui.projectMenu = false; CS.save(); CS.render(); },
     'pick-project': id => { CS.state.projectId = id; CS.ui.projectMenu = false; CS.save(); CS.render(); },
-    'toggle-project': id => { CS.ui.expandedProject = CS.ui.expandedProject === id ? null : id; CS.render(); },
+    'toggle-project': id => { CS.ui.expandedProjects.has(id) ? CS.ui.expandedProjects.delete(id) : CS.ui.expandedProjects.add(id); CS.render(); },
     'toggle-project-settings': id => { CS.ui.projectSettingsMenu = CS.ui.projectSettingsMenu === id ? null : id; CS.render(); },
     'copy-message': id => {
       const run = CS.currentRun(); const m = run?.messages[Number(id)];
@@ -450,11 +594,14 @@
         CS.state.projects = CS.state.projects.filter(p => p.id !== id);
         CS.ui.conversations = data.conversations || CS.ui.conversations;
         if (CS.state.projectId === id) CS.state.projectId = null;
-        if (CS.ui.expandedProject === id) CS.ui.expandedProject = null;
+        CS.ui.expandedProjects.delete(id);
         CS.save(); CS.closeModal(); CS.render(); CS.toast('项目已删除。');
       } catch (error) { CS.toast('删除失败：' + CS.api.friendlyError(error), 'error'); }
     },
-    'toggle-thinking': () => { CS.ui.thinkingOpen = !CS.ui.thinkingOpen; CS.render(); },
+    'stop-generation': () => { CS.api.ws.stopChats(); },
+    'toggle-thinking': (id, el) => _toggleAnchored(el, () => { CS.ui.thinkingOpen = !CS.ui.thinkingOpen; }),
+    'toggle-tools': (id, el) => _toggleAnchored(el, () => { CS.ui.toolsOpen = !CS.ui.toolsOpen; }),
+    'toggle-error': (id, el) => _toggleAnchored(el, () => { CS.ui.errorOpen = !CS.ui.errorOpen; }),
     'jump-latest': () => { CS.ui.canJumpLatest = false; CS.render(); scrollToLatest(); },
     'open-conversation': id => {
       if (!CS.state.runs.some(r => r.id === id) && !CS.ui.conversations.some(c => c.id === id)) { CS.toast('该会话不存在。', 'error'); return; }
@@ -508,11 +655,12 @@
     'save-model': async () => {
       const providerId = document.getElementById('model-provider')?.value || CS.ui.draftProviderId;
       const model = document.getElementById('model-name')?.value.trim() || '';
+      const ctxWin = parseInt(document.getElementById('model-ctx-window')?.value, 10);  // 必须在 render 前读取, 否则表单会被重建清空
       if (!providerId) { CS.toast('请选择服务商。','error'); return; }
       if (!model) { CS.toast('模型名称不能为空。','error'); return; }
       CS.ui.testing = true; CS.render();
       try {
-        await CS.api.modelCall('model.save', 'POST', '/models', { id: CS.ui.edit?.id || undefined, providerId, model, isDefault: true });
+        await CS.api.modelCall('model.save', 'POST', '/models', { id: CS.ui.edit?.id || undefined, providerId, model, isDefault: true, contextWindow: ctxWin > 0 ? ctxWin : null });
         CS.ui.edit = null; CS.ui.providerModels = null; CS.ui.draftModelName = '';
         await CS.agent.loadModels();
         CS.toast('模型已保存。');
@@ -547,8 +695,45 @@
     },
     'logout': () => { CS.state.username = ''; CS.ui.userMenu = false; CS.save(); CS.render(); CS.toast('已退出登录。'); },
     'go-home': () => CS.navigate('home'), 'go-data': () => CS.navigate('data'), 'go-workflows': () => CS.navigate('workflows'),
-    'new-project': () => CS.showModal('project'),
-    'edit-project': id => CS.showModal('project',{project:CS.state.projects.find(p=>p.id===id)}),
+    'new-project': async () => {
+      CS.showModal('project');
+      if (!CS.ui.projectsRoot) {
+        try { CS.ui.projectsRoot = (await CS.api.request('/fs/dirs')).root; }
+        catch { /* 接口不可达时保存时按名称推断 */ }
+      }
+      // dir 字段保持空, 占位提示"选择文件夹, 或留空使用默认路径下的同名文件夹"
+      const dirEl = document.getElementById('project-dir');
+      if (dirEl) dirEl.value = '';
+    },
+    // 项目目录浏览: 列表直接注入容器 DOM, 不走全局重渲染, 避免表单输入丢失
+    'browse-dir': async () => {
+      const modal = CS.ui.modal;
+      if (!CS.ui.projectsRoot) {
+        try { CS.ui.projectsRoot = (await CS.api.request('/fs/dirs')).root; }
+        catch { CS.toast('无法访问服务端目录接口。', 'error'); return; }
+      }
+      // 浏览始终从已选目录(或默认根路径)开始, 不使用按名称推断的占位值
+      _loadDirListing(modal.pickedDir || CS.ui.projectsRoot);
+    },
+    'dir-navigate': dirPath => { _loadDirListing(dirPath); },
+    'dir-parent': () => {
+      const box = document.getElementById('dir-listing');
+      if (box?.dataset.parent) _loadDirListing(box.dataset.parent);
+    },
+    'dir-cancel': () => { document.getElementById('dir-listing').innerHTML = ''; },
+    'dir-pick': dirPath => {
+      const modal = CS.ui.modal;
+      modal.pickedDir = dirPath;
+      document.getElementById('project-dir').value = dirPath;
+      // 项目名称为空时, 用所选文件夹名同步为项目名; 已填写时不覆盖
+      const nameEl = document.getElementById('project-name');
+      if (nameEl && !nameEl.value.trim()) {
+        const folderName = dirPath.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
+        if (folderName) nameEl.value = folderName;
+      }
+      document.getElementById('dir-listing').innerHTML = '';
+    },
+    'edit-project': id => { const p = CS.state.projects.find(p=>p.id===id); CS.showModal('project',{project:p, pickedDir: p?.dir || ''}); },
     'open-project': id => {
       const project = CS.state.projects.find(p=>p.id===id); if (!project) return;
       CS.state.projectId = id; CS.ui.composer = ''; CS.ui.attachments = [];
@@ -657,6 +842,7 @@
   document.addEventListener('click', async event => {
     if (CS.ui.userMenu && !event.target.closest('.workspace-chip')) { CS.ui.userMenu = false; CS.render(); }
     if (CS.ui.modelMenu && !event.target.closest('.model-select')) { CS.ui.modelMenu = false; CS.render(); }
+    if (CS.ui.contextMenu && !event.target.closest('.ctx-use')) { CS.ui.contextMenu = false; CS.render(); }
     if (CS.ui.projectMenu && !event.target.closest('.composer-project')) { CS.ui.projectMenu = false; CS.render(); }
     if (CS.ui.projectSettingsMenu && !event.target.closest('.project-link')) { CS.ui.projectSettingsMenu = null; CS.render(); }
     if (CS.ui.dropdown && !event.target.closest('.dd-wrap')) { CS.ui.dropdown = null; CS.render(); }
@@ -686,14 +872,17 @@
       } else startChat(prompt);
     } else if(type==='project') {
       const name=document.getElementById('project-name').value.trim(); const description=document.getElementById('project-description').value.trim(); const tags=document.getElementById('project-tags').value.split(/[,，]/).map(t=>t.trim()).filter(Boolean).slice(0,5);
-      if(!name) {CS.toast('项目名称不能为空。','error');return;}
       const id=CS.ui.modal.project?.id;
+      if(!name) {CS.toast('项目名称不能为空。','error');return;}
+      // 目录优先级: 用户显式选择 > 默认根 + 项目名; 编辑既有项目时保留旧 dir
+      let dir=CS.ui.modal.pickedDir || CS.ui.projectsRoot+'/'+name;
+      if(id) dir = CS.ui.modal.pickedDir || CS.state.projects.find(p=>p.id===id)?.dir || dir;
       if(CS.state.projects.some(p=>p.name.toLowerCase()===name.toLowerCase() && p.id!==id)) {CS.toast('已有同名项目，请换一个名称。','error');return;}
-      if(id) Object.assign(CS.state.projects.find(p=>p.id===id),{name,description,tags,updated:CS.today()});
-      else { const project={id:CS.uid('pr'),name,description,tags,icon:'folder',created:CS.today(),updated:CS.today(),archived:false};CS.state.projects.push(project);CS.state.projectId=project.id; }
+      if(id) Object.assign(CS.state.projects.find(p=>p.id===id),{name,description,tags,dir,updated:CS.today()});
+      else { const project={id:CS.uid('pr'),name,description,tags,dir,icon:'folder',created:CS.today(),updated:CS.today(),archived:false};CS.state.projects.push(project);CS.state.projectId=project.id; }
       CS.save();CS.closeModal();CS.navigate('projects');CS.toast('项目已保存。');
       const saved=CS.state.projects.find(p=>p.id===id||CS.state.projects[CS.state.projects.length-1]===p);
-      CS.api.modelCall('project.save','POST','/projects',{id:saved.id,name:saved.name,description:saved.description||'',tags:saved.tags||[],icon:saved.icon||'folder'}).catch(()=>{});
+      CS.api.modelCall('project.save','POST','/projects',{id:saved.id,name:saved.name,description:saved.description||'',tags:saved.tags||[],icon:saved.icon||'folder',dir:saved.dir||''}).catch(()=>{});
     } else if(type==='remote-project') {
       const name=document.getElementById('remote-project-name').value.trim(); const address=document.getElementById('remote-project-address').value.trim();
       if(!name) {CS.toast('项目名称不能为空。','error');return;}
@@ -709,7 +898,7 @@
   const searchBindings={ 'data-search':'data','project-search':'project','paper-search':'literature','tool-search':'tools' };
   document.addEventListener('input',event=>{
     const target=event.target,id=target.id;
-    if(id==='composer-text') {CS.ui.composer=target.value; const send=document.querySelector('.send-button');if(send)send.disabled=!target.value.trim();}
+    if(id==='composer-text') {CS.ui.composer=target.value; const send=document.querySelector('.send-button');if(send)send.disabled=!target.value.trim();CS.updateContextRing();}
     else if(searchBindings[id]) {CS.ui.filters[searchBindings[id]]=target.value;CS.render();}
     else if(id==='marker-search') {CS.ui.markerSearch=target.value;CS.render();}
     else if(id==='sequence-input') CS.ui.sequence=target.value;
@@ -728,9 +917,11 @@
     else if(target.id==='workflow-organism') CS.ui.organism=target.value;
   });
   document.addEventListener('keydown',event=>{
-    if(event.key==='Escape'){if(CS.ui.modal)CS.closeModal();else if(CS.ui.userMenu){CS.ui.userMenu=false;CS.render();}else if(CS.ui.modelMenu){CS.ui.modelMenu=false;CS.render();}else if(CS.ui.mobileSidebar){CS.ui.mobileSidebar=false;CS.render();}return;}
+    if(event.key==='Escape'){if(CS.ui.modal)CS.closeModal();else if(CS.ui.userMenu){CS.ui.userMenu=false;CS.render();}else if(CS.ui.modelMenu){CS.ui.modelMenu=false;CS.render();}else if(CS.ui.contextMenu){CS.ui.contextMenu=false;CS.render();}else if(CS.ui.mobileSidebar){CS.ui.mobileSidebar=false;CS.render();}return;}
     if(event.altKey && event.key.toLowerCase()==='n'){event.preventDefault();CS.state.currentRunId=null;CS.ui.composer='';CS.ui.attachments=[];CS.save();CS.navigate('home');return;}
     if(event.target.id==='composer-text' && event.key==='Enter' && !event.shiftKey && !event.isComposing){event.preventDefault();event.target.closest('form').requestSubmit();}
+    // 项目表单内回车不自动提交, 只能点击保存按钮保存项目
+    if(event.key==='Enter' && !event.isComposing && event.target.closest?.('#project-form') && event.target.tagName!=='TEXTAREA'){event.preventDefault();}
     if(event.key==='Tab' && CS.ui.modal){
       const items=[...document.querySelectorAll('.modal button:not([disabled]), .modal input, .modal textarea, .modal select, .modal a[href]')].filter(x=>x.offsetParent!==null);
       if(!items.length)return;const first=items[0],last=items.at(-1);
@@ -756,6 +947,8 @@
       CS.ui.providers = Array.isArray(pv.providers) ? pv.providers : [];
       CS.ui.models = Array.isArray(md.models) ? md.models : [];
       CS.ui.modelsLoaded = true;
+      // 固定开销(系统提示词+工具定义)的 token 估算, 失败时前端用回退常数
+      CS.api.modelCall('context.info', 'GET', '/context-info').then(r => { if (r && r.systemTokens) { CS.ui.contextInfo = r; CS.emit('render'); } }).catch(() => {});
       if (CS.ui.models.length && !CS.ui.models.some(m => m.id === CS.state.settings.modelId)) {
         const def = CS.ui.models.find(m => m.isDefault) || CS.ui.models[0];
         CS.state.settings.modelId = def.id; CS.state.settings.model = def.model;

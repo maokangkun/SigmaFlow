@@ -29,6 +29,27 @@ GET /api/health
 `demo` 应如实标记服务性质。`transports` 声明可用通道，其中 `websocket` 给出
 WS 端点路径（见第 6 节）。这个返回值只证明接口可访问，不证明模型或计算环境可用。
 
+### 1a. 服务器状态（Chat 页状态栏）
+
+```http
+GET /api/system
+```
+
+```json
+{
+  "os": "Ubuntu 22.04.3 LTS",
+  "cpu":  {"model": "Intel(R) Xeon(R) Platinum 8358P CPU @ 2.60GHz", "cores": 128, "usage": 27.3},
+  "memory": {"used_gb": 430.6, "total_gb": 1007.5, "percent": 42.7},
+  "disk":  {"used_gb": 3105.3, "total_gb": 3519.8, "percent": 92.9, "path": "/"},
+  "gpus":  [{"name": "NVIDIA A100-SXM4-80GB", "usage": 33.0, "mem_used_gb": 76.2, "mem_total_gb": 80.0}],
+  "net":   {"up_bps": 123456.0, "down_bps": 987654.0}
+}
+```
+
+CPU/网速为"与上一次请求之间的差值"（首次请求网速为 0），GPU 经 `nvidia-smi`
+查询并缓存 5 秒，无 GPU 时 `gpus` 为空数组。`disk` 为数据目录所在文件系统，
+`disks` 额外包含 `/data`（同一设备时去重）。前端约每 3 秒轮询一次。
+
 ### 2. 创建并启动一个已由用户确认的任务
 
 ```http
@@ -132,10 +153,11 @@ data: {"id":"a-unique-run-id","status":"running","progress":50,"isDemo":true,"st
 接口只返回掩码 `keyHint`，永不回传完整密钥；更新时 `apiKey` 留空表示保留原密钥。
 
 ```http
-GET    /api/models            → {"models": [{id, name, baseUrl, keyHint, isDefault, createdAt, updatedAt}]}
-POST   /api/models            → {"model": {...}, "models": [...]}   # 带 id 为更新，否则新建
+GET    /api/models            → {"models": [{id, name, baseUrl, keyHint, isDefault, contextWindow, createdAt, updatedAt}]}
+POST   /api/models            → {"model": {...}, "models": [...]}   # 带 id 为更新，否则新建；`contextWindow` 可选（会话窗口 tokens，留空按模型名取默认）
 DELETE /api/models/{id}       → {"models": [...]}
 POST   /api/models/test       → 由服务端实测模型服务商连通性
+GET    /api/context-info      → {"systemTokens": int, "toolsTokens": int}  # Agent 固定开销（系统提示词+工具定义）的 token 估算，供输入框旁的上下文用量圆环使用
 ```
 
 `POST /api/models/test` 请求体 `{id?, baseUrl?, apiKey?}`（编辑时传表单值，`id` 存在则回退到已存配置），

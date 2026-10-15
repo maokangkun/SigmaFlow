@@ -30,6 +30,51 @@ CS.tokRateText = m => {
   if (seconds <= 0) return '';
   return (m.tokens / seconds).toFixed(1) + ' tok/s';
 };
+CS.num = tokens => Math.round(tokens || 0).toLocaleString();
+// 上下文 token 估算(近似值): 中文≈0.6 token/字, 其他≈1 token/4.6 字符,
+// 按真实 glm-5.3 usage 校准过; 服务端另有 sys/tools 的精确口径(/context-info)
+CS.estimateTokens = text => {
+  if (!text) return 0;
+  let cjk = 0;
+  for (const ch of text) {
+    const c = ch.codePointAt(0);
+    if ((c >= 0x4e00 && c <= 0x9fff) || (c >= 0x3000 && c <= 0x303f) || (c >= 0xff00 && c <= 0xffef)) cjk++;
+  }
+  return Math.round(cjk * 0.6 + (text.length - cjk) / 4.6);
+};
+// token 数值的紧凑展示: ~850 / ~1.7K / ~67.7K / ~131K
+CS.kfmt = n => {
+  n = Math.round(n || 0);
+  if (n < 1000) return '~' + n;
+  const k = n / 1000;
+  return '~' + (k < 100 ? Math.round(k * 10) / 10 : Math.round(k)) + 'K';
+};
+// 当前会话的上下文占用估算: 系统提示词 + 工具定义 + 对话消息(含草稿)
+// 对话部分优先用最近一次请求的真实 promptTokens 锚定, 其后新增内容再用启发式估算
+CS.contextUsage = () => {
+  const model = CS.ui.models.find(x => x.id === CS.state.settings.modelId);
+  const win = model?.contextWindow || 131072;
+  const info = CS.ui.contextInfo || {};
+  // 服务端未就绪时的回退值: 与实测(新会话首轮 ≈2780 prompt tokens)校准的常数
+  const sysT = info.systemTokens || 183;
+  const toolT = info.toolsTokens || 2570;
+  const msgs = CS.currentRun()?.messages || [];
+  let anchorIdx = -1, anchorP = 0;
+  msgs.forEach((m, i) => { if (m.role === 'assistant' && m.promptTokens) { anchorIdx = i; anchorP = m.promptTokens; } });
+  let base = 0, after = 0, count = 0;
+  if (anchorIdx >= 0) {
+    base = Math.max(0, anchorP - sysT - toolT);
+    for (let j = anchorIdx; j < msgs.length; j++) { after += CS.estimateTokens(msgs[j].content); count++; }
+  } else {
+    msgs.forEach(m => { base += CS.estimateTokens(m.content); count++; });
+  }
+  const draft = (CS.ui.composer || '').trim();
+  if (draft) { after += CS.estimateTokens(draft); count++; }
+  const msgsT = Math.max(0, base + after + 9 * count);  // 每条消息约 9 token 模板开销(实测)
+  const total = sysT + toolT + msgsT;
+  const pct = Math.min(100, Math.round(total / win * 100));
+  return { sysT, toolT, msgsT, total, window: win, pct };
+};
 CS.tokRateTag = m => {
   const text = CS.tokRateText(m);
   if (!text) return '';
@@ -142,8 +187,9 @@ CS.markdown = text => {
   // A browser refresh must not silently restart an execution.
   CS.state.runs.forEach(run => { if (['running', 'connecting'].includes(run.status)) { run.status = run.transport === 'remote' ? 'error' : 'paused'; run.reloaded = true; if (run.transport === 'remote') run.error = '页面已重新加载；服务端任务可能继续运行。请重连以同步状态。'; } });
   // 清除刷新前残留的流式标记: 消息以 streaming:true 落盘后, 若中途刷新页面,
-  // 没有对应的生成循环来清除它, 会让 favicon/绿点永远误判为"生成中"。
-  CS.state.runs.forEach(run => (run.messages || []).forEach(m => { delete m.streaming; }));
+  // 没有对应的生成循环来清除它, 会让 favicon/绿点永远误判为"生成中";
+  // 工具调用的 running 标记同样属于页面内存态, 刷新后一并清除。
+  CS.state.runs.forEach(run => (run.messages || []).forEach(m => { delete m.streaming; (m.tools || []).forEach(t => { delete t.running; }); }));
   CS.ui = {
     route: 'home', mobileSidebar: false, composer: '', attachments: [],
     filters: { data: '', dataTab: 'all', project: '', projectTab: 'active', literature: '', paperTab: 'all', tools: '', toolTab: 'all' },
@@ -151,7 +197,7 @@ CS.markdown = text => {
     workflowId: 'singlecell', workflowCategory: 'all', datasetId: 'ds-pbmc', organism: 'Homo sapiens', advanced: false,
     minGenes: 200, maxMito: 20, activeTool: 'sequence', sequence: CS.data.sampleFASTA, sequenceResult: null,
     modal: null, expandedLogs: new Set(), selectedCell: null, note: '', apiHealth: null,
-    userMenu: false, modelMenu: false, projectMenu: false, projectSettingsMenu: null, expandedProject: null, conversations: [], settingsTab: 'appearance', models: [], providers: [], edit: null, providerModels: null, draftModelName: '', draftProviderId: null, dropdown: null, pendingDelete: null, modelsLoaded: false, thinkingOpen: false, thinkingText: '', canJumpLatest: false
+    userMenu: false, modelMenu: false, projectMenu: false, projectSettingsMenu: null, expandedProjects: new Set(), conversations: [], settingsTab: 'appearance', models: [], providers: [], edit: null, providerModels: null, draftModelName: '', draftProviderId: null, dropdown: null, pendingDelete: null, modelsLoaded: false, thinkingOpen: false, thinkingText: '', toolsOpen: false, errorOpen: false, canJumpLatest: false, contextInfo: null, contextMenu: false
   };
   CS.files = new Map(); // File objects only live in memory; raw file bytes never enter localStorage.
   CS.save = () => {
