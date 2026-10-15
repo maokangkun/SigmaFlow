@@ -711,6 +711,12 @@
       t.enabled = !t.enabled;
       CS.render();
     },
+    'tool-group-toggle': id => {
+      // 点击组标题折叠/展开该组工具; 状态存 CS.ui.toolGroupsCollapsed, 重渲染不丢
+      const c = CS.ui.toolGroupsCollapsed || (CS.ui.toolGroupsCollapsed = {});
+      c[id] = !c[id];
+      CS.render();
+    },
     'save-tools': async () => {
       if (!CS.ui.toolDraft?.length) { CS.toast('没有需要保存的修改。'); return; }
       try {
