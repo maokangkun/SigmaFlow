@@ -100,6 +100,11 @@ class ToolsUpdateIn(BaseModel):
     reset: Optional[bool] = None
 
 
+class SkillsUpdateIn(BaseModel):
+    skills: Optional[list] = None
+    reset: Optional[bool] = None
+
+
 def _test_provider(base_url: str, api_key: str) -> dict:
     """Ping `{base_url}/models` on the provider and report real latency."""
     url = base_url.rstrip("/") + "/models"
@@ -188,9 +193,12 @@ def _agent_tools_module():
     return tools
 
 
+def _science_data_root() -> str:
+    return os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(os.path.expanduser("~"), ".sigmaflow", "science")
+
+
 def _tool_config_path() -> str:
-    root = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(os.path.expanduser("~"), ".sigmaflow", "science")
-    return os.path.join(root, "tools.json")
+    return os.path.join(_science_data_root(), "tools.json")
 
 
 def _load_tool_overrides() -> Dict[str, dict]:
@@ -314,6 +322,280 @@ def _build_tool_overrides(items: list, known: Dict[str, dict]) -> Dict[str, dict
                 entry["schema"] = schema
         if entry:
             overrides[tool_id] = entry
+    return overrides
+
+
+# ==================== Agent 技能配置 ====================
+# 设置页可对技能做启用开关、名称与描述覆盖, 落盘到 <science_dir>/skills.json;
+# 技能正文来自 <science_dir>/skills/<id>/SKILL.md, 内置技能在启动时从包资源种子化;
+# 技能清单随系统提示词发给模型, 因此覆盖生效需要同时替换 skill_loader 并换出清单文本
+
+_SKILLS_INSTALL_LOCK = threading.Lock()
+_SKILL_BLOCK_BASE: Optional[Dict[str, str]] = None
+
+
+def _skills_data_dir() -> str:
+    return os.path.join(_science_data_root(), "skills")
+
+
+def _skill_config_path() -> str:
+    return os.path.join(_science_data_root(), "skills.json")
+
+
+def _builtin_skills_src() -> str:
+    """Packaged built-in skill assets live under the science web app directory."""
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "science", "skills")
+
+
+def _seed_builtin_skills() -> None:
+    """Copy packaged built-in skills into the science skills dir; never overwrite user edits."""
+    src_root = _builtin_skills_src()
+    try:
+        entries = sorted(os.listdir(src_root))
+    except OSError:
+        return
+    for name in entries:
+        src = os.path.join(src_root, name, "SKILL.md")
+        if not os.path.isfile(src):
+            continue
+        dst = os.path.join(_skills_data_dir(), name, "SKILL.md")
+        if os.path.exists(dst):
+            continue
+        try:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            with open(src, encoding="utf-8") as fh:
+                text = fh.read()
+            with open(dst, "w", encoding="utf-8") as fh:
+                fh.write(text)
+        except OSError:
+            pass
+
+
+def _load_skill_overrides() -> Dict[str, dict]:
+    try:
+        with open(_skill_config_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return {}
+    overrides = data.get("overrides") if isinstance(data, dict) else None
+    if not isinstance(overrides, dict):
+        return {}
+    return {str(k): dict(v) for k, v in overrides.items() if isinstance(v, dict)}
+
+
+def _save_skill_overrides(overrides: Dict[str, dict]) -> None:
+    path = _skill_config_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump({"overrides": overrides}, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+
+
+def _parse_skill_frontmatter(text: str) -> tuple:
+    """Split YAML frontmatter from a SKILL.md body without extra dependencies."""
+    if not text.startswith("---\n"):
+        return {}, text
+    end = text.find("\n---\n", 4)
+    if end == -1:
+        return {}, text
+    try:
+        import yaml
+        meta = yaml.safe_load(text[4:end].strip())
+    except Exception:
+        meta = {}
+    if not isinstance(meta, dict):
+        meta = {}
+    return meta, text[end + 5:].strip()
+
+
+def _discover_skills() -> list:
+    """Scan skill dirs; frontmatter name wins over dir name as the stable id."""
+    _seed_builtin_skills()
+    root = _skills_data_dir()
+    out = []
+    seen = set()
+    for dirpath, _dirnames, filenames in os.walk(root):
+        if "SKILL.md" not in filenames:
+            continue
+        path = os.path.join(dirpath, "SKILL.md")
+        try:
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        meta, body = _parse_skill_frontmatter(text)
+        skill_id = str(meta.get("name") or "").strip() or os.path.basename(dirpath.rstrip("/\\"))
+        if skill_id in seen:
+            continue
+        seen.add(skill_id)
+        out.append({"id": skill_id, "meta": meta, "body": body, "path": path})
+    return out
+
+
+def _builtin_skill_ids() -> set:
+    """Ids of packaged built-in skills (frontmatter names, falling back to dir names)."""
+    ids = set()
+    src_root = _builtin_skills_src()
+    try:
+        names = os.listdir(src_root)
+    except OSError:
+        return ids
+    for name in names:
+        path = os.path.join(src_root, name, "SKILL.md")
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        meta, _body = _parse_skill_frontmatter(text)
+        ids.add(str(meta.get("name") or "").strip() or name)
+    return ids
+
+
+class _ScienceSkillView:
+    """Override-aware replacement for tools.skill_loader (same duck-type interface);
+    get_descriptions feeds the system prompt, get_content serves load_skill calls."""
+
+    def __init__(self):
+        self.skills_dir = _skills_data_dir()
+        self.skills = {}
+        self.rebuild()
+
+    def rebuild(self):
+        self.skills_dir = _skills_data_dir()
+        overrides = _load_skill_overrides()
+        skills = {}
+        for skill in _discover_skills():
+            override = overrides.get(skill["id"]) or {}
+            if override.get("enabled") is False:
+                continue
+            meta = dict(skill["meta"])
+            name = str(override.get("name") or "").strip() or skill["id"]
+            meta["name"] = name
+            description = str(override.get("description") or "").strip()
+            if description:
+                meta["description"] = description
+            skills[name] = {"meta": meta, "body": skill["body"], "path": skill["path"]}
+        self.skills = skills
+
+    def get_descriptions(self) -> str:
+        skill_prompt = f"Use `load_skill` to access specialized knowledge before tackling unfamiliar topics.\nSkills dir: {self.skills_dir}\nSkills available:\n"
+        if not self.skills:
+            return skill_prompt + "(no skills available)"
+        lines = []
+        for name, skill in self.skills.items():
+            desc = skill["meta"].get("description", "No description")
+            tags = skill["meta"].get("tags", "")
+            line = f"  - {name}: {desc}"
+            if tags:
+                line += f" [{tags}]"
+            lines.append(line.strip())
+        return skill_prompt + "\n".join(lines)
+
+    def get_content(self, name: str) -> str:
+        skill = self.skills.get(name)
+        if not skill:
+            return f"Error: Unknown skill '{name}'. Available: {', '.join(self.skills.keys())}"
+        return f"<skill name=\"{name}\" path=\"{skill['path']}\">\n{skill['body']}\n</skill>"
+
+
+def _ensure_skills_installed() -> None:
+    """Install the override-aware skill loader into the agent tools module (idempotent).
+    Importing sigmaflow.agent.tools runs the package __init__, which builds the agent
+    module's default system prompts from the original loader, so the original listing
+    text is recorded here and swapped out later by _effective_system_prompts."""
+    global _SKILL_BLOCK_BASE
+    with _SKILLS_INSTALL_LOCK:
+        tools_mod = _agent_tools_module()
+        if isinstance(tools_mod.skill_loader, _ScienceSkillView):
+            return
+        try:
+            original_block = tools_mod.skill_loader.get_descriptions()
+        except Exception:
+            original_block = ""
+        tools_mod.skill_loader = _ScienceSkillView()
+        import sigmaflow.agent.agent as agent_module
+        if original_block and original_block in agent_module.SYSTEM:
+            _SKILL_BLOCK_BASE = {"system": original_block, "sub": original_block}
+        else:
+            _SKILL_BLOCK_BASE = {"system": "", "sub": ""}
+
+
+def _agent_agent_module():
+    """Import sigmaflow.agent.agent with the same sys.path fallback as _run_agent_chat."""
+    _ensure_skills_installed()
+    try:
+        import sigmaflow.agent.agent as agent_module
+    except ModuleNotFoundError:
+        import sys as _sys
+        _src_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        if _src_root not in _sys.path:
+            _sys.path.insert(0, _src_root)
+        import sigmaflow.agent.agent as agent_module
+    return agent_module
+
+
+def _effective_system_prompts() -> tuple:
+    """(system, sub_system) with the current skill listing swapped into the agent
+    module's default prompts; Agent captures those defaults at import, so the swap is
+    done textually against the original block recorded by _ensure_skills_installed."""
+    agent_module = _agent_agent_module()
+    global _SKILL_BLOCK_BASE
+    if _SKILL_BLOCK_BASE is None:
+        _SKILL_BLOCK_BASE = {"system": "", "sub": ""}
+    listing = _agent_tools_module().skill_loader.get_descriptions()
+    system = agent_module.SYSTEM.replace(_SKILL_BLOCK_BASE["system"], listing) if _SKILL_BLOCK_BASE["system"] else agent_module.SYSTEM
+    sub_system = agent_module.SUBAGENT_SYSTEM.replace(_SKILL_BLOCK_BASE["sub"], listing) if _SKILL_BLOCK_BASE["sub"] else agent_module.SUBAGENT_SYSTEM
+    return system, sub_system
+
+
+def _skill_listing(defaults: list, overrides: Dict[str, dict]) -> list:
+    """Settings-page view of the skills: original id plus effective name/description/enabled."""
+    builtin = _builtin_skill_ids()
+    out = []
+    for s in defaults:
+        override = overrides.get(s["id"]) or {}
+        out.append({
+            "id": s["id"],
+            "name": str(override.get("name") or "").strip() or s["id"],
+            "description": str(override.get("description") or "").strip() or str(s["meta"].get("description") or ""),
+            "enabled": override.get("enabled") is not False,
+            "builtin": s["id"] in builtin,
+            "modified": bool(override),
+        })
+    return out
+
+
+def _build_skill_overrides(items: list, known: Dict[str, dict]) -> Dict[str, dict]:
+    """Validate the submitted skill settings and compress them into overrides;
+    unchanged skills are not persisted."""
+    overrides: Dict[str, dict] = {}
+    seen: Dict[str, str] = {}
+    for item in items or []:
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=400, detail="Invalid skills payload")
+        skill_id = str(item.get("id") or "")
+        if skill_id not in known:
+            raise HTTPException(status_code=400, detail=f"Unknown skill: {skill_id}")
+        display = str(item.get("name") or "").strip()[:64]
+        if not display:
+            display = skill_id
+        if display in seen:
+            raise HTTPException(status_code=400, detail=f"技能名称重复: {display}")
+        seen[display] = skill_id
+        description = str(item.get("description") or "").strip()[:2000]
+        entry: Dict[str, Any] = {}
+        if display != skill_id:
+            entry["name"] = display
+        if description and description != str(known[skill_id]["meta"].get("description") or "").strip()[:2000]:
+            entry["description"] = description
+        if item.get("enabled") is False:
+            entry["enabled"] = False
+        if entry:
+            overrides[skill_id] = entry
     return overrides
 
 
@@ -837,6 +1119,29 @@ class ScienceAPI:
             # 工具集变化后固定开销随之变化, 清空缓存让 /context-info 重新测量
             _AGENT_CONTEXT_SIZES.clear()
             return {"tools": _tool_listing(defaults, overrides)}
+
+        @router.get("/skills")
+        async def list_skills():
+            overrides = await asyncio.to_thread(_load_skill_overrides)
+            defaults = await asyncio.to_thread(_discover_skills)
+            return {"skills": _skill_listing(defaults, overrides)}
+
+        @router.post("/skills")
+        async def save_skills(payload: SkillsUpdateIn, request: Request):
+            _check_origin(request)
+            defaults = await asyncio.to_thread(_discover_skills)
+            known = {s["id"]: s for s in defaults}
+            if payload.reset:
+                overrides = {}
+            else:
+                overrides = _build_skill_overrides(payload.skills or [], known)
+            await asyncio.to_thread(_save_skill_overrides, overrides)
+            _AGENT_CONTEXT_SIZES.clear()
+            # 已装 loader 时立即重建视图, 下一次会话用新清单
+            loader = _agent_tools_module().skill_loader
+            if isinstance(loader, _ScienceSkillView):
+                await asyncio.to_thread(loader.rebuild)
+            return {"skills": _skill_listing(defaults, overrides)}
 
         @router.get("/conversations")
         async def list_conversations():
@@ -1500,20 +1805,14 @@ def _run_agent_chat(base_url: str, api_key: str, model_name: str, messages: list
     assistant text. Tool/MCP/skill support is enabled: tools execute on
     this server (bash, file IO, MCP servers, load_skill).
     """
-    try:
-        from sigmaflow.agent.agent import Agent
-    except ModuleNotFoundError:
-        # 兼容直接以源码目录运行: 把仓库根目录加入 sys.path
-        import sys as _sys
-        _src_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        if _src_root not in _sys.path:
-            _sys.path.insert(0, _src_root)
-        from sigmaflow.agent.agent import Agent
+    agent_module = _agent_agent_module()
+    Agent = agent_module.Agent
 
     convo = [{"role": m.get("role"), "content": m.get("content", "")} for m in messages if m.get("role") in ("user", "assistant")]
     # 仅保留 user/assistant 两类角色, 其余消息直接丢弃
     # 轮次上限按助手消息数加预留余量, 防止无限循环
     max_turn = max(1, sum(1 for m in convo if m["role"] == "assistant") + 17)
+    system, sub_system = _effective_system_prompts()
     agent = Agent(
         method="openai",
         model=model_name,
@@ -1523,6 +1822,8 @@ def _run_agent_chat(base_url: str, api_key: str, model_name: str, messages: list
         retry=2,
         max_turn=max_turn,
         tools=_effective_agent_tools(),
+        system=system,
+        sub_system=sub_system,
         on_delta=_make_chat_delta_callback(on_delta, on_reasoning),
         on_tool=on_tool,
     )
@@ -1563,18 +1864,13 @@ def _agent_context_sizes() -> Dict[str, int]:
     """
     if _AGENT_CONTEXT_SIZES:
         return _AGENT_CONTEXT_SIZES
-    try:
-        from sigmaflow.agent.agent import Agent
-    except ModuleNotFoundError:
-        # 同 _run_agent_chat: 兜底把仓库根目录加入 sys.path
-        import sys as _sys
-        _src_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        if _src_root not in _sys.path:
-            _sys.path.insert(0, _src_root)
-        from sigmaflow.agent.agent import Agent
+    agent_module = _agent_agent_module()
+    Agent = agent_module.Agent
 
+    system, sub_system = _effective_system_prompts()
     agent = Agent(method="openai", model="estimate", base_url="http://127.0.0.1:9/v1",
-                  api_key="sk-empty", support_tool=True, tools=_effective_agent_tools())
+                  api_key="sk-empty", support_tool=True, tools=_effective_agent_tools(),
+                  system=system, sub_system=sub_system)
     tools_wire = json.dumps(agent.tools, ensure_ascii=False, separators=(",", ":"))
     sizes = {
         "systemTokens": math.ceil(len(agent.system) / 3.7),

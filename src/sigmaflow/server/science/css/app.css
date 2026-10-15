@@ -251,7 +251,7 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
 .tool-field-top{align-items:start}
 .tool-field-label{font-size:11px;color:var(--muted);text-align:left}
 .tool-field-top .tool-field-label{padding-top:9px}
-.tool-name-input,.tool-desc-input{width:100%;padding:7px 10px;font-size:12px}
+.tool-name-input,.tool-desc-input,.skill-name-input,.skill-desc-input{width:100%;padding:7px 10px;font-size:12px}
 /* 参数编辑框: 高亮 pre 与透明 textarea 同宽软换行, 内容自增高, 由外层容器统一滚动 */
 .schema-editor{position:relative;max-height:280px;overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--inset)}
 .schema-editor .schema-highlight{position:absolute;top:0;left:0;right:0;margin:0;padding:8px 10px;font-family:var(--mono);font-size:11px;line-height:1.6;white-space:pre-wrap;word-break:break-all;overflow:hidden;pointer-events:none;color:var(--muted)}

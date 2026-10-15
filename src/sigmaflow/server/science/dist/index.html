@@ -316,7 +316,7 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
 .tool-field-top{align-items:start}
 .tool-field-label{font-size:11px;color:var(--muted);text-align:left}
 .tool-field-top .tool-field-label{padding-top:9px}
-.tool-name-input,.tool-desc-input{width:100%;padding:7px 10px;font-size:12px}
+.tool-name-input,.tool-desc-input,.skill-name-input,.skill-desc-input{width:100%;padding:7px 10px;font-size:12px}
 /* 参数编辑框: 高亮 pre 与透明 textarea 同宽软换行, 内容自增高, 由外层容器统一滚动 */
 .schema-editor{position:relative;max-height:280px;overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--inset)}
 .schema-editor .schema-highlight{position:absolute;top:0;left:0;right:0;margin:0;padding:8px 10px;font-family:var(--mono);font-size:11px;line-height:1.6;white-space:pre-wrap;word-break:break-all;overflow:hidden;pointer-events:none;color:var(--muted)}
@@ -685,7 +685,7 @@ CS.markdown = text => {
     workflowId: 'singlecell', workflowCategory: 'all', datasetId: 'ds-pbmc', organism: 'Homo sapiens', advanced: false,
     minGenes: 200, maxMito: 20, activeTool: 'sequence', sequence: CS.data.sampleFASTA, sequenceResult: null,
     modal: null, expandedLogs: new Set(), selectedCell: null, note: '', apiHealth: null,
-    userMenu: false, modelMenu: false, projectMenu: false, projectSettingsMenu: null, expandedProjects: new Set(), conversations: [], settingsTab: 'appearance', models: [], providers: [], edit: null, providerModels: null, draftModelName: '', draftProviderId: null, dropdown: null, pendingDelete: null, modelsLoaded: false, thinkingOpen: false, thinkingText: '', toolsOpen: false, errorOpen: false, canJumpLatest: false, contextInfo: null, contextMenu: false, agentTools: null, toolDraft: null
+    userMenu: false, modelMenu: false, projectMenu: false, projectSettingsMenu: null, expandedProjects: new Set(), conversations: [], settingsTab: 'appearance', models: [], providers: [], edit: null, providerModels: null, draftModelName: '', draftProviderId: null, dropdown: null, pendingDelete: null, modelsLoaded: false, thinkingOpen: false, thinkingText: '', toolsOpen: false, errorOpen: false, canJumpLatest: false, contextInfo: null, contextMenu: false, agentTools: null, toolDraft: null, agentSkills: null, skillDraft: null
   };
   CS.files = new Map(); // File objects only live in memory; raw file bytes never enter localStorage.
   CS.save = () => {
@@ -3666,7 +3666,7 @@ CS.markdown = text => {
     const s = CS.state.settings;
     const toggle = (id, label, sub) => `<div class="setting-row"><div><h3>${e(label)}</h3><p>${e(sub)}</p></div><button type="button" role="switch" aria-checked="${!!s[id]}" aria-label="${e(label)}" class="switch" data-action="setting-toggle" data-id="${id}"></button></div>`;
     const tab = CS.ui.settingsTab;
-    const nav = [['appearance','sun','外观与交互'],['privacy','shield','数据与隐私'],['agent','bolt','模型配置'],['tools','grid','Agent 工具']];
+    const nav = [['appearance','sun','外观与交互'],['privacy','shield','数据与隐私'],['agent','bolt','模型配置'],['tools','grid','Agent 工具'],['skills','book','Agent 技能']];
     const edit = CS.ui.edit;
     const editProvider = edit?.type === 'provider' ? (CS.ui.providers.find(x => x.id === edit.id) || null) : null;
     const editModel = edit?.type === 'model' ? (CS.ui.models.find(x => x.id === edit.id) || null) : null;
@@ -3687,6 +3687,20 @@ CS.markdown = text => {
           return `<div class="tool-setting-row" data-idx="${e(t.id)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">名称</span><input class="tool-name-input" data-tool-id="${e(t.id)}" data-field="name" value="${e(t.name)}" maxlength="64" spellcheck="false"></div><div class="tool-field"><span class="tool-field-label">描述</span><input class="tool-desc-input" data-tool-id="${e(t.id)}" data-field="description" value="${e(t.description)}" maxlength="2000" spellcheck="false"></div><div class="tool-field tool-field-top"><span class="tool-field-label">参数</span><div class="schema-editor"><pre class="schema-highlight" aria-hidden="true">${V.hlJSON(V.prettyJSON(t.schema))}\n</pre><textarea class="tool-schema-input mono" data-tool-id="${e(t.id)}" data-field="schema" rows="6" spellcheck="false">${e(V.prettyJSON(t.schema))}</textarea></div></div></div><div class="tool-setting-side">${custom}<button type="button" role="switch" aria-checked="${!!t.enabled}" class="switch" data-action="tool-toggle" data-id="${e(t.id)}" aria-label="启用 ${e(t.id)}"></button></div></div>`;
         }).join('');
         return `<div class="panel settings-section"><div class="row-between"><h2>Agent 工具</h2>${pill('服务端存储')}</div><p class="small muted mb-20">设置 Agent 会话可用的内置工具: 启用开关、名称、描述与参数 schema 随下一次请求生效; 禁用的工具不再发给模型, 也不再占用上下文。参数 schema 需为合法 JSON 对象。</p>${rows}<div class="settings-actions row wrap">${btn('save-tools','保存','check','primary')}${btn('reset-tools','恢复默认','refresh','flat')}</div></div>`;
+      })(),
+      skills: (() => {
+        // Agent 技能设置: 与工具设定同构, 未保存的修改存 skillDraft, 重渲染不丢
+        const list = CS.ui.skillDraft || CS.ui.agentSkills;
+        if (!list) return `<div class="panel settings-section"><h2>Agent 技能</h2><p class="small muted mb-20">正在加载技能列表…</p></div>`;
+        if (!list.length) return `<div class="panel settings-section"><h2>Agent 技能</h2><p class="small muted mb-20">当前环境没有可配置的技能。</p></div>`;
+        const rows = list.map(s => {
+          const orig = (CS.ui.agentSkills || []).find(x => x.id === s.id);
+          const dirty = !orig || orig.name !== s.name || orig.description !== s.description || !!orig.enabled !== !!s.enabled;
+          const custom = (s.modified || dirty) ? pill('自定义') : '';
+          const builtin = s.builtin ? pill('内置', 'green') : '';
+          return `<div class="tool-setting-row" data-idx="${e(s.id)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">名称</span><input class="skill-name-input" data-skill-id="${e(s.id)}" data-field="name" value="${e(s.name)}" maxlength="64" spellcheck="false"></div><div class="tool-field"><span class="tool-field-label">描述</span><input class="skill-desc-input" data-skill-id="${e(s.id)}" data-field="description" value="${e(s.description)}" maxlength="2000" spellcheck="false"></div></div><div class="tool-setting-side">${custom}${builtin}<button type="button" role="switch" aria-checked="${!!s.enabled}" class="switch" data-action="skill-toggle" data-id="${e(s.id)}" aria-label="启用 ${e(s.id)}"></button></div></div>`;
+        }).join('');
+        return `<div class="panel settings-section"><div class="row-between"><h2>Agent 技能</h2>${pill('服务端存储')}</div><p class="small muted mb-20">设置 Agent 会话可用的技能: 启用开关、名称与描述随下一次会话生效; 技能清单作为系统提示的一部分发给模型, 禁用的技能不占用上下文。技能正文存放在服务端 skills 目录。</p>${rows}<div class="settings-actions row wrap">${btn('save-skills','保存','check','primary')}${btn('reset-skills','恢复默认','refresh','flat')}</div></div>`;
       })(),
       appearance: `<div class="panel settings-section"><h2>外观与交互</h2>${toggle('contrast','增强文字与边界对比','保持浅灰色主题，提高说明文字与控件边界的可读性。')}${toggle('reducedMotion','减少动态效果','关闭过渡与旋转动画，不影响任务状态更新。')}${toggle('inspector','显示任务详情侧栏','在宽屏的 Agent 对话中显示输入上下文与执行边界。')}</div>`,
       privacy: `<div class="panel settings-section"><h2>数据与隐私</h2>${toggle('persist','在本机保存工作空间','保存项目、文件名、对话与任务记录；不保存原始文件。共享电脑建议关闭。关闭后删除已有本地保存，当前会话仍保留。')}<div class="setting-row"><div><h3>导出工作空间</h3><p>导出元信息与任务记录。包含对话内容，分享前请检查隐私。</p></div>${btn('export-workspace','导出 JSON','download','flat')}</div><div class="setting-row"><div><h3>清空并恢复示例</h3><p>移除本机保存的项目、导入记录与对话，恢复初始演示。</p></div>${btn('reset-workspace','重置','trash','flat danger')}</div></div>`,
@@ -3958,6 +3972,16 @@ CS.markdown = text => {
   CS.refreshContextInfo = async () => {
     try { CS.ui.contextInfo = await CS.api.request('/context-info'); } catch {}
     CS.updateContextRing();
+  };
+  // Agent 技能设置: 进入设置页时懒加载, 保存或恢复后刷新上下文圆环
+  CS.loadAgentSkills = async () => {
+    if (CS.ui.agentSkills) return;
+    try {
+      const d = await CS.api.request('/skills');
+      CS.ui.agentSkills = d.skills || [];
+      if (!CS.ui.skillDraft) CS.ui.skillDraft = CS.ui.agentSkills.map(s => ({ ...s }));
+      CS.render();
+    } catch (error) { CS.toast('技能列表加载失败：' + CS.api.friendlyError(error), 'error'); }
   };
   // 参数编辑框: 透明 textarea 叠在高亮 pre 上, 输入时刷新高亮; 高度由 sizeSchemaEditors 统一管理
   CS.sizeSchemaEditors = () => {
@@ -4344,7 +4368,7 @@ CS.markdown = text => {
     },
     'connect-project': () => { CS.ui.projectMenu = false; CS.showModal('remote-project'); },
     'submit-remote-project': () => {},
-    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') CS.loadAgentTools(); },
+    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') CS.loadAgentTools(); if (id === 'skills') CS.loadAgentSkills(); },
     'configure-model': () => { CS.ui.modelMenu = false; CS.ui.settingsTab = 'agent'; CS.navigate('settings'); },
     'add-provider': () => { CS.ui.edit = { type: 'provider', id: null }; CS.render(); },
     'edit-provider': id => { CS.ui.edit = { type: 'provider', id }; CS.render(); },
@@ -4403,6 +4427,34 @@ CS.markdown = text => {
         await CS.refreshContextInfo();
         CS.render();
         CS.toast('工具设置已恢复默认。');
+      } catch (error) { CS.toast('恢复失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'skill-toggle': id => {
+      const s = (CS.ui.skillDraft || []).find(x => x.id === id);
+      if (!s) return;
+      s.enabled = !s.enabled;
+      CS.render();
+    },
+    'save-skills': async () => {
+      if (!CS.ui.skillDraft?.length) { CS.toast('没有需要保存的修改。'); return; }
+      try {
+        const d = await CS.api.request('/skills', { method: 'POST', body: JSON.stringify({ skills: CS.ui.skillDraft }) });
+        CS.ui.agentSkills = d.skills || [];
+        CS.ui.skillDraft = null;
+        await CS.refreshContextInfo();
+        CS.render();
+        CS.toast('技能设置已保存，下一次会话生效。');
+      } catch (error) { CS.toast('保存失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'reset-skills': async () => {
+      if (!confirm('清除全部技能自定义设置并恢复默认？')) return;
+      try {
+        const d = await CS.api.request('/skills', { method: 'POST', body: JSON.stringify({ reset: true }) });
+        CS.ui.agentSkills = d.skills || [];
+        CS.ui.skillDraft = null;
+        await CS.refreshContextInfo();
+        CS.render();
+        CS.toast('技能设置已恢复默认。');
       } catch (error) { CS.toast('恢复失败：' + CS.api.friendlyError(error), 'error'); }
     },
     'delete-model': id => { CS.ui.pendingDelete = id; CS.showModal('confirm',{title:'删除模型？',message:'将从服务端删除此模型配置。此操作不可撤销。',confirmAction:'confirm-delete-model',confirmLabel:'删除',danger:true}); },
@@ -4670,6 +4722,7 @@ CS.markdown = text => {
     else if(id==='min-genes') CS.ui.minGenes=target.value;
     else if(id==='max-mito') CS.ui.maxMito=target.value;
     else if(target.dataset?.toolId){ const t=(CS.ui.toolDraft||[]).find(x=>x.id===target.dataset.toolId); if(t) t[target.dataset.field]=target.value; if(target.dataset.field==='schema') CS.syncSchemaHighlight(target); }
+    else if(target.dataset?.skillId){ const s=(CS.ui.skillDraft||[]).find(x=>x.id===target.dataset.skillId); if(s) s[target.dataset.field]=target.value; }
   });
   // 窗口尺寸变化会改变软换行位置, 重新计算两层高度
   window.addEventListener('resize', () => CS.sizeSchemaEditors());

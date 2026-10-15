@@ -200,6 +200,20 @@ POST /api/tools   → {"tools": [...]}   # 保存全量列表；{"reset": true} 
 `enabled: false` 表示禁用；与默认一致的项不落盘。保存后服务端自动清空 `/api/context-info`
 缓存，下次查询返回重新测量的工具 token 开销。写操作要求同源（跨域返回 403）。
 
+### 6a. Agent 技能配置（服务端存储）
+
+设置页可对 Agent 技能做启用开关、改名与描述覆盖，落盘到
+`<science_dir>/skills.json`。技能正文来自 `<science_dir>/skills/<id>/SKILL.md`
+（内置技能在服务启动时从包资源种子化，自带 MinerU 文档提取技能）。技能清单作为系统提示的一部分发给模型，
+禁用的技能不进入清单，也不占用上下文；改动随下一次会话生效。
+
+```http
+GET  /api/skills   → {"skills": [{id, name, description, enabled, builtin, modified}]}
+POST /api/skills   → {"skills": [...]}   # 保存全量列表；{"reset": true} 恢复默认
+```
+
+`id` 为技能原始名称（来自 SKILL.md frontmatter）。写操作要求同源（跨域返回 403）。
+
 ### 7. 暂停、继续、取消
 
 ```http

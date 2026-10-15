@@ -164,7 +164,7 @@
     const s = CS.state.settings;
     const toggle = (id, label, sub) => `<div class="setting-row"><div><h3>${e(label)}</h3><p>${e(sub)}</p></div><button type="button" role="switch" aria-checked="${!!s[id]}" aria-label="${e(label)}" class="switch" data-action="setting-toggle" data-id="${id}"></button></div>`;
     const tab = CS.ui.settingsTab;
-    const nav = [['appearance','sun','外观与交互'],['privacy','shield','数据与隐私'],['agent','bolt','模型配置'],['tools','grid','Agent 工具']];
+    const nav = [['appearance','sun','外观与交互'],['privacy','shield','数据与隐私'],['agent','bolt','模型配置'],['tools','grid','Agent 工具'],['skills','book','Agent 技能']];
     const edit = CS.ui.edit;
     const editProvider = edit?.type === 'provider' ? (CS.ui.providers.find(x => x.id === edit.id) || null) : null;
     const editModel = edit?.type === 'model' ? (CS.ui.models.find(x => x.id === edit.id) || null) : null;
@@ -185,6 +185,20 @@
           return `<div class="tool-setting-row" data-idx="${e(t.id)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">名称</span><input class="tool-name-input" data-tool-id="${e(t.id)}" data-field="name" value="${e(t.name)}" maxlength="64" spellcheck="false"></div><div class="tool-field"><span class="tool-field-label">描述</span><input class="tool-desc-input" data-tool-id="${e(t.id)}" data-field="description" value="${e(t.description)}" maxlength="2000" spellcheck="false"></div><div class="tool-field tool-field-top"><span class="tool-field-label">参数</span><div class="schema-editor"><pre class="schema-highlight" aria-hidden="true">${V.hlJSON(V.prettyJSON(t.schema))}\n</pre><textarea class="tool-schema-input mono" data-tool-id="${e(t.id)}" data-field="schema" rows="6" spellcheck="false">${e(V.prettyJSON(t.schema))}</textarea></div></div></div><div class="tool-setting-side">${custom}<button type="button" role="switch" aria-checked="${!!t.enabled}" class="switch" data-action="tool-toggle" data-id="${e(t.id)}" aria-label="启用 ${e(t.id)}"></button></div></div>`;
         }).join('');
         return `<div class="panel settings-section"><div class="row-between"><h2>Agent 工具</h2>${pill('服务端存储')}</div><p class="small muted mb-20">设置 Agent 会话可用的内置工具: 启用开关、名称、描述与参数 schema 随下一次请求生效; 禁用的工具不再发给模型, 也不再占用上下文。参数 schema 需为合法 JSON 对象。</p>${rows}<div class="settings-actions row wrap">${btn('save-tools','保存','check','primary')}${btn('reset-tools','恢复默认','refresh','flat')}</div></div>`;
+      })(),
+      skills: (() => {
+        // Agent 技能设置: 与工具设定同构, 未保存的修改存 skillDraft, 重渲染不丢
+        const list = CS.ui.skillDraft || CS.ui.agentSkills;
+        if (!list) return `<div class="panel settings-section"><h2>Agent 技能</h2><p class="small muted mb-20">正在加载技能列表…</p></div>`;
+        if (!list.length) return `<div class="panel settings-section"><h2>Agent 技能</h2><p class="small muted mb-20">当前环境没有可配置的技能。</p></div>`;
+        const rows = list.map(s => {
+          const orig = (CS.ui.agentSkills || []).find(x => x.id === s.id);
+          const dirty = !orig || orig.name !== s.name || orig.description !== s.description || !!orig.enabled !== !!s.enabled;
+          const custom = (s.modified || dirty) ? pill('自定义') : '';
+          const builtin = s.builtin ? pill('内置', 'green') : '';
+          return `<div class="tool-setting-row" data-idx="${e(s.id)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">名称</span><input class="skill-name-input" data-skill-id="${e(s.id)}" data-field="name" value="${e(s.name)}" maxlength="64" spellcheck="false"></div><div class="tool-field"><span class="tool-field-label">描述</span><input class="skill-desc-input" data-skill-id="${e(s.id)}" data-field="description" value="${e(s.description)}" maxlength="2000" spellcheck="false"></div></div><div class="tool-setting-side">${custom}${builtin}<button type="button" role="switch" aria-checked="${!!s.enabled}" class="switch" data-action="skill-toggle" data-id="${e(s.id)}" aria-label="启用 ${e(s.id)}"></button></div></div>`;
+        }).join('');
+        return `<div class="panel settings-section"><div class="row-between"><h2>Agent 技能</h2>${pill('服务端存储')}</div><p class="small muted mb-20">设置 Agent 会话可用的技能: 启用开关、名称与描述随下一次会话生效; 技能清单作为系统提示的一部分发给模型, 禁用的技能不占用上下文。技能正文存放在服务端 skills 目录。</p>${rows}<div class="settings-actions row wrap">${btn('save-skills','保存','check','primary')}${btn('reset-skills','恢复默认','refresh','flat')}</div></div>`;
       })(),
       appearance: `<div class="panel settings-section"><h2>外观与交互</h2>${toggle('contrast','增强文字与边界对比','保持浅灰色主题，提高说明文字与控件边界的可读性。')}${toggle('reducedMotion','减少动态效果','关闭过渡与旋转动画，不影响任务状态更新。')}${toggle('inspector','显示任务详情侧栏','在宽屏的 Agent 对话中显示输入上下文与执行边界。')}</div>`,
       privacy: `<div class="panel settings-section"><h2>数据与隐私</h2>${toggle('persist','在本机保存工作空间','保存项目、文件名、对话与任务记录；不保存原始文件。共享电脑建议关闭。关闭后删除已有本地保存，当前会话仍保留。')}<div class="setting-row"><div><h3>导出工作空间</h3><p>导出元信息与任务记录。包含对话内容，分享前请检查隐私。</p></div>${btn('export-workspace','导出 JSON','download','flat')}</div><div class="setting-row"><div><h3>清空并恢复示例</h3><p>移除本机保存的项目、导入记录与对话，恢复初始演示。</p></div>${btn('reset-workspace','重置','trash','flat danger')}</div></div>`,

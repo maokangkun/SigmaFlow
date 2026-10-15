@@ -257,6 +257,16 @@
     try { CS.ui.contextInfo = await CS.api.request('/context-info'); } catch {}
     CS.updateContextRing();
   };
+  // Agent 技能设置: 进入设置页时懒加载, 保存或恢复后刷新上下文圆环
+  CS.loadAgentSkills = async () => {
+    if (CS.ui.agentSkills) return;
+    try {
+      const d = await CS.api.request('/skills');
+      CS.ui.agentSkills = d.skills || [];
+      if (!CS.ui.skillDraft) CS.ui.skillDraft = CS.ui.agentSkills.map(s => ({ ...s }));
+      CS.render();
+    } catch (error) { CS.toast('技能列表加载失败：' + CS.api.friendlyError(error), 'error'); }
+  };
   // 参数编辑框: 透明 textarea 叠在高亮 pre 上, 输入时刷新高亮; 高度由 sizeSchemaEditors 统一管理
   CS.sizeSchemaEditors = () => {
     document.querySelectorAll('.schema-editor').forEach(ed => {
@@ -642,7 +652,7 @@
     },
     'connect-project': () => { CS.ui.projectMenu = false; CS.showModal('remote-project'); },
     'submit-remote-project': () => {},
-    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') CS.loadAgentTools(); },
+    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') CS.loadAgentTools(); if (id === 'skills') CS.loadAgentSkills(); },
     'configure-model': () => { CS.ui.modelMenu = false; CS.ui.settingsTab = 'agent'; CS.navigate('settings'); },
     'add-provider': () => { CS.ui.edit = { type: 'provider', id: null }; CS.render(); },
     'edit-provider': id => { CS.ui.edit = { type: 'provider', id }; CS.render(); },
@@ -701,6 +711,34 @@
         await CS.refreshContextInfo();
         CS.render();
         CS.toast('工具设置已恢复默认。');
+      } catch (error) { CS.toast('恢复失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'skill-toggle': id => {
+      const s = (CS.ui.skillDraft || []).find(x => x.id === id);
+      if (!s) return;
+      s.enabled = !s.enabled;
+      CS.render();
+    },
+    'save-skills': async () => {
+      if (!CS.ui.skillDraft?.length) { CS.toast('没有需要保存的修改。'); return; }
+      try {
+        const d = await CS.api.request('/skills', { method: 'POST', body: JSON.stringify({ skills: CS.ui.skillDraft }) });
+        CS.ui.agentSkills = d.skills || [];
+        CS.ui.skillDraft = null;
+        await CS.refreshContextInfo();
+        CS.render();
+        CS.toast('技能设置已保存，下一次会话生效。');
+      } catch (error) { CS.toast('保存失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'reset-skills': async () => {
+      if (!confirm('清除全部技能自定义设置并恢复默认？')) return;
+      try {
+        const d = await CS.api.request('/skills', { method: 'POST', body: JSON.stringify({ reset: true }) });
+        CS.ui.agentSkills = d.skills || [];
+        CS.ui.skillDraft = null;
+        await CS.refreshContextInfo();
+        CS.render();
+        CS.toast('技能设置已恢复默认。');
       } catch (error) { CS.toast('恢复失败：' + CS.api.friendlyError(error), 'error'); }
     },
     'delete-model': id => { CS.ui.pendingDelete = id; CS.showModal('confirm',{title:'删除模型？',message:'将从服务端删除此模型配置。此操作不可撤销。',confirmAction:'confirm-delete-model',confirmLabel:'删除',danger:true}); },
@@ -968,6 +1006,7 @@
     else if(id==='min-genes') CS.ui.minGenes=target.value;
     else if(id==='max-mito') CS.ui.maxMito=target.value;
     else if(target.dataset?.toolId){ const t=(CS.ui.toolDraft||[]).find(x=>x.id===target.dataset.toolId); if(t) t[target.dataset.field]=target.value; if(target.dataset.field==='schema') CS.syncSchemaHighlight(target); }
+    else if(target.dataset?.skillId){ const s=(CS.ui.skillDraft||[]).find(x=>x.id===target.dataset.skillId); if(s) s[target.dataset.field]=target.value; }
   });
   // 窗口尺寸变化会改变软换行位置, 重新计算两层高度
   window.addEventListener('resize', () => CS.sizeSchemaEditors());
