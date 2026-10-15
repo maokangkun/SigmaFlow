@@ -250,22 +250,25 @@ def _effective_agent_tools() -> list:
             description = str(override.get("description") or "").strip()
             if description:
                 entry["description"] = description
+            schema = override.get("schema")
+            if isinstance(schema, dict) and schema:
+                entry["input_schema"] = schema
             tools.append(entry)
     return tools
 
 
 def _tool_listing(defaults: list, overrides: Dict[str, dict]) -> list:
-    """Settings-page view of the tool set: original id plus effective name/description/enabled."""
+    """Settings-page view of the tool set: original id plus effective name/description/schema/enabled."""
     out = []
     for t in defaults:
         override = overrides.get(t["name"]) or {}
-        schema = (t.get("input_schema") or {}).get("properties") or {}
+        schema = override.get("schema") if isinstance(override.get("schema"), dict) else (t.get("input_schema") or {})
         out.append({
             "id": t["name"],
             "name": str(override.get("name") or "").strip() or t["name"],
             "description": str(override.get("description") or "").strip() or t.get("description") or "",
             "enabled": override.get("enabled") is not False,
-            "params": ", ".join(schema.keys()),
+            "schema": json.dumps(schema, ensure_ascii=False, separators=(",", ":")),
             "modified": bool(override),
         })
     return out
@@ -296,6 +299,18 @@ def _build_tool_overrides(items: list, known: Dict[str, dict]) -> Dict[str, dict
             entry["description"] = description
         if item.get("enabled") is False:
             entry["enabled"] = False
+        schema_text = str(item.get("schema") or "").strip()
+        if schema_text:
+            if len(schema_text) > 8000:
+                raise HTTPException(status_code=400, detail=f"工具 {tool_id} 参数 schema 过长")
+            try:
+                schema = json.loads(schema_text)
+            except Exception:
+                raise HTTPException(status_code=400, detail=f"工具 {tool_id} 参数 schema 不是合法 JSON")
+            if not isinstance(schema, dict):
+                raise HTTPException(status_code=400, detail=f"工具 {tool_id} 参数 schema 必须是 JSON 对象")
+            if schema != (known[tool_id].get("input_schema") or {}):
+                entry["schema"] = schema
         if entry:
             overrides[tool_id] = entry
     return overrides

@@ -185,17 +185,18 @@ GET    /api/context-info      → {"systemTokens": int, "toolsTokens": int}  # A
 模型用新名称调用时仍路由到原实现。参数结构只读。
 
 ```http
-GET  /api/tools   → {"tools": [{id, name, description, enabled, params, modified}]}
+GET  /api/tools   → {"tools": [{id, name, description, enabled, schema, modified}]}
 POST /api/tools   → {"tools": [...]}   # 保存全量列表；{"reset": true} 恢复默认
 ```
 
-`id` 为工具原始名称（配置键），`name` 为发给模型的显示名。POST 请求体示例：
+`id` 为工具原始名称（配置键），`name` 为发给模型的显示名，`schema` 为参数结构的紧凑 JSON 字符串（可编辑）。POST 请求体示例：
 
 ```json
-{"tools": [{"id": "bash", "name": "run_terminal", "description": "Run a shell command.", "enabled": true}]}
+{"tools": [{"id": "bash", "name": "run_terminal", "description": "Run a shell command.", "enabled": true, "schema": "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\"}}}"}]}
 ```
 
 规则：`id` 必须存在于当前工具集；显示名非空、去重、≤ 64 字符；描述 ≤ 2000 字符；
+参数 schema 需为合法 JSON 对象且 ≤ 8000 字符（留空用默认）；
 `enabled: false` 表示禁用；与默认一致的项不落盘。保存后服务端自动清空 `/api/context-info`
 缓存，下次查询返回重新测量的工具 token 开销。写操作要求同源（跨域返回 403）。
 
