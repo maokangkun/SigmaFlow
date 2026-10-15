@@ -75,7 +75,9 @@
         ? `<div class="msg-block user-block"><div class="user-message">${e(m.content)}${m.datasetIds?.length ? `<div class="attachment-list mt-12">${m.datasetIds.map(id => `<span class="attachment">${i('file')}${e(CS.state.datasets.find(d => d.id === id)?.name || id)}</span>`).join('')}</div>` : ''}</div><div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span><span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="edit-message" data-id="${idxOf}" title="修改">${i('edit','',13)}</span></span></div></div>`
         : (() => {
             const blockMeta = t => t.name === 'bash' ? {icon: 'terminal', label: '终端'} : {icon: 'code', label: '工具'};
-            const bkey = bi => `${m.at || idxOf}|${bi}`;
+            // 块折叠键: 会话id+消息序号+块序号。不能用 m.at —— 完成时会重置 at,
+            // 展开状态会随键失效。idxOf 在追加式列表里稳定
+            const bkey = bi => `${run.id}|${idxOf}|${bi}`;
             const blockOpen = bi => !!CS.ui.blockOpen[bkey(bi)];
             const blocks = Array.isArray(m.blocks) ? m.blocks : null;
             const lastIdx = blocks ? blocks.length - 1 : -1;

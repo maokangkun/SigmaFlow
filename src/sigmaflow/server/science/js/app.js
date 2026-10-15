@@ -216,6 +216,7 @@
     const conversation = document.querySelector('.conversation');
     if (conversation) conversation.scrollTop = conversation.scrollHeight;
     CS.ui.canJumpLatest = false;
+    CS.ui.followLock = false;  // 主动回到底部后恢复跟随
   };
   // 用户已向上翻阅时不要抢滚动: 只有贴近底部才跟随新内容滚到底,
   // 否则流式期间的每次重渲染都会把用户的滚动位置拉回底部, 表现为滚动卡顿。
@@ -346,6 +347,7 @@
     const el = ev.target;
     if (!el.classList?.contains('conversation')) return;
     const show = el.scrollHeight - el.scrollTop - el.clientHeight >= 80;  // 离底部远 → 显示
+    if (!show) CS.ui.followLock = false;  // 用户回到底部后恢复跟随
     if (show === CS.ui.canJumpLatest) return;
     CS.ui.canJumpLatest = show;
     const btn = document.querySelector('.jump-latest');
@@ -439,7 +441,7 @@
       const toolEvent = t => {
         pushTool(t);
         mirror();
-        const follow = nearBottom();
+        const follow = nearBottom() && !CS.ui.followLock;
         CS.render();
         if (follow) scrollToLatest();
       };
@@ -448,14 +450,14 @@
         mirror();
         reply.tokens = (reply.tokens || 0) + estTokens(delta);
         const now = Date.now();
-        if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom(); if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
+        if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       }, think => {
         pushThink(think);
         mirror();
         reply.tokens = (reply.tokens || 0) + estTokens(think);
         CS.ui.thinkingText = reply.reasoning;
         const now = Date.now();
-        if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom(); if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
+        if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       }, toolEvent);
       // 正文以流式时间线为准(保留各轮文本); 服务端最终内容仅在本地没收到任何文本时兑底
       if (!reply.content && typeof done.content === 'string') reply.content = done.content;
@@ -470,7 +472,7 @@
     finishTimer();
     reply.blocks = reply.blocks.filter(b => b.type === 'tool' || !!b.text);  // 丢弃中途产生的空段
     CS.save(); CS.render();
-    setTimeout(scrollToLatest, 20);
+    if (!CS.ui.followLock) setTimeout(scrollToLatest, 20);  // 用户暂停跟随时完成后不拽到底部
     syncConversation(run);
   };
   const openNewTask = (prompt, workflowId = 'singlecell', ids = []) => {
@@ -627,7 +629,10 @@
     if (!row || idx < 0) return;
     const freshConv = document.querySelector('.conversation');
     const freshBlock = freshConv?.children[idx];
-    const freshRow = freshBlock ? freshBlock.querySelector('[data-action="' + row.dataset.action + '"]') : null;
+    // 同一动作可能出现多行(每条消息可有多个思考/工具块), 用 data-id 精确定位被点击的那行,
+    // 否则滚动补偿会以错误的行为基准, 表现为页面位置乱跳
+    const sel = '[data-action="' + row.dataset.action + '"]' + (row.dataset.id != null ? '[data-id="' + CSS.escape(row.dataset.id) + '"]' : '');
+    const freshRow = freshBlock ? freshBlock.querySelector(sel) : null;
     if (freshRow && freshConv) freshConv.scrollTop += freshRow.getBoundingClientRect().top - rowTop;
   };
   const actions = {
@@ -703,7 +708,13 @@
     },
     'stop-generation': () => { CS.api.ws.stopChats(); },
     'toggle-thinking': (id, el) => _toggleAnchored(el, () => { CS.ui.thinkingOpen = !CS.ui.thinkingOpen; }),
-    'toggle-block': (id, el) => _toggleAnchored(el, () => { CS.ui.blockOpen[id] = !CS.ui.blockOpen[id]; }),
+    'toggle-block': (id, el) => _toggleAnchored(el, () => {
+      const opening = !CS.ui.blockOpen[id];
+      CS.ui.blockOpen[id] = !CS.ui.blockOpen[id];
+      // 流式期间手动展开会增加内容: 若此刻贴近底部(近底阀值内)跟随逻辑会把视口拽走,
+      // 表现为展开后页面乱跳; 展开时暂停跟随, 回到底部或点跳到最新时恢复
+      if (opening) CS.ui.followLock = true;
+    }),
     'toggle-tools': (id, el) => _toggleAnchored(el, () => { CS.ui.toolsOpen = !CS.ui.toolsOpen; }),
     'toggle-error': (id, el) => _toggleAnchored(el, () => { CS.ui.errorOpen = !CS.ui.errorOpen; }),
     'jump-latest': () => { CS.ui.canJumpLatest = false; CS.render(); scrollToLatest(); },
