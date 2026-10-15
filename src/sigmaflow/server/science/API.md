@@ -177,7 +177,29 @@ GET    /api/context-info      → {"systemTokens": int, "toolsTokens": int}  # A
 注意区分：`baseUrl` 指向模型服务商，供后端后续接入真实推理使用；浏览器连接 Science 后端的“服务地址”
 （如 `/api` 或 `/sigmaflow/api`）是工作空间的独立设置项，保存在浏览器本地，与模型记录无关。
 
-### 6. 暂停、继续、取消
+### 6. Agent 工具配置（服务端存储）
+
+设置页可对 Agent 内置工具做启用开关、改名与描述覆盖，落盘到
+`<science_dir>/tools.json`（默认 `~/.sigmaflow/science/tools.json`）。请求时动态组合出实际生效的工具
+清单：禁用的工具不再发给模型，也不计入上下文固定开销；改名的工具会在执行层注册别名，
+模型用新名称调用时仍路由到原实现。参数结构只读。
+
+```http
+GET  /api/tools   → {"tools": [{id, name, description, enabled, params, modified}]}
+POST /api/tools   → {"tools": [...]}   # 保存全量列表；{"reset": true} 恢复默认
+```
+
+`id` 为工具原始名称（配置键），`name` 为发给模型的显示名。POST 请求体示例：
+
+```json
+{"tools": [{"id": "bash", "name": "run_terminal", "description": "Run a shell command.", "enabled": true}]}
+```
+
+规则：`id` 必须存在于当前工具集；显示名非空、去重、≤ 64 字符；描述 ≤ 2000 字符；
+`enabled: false` 表示禁用；与默认一致的项不落盘。保存后服务端自动清空 `/api/context-info`
+缓存，下次查询返回重新测量的工具 token 开销。写操作要求同源（跨域返回 403）。
+
+### 7. 暂停、继续、取消
 
 ```http
 POST /api/runs/{id}/control
@@ -202,7 +224,7 @@ Content-Type: application/json
 前端在接口联调模式下先尝试建立 WS 连接（3.5 秒超时）；失败后 30 秒内不再重试，
 期间所有请求走 HTTP，事件流走 SSE。两种通道推送的状态快照格式完全一致。
 
-### 7. WebSocket 通道
+### 8. WebSocket 通道
 
 连接地址由设置的接口地址派生：`{endpoint}/ws`（如 `/api` → `/api/ws`）。
 每帧一个 JSON 文本消息。客户端消息为 `action`，可选携带 `requestId`；

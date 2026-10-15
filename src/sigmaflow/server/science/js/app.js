@@ -241,6 +241,20 @@
       setText('v-sys', CS.kfmt(u.sysT)); setText('v-tools', CS.kfmt(u.toolT)); setText('v-msgs', CS.kfmt(u.msgsT));
     }
   };
+  // Agent 工具设置: 进入设置页时懒加载; 保存或恢复后刷新上下文圆环
+  CS.loadAgentTools = async () => {
+    if (CS.ui.agentTools) return;
+    try {
+      const d = await CS.api.request('/tools');
+      CS.ui.agentTools = d.tools || [];
+      if (!CS.ui.toolDraft) CS.ui.toolDraft = CS.ui.agentTools.map(t => ({ ...t }));
+      CS.render();
+    } catch (error) { CS.toast('工具列表加载失败：' + CS.api.friendlyError(error), 'error'); }
+  };
+  CS.refreshContextInfo = async () => {
+    try { CS.ui.contextInfo = await CS.api.request('/context-info'); } catch {}
+    CS.updateContextRing();
+  };
   const updateStreamingDom = reply => {
     const contentEl = document.querySelector(`.agent-intro[data-stream-at="${CSS.escape(reply.at)}"]`);
     const body = contentEl?.closest('.agent-body');
@@ -609,7 +623,7 @@
     },
     'connect-project': () => { CS.ui.projectMenu = false; CS.showModal('remote-project'); },
     'submit-remote-project': () => {},
-    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); },
+    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') CS.loadAgentTools(); },
     'configure-model': () => { CS.ui.modelMenu = false; CS.ui.settingsTab = 'agent'; CS.navigate('settings'); },
     'add-provider': () => { CS.ui.edit = { type: 'provider', id: null }; CS.render(); },
     'edit-provider': id => { CS.ui.edit = { type: 'provider', id }; CS.render(); },
@@ -642,6 +656,34 @@
     'add-model': id => { CS.ui.edit = { type: 'model', id: null }; CS.ui.providerModels = null; CS.ui.draftModelName = ''; CS.ui.draftProviderId = id || null; CS.render(); },
     'edit-model': id => { const m = CS.ui.models.find(x => x.id === id); CS.ui.edit = { type: 'model', id }; CS.ui.providerModels = null; CS.ui.draftModelName = m?.model || ''; CS.ui.draftProviderId = m?.providerId || null; CS.render(); },
     'cancel-edit': () => { CS.ui.edit = null; CS.ui.providerModels = null; CS.render(); },
+    'tool-toggle': id => {
+      const t = (CS.ui.toolDraft || []).find(x => x.id === id);
+      if (!t) return;
+      t.enabled = !t.enabled;
+      CS.render();
+    },
+    'save-tools': async () => {
+      if (!CS.ui.toolDraft?.length) { CS.toast('没有需要保存的修改。'); return; }
+      try {
+        const d = await CS.api.request('/tools', { method: 'POST', body: JSON.stringify({ tools: CS.ui.toolDraft }) });
+        CS.ui.agentTools = d.tools || [];
+        CS.ui.toolDraft = null;
+        await CS.refreshContextInfo();
+        CS.render();
+        CS.toast('工具设置已保存，下一次请求生效。');
+      } catch (error) { CS.toast('保存失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'reset-tools': async () => {
+      if (!confirm('清除全部工具自定义设置并恢复默认？')) return;
+      try {
+        const d = await CS.api.request('/tools', { method: 'POST', body: JSON.stringify({ reset: true }) });
+        CS.ui.agentTools = d.tools || [];
+        CS.ui.toolDraft = null;
+        await CS.refreshContextInfo();
+        CS.render();
+        CS.toast('工具设置已恢复默认。');
+      } catch (error) { CS.toast('恢复失败：' + CS.api.friendlyError(error), 'error'); }
+    },
     'delete-model': id => { CS.ui.pendingDelete = id; CS.showModal('confirm',{title:'删除模型？',message:'将从服务端删除此模型配置。此操作不可撤销。',confirmAction:'confirm-delete-model',confirmLabel:'删除',danger:true}); },
     'confirm-delete-model': async () => {
       const id = CS.ui.pendingDelete; CS.ui.pendingDelete = null;
@@ -906,6 +948,7 @@
     else if(id==='pubmed-query') CS.ui.pubmedQuery=target.value;
     else if(id==='min-genes') CS.ui.minGenes=target.value;
     else if(id==='max-mito') CS.ui.maxMito=target.value;
+    else if(target.dataset?.toolId){ const t=(CS.ui.toolDraft||[]).find(x=>x.id===target.dataset.toolId); if(t) t[target.dataset.field]=target.value; }
   });
   document.addEventListener('change',event=>{
     const target=event.target;

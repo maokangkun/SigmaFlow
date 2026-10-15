@@ -35,7 +35,11 @@
       const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), options.timeout || 15000);
       try {
         const response = await fetch(CS.api.url(path), { ...options, credentials: 'include', headers: { 'Content-Type': 'application/json', ...options.headers }, signal: controller.signal });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+          let detail = `HTTP ${response.status}`;
+          try { const body = await response.json(); if (body?.detail) detail = String(body.detail); } catch {}
+          throw new Error(detail);
+        }
         return await response.json();
       } finally { clearTimeout(timer); }
     }

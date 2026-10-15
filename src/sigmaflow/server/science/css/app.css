@@ -242,3 +242,11 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
   .ctx-pct{display:none}
   .ctx-pop{right:auto;left:0}
 }
+/* Agent 工具设置: 每条工具一行, 启用开关 + 名称 + 描述 + 只读参数摘要 */
+.tool-setting-row{display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start;padding:14px 0;border-bottom:1px solid var(--line-soft)}
+.tool-setting-row:last-child{border-bottom:none}
+.tool-setting-row .switch{margin-top:4px}
+.tool-setting-main{display:flex;flex-direction:column;gap:6px;min-width:0}
+.tool-name-input{max-width:280px;padding:7px 10px;font-size:12px}
+.tool-desc-input{min-height:46px;padding:8px 10px;font-size:11px;line-height:1.7}
+.tool-original{font-size:10px;color:var(--faint)}

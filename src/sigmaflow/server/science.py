@@ -16,6 +16,7 @@ import asyncio
 import json
 import math
 import os
+import threading
 import time
 import uuid
 
@@ -94,6 +95,11 @@ class ConversationIn(BaseModel):
     content: Optional[list] = None
 
 
+class ToolsUpdateIn(BaseModel):
+    tools: Optional[list] = None
+    reset: Optional[bool] = None
+
+
 def _test_provider(base_url: str, api_key: str) -> dict:
     """Ping `{base_url}/models` on the provider and report real latency."""
     url = base_url.rstrip("/") + "/models"
@@ -159,6 +165,140 @@ def _model_context_window(model_name: str, override: Optional[int] = None) -> in
         return int(MAX_MODEL_LEN.get((model_name or "").lower(), MAX_MODEL_LEN.get("default", 131072)))
     except Exception:
         return 131072
+
+
+# ==================== Agent 工具配置 ====================
+# 设置页可对内置工具做启用开关、改名与描述覆盖, 落盘到 <science_dir>/tools.json;
+# 请求时组合出实际生效的工具清单, 并在 TOOL_HANDLERS 中同步别名, 保证改名不影响执行
+
+_TOOLS_LOCK = threading.Lock()
+_TOOL_ALIASES: Dict[str, str] = {}
+
+
+def _agent_tools_module():
+    """Load sigmaflow.agent.tools with the same sys.path fallback as _run_agent_chat."""
+    try:
+        from sigmaflow.agent import tools
+    except ModuleNotFoundError:
+        import sys as _sys
+        _src_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        if _src_root not in _sys.path:
+            _sys.path.insert(0, _src_root)
+        from sigmaflow.agent import tools
+    return tools
+
+
+def _tool_config_path() -> str:
+    root = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(os.path.expanduser("~"), ".sigmaflow", "science")
+    return os.path.join(root, "tools.json")
+
+
+def _load_tool_overrides() -> Dict[str, dict]:
+    try:
+        with open(_tool_config_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return {}
+    overrides = data.get("overrides") if isinstance(data, dict) else None
+    if not isinstance(overrides, dict):
+        return {}
+    return {str(k): dict(v) for k, v in overrides.items() if isinstance(v, dict)}
+
+
+def _save_tool_overrides(overrides: Dict[str, dict]) -> None:
+    path = _tool_config_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump({"overrides": overrides}, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+
+
+def _tool_defaults() -> list:
+    """Copy of sigmaflow.agent.tools.TOOLS; empty list when the agent package is unavailable."""
+    try:
+        return [dict(t) for t in _agent_tools_module().TOOLS]
+    except Exception:
+        return []
+
+
+def _effective_agent_tools() -> list:
+    """Compose the active tool list: drop disabled tools, apply name/description
+    overrides, and register TOOL_HANDLERS aliases so renamed tools still execute."""
+    defaults = _tool_defaults()
+    if not defaults:
+        return []
+    handlers = _agent_tools_module().TOOL_HANDLERS
+    overrides = _load_tool_overrides()
+    with _TOOLS_LOCK:
+        original = {t["name"] for t in defaults}
+        for alias in list(_TOOL_ALIASES):
+            if alias not in original:
+                handlers.pop(alias, None)
+            del _TOOL_ALIASES[alias]
+        tools = []
+        for t in defaults:
+            override = overrides.get(t["name"]) or {}
+            if override.get("enabled") is False:
+                continue
+            entry = dict(t)
+            display = str(override.get("name") or "").strip()
+            if display and display != t["name"]:
+                entry["name"] = display
+                handlers[display] = handlers.get(t["name"])
+                _TOOL_ALIASES[display] = t["name"]
+            description = str(override.get("description") or "").strip()
+            if description:
+                entry["description"] = description
+            tools.append(entry)
+    return tools
+
+
+def _tool_listing(defaults: list, overrides: Dict[str, dict]) -> list:
+    """Settings-page view of the tool set: original id plus effective name/description/enabled."""
+    out = []
+    for t in defaults:
+        override = overrides.get(t["name"]) or {}
+        schema = (t.get("input_schema") or {}).get("properties") or {}
+        out.append({
+            "id": t["name"],
+            "name": str(override.get("name") or "").strip() or t["name"],
+            "description": str(override.get("description") or "").strip() or t.get("description") or "",
+            "enabled": override.get("enabled") is not False,
+            "params": ", ".join(schema.keys()),
+            "modified": bool(override),
+        })
+    return out
+
+
+def _build_tool_overrides(items: list, known: Dict[str, dict]) -> Dict[str, dict]:
+    """Validate the submitted tool settings and compress them into overrides;
+    unchanged tools are not persisted."""
+    overrides: Dict[str, dict] = {}
+    seen: Dict[str, str] = {}
+    for item in items or []:
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=400, detail="Invalid tools payload")
+        tool_id = str(item.get("id") or "")
+        if tool_id not in known:
+            raise HTTPException(status_code=400, detail=f"Unknown tool: {tool_id}")
+        display = str(item.get("name") or "").strip()[:64]
+        if not display:
+            display = tool_id
+        if display in seen:
+            raise HTTPException(status_code=400, detail=f"工具名称重复: {display}")
+        seen[display] = tool_id
+        description = str(item.get("description") or "").strip()[:2000]
+        entry: Dict[str, Any] = {}
+        if display != tool_id:
+            entry["name"] = display
+        if description and description != (known[tool_id].get("description") or ""):
+            entry["description"] = description
+        if item.get("enabled") is False:
+            entry["enabled"] = False
+        if entry:
+            overrides[tool_id] = entry
+    return overrides
 
 
 class ScienceModelStore:
@@ -661,6 +801,26 @@ class ScienceAPI:
             except RuntimeError as err:
                 raise HTTPException(status_code=400, detail=str(err))
             return {"content": content, "tokens": stats.get("completion_tokens") or 0, "promptTokens": stats.get("prompt_tokens") or 0}
+
+        @router.get("/tools")
+        async def list_tools():
+            overrides = await asyncio.to_thread(_load_tool_overrides)
+            defaults = await asyncio.to_thread(_tool_defaults)
+            return {"tools": _tool_listing(defaults, overrides)}
+
+        @router.post("/tools")
+        async def save_tools(payload: ToolsUpdateIn, request: Request):
+            _check_origin(request)
+            defaults = await asyncio.to_thread(_tool_defaults)
+            known = {t["name"]: t for t in defaults}
+            if payload.reset:
+                overrides = {}
+            else:
+                overrides = _build_tool_overrides(payload.tools or [], known)
+            await asyncio.to_thread(_save_tool_overrides, overrides)
+            # 工具集变化后固定开销随之变化, 清空缓存让 /context-info 重新测量
+            _AGENT_CONTEXT_SIZES.clear()
+            return {"tools": _tool_listing(defaults, overrides)}
 
         @router.get("/conversations")
         async def list_conversations():
@@ -1346,6 +1506,7 @@ def _run_agent_chat(base_url: str, api_key: str, model_name: str, messages: list
         support_tool=True,
         retry=2,
         max_turn=max_turn,
+        tools=_effective_agent_tools(),
         on_delta=_make_chat_delta_callback(on_delta, on_reasoning),
         on_tool=on_tool,
     )
@@ -1397,7 +1558,7 @@ def _agent_context_sizes() -> Dict[str, int]:
         from sigmaflow.agent.agent import Agent
 
     agent = Agent(method="openai", model="estimate", base_url="http://127.0.0.1:9/v1",
-                  api_key="sk-empty", support_tool=True)
+                  api_key="sk-empty", support_tool=True, tools=_effective_agent_tools())
     tools_wire = json.dumps(agent.tools, ensure_ascii=False, separators=(",", ":"))
     sizes = {
         "systemTokens": math.ceil(len(agent.system) / 3.7),
