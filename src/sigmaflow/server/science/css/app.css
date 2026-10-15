@@ -260,3 +260,8 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
 .j-str{color:var(--green)}
 .j-num{color:var(--blue)}
 .j-kw{color:var(--red)}
+/* 系统提示词设置: 开关行复用工具卡布局, 内容为多行等宽编辑框 */
+.sysprompt-textarea{width:100%;min-height:220px;resize:vertical;font-size:11px;line-height:1.7;padding:10px 12px;white-space:pre-wrap}
+.sysprompt-builtin{margin-top:12px}
+.sysprompt-builtin summary{cursor:pointer;user-select:none}
+.sysprompt-builtin-pre{max-height:280px;overflow:auto;padding:10px 12px;font-size:11px;line-height:1.7;white-space:pre-wrap;word-break:break-word;background:var(--inset);border:1px solid var(--line-soft);border-radius:10px;color:var(--muted)}

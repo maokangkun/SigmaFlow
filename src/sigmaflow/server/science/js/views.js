@@ -164,7 +164,7 @@
     const s = CS.state.settings;
     const toggle = (id, label, sub) => `<div class="setting-row"><div><h3>${e(label)}</h3><p>${e(sub)}</p></div><button type="button" role="switch" aria-checked="${!!s[id]}" aria-label="${e(label)}" class="switch" data-action="setting-toggle" data-id="${id}"></button></div>`;
     const tab = CS.ui.settingsTab;
-    const nav = [['appearance','sun','外观与交互'],['privacy','shield','数据与隐私'],['agent','bolt','模型配置'],['tools','grid','Agent 工具'],['skills','book','Agent 技能'],['mcp','network','MCP 服务']];
+    const nav = [['appearance','sun','外观与交互'],['privacy','shield','数据与隐私'],['agent','bolt','模型配置'],['tools','grid','Agent 工具'],['skills','book','Agent 技能'],['mcp','network','MCP 服务'],['sysprompt','code','系统提示词']];
     const edit = CS.ui.edit;
     const editProvider = edit?.type === 'provider' ? (CS.ui.providers.find(x => x.id === edit.id) || null) : null;
     const editModel = edit?.type === 'model' ? (CS.ui.models.find(x => x.id === edit.id) || null) : null;
@@ -212,6 +212,16 @@
           return `<div class="tool-setting-row" data-idx="${e(s.key)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">名称</span><input class="mcp-name-input" data-mcp-id="${e(s.key)}" data-field="name" value="${e(s.name)}" maxlength="64" spellcheck="false"></div><div class="tool-field"><span class="tool-field-label">地址</span><input class="mcp-url-input" data-mcp-id="${e(s.key)}" data-field="url" value="${e(s.url)}" maxlength="500" spellcheck="false"></div></div><div class="tool-setting-side">${custom}${builtin}<div class="row gap-6"><button type="button" class="icon-btn" data-action="mcp-remove" data-id="${e(s.key)}" aria-label="移除 ${e(s.name) || '新服务器'}" title="移除">${i('trash')}</button><button type="button" role="switch" aria-checked="${!!s.enabled}" class="switch" data-action="mcp-toggle" data-id="${e(s.key)}" aria-label="启用 ${e(s.name) || '新服务器'}"></button></div></div></div>`;
         }).join('');
         return `<div class="panel settings-section"><div class="row-between"><h2>MCP 服务</h2>${pill('服务端存储')}</div><p class="small muted mb-20">配置 Agent 会话可用的 MCP 服务器: 保存后服务端连接各服务器拉取工具清单, 启用的服务器工具并入“Agent 工具”并占用上下文; 禁用或移除的服务器不参与会话。内置 medical-apis 提供基因、疾病、药物等医学数据查询。</p>${rows}<div class="settings-actions row wrap">${btn('add-mcp','新增服务器','plus','primary')}${btn('save-mcp','保存','check','primary')}${btn('reset-mcp','恢复默认','refresh','flat')}</div></div>`;
+      })(),
+      sysprompt: (() => {
+        // 系统提示词设置: draft 含 prompt/enabled; 内置默认供参考, 内联折叠展示
+        const sp = CS.ui.syspromptDraft || CS.ui.systemPrompt;
+        if (!sp) return `<div class="panel settings-section"><h2>系统提示词</h2><p class="small muted mb-20">正在加载系统提示词配置…</p></div>`;
+        const on = !!sp.enabled;
+        const builtin = sp.builtin || CS.ui.systemPrompt?.builtin || '';
+        const builtinTokens = sp.builtinTokens || CS.ui.systemPrompt?.builtinTokens;
+        const chars = (sp.prompt || '').length;
+        return `<div class="panel settings-section"><div class="row-between"><h2>系统提示词</h2>${pill('服务端存储')}</div><p class="small muted mb-20">自定义提示词会替换 Agent 内置默认(会改变内置任务/团队等指令, 请谨慎); 技能清单自动附加在末尾, 工具调用说明由 Agent 自动追加。子代理仍使用内置提示词。</p><div class="tool-setting-row"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">开关</span><div class="row gap-6"><button type="button" role="switch" aria-checked="${on}" class="switch" data-action="sysprompt-toggle" aria-label="启用自定义系统提示词"></button><span class="small muted">${on ? '已启用自定义' : '使用内置默认'}</span></div></div><div class="tool-field tool-field-top"><span class="tool-field-label">内容</span><textarea id="sysprompt-textarea" class="sysprompt-textarea mono" rows="12" maxlength="32000" spellcheck="false" placeholder="留空并用内置默认; 触发后这里的内容将作为 Agent 的系统提示词…">${e(sp.prompt || '')}</textarea></div><span class="tiny muted">自定义 ${chars} 字符${builtinTokens ? ` · 内置默认约 ${builtinTokens} tokens` : ''} · 保存后上下文圆环自动重新测量</span></div></div>${builtin ? `<details class="sysprompt-builtin"><summary class="small muted">查看内置默认系统提示词</summary><pre class="sysprompt-builtin-pre mono">${e(builtin)}</pre></details>` : ''}<div class="settings-actions row wrap">${btn('save-sysprompt','保存','check','primary')}${btn('reset-sysprompt','恢复默认','refresh','flat')}</div></div>`;
       })(),
       appearance: `<div class="panel settings-section"><h2>外观与交互</h2>${toggle('contrast','增强文字与边界对比','保持浅灰色主题，提高说明文字与控件边界的可读性。')}${toggle('reducedMotion','减少动态效果','关闭过渡与旋转动画，不影响任务状态更新。')}${toggle('inspector','显示任务详情侧栏','在宽屏的 Agent 对话中显示输入上下文与执行边界。')}</div>`,
       privacy: `<div class="panel settings-section"><h2>数据与隐私</h2>${toggle('persist','在本机保存工作空间','保存项目、文件名、对话与任务记录；不保存原始文件。共享电脑建议关闭。关闭后删除已有本地保存，当前会话仍保留。')}<div class="setting-row"><div><h3>导出工作空间</h3><p>导出元信息与任务记录。包含对话内容，分享前请检查隐私。</p></div>${btn('export-workspace','导出 JSON','download','flat')}</div><div class="setting-row"><div><h3>清空并恢复示例</h3><p>移除本机保存的项目、导入记录与对话，恢复初始演示。</p></div>${btn('reset-workspace','重置','trash','flat danger')}</div></div>`,

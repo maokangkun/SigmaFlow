@@ -110,6 +110,11 @@ class MCPIn(BaseModel):
     reset: Optional[bool] = None
 
 
+class SystemPromptIn(BaseModel):
+    prompt: Optional[str] = None
+    enabled: Optional[bool] = None
+
+
 def _test_provider(base_url: str, api_key: str) -> dict:
     """Ping `{base_url}/models` on the provider and report real latency."""
     url = base_url.rstrip("/") + "/models"
@@ -545,7 +550,7 @@ def _agent_agent_module():
     return agent_module
 
 
-def _effective_system_prompts() -> tuple:
+def _default_system_prompts() -> tuple:
     """(system, sub_system) with the current skill listing swapped into the agent
     module's default prompts; Agent captures those defaults at import, so the swap is
     done textually against the original block recorded by _ensure_skills_installed."""
@@ -556,6 +561,20 @@ def _effective_system_prompts() -> tuple:
     listing = _agent_tools_module().skill_loader.get_descriptions()
     system = agent_module.SYSTEM.replace(_SKILL_BLOCK_BASE["system"], listing) if _SKILL_BLOCK_BASE["system"] else agent_module.SYSTEM
     sub_system = agent_module.SUBAGENT_SYSTEM.replace(_SKILL_BLOCK_BASE["sub"], listing) if _SKILL_BLOCK_BASE["sub"] else agent_module.SUBAGENT_SYSTEM
+    return system, sub_system
+
+
+def _effective_system_prompts() -> tuple:
+    """Effective main-agent system prompt: default with skills swap, optionally
+    overridden by the settings-page custom prompt (skills listing re-appended);
+    the subagent prompt keeps the built-in text."""
+    system, sub_system = _default_system_prompts()
+    cfg = _load_system_prompt_config()
+    if cfg.get("enabled"):
+        custom = str(cfg.get("prompt") or "").strip()
+        if custom:
+            listing = _agent_tools_module().skill_loader.get_descriptions()
+            system = f"{custom}\n\n{listing}"
     return system, sub_system
 
 
@@ -745,6 +764,33 @@ def _build_mcp_servers(items: list, reset: bool) -> Dict[str, dict]:
             entry["enabled"] = False
         servers[name] = entry
     return servers
+
+
+# ==================== 系统提示词配置 ====================
+# 设置页可提供自定义系统提示词替换内置默认; 技能清单自动附加在末尾;
+# 子代理提示词保持内置不随覆盖变化; 配置落盘 <science_dir>/system_prompt.json
+
+
+def _system_prompt_config_path() -> str:
+    return os.path.join(_science_data_root(), "system_prompt.json")
+
+
+def _load_system_prompt_config() -> dict:
+    try:
+        with open(_system_prompt_config_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_system_prompt_config(cfg: dict) -> None:
+    path = _system_prompt_config_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
 
 
 class ScienceModelStore:
@@ -1305,6 +1351,28 @@ class ScienceAPI:
             await asyncio.to_thread(_rebuild_agent_mcp)
             _AGENT_CONTEXT_SIZES.clear()
             return {"servers": _mcp_listing()}
+
+        @router.get("/system-prompt")
+        async def get_system_prompt():
+            def _builtin_text():
+                return _default_system_prompts()[0]
+            builtin = await asyncio.to_thread(_builtin_text)
+            cfg = _load_system_prompt_config()
+            prompt = str(cfg.get("prompt") or "")
+            enabled = bool(cfg.get("enabled")) and bool(prompt.strip())
+            return {"prompt": prompt, "enabled": enabled, "builtin": builtin, "builtinTokens": math.ceil(len(builtin) / 3.7)}
+
+        @router.post("/system-prompt")
+        async def save_system_prompt(payload: SystemPromptIn, request: Request):
+            _check_origin(request)
+            prompt_text = str(payload.prompt or "")[:32000]
+            enabled = bool(payload.enabled)
+            if enabled and not prompt_text.strip():
+                raise HTTPException(status_code=400, detail="启用自定义系统提示词时内容不能为空")
+            await asyncio.to_thread(_save_system_prompt_config, {"prompt": prompt_text, "enabled": enabled})
+            # 自定义提示词改变系统提示长度, 清空缓存让 /context-info 重新测量
+            _AGENT_CONTEXT_SIZES.clear()
+            return {"prompt": prompt_text, "enabled": enabled}
 
         @router.get("/conversations")
         async def list_conversations():

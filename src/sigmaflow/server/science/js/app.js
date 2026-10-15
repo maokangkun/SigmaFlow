@@ -277,6 +277,16 @@
       CS.render();
     } catch (error) { CS.toast('MCP 配置加载失败：' + CS.api.friendlyError(error), 'error'); }
   };
+  // 系统提示词设置: 懒加载内置默认与自定义配置; 草稿仅含 prompt/enabled
+  CS.loadSystemPrompt = async () => {
+    if (CS.ui.systemPrompt) return;
+    try {
+      const d = await CS.api.request('/system-prompt');
+      CS.ui.systemPrompt = d;
+      if (!CS.ui.syspromptDraft) CS.ui.syspromptDraft = { prompt: d.prompt || '', enabled: !!d.enabled };
+      CS.render();
+    } catch (error) { CS.toast('系统提示词加载失败：' + CS.api.friendlyError(error), 'error'); }
+  };
   // 参数编辑框: 透明 textarea 叠在高亮 pre 上, 输入时刷新高亮; 高度由 sizeSchemaEditors 统一管理
   CS.sizeSchemaEditors = () => {
     document.querySelectorAll('.schema-editor').forEach(ed => {
@@ -662,7 +672,7 @@
     },
     'connect-project': () => { CS.ui.projectMenu = false; CS.showModal('remote-project'); },
     'submit-remote-project': () => {},
-    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') CS.loadAgentTools(); if (id === 'skills') CS.loadAgentSkills(); if (id === 'mcp') CS.loadAgentMcp(); },
+    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') CS.loadAgentTools(); if (id === 'skills') CS.loadAgentSkills(); if (id === 'mcp') CS.loadAgentMcp(); if (id === 'sysprompt') CS.loadSystemPrompt(); },
     'configure-model': () => { CS.ui.modelMenu = false; CS.ui.settingsTab = 'agent'; CS.navigate('settings'); },
     'add-provider': () => { CS.ui.edit = { type: 'provider', id: null }; CS.render(); },
     'edit-provider': id => { CS.ui.edit = { type: 'provider', id }; CS.render(); },
@@ -788,6 +798,34 @@
         await CS.refreshContextInfo();
         CS.render();
         CS.toast('MCP 配置已恢复默认。');
+      } catch (error) { CS.toast('恢复失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'sysprompt-toggle': () => {
+      const d = CS.ui.syspromptDraft || (CS.ui.syspromptDraft = { prompt: '', enabled: false });
+      d.enabled = !d.enabled;
+      CS.render();
+    },
+    'save-sysprompt': async () => {
+      const d = CS.ui.syspromptDraft || { prompt: '', enabled: false };
+      if (d.enabled && !d.prompt.trim()) { CS.toast('启用自定义系统提示词时内容不能为空。', 'error'); return; }
+      try {
+        const r = await CS.api.request('/system-prompt', { method: 'POST', body: JSON.stringify({ prompt: d.prompt, enabled: d.enabled }) });
+        CS.ui.systemPrompt = { ...(CS.ui.systemPrompt || {}), prompt: r.prompt, enabled: r.enabled };
+        CS.ui.syspromptDraft = null;
+        await CS.refreshContextInfo();
+        CS.render();
+        CS.toast('系统提示词已保存，下一次会话生效。');
+      } catch (error) { CS.toast('保存失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'reset-sysprompt': async () => {
+      if (!confirm('清除自定义系统提示词并恢复内置默认？')) return;
+      try {
+        await CS.api.request('/system-prompt', { method: 'POST', body: JSON.stringify({ prompt: '', enabled: false }) });
+        CS.ui.systemPrompt = { ...(CS.ui.systemPrompt || {}), prompt: '', enabled: false };
+        CS.ui.syspromptDraft = null;
+        await CS.refreshContextInfo();
+        CS.render();
+        CS.toast('系统提示词已恢复内置默认。');
       } catch (error) { CS.toast('恢复失败：' + CS.api.friendlyError(error), 'error'); }
     },
     'delete-model': id => { CS.ui.pendingDelete = id; CS.showModal('confirm',{title:'删除模型？',message:'将从服务端删除此模型配置。此操作不可撤销。',confirmAction:'confirm-delete-model',confirmLabel:'删除',danger:true}); },
@@ -1054,6 +1092,7 @@
     else if(id==='pubmed-query') CS.ui.pubmedQuery=target.value;
     else if(id==='min-genes') CS.ui.minGenes=target.value;
     else if(id==='max-mito') CS.ui.maxMito=target.value;
+    else if(id==='sysprompt-textarea'){ const d=CS.ui.syspromptDraft||(CS.ui.syspromptDraft={prompt:'',enabled:!!CS.ui.systemPrompt?.enabled}); d.prompt=target.value; }
     else if(target.dataset?.toolId){ const t=(CS.ui.toolDraft||[]).find(x=>x.id===target.dataset.toolId); if(t) t[target.dataset.field]=target.value; if(target.dataset.field==='schema') CS.syncSchemaHighlight(target); }
     else if(target.dataset?.skillId){ const s=(CS.ui.skillDraft||[]).find(x=>x.id===target.dataset.skillId); if(s) s[target.dataset.field]=target.value; }
     else if(target.dataset?.mcpId){ const s=(CS.ui.mcpDraft||[]).find(x=>x.key===target.dataset.mcpId); if(s) s[target.dataset.field]=target.value; }

@@ -229,6 +229,21 @@ POST /api/mcp   → {"servers": [...]}   # 保存全量列表；{"reset": true} 
 规则：名称非空、去重、≤ 64 字符；地址需以 http(s):// 开头、≤ 500 字符；`enabled: false` 表示禁用。
 保存会真实连接各启用的服务器（tools/list），可能需要数秒。写操作要求同源（跨域返回 403）。
 
+### 6c. 系统提示词配置（服务端存储）
+
+设置页可提供自定义系统提示词替换 Agent 内置默认，落盘到
+`<science_dir>/system_prompt.json`。启用时 `prompt` 作为主 Agent 的系统提示词，
+技能清单自动附加在末尾（工具调用说明由 Agent 运行时追加）；子代理提示词保持内置。
+留空或关闭 `enabled` 表示使用内置默认。
+
+```http
+GET  /api/system-prompt   → {"prompt": str, "enabled": bool, "builtin": str, "builtinTokens": int}
+POST /api/system-prompt   → {"prompt": str, "enabled": bool}   # 保存; 启用时 prompt 不能为空
+```
+
+`prompt` ≤ 32000 字符；`enabled: true` 时上下文用量圆环将按自定义提示词重新测量。
+写操作要求同源（跨域返回 403）。
+
 ### 7. 暂停、继续、取消
 
 ```http
