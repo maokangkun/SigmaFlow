@@ -927,6 +927,7 @@ class ScienceAPI:
                             tags=data.get("tags") or None,
                             icon=data.get("icon", "folder"),
                             remote=data.get("remote"),
+                            dir=data.get("dir"),
                         )
                     except Exception:
                         await fail(request_id, "Invalid project payload")
