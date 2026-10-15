@@ -20,6 +20,7 @@ dependencies = [
     "packaging",
     "anthropic",
     "prompt_toolkit",
+    "psutil",
     "uvicorn[standard]",
 ]
 classifiers=[

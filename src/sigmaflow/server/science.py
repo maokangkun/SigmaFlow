@@ -6,10 +6,10 @@ FastAPI server, with a single run manager serving two transports:
 * WebSocket  -- preferred transport (`/api/ws`);
 * HTTP + SSE -- the original protocol, kept for compatibility.
 
-This is still a DEMO executor: it ticks synthetic progress for each step
-and never executes commands, code or uploaded files. Swap
-`ScienceRunManager` for a real execution backend to go live; the wire
-contract stays unchanged.
+Runs are still a DEMO executor (synthetic progress ticks). The chat
+path, however, runs the real SigmaFlow agent: with tool support
+enabled it may execute bash, file IO, MCP servers and load_skill ON
+THIS SERVER, using the model/provider configured in the settings.
 """
 
 import asyncio

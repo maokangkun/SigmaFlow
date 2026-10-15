@@ -200,7 +200,6 @@ class Agent:
                             messages.append({"role": "assistant", "content": response.content})
                             info["messages"].append({"role": "assistant", "content": [i.dict() for i in response.content]})
                         case "openai" if self.on_delta is not None:
-                            import sys as _sys; print("DBG: STREAMING CASE", file=_sys.stderr)
                             # 流式路径: 逐块推送增量文本/思考, 同时累积完整响应供后续逻辑使用。
                             # 支持工具调用: 增量聚合 tool_calls 分片, 聚合结果走与非流式
                             # 分支相同的工具执行路径。
