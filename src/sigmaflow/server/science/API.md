@@ -179,10 +179,10 @@ GET    /api/context-info      → {"systemTokens": int, "toolsTokens": int}  # A
 
 ### 6. Agent 工具配置（服务端存储）
 
-设置页可对 Agent 内置工具做启用开关、改名与描述覆盖，落盘到
+设置页可对 Agent 内置工具做启用开关、改名、描述与参数结构覆盖，落盘到
 `<science_dir>/tools.json`（默认 `~/.sigmaflow/science/tools.json`）。请求时动态组合出实际生效的工具
 清单：禁用的工具不再发给模型，也不计入上下文固定开销；改名的工具会在执行层注册别名，
-模型用新名称调用时仍路由到原实现。参数结构只读。
+模型用新名称调用时仍路由到原实现。
 
 ```http
 GET  /api/tools   → {"tools": [{id, name, description, enabled, schema, modified}]}
