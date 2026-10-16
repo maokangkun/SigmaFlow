@@ -1494,7 +1494,7 @@ class ScienceAPI:
         @router.get("/fs/dirs")
         async def list_dirs(request: Request, path: str = ""):
             _check_origin(request)
-            root = os.environ.get("SIGMAFLOW_PROJECTS_DIR") or os.path.join(os.path.expanduser("~"), "projects")
+            root = os.environ.get("SIGMAFLOW_PROJECTS_DIR") or os.path.expanduser("~")
             base = os.path.realpath(os.path.expanduser(path)) if path else os.path.realpath(root)
             dirs, error = [], ""
             try:

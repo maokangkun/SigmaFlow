@@ -837,7 +837,7 @@
       CS.ui.projectsRoot = CS.ui.projectsRoot || d.root;
       box.dataset.parent = d.parent || '';
       box.dataset.path = d.path;
-      box.innerHTML = `<div class="dir-list"><div class="dir-list-head"><span class="dir-list-path" title="${e(d.path)}">${e(d.path)}</span>`
+      box.innerHTML = `<div class="dir-list"><div class="dir-list-head"><span class="dir-list-path" title="${e(d.path)}">${'\u2066'}${e(d.path)}${'\u2069'}</span>`
         + (d.parent ? `<button type="button" class="text-button muted small" data-action="dir-parent">上一级</button>` : '')
         + `<button type="button" class="text-button muted small" data-action="dir-cancel">收起</button></div>`
         + `<div class="menu-divider"></div>`
