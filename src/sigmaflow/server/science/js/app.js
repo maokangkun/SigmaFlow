@@ -441,7 +441,7 @@
       btn.title = `上下文已用 ~${u.pct}% · 点击查看详情`;
     }
     if (pop) {
-      const win = u.window, seg = t => t > 0 ? `width:${Math.max(0, Math.min(100, t / win * 100)).toFixed(2)}%;min-width:7px` : 'width:0%;min-width:0';
+      const win = u.window, seg = t => t > 0 ? `width:${Math.max(0, Math.min(100, t / win * 100)).toFixed(2)}%;min-width:5px` : 'width:0%;min-width:0';
       const q = k => pop.querySelector(`[data-ctx="${k}"]`);
       const setText = (k, v) => { const el = q(k); if (el) el.textContent = v; };
       const setWidth = (k, style) => { const el = q(k); if (el) el.style.cssText = style; };
