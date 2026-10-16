@@ -390,13 +390,13 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .settings-section table .num{text-align:right;font-variant-numeric:tabular-nums}
 @media(max-width:860px){.usage-stats{grid-template-columns:repeat(2,1fr)}}
 /* ===== GitHub 风格 Token 活动热力图(每日) ===== */
-.usage-heatmap{margin-top:10px;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:12px;overflow-x:auto}
+.usage-heatmap{margin-top:10px;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:12px;overflow-x:hidden}
 .heatmap-wrap{display:inline-flex;flex-direction:column;gap:5px;min-width:100%}
-.heatmap-months{display:grid;grid-auto-flow:column;grid-auto-columns:15px;font-size:9px;color:var(--muted);margin-left:25px;font-weight:500}
+.heatmap-months{display:grid;grid-auto-flow:column;grid-auto-columns:14px;font-size:9px;color:var(--muted);margin-left:19px;font-weight:500}
 .heatmap-main{display:flex;gap:3px}
-.heatmap-day-labels{display:grid;grid-template-rows:repeat(7,13px);gap:3px;font-size:9px;color:var(--faint);flex:none;width:16px;text-align:right;line-height:13px}
-.heatmap-cells{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,13px);grid-auto-columns:13px;gap:3px}
-.heatmap-cell{width:13px;height:13px;border-radius:3px;background:var(--surface);border:1px solid rgba(0,0,0,.04)}
+.heatmap-day-labels{display:grid;grid-template-rows:repeat(7,12px);gap:2px;font-size:9px;color:var(--faint);flex:none;width:16px;text-align:right;line-height:12px}
+.heatmap-cells{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,12px);grid-auto-columns:12px;gap:2px}
+.heatmap-cell{width:12px;height:12px;border-radius:2.5px;background:var(--surface);border:1px solid rgba(0,0,0,.04)}
 .heatmap-cell[data-level="1"]{background:var(--accent);opacity:.28;border-color:transparent}
 .heatmap-cell[data-level="2"]{background:var(--accent);opacity:.5;border-color:transparent}
 .heatmap-cell[data-level="3"]{background:var(--accent);opacity:.75;border-color:transparent}
@@ -3610,11 +3610,12 @@ CS.markdown = text => {
     if (!days?.length) return H.notice('暂无每日用量记录。');
     const byDay = new Map(days.map(d => [d.date, d]));
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    // GitHub 同款固定展示最近一年(53 列 × 7 行), 铺满矩形; 数据不足左侧补空格, 超过一年的历史不在此图显示
-    const startAt = new Date(today); startAt.setDate(startAt.getDate() - 52 * 7);
+    // 右对齐展示最近 N 周(最多一年 53 列): 列数由容器宽度自适应(CS.fitUsageHeatmap),
+    // 放不下就减少周数但格子保持尺寸, 恰好撑满矩形无滚动条; 数据不足左侧补空格
+    const weeks = Math.max(1, Math.min(53, CS.ui.usageHeatCols || 53));
+    const startAt = new Date(today); startAt.setDate(startAt.getDate() - (weeks - 1) * 7);
     startAt.setDate(startAt.getDate() - ((startAt.getDay() + 6) % 7));  // 对齐周一
     const endAligned = new Date(today); endAligned.setDate(endAligned.getDate() + (6 - ((endAligned.getDay() + 6) % 7)));  // 对齐周日
-    const weeks = Math.max(1, Math.round((endAligned - startAt) / (7 * 86400000)) + 1);
     const maxTotal = Math.max(...days.map(d => d.totalTokens || 0), 1);
     const levelOf = d => { if (!d) return 0; const t = d.totalTokens || 0; if (!t) return 0; return Math.min(4, 1 + Math.floor((t / maxTotal) * 3.999)); };
     const cells = [];
@@ -3632,7 +3633,8 @@ CS.markdown = text => {
       }
     }
     const dayLabels = ['一', '', '三', '', '五', '', '日'].map(x => `<span>${x}</span>`).join('');
-    return `<div class="usage-heatmap" role="img" aria-label="Token 每日活动热力图"><div class="heatmap-wrap"><div class="heatmap-months">${monthLabels.join('')}</div><div class="heatmap-main"><div class="heatmap-day-labels">${dayLabels}</div><div class="heatmap-cells">${cells.join('')}</div></div><div class="heatmap-legend tiny muted"><span>少</span><span class="heatmap-cell" data-level="0"></span><span class="heatmap-cell" data-level="1"></span><span class="heatmap-cell" data-level="2"></span><span class="heatmap-cell" data-level="3"></span><span class="heatmap-cell" data-level="4"></span><span>多</span><span class="heatmap-legend-total">峰值日 ${e((days.reduce((a, b) => (b.totalTokens > a.totalTokens ? b : a), days[0])).date)}</span></div></div></div>`;
+    const g = CS.ui.usageHeatGap || 2;  // 间隙与列数配合填满容器
+    return `<div class="usage-heatmap" role="img" aria-label="Token 每日活动热力图"><div class="heatmap-wrap"><div class="heatmap-months" style="grid-auto-columns:${12 + g}px;margin-left:${16 + g}px">${monthLabels.join('')}</div><div class="heatmap-main"><div class="heatmap-day-labels" style="row-gap:${g}px">${dayLabels}</div><div class="heatmap-cells" style="gap:${g}px">${cells.join('')}</div></div><div class="heatmap-legend tiny muted"><span>少</span><span class="heatmap-cell" data-level="0"></span><span class="heatmap-cell" data-level="1"></span><span class="heatmap-cell" data-level="2"></span><span class="heatmap-cell" data-level="3"></span><span class="heatmap-cell" data-level="4"></span><span>多</span><span class="heatmap-legend-total">峰值日 ${e((days.reduce((a, b) => (b.totalTokens > a.totalTokens ? b : a), days[0])).date)}</span></div></div></div>`;
   };
   const usageChart = (days, gran) => {
     if (!days?.length) return H.notice('暂无每日用量记录。');
@@ -4129,6 +4131,25 @@ CS.markdown = text => {
     if (el && _sysStatsHtml) el.innerHTML = _sysStatsHtml;
     if (hadConv) { const fresh = document.querySelector('.conversation'); if (fresh) fresh.scrollTop = savedTop; }
     CS.syncAnchorRail();
+    // Token 用量热力图: 按容器宽度自适应列数(测量后才重排, 最多一次额外渲染)
+    CS.fitUsageHeatmap();
+  };
+  // 热力图列数自适应: 每列 14px(12px 格 + 2px 间隙), 18~53 列之间取容器能容纳的最多周数;
+  // 与当前列数一致时不重渲染, 避免循环
+  CS.fitUsageHeatmap = () => {
+    const compute = () => {
+      const box = document.querySelector('.usage-heatmap');
+      if (!box) return;
+      const inner = box.clientWidth - 24 - 16 - 3 - 1;  // 排除 padding、星期标签列与其 flex 间隙, 留 1px 缓冲
+      const weeks = Math.max(18, Math.min(53, Math.floor((inner + 2) / 14)));
+      const gap = Math.min(5, Math.max(2, (inner - weeks * 12) / Math.max(1, weeks - 1)));
+      // 列数或间隙变化都要重渲染; 收敛后两者稳定, 不会循环
+      const changed = weeks !== CS.ui.usageHeatCols || Math.abs((CS.ui.usageHeatGap || 2) - gap) > 0.05;
+      CS.ui.usageHeatGap = Math.round(gap * 10) / 10;
+      if (changed) { CS.ui.usageHeatCols = weeks; CS.render(); }
+    };
+    // 推迟到布局稳定(双重 rAF)后再测量, 避免滚动条出现/消失导致宽度漂移
+    requestAnimationFrame(() => requestAnimationFrame(compute));
   };
 
   // ===== 会话锚点轨(Codex 风格左侧短横线) =====
@@ -4303,7 +4324,7 @@ CS.markdown = text => {
       if (_anchorRail.spyRaf) cancelAnimationFrame(_anchorRail.spyRaf);
       _anchorRail.spyRaf = requestAnimationFrame(_anchorSpy);
     }, true);
-    window.addEventListener('resize', () => CS.syncAnchorRail());
+    window.addEventListener('resize', () => { CS.syncAnchorRail(); CS.fitUsageHeatmap(); });
   };
   _anchorInit();
   // 对话区滚动条: 滚动时短暂显示, 停止后隐藏

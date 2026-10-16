@@ -22,11 +22,12 @@
     if (!days?.length) return H.notice('暂无每日用量记录。');
     const byDay = new Map(days.map(d => [d.date, d]));
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    // GitHub 同款固定展示最近一年(53 列 × 7 行), 铺满矩形; 数据不足左侧补空格, 超过一年的历史不在此图显示
-    const startAt = new Date(today); startAt.setDate(startAt.getDate() - 52 * 7);
+    // 右对齐展示最近 N 周(最多一年 53 列): 列数由容器宽度自适应(CS.fitUsageHeatmap),
+    // 放不下就减少周数但格子保持尺寸, 恰好撑满矩形无滚动条; 数据不足左侧补空格
+    const weeks = Math.max(1, Math.min(53, CS.ui.usageHeatCols || 53));
+    const startAt = new Date(today); startAt.setDate(startAt.getDate() - (weeks - 1) * 7);
     startAt.setDate(startAt.getDate() - ((startAt.getDay() + 6) % 7));  // 对齐周一
     const endAligned = new Date(today); endAligned.setDate(endAligned.getDate() + (6 - ((endAligned.getDay() + 6) % 7)));  // 对齐周日
-    const weeks = Math.max(1, Math.round((endAligned - startAt) / (7 * 86400000)) + 1);
     const maxTotal = Math.max(...days.map(d => d.totalTokens || 0), 1);
     const levelOf = d => { if (!d) return 0; const t = d.totalTokens || 0; if (!t) return 0; return Math.min(4, 1 + Math.floor((t / maxTotal) * 3.999)); };
     const cells = [];
@@ -44,7 +45,8 @@
       }
     }
     const dayLabels = ['一', '', '三', '', '五', '', '日'].map(x => `<span>${x}</span>`).join('');
-    return `<div class="usage-heatmap" role="img" aria-label="Token 每日活动热力图"><div class="heatmap-wrap"><div class="heatmap-months">${monthLabels.join('')}</div><div class="heatmap-main"><div class="heatmap-day-labels">${dayLabels}</div><div class="heatmap-cells">${cells.join('')}</div></div><div class="heatmap-legend tiny muted"><span>少</span><span class="heatmap-cell" data-level="0"></span><span class="heatmap-cell" data-level="1"></span><span class="heatmap-cell" data-level="2"></span><span class="heatmap-cell" data-level="3"></span><span class="heatmap-cell" data-level="4"></span><span>多</span><span class="heatmap-legend-total">峰值日 ${e((days.reduce((a, b) => (b.totalTokens > a.totalTokens ? b : a), days[0])).date)}</span></div></div></div>`;
+    const g = CS.ui.usageHeatGap || 2;  // 间隙与列数配合填满容器
+    return `<div class="usage-heatmap" role="img" aria-label="Token 每日活动热力图"><div class="heatmap-wrap"><div class="heatmap-months" style="grid-auto-columns:${12 + g}px;margin-left:${16 + g}px">${monthLabels.join('')}</div><div class="heatmap-main"><div class="heatmap-day-labels" style="row-gap:${g}px">${dayLabels}</div><div class="heatmap-cells" style="gap:${g}px">${cells.join('')}</div></div><div class="heatmap-legend tiny muted"><span>少</span><span class="heatmap-cell" data-level="0"></span><span class="heatmap-cell" data-level="1"></span><span class="heatmap-cell" data-level="2"></span><span class="heatmap-cell" data-level="3"></span><span class="heatmap-cell" data-level="4"></span><span>多</span><span class="heatmap-legend-total">峰值日 ${e((days.reduce((a, b) => (b.totalTokens > a.totalTokens ? b : a), days[0])).date)}</span></div></div></div>`;
   };
   const usageChart = (days, gran) => {
     if (!days?.length) return H.notice('暂无每日用量记录。');

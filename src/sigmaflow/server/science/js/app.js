@@ -153,6 +153,25 @@
     if (el && _sysStatsHtml) el.innerHTML = _sysStatsHtml;
     if (hadConv) { const fresh = document.querySelector('.conversation'); if (fresh) fresh.scrollTop = savedTop; }
     CS.syncAnchorRail();
+    // Token 用量热力图: 按容器宽度自适应列数(测量后才重排, 最多一次额外渲染)
+    CS.fitUsageHeatmap();
+  };
+  // 热力图列数自适应: 每列 14px(12px 格 + 2px 间隙), 18~53 列之间取容器能容纳的最多周数;
+  // 与当前列数一致时不重渲染, 避免循环
+  CS.fitUsageHeatmap = () => {
+    const compute = () => {
+      const box = document.querySelector('.usage-heatmap');
+      if (!box) return;
+      const inner = box.clientWidth - 24 - 16 - 3 - 1;  // 排除 padding、星期标签列与其 flex 间隙, 留 1px 缓冲
+      const weeks = Math.max(18, Math.min(53, Math.floor((inner + 2) / 14)));
+      const gap = Math.min(5, Math.max(2, (inner - weeks * 12) / Math.max(1, weeks - 1)));
+      // 列数或间隙变化都要重渲染; 收敛后两者稳定, 不会循环
+      const changed = weeks !== CS.ui.usageHeatCols || Math.abs((CS.ui.usageHeatGap || 2) - gap) > 0.05;
+      CS.ui.usageHeatGap = Math.round(gap * 10) / 10;
+      if (changed) { CS.ui.usageHeatCols = weeks; CS.render(); }
+    };
+    // 推迟到布局稳定(双重 rAF)后再测量, 避免滚动条出现/消失导致宽度漂移
+    requestAnimationFrame(() => requestAnimationFrame(compute));
   };
 
   // ===== 会话锚点轨(Codex 风格左侧短横线) =====
@@ -327,7 +346,7 @@
       if (_anchorRail.spyRaf) cancelAnimationFrame(_anchorRail.spyRaf);
       _anchorRail.spyRaf = requestAnimationFrame(_anchorSpy);
     }, true);
-    window.addEventListener('resize', () => CS.syncAnchorRail());
+    window.addEventListener('resize', () => { CS.syncAnchorRail(); CS.fitUsageHeatmap(); });
   };
   _anchorInit();
   // 对话区滚动条: 滚动时短暂显示, 停止后隐藏
