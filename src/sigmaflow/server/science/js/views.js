@@ -110,8 +110,9 @@
         ${CS.ui.projectsCollapsed ? '' : `<button type="button" class="project-link" data-nav="projects">${i('more')}<span>查看全部项目</span></button>`}
       </section>
       <section class="sidebar-section"><div class="sidebar-section-label"><button type="button" class="text-button muted small ${CS.ui.unassignedCollapsed ? 'collapsed' : ''}" data-action="toggle-unassigned" aria-expanded="${!CS.ui.unassignedCollapsed}" title="${CS.ui.unassignedCollapsed ? '展开会话列表' : '折叠会话列表'}"><span>会话</span></button></div>
-        ${CS.ui.unassignedCollapsed ? '<div class="conversation-empty small muted">已折叠</div>' : (() => { const loose = CS.ui.conversations.filter(c => !c.projectId).slice(0, 8); return loose.length ? loose.filter(c => !c.archived).map(c => `<button type="button" class="conversation-link ${CS.state.currentRunId === c.id ? 'selected' : ''}" data-action="open-conversation" data-id="${e(c.id)}" title="${e(c.title)}">${i('message')}<span class="conversation-title">${e(c.title)}</span>${streaming.has(c.id) ? '<span class="conv-dot" title="生成中"></span>' : ''}<span class="conversation-actions${c.pinned ? ' has-pinned' : ''}"><span class="icon-btn" role="button" data-action="toggle-pin-conversation" data-id="${e(c.id)}" title="${c.pinned ? '取消置顶' : '置顶'}">${i(c.pinned ? 'x' : 'up','',12)}</span><span class="icon-btn" role="button" data-action="archive-conversation" data-id="${e(c.id)}" title="归档">${i('archive','',12)}</span></span></button>`).join('') : '<div class="conversation-empty small muted">暂无未归属项目的会话</div>'; })()}
-      </section></div>
+        ${CS.ui.unassignedCollapsed ? '' : (() => { const loose = CS.ui.conversations.filter(c => !c.projectId).slice(0, 8); return loose.length ? loose.filter(c => !c.archived).map(c => `<button type="button" class="conversation-link ${CS.state.currentRunId === c.id ? 'selected' : ''}" data-action="open-conversation" data-id="${e(c.id)}" title="${e(c.title)}">${i('message')}<span class="conversation-title">${e(c.title)}</span>${streaming.has(c.id) ? '<span class="conv-dot" title="生成中"></span>' : ''}<span class="conversation-actions${c.pinned ? ' has-pinned' : ''}"><span class="icon-btn" role="button" data-action="toggle-pin-conversation" data-id="${e(c.id)}" title="${c.pinned ? '取消置顶' : '置顶'}">${i(c.pinned ? 'x' : 'up','',12)}</span><span class="icon-btn" role="button" data-action="archive-conversation" data-id="${e(c.id)}" title="归档">${i('archive','',12)}</span></span></button>`).join('') : '<div class="conversation-empty small muted">暂无未归属项目的会话</div>'; })()}
+      </section>
+      <section class="sidebar-section"><div class="sidebar-section-label"><button type="button" class="text-button muted small ${CS.ui.fsCollapsed ? 'collapsed' : ''}" data-action="toggle-fs-section" aria-expanded="${!CS.ui.fsCollapsed}" title="${CS.ui.fsCollapsed ? '展开文件' : '折叠文件'}"><span>文件</span></button>${iconBtn('fs-refresh','refresh','刷新文件')}</div>${CS.ui.fsCollapsed ? '' : V.fsTree()}</section></div>
       <div class="sidebar-bottom"><div class="workspace-chip" data-action="toggle-user-menu"><div class="workspace-monogram">${(CS.state.username || 'CS').slice(0,2).toUpperCase()}</div><div class="grow"><div class="name">${e(CS.state.username || '未登录用户')}</div><div class="sub">科研工作空间</div></div>${i('chevron','',12)}${CS.ui.userMenu ? `<div class="user-menu"><button class="menu-item" data-nav="settings">${i('settings','',15)}<span>设置</span><kbd>⌘,</kbd></button><button class="menu-item" data-nav="help">${i('help','',15)}<span>帮助与文档</span></button><div class="menu-divider"></div><button class="menu-item danger" data-action="logout">${i('logout','',15)}<span>退出登录</span></button></div>` : ''}</div></div>
     </aside>`;
   };
@@ -128,6 +129,31 @@
       const seg = t => t > 0 ? `width:${Math.max(0, Math.min(100, t / win * 100)).toFixed(2)}%;min-width:5px` : 'width:0%;min-width:0';
       return `<div class="ctx-pop" role="dialog" aria-label="上下文用量详情"><div class="ctx-head"><span>上下文已用 <b data-ctx="pct">${u.pct}%</b></span><span class="ctx-head-cap" data-ctx="cap">${CS.kfmt(u.total)} / ${CS.kfmt(win).slice(1)}</span></div><div class="ctx-bar"><span class="ctx-seg sys" data-ctx="w-sys" style="${seg(u.sysT)}"></span><span class="ctx-seg tools" data-ctx="w-tools" style="${seg(u.toolT)}"></span><span class="ctx-seg msgs" data-ctx="w-msgs" style="${seg(u.msgsT)}"></span></div><div class="ctx-rows"><div class="ctx-row"><span class="ctx-dot sys"></span><span class="ctx-label">系统提示词</span><span class="ctx-val" data-ctx="v-sys">${CS.kfmt(u.sysT)}</span></div><div class="ctx-row"><span class="ctx-dot tools"></span><span class="ctx-label">工具定义</span><span class="ctx-val" data-ctx="v-tools">${CS.kfmt(u.toolT)}</span></div><div class="ctx-row"><span class="ctx-dot msgs"></span><span class="ctx-label">对话消息</span><span class="ctx-val" data-ctx="v-msgs">${CS.kfmt(u.msgsT)}</span></div></div></div>`;
     })() : ''}</div>`;
+  };
+  V.fsTree = () => {
+    const st = CS.ui.fs;
+    const project = CS.state.projects.find(p => p.id === CS.state.projectId);
+    if (!project) return '<div class="fs-empty small muted">未关联项目，先在输入框选择项目即可浏览其目录。</div>';
+    if (!st || st.projectId !== project.id || (st.loading && !Array.isArray(st.root))) {
+      CS.ui.fs = { projectId: project.id, expanded: st?.expanded && st.projectId === project.id ? st.expanded : new Set(), children: {}, git: {}, root: null, loading: true };
+      CS.agent?.loadFsDir?.('');
+      return '<div class="fs-empty small muted">正在加载目录…</div>';
+    }
+    const git = st.git || {};
+    const row = (entry, depth) => {
+      const isDir = entry.type === 'dir';
+      const open = isDir && st.expanded.has(entry.path);
+      const stx = git[entry.path] || '';
+      const badge = stx ? `<span class="fs-st s-${stx}">${stx}</span>` : '';
+      const kids = open ? (Array.isArray(st.children[entry.path]) ? st.children[entry.path].map(k => row(k, depth + 1)).join('') : `<div class="fs-row fs-loading" style="padding-left:${12 + (depth + 1) * 13}px"><span class="spinner"></span></div>`) : '';
+      const icon = isDir ? `<span class="fs-chevron${open ? ' open' : ''}">${i('chevron', '', 12)}</span>` : `<span class="fs-file-ic">${i('file', '', 13)}</span>`;
+      return `<button type="button" class="fs-row${open ? ' open' : ''}" style="padding-left:${6 + depth * 13}px" data-action="${isDir ? 'fs-dir' : 'fs-open'}" data-path="${e(entry.path)}" title="${e(entry.path)}${stx ? ' · git ' + stx : ''}">${icon}<span class="fs-name${stx ? ' st-' + stx.toLowerCase() : ''}">${e(entry.name)}</span>${badge}</button>${kids}`;
+    };
+    if (!Array.isArray(st.root)) return '<div class="fs-empty small muted">正在加载目录…</div>';
+    if (st.root.length) return `<div class="fs-tree">${st.root.map(x => row(x, 0)).join('')}</div>`;
+    return st.error
+      ? `<div class="fs-empty small muted">${e(st.error)}</div>`
+      : '<div class="fs-empty small muted">目录为空，或项目尚未配置本地路径。</div>';
   };
   V.composer = (home = false) => `<div class="${home ? 'composer-home' : 'chat-composer'}">${!home ? `<button type="button" class="jump-latest" data-action="jump-latest" title="跳到最新消息"${CS.ui.canJumpLatest ? '' : ' hidden'}>${i('down', '', 14)}</button>` : ''}${home ? `<div class="composer-project"><button type="button" class="model-select-btn project-select-btn" data-action="toggle-project-menu" aria-haspopup="listbox" aria-expanded="${!!CS.ui.projectMenu}">${CS.state.projectId ? `<span class="project-icon" data-action="clear-project" title="取消项目关联">${i('folder','',13)}${i('x','',13)}</span>` : i('folder','',13)}<span>${e(CS.state.projects.find(p => p.id === CS.state.projectId)?.name || '选择项目')}</span>${i('down','',13)}</button>${CS.ui.projectMenu ? `<div class="model-menu dd-down" role="menu">${CS.state.projects.filter(p => !p.archived).map(p => `<button type="button" class="model-menu-item" role="menuitem" data-action="pick-project" data-id="${e(p.id)}"><span>${e(p.name)}</span>${CS.state.projectId === p.id ? i('check','',13) : ''}</button>`).join('')}<div class="menu-divider"></div><button type="button" class="model-menu-item" data-action="new-project">${i('plus','',14)}<span>新建项目</span></button><button type="button" class="model-menu-item" data-action="connect-project">${i('external','',14)}<span>连接远程项目</span></button></div>` : ''}</div>` : ''}<form class="composer" data-form="composer">
     ${CS.ui.attachments.length ? `<div class="attachment-list">${CS.ui.attachments.map(id => { const d = CS.state.datasets.find(x => x.id === id); return d ? `<span class="attachment">${i('file')}<span>${e(d.name)}</span>${iconBtn('remove-attachment','x','移除附件',`data-id="${e(id)}"`)}</span>` : ''; }).join('')}</div>` : ''}

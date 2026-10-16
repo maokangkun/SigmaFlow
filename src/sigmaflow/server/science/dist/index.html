@@ -130,7 +130,23 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
 @media(max-width:800px){.chat-page{height:calc(100dvh - 65px)}}
 @media(max-width:560px){.chat-page{height:calc(100dvh - 60px)}.chat-title{margin-bottom:15px}.conversation{padding-right:3px}.chat-composer{margin-top:10px}.run-card[data-phase="awaiting"] .step{min-height:54px}.step-log{font-size:8px}}
 .dd-wrap{position:relative;display:inline-flex;align-items:center}.model-menu.dd-down{top:calc(100% + 8px);left:0;right:auto;bottom:auto;min-width:230px;max-height:260px;overflow:auto}.model-menu.dd-down .model-menu-item{white-space:normal;line-height:1.5}.setting-row.no-divider{border-bottom:none}.setting-row.compact{padding:5px 0}.setting-row.compact p{margin-top:2px}.dd-wrap .model-select-btn{max-width:none}.composer-home{position:relative}.composer-project{position:absolute;top:-38px;left:0;z-index:50}.composer-project .model-menu{min-width:200px}.project-select-btn{max-width:240px}.conversation-list{display:block;margin:2px 0 8px 22px}
-.conversation-link{width:100%;box-sizing:border-box}.conversation-link{display:flex;align-items:center;gap:8px;padding:6px 8px;font-size:11px;color:var(--muted);border-radius:8px;text-align:left;cursor:pointer;background:transparent;border:0}.conversation-link:hover{background:var(--inset)}.conversation-link.selected{color:var(--ink);font-weight:500}.conversation-link span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.conversation-link .icon{width:13px;height:13px;flex-shrink:0}.conversation-empty{padding:4px 8px 8px 22px}.project-icon{display:inline-flex;align-items:center;flex-shrink:0;color:var(--faint)}.project-icon .icon:last-child{display:none}.project-select-btn:hover .project-icon .icon:first-child{display:none}.project-select-btn:hover .project-icon .icon:last-child{display:inline}.project-icon:hover{color:var(--ink)}.project-row{position:relative;width:100%}.project-link .project-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.project-link .project-actions{display:none;align-items:center;gap:1px;margin-left:auto}.project-link:hover .project-actions{display:inline-flex}.project-link:hover .nav-count{display:none}.project-link .project-actions .icon-btn{height:auto;width:auto;padding:3px;border-radius:4px}.project-link .project-actions .icon-btn:hover{background:var(--inset)}.project-settings-menu{top:calc(100% + 4px);right:6px;bottom:auto;left:auto;min-width:120px}.project-settings-menu .model-menu-item.danger{color:#c0392b}.conversation-link .conversation-title{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conversation-link{width:100%;box-sizing:border-box}.conversation-link{display:flex;align-items:center;gap:8px;padding:6px 8px;font-size:11px;color:var(--muted);border-radius:8px;text-align:left;cursor:pointer;background:transparent;border:0}.conversation-link:hover{background:var(--inset)}.conversation-link.selected{color:var(--ink);font-weight:500}.conversation-link span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.conversation-link .icon{width:13px;height:13px;flex-shrink:0}.fs-tree{display:flex;flex-direction:column;padding-bottom:4px}
+.fs-row{display:flex;align-items:center;gap:7px;min-height:27px;padding:3px 10px 3px 6px;border-radius:7px;font-size:11.5px;color:var(--muted);width:100%;background:none;text-align:left;overflow:hidden}
+.fs-row:hover{background:#e7e9f0;color:var(--ink)}
+.fs-row .icon{flex-shrink:0}
+.fs-chevron{display:inline-flex;color:var(--faint);transition:transform .15s}
+.fs-chevron.open{transform:rotate(90deg)}
+.fs-file-ic{display:inline-flex;color:var(--faint);padding-left:1.5px}
+.fs-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.fs-name.st-m{color:var(--amber)}
+.fs-name.st-a,.fs-name.st-u,.fs-name.st-r{color:var(--green)}
+.fs-name.st-d{color:var(--red);text-decoration:line-through}
+.fs-st{flex-shrink:0;font-size:9px;font-weight:600;font-family:var(--mono);padding:0 3px;border-radius:4px}
+.fs-st.s-M{color:var(--amber);background:var(--amber-bg)}
+.fs-st.s-A,.fs-st.s-U,.fs-st.s-R{color:var(--green);background:var(--green-bg)}
+.fs-st.s-D{color:var(--red);background:var(--red-bg)}
+.fs-empty{padding:9px 12px}
+.conversation-empty{padding:4px 8px 8px 22px}.project-icon{display:inline-flex;align-items:center;flex-shrink:0;color:var(--faint)}.project-icon .icon:last-child{display:none}.project-select-btn:hover .project-icon .icon:first-child{display:none}.project-select-btn:hover .project-icon .icon:last-child{display:inline}.project-icon:hover{color:var(--ink)}.project-row{position:relative;width:100%}.project-link .project-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.project-link .project-actions{display:none;align-items:center;gap:1px;margin-left:auto}.project-link:hover .project-actions{display:inline-flex}.project-link:hover .nav-count{display:none}.project-link .project-actions .icon-btn{height:auto;width:auto;padding:3px;border-radius:4px}.project-link .project-actions .icon-btn:hover{background:var(--inset)}.project-settings-menu{top:calc(100% + 4px);right:6px;bottom:auto;left:auto;min-width:120px}.project-settings-menu .model-menu-item.danger{color:#c0392b}.conversation-link .conversation-title{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* 会话生成中状态: 会话名右侧绿点 */
 .conversation-link .conv-dot{flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 2px color-mix(in srgb,var(--green) 18%,transparent);animation:conv-dot-pulse 1.5s ease-in-out infinite}
 .conversation-link .conv-dot:hover{animation:none}
@@ -779,7 +795,7 @@ CS.markdown = text => {
     workflowId: 'singlecell', workflowCategory: 'all', datasetId: 'ds-pbmc', organism: 'Homo sapiens', advanced: false,
     minGenes: 200, maxMito: 20, activeTool: 'sequence', sequence: CS.data.sampleFASTA, sequenceResult: null,
     modal: null, expandedLogs: new Set(), selectedCell: null, note: '', apiHealth: null,
-    userMenu: false, modelMenu: false, projectMenu: false, projectSettingsMenu: null, expandedProjects: new Set(), conversations: [], settingsTab: 'appearance', models: [], providers: [], edit: null, providerModels: null, draftModelName: '', draftProviderId: null, dropdown: null, pendingDelete: null, modelsLoaded: false, thinkingOpen: false, thinkingText: '', toolsOpen: false, errorOpen: false, blockOpen: {}, canJumpLatest: false, contextInfo: null, contextMenu: false, agentTools: null, toolDraft: null, toolGroupsCollapsed: null, agentSkills: null, skillDraft: null, mcpServers: null, mcpDraft: null, systemPrompt: null, syspromptDraft: null, tokens: null, tokensDraft: null
+    userMenu: false, modelMenu: false, projectMenu: false, projectSettingsMenu: null, expandedProjects: new Set(), conversations: [], settingsTab: 'appearance', models: [], providers: [], edit: null, providerModels: null, draftModelName: '', draftProviderId: null, dropdown: null, pendingDelete: null, modelsLoaded: false, thinkingOpen: false, thinkingText: '', toolsOpen: false, errorOpen: false, blockOpen: {}, canJumpLatest: false, contextInfo: null, contextMenu: false, agentTools: null, toolDraft: null, toolGroupsCollapsed: null, agentSkills: null, skillDraft: null, mcpServers: null, mcpDraft: null, systemPrompt: null, syspromptDraft: null, tokens: null, tokensDraft: null, fsCollapsed: false, fs: null
   };
   // 侧栏项目折叠状态持久化: 记录用户显式展开的项目, 刷新后保持一致。
   try { const fold = JSON.parse(localStorage.getItem(key + '.fold') || 'null'); if (Array.isArray(fold)) CS.ui.expandedProjects = new Set(fold.map(String)); } catch {}
@@ -792,6 +808,8 @@ CS.markdown = text => {
   } catch {}
   CS.persistFoldSection = () => { try { localStorage.setItem(key + '.foldProj', CS.ui.projectsCollapsed ? '1' : '0'); } catch {} };
   CS.persistFoldLoose = () => { try { localStorage.setItem(key + '.foldLoose', CS.ui.unassignedCollapsed ? '1' : '0'); } catch {} };
+  CS.ui.fsCollapsed = localStorage.getItem(key + '.foldFs') === '1';
+  CS.persistFoldFs = () => { try { localStorage.setItem(key + '.foldFs', CS.ui.fsCollapsed ? '1' : '0'); } catch {} };
   CS.files = new Map(); // File objects only live in memory; raw file bytes never enter localStorage.
   CS.save = () => {
     try {
@@ -3721,8 +3739,9 @@ CS.markdown = text => {
         ${CS.ui.projectsCollapsed ? '' : `<button type="button" class="project-link" data-nav="projects">${i('more')}<span>查看全部项目</span></button>`}
       </section>
       <section class="sidebar-section"><div class="sidebar-section-label"><button type="button" class="text-button muted small ${CS.ui.unassignedCollapsed ? 'collapsed' : ''}" data-action="toggle-unassigned" aria-expanded="${!CS.ui.unassignedCollapsed}" title="${CS.ui.unassignedCollapsed ? '展开会话列表' : '折叠会话列表'}"><span>会话</span></button></div>
-        ${CS.ui.unassignedCollapsed ? '<div class="conversation-empty small muted">已折叠</div>' : (() => { const loose = CS.ui.conversations.filter(c => !c.projectId).slice(0, 8); return loose.length ? loose.filter(c => !c.archived).map(c => `<button type="button" class="conversation-link ${CS.state.currentRunId === c.id ? 'selected' : ''}" data-action="open-conversation" data-id="${e(c.id)}" title="${e(c.title)}">${i('message')}<span class="conversation-title">${e(c.title)}</span>${streaming.has(c.id) ? '<span class="conv-dot" title="生成中"></span>' : ''}<span class="conversation-actions${c.pinned ? ' has-pinned' : ''}"><span class="icon-btn" role="button" data-action="toggle-pin-conversation" data-id="${e(c.id)}" title="${c.pinned ? '取消置顶' : '置顶'}">${i(c.pinned ? 'x' : 'up','',12)}</span><span class="icon-btn" role="button" data-action="archive-conversation" data-id="${e(c.id)}" title="归档">${i('archive','',12)}</span></span></button>`).join('') : '<div class="conversation-empty small muted">暂无未归属项目的会话</div>'; })()}
-      </section></div>
+        ${CS.ui.unassignedCollapsed ? '' : (() => { const loose = CS.ui.conversations.filter(c => !c.projectId).slice(0, 8); return loose.length ? loose.filter(c => !c.archived).map(c => `<button type="button" class="conversation-link ${CS.state.currentRunId === c.id ? 'selected' : ''}" data-action="open-conversation" data-id="${e(c.id)}" title="${e(c.title)}">${i('message')}<span class="conversation-title">${e(c.title)}</span>${streaming.has(c.id) ? '<span class="conv-dot" title="生成中"></span>' : ''}<span class="conversation-actions${c.pinned ? ' has-pinned' : ''}"><span class="icon-btn" role="button" data-action="toggle-pin-conversation" data-id="${e(c.id)}" title="${c.pinned ? '取消置顶' : '置顶'}">${i(c.pinned ? 'x' : 'up','',12)}</span><span class="icon-btn" role="button" data-action="archive-conversation" data-id="${e(c.id)}" title="归档">${i('archive','',12)}</span></span></button>`).join('') : '<div class="conversation-empty small muted">暂无未归属项目的会话</div>'; })()}
+      </section>
+      <section class="sidebar-section"><div class="sidebar-section-label"><button type="button" class="text-button muted small ${CS.ui.fsCollapsed ? 'collapsed' : ''}" data-action="toggle-fs-section" aria-expanded="${!CS.ui.fsCollapsed}" title="${CS.ui.fsCollapsed ? '展开文件' : '折叠文件'}"><span>文件</span></button>${iconBtn('fs-refresh','refresh','刷新文件')}</div>${CS.ui.fsCollapsed ? '' : V.fsTree()}</section></div>
       <div class="sidebar-bottom"><div class="workspace-chip" data-action="toggle-user-menu"><div class="workspace-monogram">${(CS.state.username || 'CS').slice(0,2).toUpperCase()}</div><div class="grow"><div class="name">${e(CS.state.username || '未登录用户')}</div><div class="sub">科研工作空间</div></div>${i('chevron','',12)}${CS.ui.userMenu ? `<div class="user-menu"><button class="menu-item" data-nav="settings">${i('settings','',15)}<span>设置</span><kbd>⌘,</kbd></button><button class="menu-item" data-nav="help">${i('help','',15)}<span>帮助与文档</span></button><div class="menu-divider"></div><button class="menu-item danger" data-action="logout">${i('logout','',15)}<span>退出登录</span></button></div>` : ''}</div></div>
     </aside>`;
   };
@@ -3739,6 +3758,31 @@ CS.markdown = text => {
       const seg = t => t > 0 ? `width:${Math.max(0, Math.min(100, t / win * 100)).toFixed(2)}%;min-width:5px` : 'width:0%;min-width:0';
       return `<div class="ctx-pop" role="dialog" aria-label="上下文用量详情"><div class="ctx-head"><span>上下文已用 <b data-ctx="pct">${u.pct}%</b></span><span class="ctx-head-cap" data-ctx="cap">${CS.kfmt(u.total)} / ${CS.kfmt(win).slice(1)}</span></div><div class="ctx-bar"><span class="ctx-seg sys" data-ctx="w-sys" style="${seg(u.sysT)}"></span><span class="ctx-seg tools" data-ctx="w-tools" style="${seg(u.toolT)}"></span><span class="ctx-seg msgs" data-ctx="w-msgs" style="${seg(u.msgsT)}"></span></div><div class="ctx-rows"><div class="ctx-row"><span class="ctx-dot sys"></span><span class="ctx-label">系统提示词</span><span class="ctx-val" data-ctx="v-sys">${CS.kfmt(u.sysT)}</span></div><div class="ctx-row"><span class="ctx-dot tools"></span><span class="ctx-label">工具定义</span><span class="ctx-val" data-ctx="v-tools">${CS.kfmt(u.toolT)}</span></div><div class="ctx-row"><span class="ctx-dot msgs"></span><span class="ctx-label">对话消息</span><span class="ctx-val" data-ctx="v-msgs">${CS.kfmt(u.msgsT)}</span></div></div></div>`;
     })() : ''}</div>`;
+  };
+  V.fsTree = () => {
+    const st = CS.ui.fs;
+    const project = CS.state.projects.find(p => p.id === CS.state.projectId);
+    if (!project) return '<div class="fs-empty small muted">未关联项目，先在输入框选择项目即可浏览其目录。</div>';
+    if (!st || st.projectId !== project.id || (st.loading && !Array.isArray(st.root))) {
+      CS.ui.fs = { projectId: project.id, expanded: st?.expanded && st.projectId === project.id ? st.expanded : new Set(), children: {}, git: {}, root: null, loading: true };
+      CS.agent?.loadFsDir?.('');
+      return '<div class="fs-empty small muted">正在加载目录…</div>';
+    }
+    const git = st.git || {};
+    const row = (entry, depth) => {
+      const isDir = entry.type === 'dir';
+      const open = isDir && st.expanded.has(entry.path);
+      const stx = git[entry.path] || '';
+      const badge = stx ? `<span class="fs-st s-${stx}">${stx}</span>` : '';
+      const kids = open ? (Array.isArray(st.children[entry.path]) ? st.children[entry.path].map(k => row(k, depth + 1)).join('') : `<div class="fs-row fs-loading" style="padding-left:${12 + (depth + 1) * 13}px"><span class="spinner"></span></div>`) : '';
+      const icon = isDir ? `<span class="fs-chevron${open ? ' open' : ''}">${i('chevron', '', 12)}</span>` : `<span class="fs-file-ic">${i('file', '', 13)}</span>`;
+      return `<button type="button" class="fs-row${open ? ' open' : ''}" style="padding-left:${6 + depth * 13}px" data-action="${isDir ? 'fs-dir' : 'fs-open'}" data-path="${e(entry.path)}" title="${e(entry.path)}${stx ? ' · git ' + stx : ''}">${icon}<span class="fs-name${stx ? ' st-' + stx.toLowerCase() : ''}">${e(entry.name)}</span>${badge}</button>${kids}`;
+    };
+    if (!Array.isArray(st.root)) return '<div class="fs-empty small muted">正在加载目录…</div>';
+    if (st.root.length) return `<div class="fs-tree">${st.root.map(x => row(x, 0)).join('')}</div>`;
+    return st.error
+      ? `<div class="fs-empty small muted">${e(st.error)}</div>`
+      : '<div class="fs-empty small muted">目录为空，或项目尚未配置本地路径。</div>';
   };
   V.composer = (home = false) => `<div class="${home ? 'composer-home' : 'chat-composer'}">${!home ? `<button type="button" class="jump-latest" data-action="jump-latest" title="跳到最新消息"${CS.ui.canJumpLatest ? '' : ' hidden'}>${i('down', '', 14)}</button>` : ''}${home ? `<div class="composer-project"><button type="button" class="model-select-btn project-select-btn" data-action="toggle-project-menu" aria-haspopup="listbox" aria-expanded="${!!CS.ui.projectMenu}">${CS.state.projectId ? `<span class="project-icon" data-action="clear-project" title="取消项目关联">${i('folder','',13)}${i('x','',13)}</span>` : i('folder','',13)}<span>${e(CS.state.projects.find(p => p.id === CS.state.projectId)?.name || '选择项目')}</span>${i('down','',13)}</button>${CS.ui.projectMenu ? `<div class="model-menu dd-down" role="menu">${CS.state.projects.filter(p => !p.archived).map(p => `<button type="button" class="model-menu-item" role="menuitem" data-action="pick-project" data-id="${e(p.id)}"><span>${e(p.name)}</span>${CS.state.projectId === p.id ? i('check','',13) : ''}</button>`).join('')}<div class="menu-divider"></div><button type="button" class="model-menu-item" data-action="new-project">${i('plus','',14)}<span>新建项目</span></button><button type="button" class="model-menu-item" data-action="connect-project">${i('external','',14)}<span>连接远程项目</span></button></div>` : ''}</div>` : ''}<form class="composer" data-form="composer">
     ${CS.ui.attachments.length ? `<div class="attachment-list">${CS.ui.attachments.map(id => { const d = CS.state.datasets.find(x => x.id === id); return d ? `<span class="attachment">${i('file')}<span>${e(d.name)}</span>${iconBtn('remove-attachment','x','移除附件',`data-id="${e(id)}"`)}</span>` : ''; }).join('')}</div>` : ''}
@@ -4750,7 +4794,12 @@ CS.markdown = text => {
   CS.renderModal = () => {
     const modal = CS.ui.modal; if (!modal) return;
     let title = '', body = '', footer = '', wide = false;
-    if (modal.type === 'import') {
+    if (modal.type === 'fs-preview') {
+      title = modal.name || '文件预览'; wide = true;
+      body = modal.binary
+        ? `<div class="modal-pad"><p class="small muted">二进制文件（${CS.formatBytes(modal.size)}），不支持预览。</p></div>`
+        : `<div class="modal-pad"><div class="row-between mb-20"><span class="small muted mono">${e(modal.path || '')}</span><span class="small muted">${CS.formatBytes(modal.size)}</span></div><pre style="max-height:62vh;overflow:auto;margin:0">${e(modal.content || '')}</pre>${modal.truncated ? '<p class="small muted mt-12">内容过大，仅显示前 512 KB。</p>' : ''}</div>`;
+    } else if (modal.type === 'import') {
       title = '添加研究数据';
       body = `<div class="dropzone" id="dropzone" data-dropzone><div class="upload-mark">${i('upload','',24)}</div><p>拖拽文件到这里，或${H.btn('pick-files','选择本地文件','','small-btn flat')}</p><span class="sub">CSV / TSV / FASTA / H5AD / FASTQ / MTX / JSON</span></div><div class="mt-20">${H.notice('导入仅在本地登记。文本预览最多读取 64 KB；不解压、不执行文件。二进制数据仅查看元信息。')}</div>${modal.imported?.length ? `<div class="mt-20 stack">${modal.imported.map(d => `<div class="row">${H.tile('file','green')}<div class="grow"><h3>${e(d.name)}</h3><span class="small muted">${CS.formatBytes(d.size)} · 已在本地登记</span></div>${i('checkcircle','',17)}</div>`).join('')}</div>` : ''}`;
       footer = H.btn('close-modal','完成','check','primary');
@@ -4921,6 +4970,23 @@ CS.markdown = text => {
     'toggle-project': id => { CS.ui.expandedProjects.has(id) ? CS.ui.expandedProjects.delete(id) : CS.ui.expandedProjects.add(id); CS.persistFold(); CS.render(); },
     'toggle-projects-section': () => { CS.ui.projectsCollapsed = !CS.ui.projectsCollapsed; CS.persistFoldSection(); CS.render(); },
     'toggle-unassigned': () => { CS.ui.unassignedCollapsed = !CS.ui.unassignedCollapsed; CS.persistFoldLoose(); CS.render(); },
+    'toggle-fs-section': () => { CS.ui.fsCollapsed = !CS.ui.fsCollapsed; CS.persistFoldFs(); CS.render(); },
+    'fs-dir': (id, el) => {
+      const path = el?.dataset?.path || id;
+      const st = CS.ui.fs; if (!path || !st) return;
+      if (st.expanded.has(path)) st.expanded.delete(path);
+      else { st.expanded.add(path); if (!Array.isArray(st.children[path])) CS.agent.loadFsDir(path); }
+      CS.render();
+    },
+    'fs-open': (id, el) => { const path = el?.dataset?.path || id; if (path) CS.agent.previewFsFile(path); },
+    'fs-refresh': () => {
+      const st = CS.ui.fs; if (!st) return;
+      st.children = {}; st.git = {}; st.loading = true;
+      const keep = [...st.expanded];
+      st.expanded = new Set(keep);
+      CS.agent.loadFsDir('');
+      CS.render();
+    },
     'toggle-project-settings': id => { CS.ui.projectSettingsMenu = CS.ui.projectSettingsMenu === id ? null : id; CS.render(); },
     'copy-message': id => {
       const run = CS.currentRun(); const m = run?.messages[Number(id)];
@@ -5603,6 +5669,27 @@ CS.markdown = text => {
     if (real.length) payload.content = real.map(m => ({ role: m.role, content: m.content }));  // 空则不带 → 服务端保留已有
     CS.api.modelCall('conversation.save', 'POST', '/conversations', payload)
       .then(() => CS.agent.loadConversations()).catch(() => {});
+  };
+  CS.agent.loadFsDir = async path => {
+    const st = CS.ui.fs; if (!st) return;
+    try {
+      const data = await CS.api.request('/fs/tree?projectId=' + encodeURIComponent(st.projectId) + '&path=' + encodeURIComponent(path || ''), { method: 'GET' });
+      const cur = CS.ui.fs; if (!cur || cur.projectId !== st.projectId) return;
+      if (path) { cur.children[path] = data.entries || []; cur.expanded.add(path); } else cur.root = data.entries || [];
+      cur.git = { ...cur.git, ...(data.git || {}) };
+      cur.loading = false;
+      CS.emit('render');
+    } catch (error) {
+      const cur = CS.ui.fs; if (cur && cur.projectId === st.projectId) { cur.loading = false; if (!path && !Array.isArray(cur.root)) { cur.root = []; cur.error = (error && error.message) || ''; } }
+      CS.emit('render');
+    }
+  };
+  CS.agent.previewFsFile = async path => {
+    const st = CS.ui.fs; if (!st) return;
+    try {
+      const data = await CS.api.request('/fs/file?projectId=' + encodeURIComponent(st.projectId) + '&path=' + encodeURIComponent(path), { method: 'GET' });
+      CS.showModal('fs-preview', { name: path.split('/').pop(), ...data });
+    } catch { CS.toast('无法读取该文件。', 'error'); }
   };
   CS.api.detectEndpoint().finally(() => { CS.agent.loadModels(); CS.agent.loadProjects().then(() => CS.agent.loadConversations()); });
   if(CS.storageUnavailable)CS.toast('浏览器存储不可用，当前仅在内存运行。','error');

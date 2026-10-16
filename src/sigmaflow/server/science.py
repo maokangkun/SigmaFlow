@@ -17,6 +17,7 @@ import json
 import math
 import os
 import re
+import subprocess
 import threading
 import time
 import uuid
@@ -977,6 +978,111 @@ def _build_skill_overrides(items: list, known: Dict[str, dict]) -> Dict[str, dic
 # 内置服务器 (medical-apis) 在首次运行时种子化; 生效路径: 导入 agent 工具模块前通过
 # MCP_ENDPOINT 环境变量注入, 已导入时在保存后重建 MCPClient 并重挂其工具
 
+_FS_HIDDEN_NAMES = {".git", "__pycache__", "node_modules", ".DS_Store"}
+_GIT_STATUS_TTL = 3.0
+_GIT_STATUS_CACHE: Dict[str, tuple] = {}
+_FS_TEXT_MAX = 512 * 1024
+
+
+def _fs_resolve(project_dir: str, rel: str):
+    """Resolve `rel` inside the project dir, refusing escapes (returns abs path)."""
+    root = os.path.realpath(project_dir)
+    target = os.path.realpath(os.path.join(root, rel)) if rel else root
+    if target != root and not target.startswith(root + os.sep):
+        return None, root
+    return target, root
+
+
+def _git_status_map(root: str) -> Dict[str, str]:
+    """Repo-relative path -> one-letter git status (M/A/D/R/U for untracked).
+
+    Cached briefly per project so expanding a few directories does not re-run
+    `git status` each time.
+    """
+    cached = _GIT_STATUS_CACHE.get(root)
+    now = time.time()
+    if cached and now - cached[0] < _GIT_STATUS_TTL:
+        return cached[1]
+    result: Dict[str, str] = {}
+    try:
+        proc = subprocess.run(
+            ["git", "-C", root, "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+            capture_output=True, text=True, timeout=8,
+        )
+        if proc.returncode == 0:
+            items = proc.stdout.split("\0")
+            i = 0
+            while i < len(items):
+                item = items[i]
+                i += 1
+                if len(item) < 4:
+                    continue
+                xy = item[:2]
+                path = item[3:]
+                if xy == "??":
+                    status = "U"
+                else:
+                    status = xy[1].strip() or xy[0].strip() or "M"
+                if status == "R" and i < len(items) - 1:
+                    i += 1  # rename records carry the old path in the next field
+                if path:
+                    result[path] = status
+    except Exception:
+        return {}
+    _GIT_STATUS_CACHE[root] = (now, result)
+    return result
+
+
+def _fs_tree_payload(project, rel: str) -> dict:
+    """Directory listing + git status for the project file browser."""
+    base = str((project or {}).get("dir") or "").strip()
+    if not base or not os.path.isdir(base):
+        raise HTTPException(status_code=404, detail="项目目录不存在，请编辑项目并填写本地路径")
+    target, root = _fs_resolve(base, rel)
+    if target is None or not os.path.isdir(target):
+        raise HTTPException(status_code=404, detail="目录不存在")
+    entries = []
+    try:
+        names = os.listdir(target)
+    except PermissionError:
+        names = []
+    for name in sorted(names, key=str.lower):
+        if name in _FS_HIDDEN_NAMES or name.startswith("."):
+            continue
+        full = os.path.join(target, name)
+        is_dir = os.path.isdir(full)
+        if not is_dir and not os.path.isfile(full):
+            continue  # sockets / broken symlinks 等
+        entries.append({
+            "name": name,
+            "type": "dir" if is_dir else "file",
+            "path": os.path.relpath(full, root).replace(os.sep, "/"),
+        })
+        if len(entries) >= 500:
+            break
+    return {"root": root.replace(os.sep, "/"), "path": rel, "entries": entries, "git": _git_status_map(root)}
+
+
+def _fs_file_payload(project, rel: str) -> dict:
+    """Read one file for the read-only preview modal."""
+    base = str((project or {}).get("dir") or "").strip()
+    if not base or not os.path.isdir(base):
+        raise HTTPException(status_code=404, detail="项目目录不存在")
+    target, root = _fs_resolve(base, rel)
+    if target is None:
+        raise HTTPException(status_code=403, detail="越界路径")
+    if not os.path.isfile(target):
+        raise HTTPException(status_code=404, detail="文件不存在")
+    size = os.path.getsize(target)
+    with open(target, "rb") as fh:
+        head = fh.read(min(size, _FS_TEXT_MAX + 64 * 1024))
+    if b"\x00" in head[:8192]:
+        return {"path": rel, "size": size, "binary": True, "content": ""}
+    truncated = size > _FS_TEXT_MAX
+    text = head[:_FS_TEXT_MAX].decode("utf-8", "replace")
+    return {"path": rel, "size": size, "binary": False, "content": text, "truncated": truncated}
+
+
 _MCP_REBUILD_LOCK = threading.Lock()
 
 
@@ -1700,6 +1806,19 @@ class ScienceAPI:
         # ------------------------------------------------ projects & conversations
         # Projects group conversations. Deleting a project unassigns (keeps)
         # its conversations.
+
+        @router.get("/fs/tree")
+        async def fs_tree(request: Request, projectId: str = "", path: str = ""):
+            """项目目录一层列表 + git 状态(供侧栏文件浏览器懒加载)。"""
+            _check_origin(request)
+            project = self.project_store.projects.get(projectId or "")
+            return await asyncio.to_thread(_fs_tree_payload, project, path or "")
+
+        @router.get("/fs/file")
+        async def fs_file(request: Request, projectId: str = "", path: str = ""):
+            _check_origin(request)
+            project = self.project_store.projects.get(projectId or "")
+            return await asyncio.to_thread(_fs_file_payload, project, path or "")
 
         @router.get("/projects")
         async def list_projects():

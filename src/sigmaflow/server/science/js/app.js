@@ -741,7 +741,12 @@
   CS.renderModal = () => {
     const modal = CS.ui.modal; if (!modal) return;
     let title = '', body = '', footer = '', wide = false;
-    if (modal.type === 'import') {
+    if (modal.type === 'fs-preview') {
+      title = modal.name || '文件预览'; wide = true;
+      body = modal.binary
+        ? `<div class="modal-pad"><p class="small muted">二进制文件（${CS.formatBytes(modal.size)}），不支持预览。</p></div>`
+        : `<div class="modal-pad"><div class="row-between mb-20"><span class="small muted mono">${e(modal.path || '')}</span><span class="small muted">${CS.formatBytes(modal.size)}</span></div><pre style="max-height:62vh;overflow:auto;margin:0">${e(modal.content || '')}</pre>${modal.truncated ? '<p class="small muted mt-12">内容过大，仅显示前 512 KB。</p>' : ''}</div>`;
+    } else if (modal.type === 'import') {
       title = '添加研究数据';
       body = `<div class="dropzone" id="dropzone" data-dropzone><div class="upload-mark">${i('upload','',24)}</div><p>拖拽文件到这里，或${H.btn('pick-files','选择本地文件','','small-btn flat')}</p><span class="sub">CSV / TSV / FASTA / H5AD / FASTQ / MTX / JSON</span></div><div class="mt-20">${H.notice('导入仅在本地登记。文本预览最多读取 64 KB；不解压、不执行文件。二进制数据仅查看元信息。')}</div>${modal.imported?.length ? `<div class="mt-20 stack">${modal.imported.map(d => `<div class="row">${H.tile('file','green')}<div class="grow"><h3>${e(d.name)}</h3><span class="small muted">${CS.formatBytes(d.size)} · 已在本地登记</span></div>${i('checkcircle','',17)}</div>`).join('')}</div>` : ''}`;
       footer = H.btn('close-modal','完成','check','primary');
@@ -912,6 +917,23 @@
     'toggle-project': id => { CS.ui.expandedProjects.has(id) ? CS.ui.expandedProjects.delete(id) : CS.ui.expandedProjects.add(id); CS.persistFold(); CS.render(); },
     'toggle-projects-section': () => { CS.ui.projectsCollapsed = !CS.ui.projectsCollapsed; CS.persistFoldSection(); CS.render(); },
     'toggle-unassigned': () => { CS.ui.unassignedCollapsed = !CS.ui.unassignedCollapsed; CS.persistFoldLoose(); CS.render(); },
+    'toggle-fs-section': () => { CS.ui.fsCollapsed = !CS.ui.fsCollapsed; CS.persistFoldFs(); CS.render(); },
+    'fs-dir': (id, el) => {
+      const path = el?.dataset?.path || id;
+      const st = CS.ui.fs; if (!path || !st) return;
+      if (st.expanded.has(path)) st.expanded.delete(path);
+      else { st.expanded.add(path); if (!Array.isArray(st.children[path])) CS.agent.loadFsDir(path); }
+      CS.render();
+    },
+    'fs-open': (id, el) => { const path = el?.dataset?.path || id; if (path) CS.agent.previewFsFile(path); },
+    'fs-refresh': () => {
+      const st = CS.ui.fs; if (!st) return;
+      st.children = {}; st.git = {}; st.loading = true;
+      const keep = [...st.expanded];
+      st.expanded = new Set(keep);
+      CS.agent.loadFsDir('');
+      CS.render();
+    },
     'toggle-project-settings': id => { CS.ui.projectSettingsMenu = CS.ui.projectSettingsMenu === id ? null : id; CS.render(); },
     'copy-message': id => {
       const run = CS.currentRun(); const m = run?.messages[Number(id)];
@@ -1594,6 +1616,27 @@
     if (real.length) payload.content = real.map(m => ({ role: m.role, content: m.content }));  // 空则不带 → 服务端保留已有
     CS.api.modelCall('conversation.save', 'POST', '/conversations', payload)
       .then(() => CS.agent.loadConversations()).catch(() => {});
+  };
+  CS.agent.loadFsDir = async path => {
+    const st = CS.ui.fs; if (!st) return;
+    try {
+      const data = await CS.api.request('/fs/tree?projectId=' + encodeURIComponent(st.projectId) + '&path=' + encodeURIComponent(path || ''), { method: 'GET' });
+      const cur = CS.ui.fs; if (!cur || cur.projectId !== st.projectId) return;
+      if (path) { cur.children[path] = data.entries || []; cur.expanded.add(path); } else cur.root = data.entries || [];
+      cur.git = { ...cur.git, ...(data.git || {}) };
+      cur.loading = false;
+      CS.emit('render');
+    } catch (error) {
+      const cur = CS.ui.fs; if (cur && cur.projectId === st.projectId) { cur.loading = false; if (!path && !Array.isArray(cur.root)) { cur.root = []; cur.error = (error && error.message) || ''; } }
+      CS.emit('render');
+    }
+  };
+  CS.agent.previewFsFile = async path => {
+    const st = CS.ui.fs; if (!st) return;
+    try {
+      const data = await CS.api.request('/fs/file?projectId=' + encodeURIComponent(st.projectId) + '&path=' + encodeURIComponent(path), { method: 'GET' });
+      CS.showModal('fs-preview', { name: path.split('/').pop(), ...data });
+    } catch { CS.toast('无法读取该文件。', 'error'); }
   };
   CS.api.detectEndpoint().finally(() => { CS.agent.loadModels(); CS.agent.loadProjects().then(() => CS.agent.loadConversations()); });
   if(CS.storageUnavailable)CS.toast('浏览器存储不可用，当前仅在内存运行。','error');
