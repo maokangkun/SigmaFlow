@@ -538,9 +538,32 @@
     } else if (modal.type === 'dataset-picker') {
       title = '将数据加入研究上下文';
       body = `<p class="small muted mb-20">选择数据记录，附加到当前问题。演示执行不上传原始文件。</p>${CS.state.datasets.map(d => `<button class="dataset-picker-row" data-action="pick-dataset" data-id="${e(d.id)}">${H.tile(d.format === 'H5AD' ? 'cells' : 'file')}<div class="grow"><strong>${e(d.name)}</strong><p>${e(d.format)} · ${d.source === 'demo' ? '合成演示' : '本地导入'}</p></div>${i(CS.ui.attachments.includes(d.id) ? 'checkcircle' : 'plus','',17)}</button>`).join('')}`;
-    } else if (modal.type === 'tool-picker') {
-      title = '选择研究工具';
-      body = `<p class="small muted mb-20">选择后打开对应的本地工具或分析配置。你尚未发送的问题会保留。</p>${CS.data.workflows.map(w => `<button class="dataset-picker-row" data-action="pick-workflow" data-id="${w.id}">${H.tile(w.icon)}<div class="grow"><strong>${e(w.title)}</strong><p>${e(w.sub)} · 演示</p></div>${i('arrow','',16)}</button>`).join('')}<button class="dataset-picker-row" data-action="choose-sequence-tool">${H.tile('dna','green')}<div class="grow"><strong>DNA 基础统计</strong><p>浏览器内真实计算长度与 GC 比例</p></div>${i('arrow','',16)}</button>`;
+    } else if (modal.type === 'agent-tools' || modal.type === 'agent-skills') {
+      // 会话工具/技能只读展示: 与设置页启用状态一致, 禁用的不显示; 提供入口跳设置
+      const isTools = modal.type === 'agent-tools';
+      title = isTools ? '会话工具' : '会话技能';
+      const rows = ((isTools ? CS.ui.agentTools : CS.ui.agentSkills) || []).filter(t => t.enabled);
+      const item = (name, desc, badge) => `<div class="session-list-item"><div class="row gap-6"><strong>${e(name)}</strong>${badge || ''}</div><span class="small muted">${e(desc)}</span></div>`;
+      let list;
+      if (isTools) {
+        // 与设置页同规则分组排序: 内置三类固定顺序, MCP 按配置顺序
+        const GROUP_LABELS = { builtin: '内置工具 · 基础', sciverse: '内置工具 · Sciverse', arxiv: '内置工具 · arXiv' };
+        const GROUP_ORDER = { builtin: 0, sciverse: 1, arxiv: 2 };
+        const groups = [];
+        for (const t of rows) {
+          const origin = t.origin || 'builtin';
+          let g = groups.find(x => x.origin === origin);
+          if (!g) groups.push(g = { origin, label: GROUP_LABELS[origin] || `MCP · ${origin}`, rank: GROUP_ORDER[origin] ?? 3, items: [] });
+          g.items.push(t);
+        }
+        groups.sort((a, b) => a.rank - b.rank);
+        list = groups.map(g => `<div class="session-list-group">${e(g.label)}<span class="count">${g.items.length} 个工具</span></div>${g.items.map(t => item(t.name, t.description)).join('')}`).join('');
+      } else {
+        list = rows.map(s => item(s.name, s.description, s.builtin ? '<span class="pill green">内置</span>' : '')).join('');
+      }
+      const empty = rows.length ? '' : H.notice(isTools ? '当前没有启用的工具。可在设置的 Agent 工具里开启。' : '当前没有启用的技能。可在设置的 Agent 技能里开启。');
+      body = `<p class="small muted mb-20">${isTools ? '当前对话 Agent 可调用的工具, 与设置页“Agent 工具”的启用状态一致; 禁用的工具不会发给模型、也不占用上下文。' : '当前对话 Agent 可用的技能; 技能清单作为系统提示词的一部分自动附加, 禁用的技能不进入会话、不占用上下文。'}</p>${empty}<div class="session-list">${list}</div>`;
+      footer = `${H.btn(isTools ? 'open-tool-settings' : 'open-skill-settings','打开设置','settings','flat')}${H.btn('close-modal','关闭','','flat')}`;
     } else if (modal.type === 'project') {
       const p = modal.project || {}; title = p.id ? '编辑研究项目' : '新的研究，从这里开始';
       body = `<form id="project-form" data-form="project"><div class="field"><label for="project-name">项目名称</label><input id="project-name" name="name" value="${e(p.name || '')}" placeholder="例如 immune_cell_atlas" maxlength="60" required autocomplete="off"></div><div class="field"><label for="project-dir">项目目录</label><div class="dir-row"><input id="project-dir" value="${e(CS.ui.modal.pickedDir || p.dir || '')}" placeholder="选择文件夹，或输入名称后使用默认路径" readonly autocomplete="off"><button type="button" class="btn small-btn" data-action="browse-dir">浏览</button></div><div id="dir-listing"></div><span class="hint">选择文件夹后以其名称作为项目名；只填名称时使用默认路径下的同名文件夹。</span></div><div class="field"><label for="project-description">项目描述</label><textarea id="project-description" name="description" placeholder="这个项目希望回答什么问题？" rows="3" maxlength="240">${e(p.description || '')}</textarea></div><div class="field"><label for="project-tags">标签</label><input id="project-tags" name="tags" value="${e((p.tags || []).join(', '))}" placeholder="单细胞, 文献, 方法" maxlength="100"><span class="hint">用英文或中文逗号分隔，最多 5 个标签。</span></div></form>`;
@@ -1067,9 +1090,10 @@
     'remove-attachment': id => { CS.ui.attachments = CS.ui.attachments.filter(x=>x!==id); CS.render(); },
     'attach-dataset': id => { CS.ui.attachments=[id]; CS.state.currentRunId=null; CS.save(); CS.navigate('home'); },
     'attach-preview': id => { CS.closeModal(); actions['attach-dataset'](id); },
-    'choose-tools': () => CS.showModal('tool-picker'),
-    'pick-workflow': id => { CS.ui.workflowId=id; CS.closeModal(); CS.navigate('workflows'); },
-    'choose-sequence-tool': () => { CS.ui.activeTool='sequence'; CS.closeModal(); CS.navigate('tools'); },
+    'choose-tools': async () => { await CS.loadAgentTools(); CS.showModal('agent-tools'); },
+    'choose-skills': async () => { await CS.loadAgentSkills(); CS.showModal('agent-skills'); },
+    'open-tool-settings': () => { CS.closeModal(); CS.ui.settingsTab = 'tools'; CS.navigate('settings'); CS.loadAgentTools(); CS.loadAgentTokens(); },
+    'open-skill-settings': () => { CS.closeModal(); CS.ui.settingsTab = 'skills'; CS.navigate('settings'); CS.loadAgentSkills(); },
     'approve-run': () => CS.agent.approve(CS.currentRun()),
     'pause-run': () => CS.agent.control(CS.currentRun(),'pause'),
     'cancel-run': () => CS.agent.control(CS.currentRun(),'cancel'),
