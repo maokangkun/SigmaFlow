@@ -218,12 +218,15 @@ POST /api/skills   → {"skills": [...]}   # 保存全量列表；{"reset": true
 
 设置页可增删改 MCP 服务器（名称/地址/启用开关），落盘到
 `<science_dir>/mcp.json`。内置服务器随应用分发（`server/science/mcp_servers.json`），
-首次运行种子化；目前自带 `medical-apis`。保存后服务端重连各启用的服务器拉取工具清单，
+首次运行种子化，后续启动自动回填新内置服务器（用户主动移除的除外）；目前自带
+`medical-apis`（医学数据查询）与 `anysearch`（认证头使用 `${ANYSEARCH_API_KEY}` 模板：
+第三方 API Key 未配置该密钥时服务器等同禁用，配置后自动加入活动集并按真实密钥发送 Bearer 头）。
+保存后服务端重连各启用的服务器拉取工具清单，
 工具并入 Agent 工具列表（也会出现在 `/api/tools` 中）并占用上下文；禁用或移除的服务器不参与会话。
 
 ```http
-GET  /api/mcp   → {"servers": [{id, name, url, enabled, builtin, modified}]}
-POST /api/mcp   → {"servers": [...]}   # 保存全量列表；{"reset": true} 恢复内置
+GET  /api/mcp   → {"servers": [{id, name, url, enabled, builtin, locked, modified}]}  # locked: 密钥未配置，服务端强制关闭
+POST /api/mcp   → {"servers": [...]}   # 保存全量列表；{"reset": true} 恢复内置；内置服务器的认证头以内置资产为准
 ```
 
 规则：名称非空、去重、≤ 64 字符；地址需以 http(s):// 开头、≤ 500 字符；`enabled: false` 表示禁用。
