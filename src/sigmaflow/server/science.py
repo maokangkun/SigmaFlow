@@ -1559,6 +1559,10 @@ class ScienceAPI:
             _litellm_warm()  # 先完成 litellm 导入再对外服务, 避免半初始化竞态
         except Exception:
             pass
+        try:
+            _seed_mcp_config()  # 启动即补种内置 MCP(如新增的 rcsb), agent 导入时即可激活
+        except Exception:
+            pass
         router = APIRouter(prefix="/api")
 
         # ------------------------------------------------------------- HTTP

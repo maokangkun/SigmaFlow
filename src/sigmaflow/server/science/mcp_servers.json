@@ -8,6 +8,9 @@
       "headers": {
         "Authorization": "Bearer ${ANYSEARCH_API_KEY}"
       }
+    },
+    "rcsb": {
+      "url": "https://mcp-beta.rcsb.org/mcp"
     }
   }
 }
