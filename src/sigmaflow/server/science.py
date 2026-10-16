@@ -277,19 +277,24 @@ def _save_tool_overrides(overrides: Dict[str, dict]) -> None:
 
 
 def _token_listing() -> list:
-    """Settings-page view of configured third-party API tokens; secrets never leave the server."""
+    """Settings-page view of configured third-party API tokens; secrets only appear masked."""
     saved = _sciverse_key_file().strip()
     try:
         env_key = str(getattr(_agent_tools_module(), "Sciverse_API_KEY", "") or "")
     except Exception:
         env_key = ""
-    effective = saved or env_key
+    effective = (saved or env_key).strip()
+
+    def _hint(key: str) -> Optional[str]:
+        return key if len(key) <= 8 else f"{key[:4]}****{key[-4:]}"
+
     return [{
         "id": "sciverse",
         "label": "Sciverse API",
-        "configured": bool(effective.strip()),
+        "configured": bool(effective),
         "saved": bool(saved),
         "fromEnv": not saved and bool(env_key.strip()),
+        "keyHint": _hint(effective),
     }]
 
 
