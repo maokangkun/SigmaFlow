@@ -1470,6 +1470,31 @@ class ScienceAPI:
             prompt + tool definitions), used by the ring widget."""
             return await asyncio.to_thread(_agent_context_sizes)
 
+        @router.get("/usage-tokens")
+        async def usage_tokens(request: Request):
+            """Proxy local csusage aggregate stats for the settings usage card.
+
+            Served from `SIGMAFLOW_USAGE_API` (default `http://127.0.0.1:4100/api/usage`);
+            the payload is cached briefly so opening the settings page does not
+            re-aggregate the whole token ledger every time. The agent
+            breakdown is dropped because the settings page never renders it.
+            """
+            _check_origin(request)
+            now = time.time()
+            if _usage_cache["data"] is not None and now - _usage_cache["at"] < _USAGE_CACHE_TTL:
+                return _usage_cache["data"]
+            try:
+                data = await asyncio.to_thread(_fetch_usage_payload)
+            except Exception as exc:
+                if _usage_cache["data"] is not None:
+                    # 拉取失败时回退旧缓存, 保证设置页不会白屏
+                    _usage_cache["at"] = now
+                    return _usage_cache["data"]
+                raise HTTPException(status_code=502, detail=f"用法数据源不可达: {exc}")
+            _usage_cache["data"] = data
+            _usage_cache["at"] = now
+            return data
+
         @router.post("/models")
         async def save_model(payload: ModelIn, request: Request):
             _check_origin(request)
@@ -2344,6 +2369,25 @@ def _run_agent_chat(base_url: str, api_key: str, model_name: str, messages: list
 
 
 _AGENT_CONTEXT_SIZES: Dict[str, int] = {}
+
+
+# csusage 聚合数据的内存缓存: 打开设置页频繁刷新时避免每次重拉完整台账
+_USAGE_CACHE_TTL = 300.0
+_usage_cache: Dict[str, object] = {"data": None, "at": 0.0}
+
+
+def _fetch_usage_payload() -> Dict[str, object]:
+    """Fetch the local csusage aggregate (blocking; run via to_thread)."""
+    import json as _json
+    import urllib.request
+
+    url = os.environ.get("SIGMAFLOW_USAGE_API") or "http://127.0.0.1:4100/api/usage"
+    with urllib.request.urlopen(url, timeout=20) as resp:
+        payload = _json.loads(resp.read().decode("utf-8"))
+    # 设置页不渲染 Agent 明细, 直接丢弃以减小载荷
+    if isinstance(payload, dict):
+        payload.pop("agents", None)
+    return payload
 
 
 def _agent_context_sizes() -> Dict[str, int]:

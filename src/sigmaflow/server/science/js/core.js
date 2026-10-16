@@ -31,6 +31,13 @@ CS.tokRateText = m => {
   return (m.tokens / seconds).toFixed(1) + ' tok/s';
 };
 CS.num = tokens => Math.round(tokens || 0).toLocaleString();
+// 中文数量级缩写(仿 csusage 页统计卡): 1.2亿 / 45.6万 / 123
+CS.usageNum = n => {
+  n = Math.round(n || 0);
+  if (n >= 1e8) return (n / 1e8).toFixed(1) + '亿';
+  if (n >= 1e4) return (n / 1e4).toFixed(1) + '万';
+  return n.toLocaleString();
+};
 // 上下文 token 估算(近似值): 中文≈0.6 token/字, 其他≈1 token/4.6 字符,
 // 按真实 glm-5.3 usage 校准过; 服务端另有 sys/tools 的精确口径(/context-info)
 CS.estimateTokens = text => {

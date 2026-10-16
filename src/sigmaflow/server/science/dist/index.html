@@ -374,6 +374,21 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
 .msg-block,.conversation>.user-message{scroll-margin-top:14px}
 @media(max-width:1100px){#anchor-rail,#anchor-tip{display:none!important}}
 html[data-motion="reduced"] #anchor-tip{display:none}
+/* ===== 设置页 Token 用量卡(仿 csusage 页, 去 Agent 明细) ===== */
+.usage-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.usage-stat{background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0;cursor:default}
+.usage-stat-value{font-size:19px;font-weight:700;letter-spacing:-.02em;color:var(--ink-strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.usage-stat-label{margin-top:3px;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.usage-chart{margin-top:10px;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:10px 12px 8px}
+.usage-chart svg{display:block;width:100%;height:150px}
+.usage-chart-note{margin-top:6px;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tab-label{background:transparent;border:0;color:var(--muted);font-size:12px;font-weight:500;padding:3px 10px;border-radius:8px;cursor:pointer}
+.tab-label:hover{color:var(--ink);background:var(--inset)}
+.tab-label.usage-gran-active{color:var(--ink-strong);background:var(--accent);color:#fff}
+.settings-section .table-wrap{max-height:420px;overflow-y:auto}
+.settings-section table td,.settings-section table th{white-space:nowrap}
+.settings-section table .num{text-align:right;font-variant-numeric:tabular-nums}
+@media(max-width:860px){.usage-stats{grid-template-columns:repeat(2,1fr)}}
 
 </style>
 </head>
@@ -568,6 +583,13 @@ CS.tokRateText = m => {
   return (m.tokens / seconds).toFixed(1) + ' tok/s';
 };
 CS.num = tokens => Math.round(tokens || 0).toLocaleString();
+// 中文数量级缩写(仿 csusage 页统计卡): 1.2亿 / 45.6万 / 123
+CS.usageNum = n => {
+  n = Math.round(n || 0);
+  if (n >= 1e8) return (n / 1e8).toFixed(1) + '亿';
+  if (n >= 1e4) return (n / 1e4).toFixed(1) + '万';
+  return n.toLocaleString();
+};
 // 上下文 token 估算(近似值): 中文≈0.6 token/字, 其他≈1 token/4.6 字符,
 // 按真实 glm-5.3 usage 校准过; 服务端另有 sys/tools 的精确口径(/context-info)
 CS.estimateTokens = text => {
@@ -3561,6 +3583,47 @@ CS.markdown = text => {
   const search = (id, placeholder, value) => `<div class="search-input">${i('search')}<input id="${id}" type="search" aria-label="${e(placeholder)}" placeholder="${e(placeholder)}" value="${e(value)}" autocomplete="off"></div>`;
   const tab = (action, id, title, selected, count) => `<button type="button" class="tab ${selected ? 'active' : ''}" data-action="${action}" data-id="${id}" aria-pressed="${!!selected}">${e(title)}${count !== undefined ? `<span class="count">${count}</span>` : ''}</button>`;
   const tile = (name, color = '') => `<span class="icon-tile ${color}">${i(name, '', 19)}</span>`;
+  // Token 用量卡辅助: 会话时长与 SVG 活动图(仿 csusage 页, 去 Agent 明细)
+  const usageDur = ms => {
+    if (!ms) return '—';
+    const min = Math.floor(ms / 60000);
+    const d = Math.floor(min / 1440), h = Math.floor((min % 1440) / 60);
+    return d ? `${d} 天 ${h} 小时` : h ? `${h} 小时 ${Math.floor(min % 60)} 分钟` : `${min} 分钟`;
+  };
+  const usageChart = (days, gran) => {
+    if (!days?.length) return H.notice('暂无每日用量记录。');
+    // daily: 每日一柱; weekly: 按自然周(周一起)聚合; total: 按日累计折线
+    const W = 720, Hh = 150, pad = 8;
+    let items;
+    if (gran === 'weekly') {
+      items = [];
+      let acc = null;
+      for (const day of days) {
+        const dow = (new Date(day.date + 'T00:00:00').getDay() + 6) % 7;  // 0=周一
+        if (dow === 0 || !acc) acc = { date: day.date, total: 0, sessions: 0, cost: 0 };
+        acc.total += day.totalTokens || 0; acc.sessions += day.sessions || 0; acc.cost += day.costUsd || 0;
+        if (dow === 6) { items.push(acc); acc = null; }
+      }
+      if (acc) items.push(acc);  // 收尾不完整的一周
+    } else if (gran === 'total') {
+      let run = 0; items = days.map(day => ({ date: day.date, total: (run += day.totalTokens || 0), sessions: day.sessions || 0, cost: day.costUsd || 0 }));
+    } else items = days.map(day => ({ date: day.date, total: day.totalTokens || 0, sessions: day.sessions || 0, cost: day.costUsd || 0 }));
+    const fmtTitle = it => `${it.date} · ${CS.usageNum(it.total)} tokens${it.cost ? ` · $${it.cost.toFixed(2)}` : ''}`;
+    if (gran === 'total') {
+      const max = Math.max(...items.map(x => x.total), 1);
+      const pts = items.map((x, idx) => `${(pad + idx * (W - pad * 2) / Math.max(1, items.length - 1)).toFixed(1)},${(Hh - pad - (x.total / max) * (Hh - pad * 2)).toFixed(1)}`).join(' ');
+      return `<div class="usage-chart" role="img" aria-label="Token 累计曲线"><svg viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2"/><line x1="${pad}" y1="${Hh - pad}" x2="${W - pad}" y2="${Hh - pad}" stroke="var(--line)" stroke-width="1"/></svg><div class="usage-chart-note tiny muted">${e(items[0]?.date || '')} → ${e(items[items.length - 1]?.date || '')} · 累计 ${CS.usageNum(items[items.length - 1]?.total || 0)} tokens</div></div>`;
+    }
+    const max = Math.max(...items.map(x => x.total), 1);
+    const gap = items.length > 90 ? 1 : 2.5;
+    const bw = Math.max(2.5, Math.floor((W - pad * 2 - gap * (items.length - 1)) / items.length));
+    const bars = items.map((x, idx) => {
+      const bh = Math.max(1.5, (x.total / max) * (Hh - pad * 2));
+      const bx = pad + idx * (bw + gap);
+      return `<rect x="${bx.toFixed(1)}" y="${(Hh - pad - bh).toFixed(1)}" width="${bw}" height="${bh.toFixed(1)}" rx="1.5" fill="var(--accent)" opacity="${items.length > 90 ? 0.75 : 0.9}"><title>${e(fmtTitle(x))}</title></rect>`;
+    }).join('');
+    return `<div class="usage-chart" role="img" aria-label="Token ${gran === 'weekly' ? '每周' : '每日'}活动"><svg viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none">${bars}<line x1="${pad}" y1="${Hh - pad}" x2="${W - pad}" y2="${Hh - pad}" stroke="var(--line)" stroke-width="1"/></svg><div class="usage-chart-note tiny muted">${e(fmtTitle(items.reduce((a, b) => (b.total > a.total ? b : a), items[0])))} · 共 ${items.length} ${gran === 'weekly' ? '周' : '天'}</div></div>`;
+  };
   const notice = text => `<div class="notice">${i('info', '', 15)}<span>${e(text)}</span></div>`;
   const renderTable = (columns, rows) => `<div class="table-wrap"><table><thead><tr>${columns.map(c => `<th>${e(c)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
   CS.viewHelpers = { btn, iconBtn, pill, status, empty, header, search, tab, tile, notice, renderTable };
@@ -3748,7 +3811,7 @@ CS.markdown = text => {
     const s = CS.state.settings;
     const toggle = (id, label, sub) => `<div class="setting-row"><div><h3>${e(label)}</h3><p>${e(sub)}</p></div><button type="button" role="switch" aria-checked="${!!s[id]}" aria-label="${e(label)}" class="switch" data-action="setting-toggle" data-id="${id}"></button></div>`;
     const tab = CS.ui.settingsTab;
-    const nav = [['appearance','sun','外观与交互'],['privacy','shield','数据与隐私'],['agent','bolt','模型配置'],['tools','grid','Agent 工具'],['skills','book','Agent 技能'],['mcp','network','MCP 服务'],['keys','lock','第三方 API Key'],['sysprompt','code','系统提示词']];
+    const nav = [['appearance','sun','外观与交互'],['usage','chart','Token 用量'],['privacy','shield','数据与隐私'],['agent','bolt','模型配置'],['tools','grid','Agent 工具'],['skills','book','Agent 技能'],['mcp','network','MCP 服务'],['keys','lock','第三方 API Key'],['sysprompt','code','系统提示词']];
     const edit = CS.ui.edit;
     const editProvider = edit?.type === 'provider' ? (CS.ui.providers.find(x => x.id === edit.id) || null) : null;
     const editModel = edit?.type === 'model' ? (CS.ui.models.find(x => x.id === edit.id) || null) : null;
@@ -3830,6 +3893,19 @@ CS.markdown = text => {
         }).join('');
         const missingHints = (CS.ui.tokens || []).filter(t => !t.configured).map(t => `<p class="small muted">${e(t.label)} 未配置: ${t.id === 'sciverse' ? 'Sciverse 工具' : t.id === 'anysearch' ? 'anysearch MCP 服务' : '相关功能'}保持关闭, 配置并保存后自动启用。</p>`).join('');
         return `<div class="panel settings-section"><div class="row-between"><h2>第三方 API Key</h2>${pill('服务端存储')}</div><p class="small muted mb-20">配置第三方服务的访问密钥: Sciverse 工具与 anysearch MCP 服务依赖对应密钥, 未配置时保持关闭, 配置后自动启用; 也可在各自设置页单独控制。页面仅显示掩码, 不回传完整密钥。</p>${rows}${missingHints}<div class="settings-actions row wrap">${btn('save-tokens','保存','check','primary')}</div></div>`;
+      })(),
+      usage: (() => {
+        // Token 用量卡: 仿 csusage 页(去 Agent 明细), 统计卡 + 每日/每周/累计活动图 + 两张明细表
+        const u = CS.ui.usage;
+        if (u?.error) return `<div class="panel settings-section"><div class="row-between"><h2>Token 用量</h2>${pill('csusage')}</div><p class="small muted mb-20">本卡的用量统计来自本机 csusage 数据源（可重启 csusage-web 后重试）。</p>${H.notice('无法读取用量数据源：' + u.error)}</div>`;
+        if (!u?.totalTokens && !u?.days) return `<div class="panel settings-section"><h2>Token 用量</h2><p class="small muted mb-20">${u?.loading !== false ? '正在加载用量数据…' : '暂无用量数据。'}</p></div>`;
+        const peakTitle = u.peakDay?.date ? `峰值日 ${u.peakDay.date}` : '';
+        const stats = [[CS.usageNum(u.totalTokens), '累计 Token 数', `输入 ${CS.usageNum(u.totalInputTokens)} · 输出 ${CS.usageNum(u.totalOutputTokens)}`], [CS.usageNum(u.peakDay?.totalTokens || 0), '峰值 Token 数', peakTitle], [usageDur(u.longestSessionMs), '最长聊天时长', `${CS.num(u.totalSessions)} 个会话`], [`${u.currentStreakDays || 0} 天`, '当前连续天数', `累计生成 ${u.generatedAt ? e(u.generatedAt.slice(0, 10)) : '—'}`], [`${u.longestStreakDays || 0} 天`, '最长连续天数', `总成本 $${(u.totalCostUsd || 0).toFixed(2)}`]];
+        const gran = CS.ui.usageGran || 'daily';
+        const models = [...(u.models || [])].sort((x, y2) => (y2.totalTokens || 0) - (x.totalTokens || 0));
+        const sessions = [...(u.sessions || [])].sort((x, y2) => (y2.endMs || 0) - (x.endMs || 0)).slice(0, 30);
+        return `<div class="panel settings-section"><div class="row-between"><h2>Token 用量</h2><span class="row gap-6">${pill('csusage')}${iconBtn('reload-usage','refresh','重新拉取')}</span></div><p class="small muted mb-20">统计本机所有 Agent 工具的 token 消耗与成本（数据源：csusage），打开设置时缓存 5 分钟内不重复拉取。</p><div class="usage-stats">${stats.map(([v, l, t]) => `<div class="usage-stat" ${t ? `title="${e(t)}"` : ''}><div class="usage-stat-value">${v}</div><div class="usage-stat-label">${e(l)}</div></div>`).join('')}</div><div class="panel-head" style="margin-top:20px"><h3 style="margin:0">Token 活动</h3><div class="row gap-6">${['daily','weekly','total'].map(g => `<button type="button" class="tab-label ${gran === g ? 'usage-gran-active' : ''}" data-action="usage-gran" data-id="${g}">${{ daily: '每日', weekly: '每周', total: '累计' }[g]}</button>`).join('')}</div></div>${usageChart(u.days || [], gran)}<div class="panel-head" style="margin-top:20px"><h3 style="margin:0">模型明细</h3><span class="tiny muted">${models.length} 个模型${pill(`总成本 $${(u.totalCostUsd || 0).toFixed(2)}`)}</span></div>${models.length ? `<div class="table-wrap"><table><thead><tr><th>模型</th><th class="num">输入</th><th class="num">输出</th><th class="num">缓存读</th><th class="num">缓存写</th><th class="num">合计 ↓</th><th class="num">成本</th><th class="num">会话</th></tr></thead><tbody>${models.map(m => `<tr><td title="${e(m.model)}">${e(m.model)}</td><td class="num">${CS.num(m.inputTokens)}</td><td class="num">${CS.num(m.outputTokens)}</td><td class="num">${CS.num(m.cacheReadTokens)}</td><td class="num">${CS.num(m.cacheWriteTokens)}</td><td class="num"><strong>${CS.num(m.totalTokens)}</strong></td><td class="num">$${(m.costUsd || 0).toFixed(2)}</td><td class="num">${CS.num(m.sessions)}</td></tr>`).join('')}</tbody></table></div>` : H.notice('暂无模型用量记录。')}
+        <div class="panel-head" style="margin-top:20px"><h3 style="margin:0">最近会话</h3><span class="tiny muted">最近 30 个</span></div>${sessions.length ? `<div class="table-wrap"><table><thead><tr><th>Agent</th><th>会话</th><th>开始时间</th><th>时长</th><th class="num">合计</th><th class="num">成本</th><th>模型</th></tr></thead><tbody>${sessions.map(sm2 => `<tr><td>${e(sm2.agent || '—')}</td><td title="${e(sm2.sessionId || '')}">${e((sm2.sessionId || '—').slice(0, 16))}${(sm2.sessionId || '').length > 16 ? '…' : ''}</td><td>${e(sm2.startMs ? new Date(sm2.startMs).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—')}</td><td>${usageDur(sm2.durationMs)}</td><td class="num"><strong>${CS.num(sm2.totalTokens)}</strong></td><td class="num">$${(sm2.costUsd || 0).toFixed(2)}</td><td title="${e((sm2.models || []).join(', '))}">${e((sm2.models || []).slice(0, 2).join(', '))}${(sm2.models || []).length > 2 ? ' …' : ''}</td></tr>`).join('')}</tbody></table></div>` : H.notice('暂无会话记录。')}</div>`;
       })(),
       sysprompt: (() => {
         // 系统提示词设置: draft 含 prompt/enabled; 内置默认供参考, 内联折叠展示
@@ -4339,6 +4415,15 @@ CS.markdown = text => {
       CS.render();
     } catch (error) { CS.toast('系统提示词加载失败：' + CS.api.friendlyError(error), 'error'); }
   };
+  // Token 用量卡数据: 服务端代理 csusage(带 5 分钟缓存); force=true 跳过前端缓存重拉
+  CS.loadUsage = async force => {
+    if (CS.ui.usage && !force) return;
+    try {
+      const d = await CS.api.request('/usage-tokens');
+      CS.ui.usage = d;
+    } catch (error) { CS.ui.usage = { error: CS.api.friendlyError(error), loading: false }; }
+    if (CS.ui.route === 'settings' && CS.ui.settingsTab === 'usage') CS.render();
+  };
   // 参数编辑框: 透明 textarea 叠在高亮 pre 上, 输入时刷新高亮; 高度由 sizeSchemaEditors 统一管理
   CS.sizeSchemaEditors = () => {
     // 先按内容自适应, 再把同一网格行(左右两列)的编辑器统一到该行最大高度, 保证每行两卡等高
@@ -4809,7 +4894,9 @@ CS.markdown = text => {
     },
     'connect-project': () => { CS.ui.projectMenu = false; CS.showModal('remote-project'); },
     'submit-remote-project': () => {},
-    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') { CS.loadAgentTools(); CS.loadAgentTokens(); } if (id === 'skills') CS.loadAgentSkills(); if (id === 'mcp') CS.loadAgentMcp(); if (id === 'keys') CS.loadAgentTokens(); if (id === 'sysprompt') CS.loadSystemPrompt(); },
+    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') { CS.loadAgentTools(); CS.loadAgentTokens(); } if (id === 'skills') CS.loadAgentSkills(); if (id === 'mcp') CS.loadAgentMcp(); if (id === 'keys') CS.loadAgentTokens(); if (id === 'sysprompt') CS.loadSystemPrompt(); if (id === 'usage') CS.loadUsage(); },
+    'usage-gran': id => { CS.ui.usageGran = id; CS.render(); },
+    'reload-usage': () => { CS.ui.usage = null; CS.loadUsage(true); },
     'configure-model': () => { CS.ui.modelMenu = false; CS.ui.settingsTab = 'agent'; CS.navigate('settings'); },
     'add-provider': () => { CS.ui.edit = { type: 'provider', id: null }; CS.render(); },
     'edit-provider': id => { CS.ui.edit = { type: 'provider', id }; CS.render(); },

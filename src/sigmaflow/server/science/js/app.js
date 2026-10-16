@@ -484,6 +484,15 @@
       CS.render();
     } catch (error) { CS.toast('系统提示词加载失败：' + CS.api.friendlyError(error), 'error'); }
   };
+  // Token 用量卡数据: 服务端代理 csusage(带 5 分钟缓存); force=true 跳过前端缓存重拉
+  CS.loadUsage = async force => {
+    if (CS.ui.usage && !force) return;
+    try {
+      const d = await CS.api.request('/usage-tokens');
+      CS.ui.usage = d;
+    } catch (error) { CS.ui.usage = { error: CS.api.friendlyError(error), loading: false }; }
+    if (CS.ui.route === 'settings' && CS.ui.settingsTab === 'usage') CS.render();
+  };
   // 参数编辑框: 透明 textarea 叠在高亮 pre 上, 输入时刷新高亮; 高度由 sizeSchemaEditors 统一管理
   CS.sizeSchemaEditors = () => {
     // 先按内容自适应, 再把同一网格行(左右两列)的编辑器统一到该行最大高度, 保证每行两卡等高
@@ -954,7 +963,9 @@
     },
     'connect-project': () => { CS.ui.projectMenu = false; CS.showModal('remote-project'); },
     'submit-remote-project': () => {},
-    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') { CS.loadAgentTools(); CS.loadAgentTokens(); } if (id === 'skills') CS.loadAgentSkills(); if (id === 'mcp') CS.loadAgentMcp(); if (id === 'keys') CS.loadAgentTokens(); if (id === 'sysprompt') CS.loadSystemPrompt(); },
+    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') { CS.loadAgentTools(); CS.loadAgentTokens(); } if (id === 'skills') CS.loadAgentSkills(); if (id === 'mcp') CS.loadAgentMcp(); if (id === 'keys') CS.loadAgentTokens(); if (id === 'sysprompt') CS.loadSystemPrompt(); if (id === 'usage') CS.loadUsage(); },
+    'usage-gran': id => { CS.ui.usageGran = id; CS.render(); },
+    'reload-usage': () => { CS.ui.usage = null; CS.loadUsage(true); },
     'configure-model': () => { CS.ui.modelMenu = false; CS.ui.settingsTab = 'agent'; CS.navigate('settings'); },
     'add-provider': () => { CS.ui.edit = { type: 'provider', id: null }; CS.render(); },
     'edit-provider': id => { CS.ui.edit = { type: 'provider', id }; CS.render(); },
