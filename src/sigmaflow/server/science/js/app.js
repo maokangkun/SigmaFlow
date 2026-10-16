@@ -786,6 +786,15 @@
       c[id] = !c[id];
       CS.render();
     },
+    'tool-group-switch': id => {
+      // 组级开关: 组内有禁用项 → 一键全开; 全部启用 → 一键全关
+      const list = CS.ui.toolDraft || (CS.ui.toolDraft = (CS.ui.agentTools || []).map(t => ({ ...t })));
+      const members = list.filter(t => (t.origin || 'builtin') === id);
+      if (!members.length) return;
+      const enable = members.some(t => !t.enabled);
+      members.forEach(t => { t.enabled = enable; });
+      CS.render();
+    },
     'save-tools': async () => {
       if (!CS.ui.toolDraft?.length) { CS.toast('没有需要保存的修改。'); return; }
       try {

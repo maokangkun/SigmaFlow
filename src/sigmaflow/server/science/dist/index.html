@@ -333,13 +333,15 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
 /* Agent 工具设置: 按来源归组, 组全宽堆叠; 组内工具一行两列网格; 组标题可点击折叠 */
 .tool-groups{display:flex;flex-direction:column;gap:18px;margin-bottom:14px}
 .tool-group{min-width:0}
-.tool-group-header{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:6px 2px 8px;background:none;border:none;border-bottom:1px solid var(--line-soft);margin-bottom:10px;cursor:pointer;text-align:left}
-.tool-group-header:hover .tool-group-title{color:var(--accent)}
+.tool-group-header{display:flex;align-items:center;gap:10px;padding:6px 2px 8px;border-bottom:1px solid var(--line-soft);margin-bottom:10px}
+.tool-group-toggle{flex:1;display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;background:none;border:none;padding:0;cursor:pointer;text-align:left;font:inherit}
+.tool-group-toggle:hover .tool-group-title{color:var(--accent)}
+.tool-group-switch{flex:0 0 auto}
 .tool-group-title{font-size:12px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:7px}
 .tool-group-title::before{content:"";width:8px;height:8px;border-radius:3px;background:var(--accent);opacity:.75}
 .tool-group:nth-child(1) .tool-group-title::before{background:var(--blue)}
 .tool-group-chevron{transition:transform .18s ease;color:var(--muted)}
-.tool-group-header[aria-expanded="false"] .tool-group-chevron{transform:rotate(-90deg)}
+.tool-group-toggle[aria-expanded="false"] .tool-group-chevron{transform:rotate(-90deg)}
 .tool-group-rows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px}
 .tool-group-rows.collapsed{display:none}
 
@@ -3750,7 +3752,8 @@ CS.markdown = text => {
         };
         const groupBlocks = groups.map(g => {
           const collapsed = !!(CS.ui.toolGroupsCollapsed || {})[g.origin];
-          return `<div class="tool-group"><button type="button" class="tool-group-header" data-action="tool-group-toggle" data-id="${e(g.origin)}" aria-expanded="${!collapsed}" aria-label="展开或折叠 ${e(g.label)}"><span class="tool-group-title">${e(g.label)}</span><span class="row gap-6"><span class="tiny muted">${g.tools.length} 个工具</span>${i('down','tool-group-chevron',15)}</span></button><div class="tool-group-rows ${collapsed ? 'collapsed' : ''}">${g.tools.map(row).join('')}</div></div>`;
+          const allOn = g.tools.every(t => !!t.enabled);
+          return `<div class="tool-group"><div class="tool-group-header"><button type="button" class="tool-group-toggle" data-action="tool-group-toggle" data-id="${e(g.origin)}" aria-expanded="${!collapsed}" aria-label="展开或折叠 ${e(g.label)}"><span class="tool-group-title">${e(g.label)}</span><span class="row gap-6"><span class="tiny muted">${g.tools.length} 个工具</span>${i('down','tool-group-chevron',15)}</span></button><button type="button" role="switch" aria-checked="${allOn}" class="switch tool-group-switch" data-action="tool-group-switch" data-id="${e(g.origin)}" aria-label="整组启用或禁用 ${e(g.label)}" title="整组启用/禁用"></button></div><div class="tool-group-rows ${collapsed ? 'collapsed' : ''}">${g.tools.map(row).join('')}</div></div>`;
         }).join('');
         return `<div class="panel settings-section"><div class="row-between"><h2>Agent 工具</h2>${pill('服务端存储')}</div><p class="small muted mb-20">按来源分组展示 Agent 会话可用的工具(基础/Sciverse/arXiv 与各 MCP 服务器, 点击组标题可折叠): 同一行内两列卡片等高; 启用开关、名称、描述与参数 schema 随下一次请求生效; 禁用的工具不再发给模型, 也不再占用上下文。参数 schema 需为合法 JSON 对象。</p><div class="tool-groups">${groupBlocks}</div><div class="settings-actions row wrap">${btn('save-tools','保存','check','primary')}${btn('reset-tools','恢复默认','refresh','flat')}</div></div>`;
       })(),
@@ -4589,6 +4592,15 @@ CS.markdown = text => {
       // 点击组标题折叠/展开该组工具; 状态存 CS.ui.toolGroupsCollapsed, 重渲染不丢
       const c = CS.ui.toolGroupsCollapsed || (CS.ui.toolGroupsCollapsed = {});
       c[id] = !c[id];
+      CS.render();
+    },
+    'tool-group-switch': id => {
+      // 组级开关: 组内有禁用项 → 一键全开; 全部启用 → 一键全关
+      const list = CS.ui.toolDraft || (CS.ui.toolDraft = (CS.ui.agentTools || []).map(t => ({ ...t })));
+      const members = list.filter(t => (t.origin || 'builtin') === id);
+      if (!members.length) return;
+      const enable = members.some(t => !t.enabled);
+      members.forEach(t => { t.enabled = enable; });
       CS.render();
     },
     'save-tools': async () => {
