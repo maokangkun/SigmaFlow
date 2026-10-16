@@ -2128,7 +2128,16 @@ class ScienceProjectStore:
         }
 
     def list_projects(self) -> list:
-        return [self._public_project(p) for p in self.projects.values()]
+        # 最近活动优先排序: 取项目自身更新时间与项目下未归档会话的最新时间中的较大者。
+        # 新建的项目 updatedAt 最新, 自然排最上; 老项目有新对话时同样被顶到最上方。
+        latest = {}
+        for conv in self.conversations.values():
+            pid = conv.get("projectId")
+            if pid and not conv.get("archived"):
+                latest[pid] = max(latest.get(pid, 0), conv.get("updatedAt") or 0)
+        projects = [self._public_project(p) for p in self.projects.values()]
+        projects.sort(key=lambda p: max(p.get("updatedAt") or 0, latest.get(p["id"], 0)), reverse=True)
+        return projects
 
     def upsert_project(self, payload: ProjectIn) -> dict:
         now = int(time.time() * 1000)
