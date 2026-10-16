@@ -909,7 +909,7 @@
     'toggle-project-menu': () => { CS.ui.projectMenu = !CS.ui.projectMenu; CS.render(); },
     'clear-project': () => { CS.state.projectId = null; CS.ui.projectMenu = false; CS.save(); CS.render(); },
     'pick-project': id => { CS.state.projectId = id; CS.ui.projectMenu = false; CS.save(); CS.render(); },
-    'toggle-project': id => { CS.ui.expandedProjects.has(id) ? CS.ui.expandedProjects.delete(id) : CS.ui.expandedProjects.add(id); CS.render(); },
+    'toggle-project': id => { CS.ui.expandedProjects.has(id) ? CS.ui.expandedProjects.delete(id) : CS.ui.expandedProjects.add(id); CS.persistFold(); CS.render(); },
     'toggle-project-settings': id => { CS.ui.projectSettingsMenu = CS.ui.projectSettingsMenu === id ? null : id; CS.render(); },
     'copy-message': id => {
       const run = CS.currentRun(); const m = run?.messages[Number(id)];
@@ -978,6 +978,7 @@
     'jump-latest': () => { CS.ui.canJumpLatest = false; CS.render(); scrollToLatest(); },
     'open-conversation': id => {
       if (!CS.state.runs.some(r => r.id === id) && !CS.ui.conversations.some(c => c.id === id)) { CS.toast('该会话不存在。', 'error'); return; }
+      CS.expandProject((CS.ui.conversations.find(c => c.id === id) || {}).projectId);
       CS.navigate('chat', id);
     },
     'connect-project': () => { CS.ui.projectMenu = false; CS.showModal('remote-project'); },
@@ -1285,6 +1286,7 @@
     'edit-project': id => { const p = CS.state.projects.find(p=>p.id===id); CS.showModal('project',{project:p, pickedDir: p?.dir || ''}); },
     'open-project': id => {
       const project = CS.state.projects.find(p=>p.id===id); if (!project) return;
+      CS.expandProject(id);
       CS.state.projectId = id; CS.ui.composer = ''; CS.ui.attachments = [];
       const lastRun = CS.state.runs.filter(r=>r.projectId===id).at(-1);
       CS.state.currentRunId = lastRun?.id || null; CS.save(); CS.navigate(lastRun ? 'chat' : 'home');

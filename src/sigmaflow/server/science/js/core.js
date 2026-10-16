@@ -214,6 +214,10 @@ CS.markdown = text => {
     modal: null, expandedLogs: new Set(), selectedCell: null, note: '', apiHealth: null,
     userMenu: false, modelMenu: false, projectMenu: false, projectSettingsMenu: null, expandedProjects: new Set(), conversations: [], settingsTab: 'appearance', models: [], providers: [], edit: null, providerModels: null, draftModelName: '', draftProviderId: null, dropdown: null, pendingDelete: null, modelsLoaded: false, thinkingOpen: false, thinkingText: '', toolsOpen: false, errorOpen: false, blockOpen: {}, canJumpLatest: false, contextInfo: null, contextMenu: false, agentTools: null, toolDraft: null, toolGroupsCollapsed: null, agentSkills: null, skillDraft: null, mcpServers: null, mcpDraft: null, systemPrompt: null, syspromptDraft: null, tokens: null, tokensDraft: null
   };
+  // 侧栏项目折叠状态持久化: 记录用户显式展开的项目, 刷新后保持一致。
+  try { const fold = JSON.parse(localStorage.getItem(key + '.fold') || 'null'); if (Array.isArray(fold)) CS.ui.expandedProjects = new Set(fold.map(String)); } catch {}
+  CS.persistFold = () => { try { localStorage.setItem(key + '.fold', JSON.stringify([...CS.ui.expandedProjects])); } catch {} };
+  CS.expandProject = id => { if (id && !CS.ui.expandedProjects.has(id)) { CS.ui.expandedProjects.add(id); CS.persistFold(); } };
   CS.files = new Map(); // File objects only live in memory; raw file bytes never enter localStorage.
   CS.save = () => {
     try {
