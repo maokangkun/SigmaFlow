@@ -3732,7 +3732,7 @@ CS.markdown = text => {
         if (!list) return `<div class="panel settings-section"><h2>Agent 工具</h2><p class="small muted mb-20">正在加载工具列表…</p></div>`;
         if (!list.length) return `<div class="panel settings-section"><h2>Agent 工具</h2><p class="small muted mb-20">当前环境没有可配置的内置工具。</p></div>`;
         // origin 分组: builtin(基础) / sciverse / arxiv / MCP 服务器; 内置三类固定顺序, MCP 按配置顺序
-        const GROUP_LABELS = { builtin: '基础', sciverse: 'Sciverse', arxiv: 'arXiv' };
+        const GROUP_LABELS = { builtin: '内置工具 · 基础', sciverse: '内置工具 · Sciverse', arxiv: '内置工具 · arXiv' };
         const GROUP_ORDER = { builtin: 0, sciverse: 1, arxiv: 2 };
         const groups = [];
         for (const t of list) {
