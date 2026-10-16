@@ -3609,16 +3609,11 @@ CS.markdown = text => {
   const usageHeatmap = days => {
     if (!days?.length) return H.notice('暂无每日用量记录。');
     const byDay = new Map(days.map(d => [d.date, d]));
-    const fmt = str => { const [y, m, dd] = str.split('-').map(Number); return new Date(y, m - 1, dd); };
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const firstData = fmt(days[0].date);
-    const lastData = fmt(days[days.length - 1].date);
-    const start = new Date(firstData); start.setDate(start.getDate() - ((start.getDay() + 6) % 7));  // 对齐周一
-    const MIN_WEEKS = 18;
-    const minStart = new Date(today); minStart.setDate(minStart.getDate() - (MIN_WEEKS - 1) * 7);
-    const startAt = start < minStart ? start : minStart;
-    const end = lastData > today ? lastData : today;
-    const endAligned = new Date(end); endAligned.setDate(endAligned.getDate() + (6 - ((endAligned.getDay() + 6) % 7)));  // 对齐周日
+    // GitHub 同款固定展示最近一年(53 列 × 7 行), 铺满矩形; 数据不足左侧补空格, 超过一年的历史不在此图显示
+    const startAt = new Date(today); startAt.setDate(startAt.getDate() - 52 * 7);
+    startAt.setDate(startAt.getDate() - ((startAt.getDay() + 6) % 7));  // 对齐周一
+    const endAligned = new Date(today); endAligned.setDate(endAligned.getDate() + (6 - ((endAligned.getDay() + 6) % 7)));  // 对齐周日
     const weeks = Math.max(1, Math.round((endAligned - startAt) / (7 * 86400000)) + 1);
     const maxTotal = Math.max(...days.map(d => d.totalTokens || 0), 1);
     const levelOf = d => { if (!d) return 0; const t = d.totalTokens || 0; if (!t) return 0; return Math.min(4, 1 + Math.floor((t / maxTotal) * 3.999)); };
