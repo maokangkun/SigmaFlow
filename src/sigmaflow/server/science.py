@@ -16,6 +16,7 @@ import asyncio
 import json
 import math
 import os
+import re
 import threading
 import time
 import uuid
@@ -2531,14 +2532,17 @@ def _run_agent_chat(base_url: str, api_key: str, model_name: str, messages: list
     # 轮次上限按助手消息数加预留余量, 防止无限循环
     max_turn = max(1, sum(1 for m in convo if m["role"] == "assistant") + 17)
     system, sub_system = _effective_system_prompts()
+    sub_system = re.sub(r"(subagent at )\S+", lambda mo: mo.group(1) + (workdir or mo.group(0)), sub_system, count=1) if workdir else sub_system
     bound_system = system
     if workdir:
+        # 内置提示词首句形如 "You are a ... agent at <服务进程 cwd>", 会覆盖末尾的
+        # 项目目录说明; 先把这类句子里的路径改写为会话工作目录, 再附加显式说明。
+        bound_system = re.sub(r"(agent at )\S+", lambda mo: mo.group(1) + workdir, f"{system}", count=1)
         bound_system = (
-            f"{system}"
-
+            f"{bound_system}"
             "\n\n# 工作目录\n本次会话绑定项目工作目录 `{workdir}`。"
             "bash 命令、文件读写与数据处理的相对路径都相对该目录执行；"
-            "向用户报告时也以该目录为当前工作目录。"
+            "向用户答复时必须以该目录为当前工作目录。"
         )
     agent = Agent(
         method="openai",
