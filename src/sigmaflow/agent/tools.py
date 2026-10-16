@@ -18,9 +18,27 @@ from .conf import *
 from .sciverse_api import SCIVERSE_TOOL_HANDLERS, SCIVERSE_TOOLS
 
 # -- Tools --
+# 会话工作目录: Science 的聊天按项目绑定工作目录(存 thread-local, 由服务层在
+# 工具执行线程上设置); 未设置时保持默认 WORKDIR(应用根), 行为不变。
+# 沙箱语义随之切换: 相对路径解析与越界检查都以当前会话工作目录为根。
+_SESSION_WORKDIR = threading.local()
+
+
+def set_session_workdir(path) -> None:
+    """Bind the calling thread's session workdir; None restores the default."""
+    _SESSION_WORKDIR.workdir = Path(path).resolve() if path else None
+
+
+def get_session_workdir() -> Path:
+    """Resolve the effective workdir for tool execution on this thread."""
+    override = getattr(_SESSION_WORKDIR, "workdir", None)
+    return Path(override) if override else WORKDIR
+
+
 def safe_path(p: str) -> Path:
-    path = (WORKDIR / p).resolve()
-    if not path.is_relative_to(WORKDIR):
+    root = get_session_workdir()
+    path = (root / p).resolve()
+    if not path.is_relative_to(root):
         raise ValueError(f"Path escapes workspace: {p}")
     return path
 
@@ -31,7 +49,7 @@ def run_bash(command: str) -> str:
     if any(d in command for d in dangerous):
         return "Error: Dangerous command blocked"
     try:
-        r = subprocess.run(command, shell=True, cwd=WORKDIR,
+        r = subprocess.run(command, shell=True, cwd=get_session_workdir(),
                            capture_output=True, text=True, timeout=CMD_TIMEOUT)
         out = (r.stdout + r.stderr).strip()
         return out or "(no output)"
@@ -57,7 +75,7 @@ def run_grep(tool: str, args: str) -> str:
     try:
         r = subprocess.run(
             [tool, *argv],
-            cwd=WORKDIR,
+            cwd=get_session_workdir(),
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
@@ -74,7 +92,7 @@ def run_read(path: str, offset: int = None, limit: int = None) -> str:
     if path == "":
         return "Error: path cannot be empty"
     try:
-        path = (WORKDIR / path).resolve()
+        path = (get_session_workdir() / path).resolve()
         text = path.read_text()
         lines = text.splitlines()
 
@@ -147,7 +165,7 @@ def read_arxiv(paper_id: str) -> str:
     if not paper_id: return "Error: paper_id is required"
     command = f"arxiv2md {paper_id} --remove-refs --remove-toc -o -"
     try:
-        r = subprocess.run(command, shell=True, cwd=WORKDIR,
+        r = subprocess.run(command, shell=True, cwd=get_session_workdir(),
                            capture_output=True, text=True, timeout=120)
         out = (r.stdout + r.stderr).strip()
         return out[:50000] if out else "(no output)"
@@ -416,16 +434,19 @@ class BackgroundManager:
         task_id = str(uuid.uuid4())[:8]
         self.tasks[task_id] = {"status": "running", "result": None, "command": command}
         thread = threading.Thread(
-            target=self._execute, args=(task_id, command), daemon=True
+            target=self._execute, args=(task_id, command, get_session_workdir()), daemon=True
         )
         thread.start()
         return f"Background task {task_id} started: {command[:80]}"
 
-    def _execute(self, task_id: str, command: str):
-        """Thread target: run subprocess, capture output, push to queue."""
+    def _execute(self, task_id: str, command: str, workdir=None):
+        """Thread target: run subprocess, capture output, push to queue.
+
+        workdir is captured on the caller thread (thread-local does not cross
+        threads); background tasks run where the session was bound."""
         try:
             r = subprocess.run(
-                command, shell=True, cwd=WORKDIR,
+                command, shell=True, cwd=workdir or WORKDIR,
                 capture_output=True, text=True, timeout=300
             )
             output = (r.stdout + r.stderr).strip()[:50000]

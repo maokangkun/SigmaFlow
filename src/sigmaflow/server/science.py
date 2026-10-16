@@ -1735,9 +1735,10 @@ class ScienceAPI:
             _check_origin(request)
             base_url, api_key, model_name = _resolve_chat(self.model_store, payload.modelId)
             messages = [m for m in (payload.messages or []) if isinstance(m, dict)]
+            workdir = self.project_store.projects.get(payload.projectId or "", {}).get("dir")
             try:
                 stats: dict = {}
-                content = await asyncio.to_thread(_run_agent_chat, base_url, api_key, model_name, messages, None, None, None, stats)
+                content = await asyncio.to_thread(_run_agent_chat, base_url, api_key, model_name, messages, None, None, None, stats, workdir)
             except RuntimeError as err:
                 raise HTTPException(status_code=400, detail=str(err))
             return {"content": content, "tokens": stats.get("completion_tokens") or 0, "promptTokens": stats.get("prompt_tokens") or 0}
@@ -2164,6 +2165,7 @@ class ScienceAPI:
                     if not messages:
                         await fail(request_id, "消息列表为空")
                         return
+                    chat_workdir = self.project_store.projects.get(data.get("projectId") or "", {}).get("dir")
                     # 同一 requestId 重发前先复位停止标记
                     chat_stops[request_id] = False
                     # 工作线程阻塞产出事件, 经线程安全回调投递回队列
@@ -2180,7 +2182,7 @@ class ScienceAPI:
                                     lambda d: loop.call_soon_threadsafe(chat_queue.put_nowait, ("delta", d)),
                                     lambda t: loop.call_soon_threadsafe(chat_queue.put_nowait, ("think", t)),
                                     lambda e: loop.call_soon_threadsafe(chat_queue.put_nowait, ("tool", e)),
-                                    stats)
+                                    stats, chat_workdir)
                                 loop.call_soon_threadsafe(chat_queue.put_nowait, ("done", None))
                             except Exception as err:
                                 loop.call_soon_threadsafe(chat_queue.put_nowait, ("error", str(err)))
@@ -2279,6 +2281,7 @@ def _push_loop(ws: WebSocket, queue: asyncio.Queue):
 
 class ChatIn(BaseModel):
     modelId: Optional[str] = None
+    projectId: Optional[str] = None
     messages: list = []
 
 
@@ -2503,7 +2506,7 @@ def _make_chat_delta_callback(on_delta, on_reasoning):
     return _cb
 
 
-def _run_agent_chat(base_url: str, api_key: str, model_name: str, messages: list, on_delta=None, on_reasoning=None, on_tool=None, stats: dict = None) -> str:
+def _run_agent_chat(base_url: str, api_key: str, model_name: str, messages: list, on_delta=None, on_reasoning=None, on_tool=None, stats: dict = None, workdir: Optional[str] = None) -> str:
     """Run a chat through the SigmaFlow agent/agent.Agent stack.
 
     Builds an Agent (openai-compatible method) against the configured
@@ -2514,11 +2517,23 @@ def _run_agent_chat(base_url: str, api_key: str, model_name: str, messages: list
     agent_module = _agent_agent_module()
     Agent = agent_module.Agent
 
+    tools_mod = _agent_tools_module()
+    tools_mod.set_session_workdir(workdir)
+
     convo = [{"role": m.get("role"), "content": m.get("content", "")} for m in messages if m.get("role") in ("user", "assistant")]
     # 仅保留 user/assistant 两类角色, 其余消息直接丢弃
     # 轮次上限按助手消息数加预留余量, 防止无限循环
     max_turn = max(1, sum(1 for m in convo if m["role"] == "assistant") + 17)
     system, sub_system = _effective_system_prompts()
+    bound_system = system
+    if workdir:
+        bound_system = (
+            f"{system}"
+
+            "\n\n# 工作目录\n本次会话绑定项目工作目录 `{workdir}`。"
+            "bash 命令、文件读写与数据处理的相对路径都相对该目录执行；"
+            "向用户报告时也以该目录为当前工作目录。"
+        )
     agent = Agent(
         method="openai",
         model=model_name,
@@ -2528,7 +2543,7 @@ def _run_agent_chat(base_url: str, api_key: str, model_name: str, messages: list
         retry=2,
         max_turn=max_turn,
         tools=_effective_agent_tools(),
-        system=system,
+        system=bound_system,
         sub_system=sub_system,
         on_delta=_make_chat_delta_callback(on_delta, on_reasoning),
         on_tool=on_tool,
@@ -2536,11 +2551,14 @@ def _run_agent_chat(base_url: str, api_key: str, model_name: str, messages: list
     agent.client.timeout = 90
     agent.client.max_retries = 1
     info = agent(convo, is_print=False, max_turn=max_turn)
-    if stats is not None and isinstance(info, dict):
-        # 回填本次请求的 token 用量, 供 /chat 返回统计
-        stats["completion_tokens"] = info.get("completion_tokens") or 0
-        stats["prompt_tokens"] = info.get("prompt_tokens") or 0
-    last = info["last_response"] if isinstance(info, dict) else None
+    try:
+        if stats is not None and isinstance(info, dict):
+            # 回填本次请求的 token 用量, 供 /chat 返回统计
+            stats["completion_tokens"] = info.get("completion_tokens") or 0
+            stats["prompt_tokens"] = info.get("prompt_tokens") or 0
+        last = info["last_response"] if isinstance(info, dict) else None
+    finally:
+        tools_mod.set_session_workdir(None)
 
     if not last:
         raise RuntimeError("模型没有返回内容")
@@ -2748,12 +2766,12 @@ def _agent_context_sizes() -> Dict[str, int]:
     return sizes
 
 
-def _stream_agent_chat(base_url: str, api_key: str, model_name: str, messages: list, on_delta, on_reasoning=None, on_tool=None, stats: dict = None):
+def _stream_agent_chat(base_url: str, api_key: str, model_name: str, messages: list, on_delta, on_reasoning=None, on_tool=None, stats: dict = None, workdir: Optional[str] = None):
     """Streaming chat. Runs synchronously on the caller's worker thread
     (the WS handler invokes it via asyncio.to_thread); on_delta is called
     on this same thread and forwarded into the asyncio queue by the
     caller with loop.call_soon_threadsafe."""
-    return _run_agent_chat(base_url, api_key, model_name, messages, on_delta=on_delta, on_reasoning=on_reasoning, on_tool=on_tool, stats=stats)
+    return _run_agent_chat(base_url, api_key, model_name, messages, on_delta=on_delta, on_reasoning=on_reasoning, on_tool=on_tool, stats=stats, workdir=workdir)
 
 
 def _check_origin(request: Request):
