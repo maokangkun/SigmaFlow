@@ -197,7 +197,7 @@
     const s = CS.state.settings;
     const toggle = (id, label, sub) => `<div class="setting-row"><div><h3>${e(label)}</h3><p>${e(sub)}</p></div><button type="button" role="switch" aria-checked="${!!s[id]}" aria-label="${e(label)}" class="switch" data-action="setting-toggle" data-id="${id}"></button></div>`;
     const tab = CS.ui.settingsTab;
-    const nav = [['appearance','sun','外观与交互'],['privacy','shield','数据与隐私'],['agent','bolt','模型配置'],['tools','grid','Agent 工具'],['skills','book','Agent 技能'],['mcp','network','MCP 服务'],['sysprompt','code','系统提示词']];
+    const nav = [['appearance','sun','外观与交互'],['privacy','shield','数据与隐私'],['agent','bolt','模型配置'],['tools','grid','Agent 工具'],['skills','book','Agent 技能'],['mcp','network','MCP 服务'],['keys','lock','第三方 API Key'],['sysprompt','code','系统提示词']];
     const edit = CS.ui.edit;
     const editProvider = edit?.type === 'provider' ? (CS.ui.providers.find(x => x.id === edit.id) || null) : null;
     const editModel = edit?.type === 'model' ? (CS.ui.models.find(x => x.id === edit.id) || null) : null;
@@ -223,18 +223,20 @@
           g.tools.push(t);
         }
         groups.sort((a, b) => a.rank - b.rank);  // 同 rank 时保持插入顺序(稳定排序)
+        // 未配置 Sciverse API Key 时, Sciverse 组开关与行开关锁定(服务端也强制关闭并隔离 payload)
+        const sciLocked = Array.isArray(CS.ui.tokens) && !CS.ui.tokens.some(t => t.id === 'sciverse' && t.configured);
         const row = t => {
           const orig = (CS.ui.agentTools || []).find(x => x.id === t.id);
           const dirty = !orig || orig.name !== t.name || orig.description !== t.description || schemaDirty(orig.schema, t.schema) || !!orig.enabled !== !!t.enabled;
           const custom = (t.modified || dirty) ? pill('自定义') : '';
-          return `<div class="tool-setting-row" data-idx="${e(t.id)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">名称</span><input class="tool-name-input" data-tool-id="${e(t.id)}" data-field="name" value="${e(t.name)}" maxlength="64" spellcheck="false"></div><div class="tool-field"><span class="tool-field-label">描述</span><input class="tool-desc-input" data-tool-id="${e(t.id)}" data-field="description" value="${e(t.description)}" maxlength="2000" spellcheck="false"></div><div class="tool-field tool-field-top"><span class="tool-field-label">参数</span><div class="schema-editor"><pre class="schema-highlight" aria-hidden="true">${V.hlJSON(V.prettyJSON(t.schema))}\n</pre><textarea class="tool-schema-input mono" data-tool-id="${e(t.id)}" data-field="schema" rows="6" spellcheck="false">${e(V.prettyJSON(t.schema))}</textarea></div></div></div><div class="tool-setting-side">${custom}<button type="button" role="switch" aria-checked="${!!t.enabled}" class="switch" data-action="tool-toggle" data-id="${e(t.id)}" aria-label="启用 ${e(t.id)}"></button></div></div>`;
+          return `<div class="tool-setting-row" data-idx="${e(t.id)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">名称</span><input class="tool-name-input" data-tool-id="${e(t.id)}" data-field="name" value="${e(t.name)}" maxlength="64" spellcheck="false"></div><div class="tool-field"><span class="tool-field-label">描述</span><input class="tool-desc-input" data-tool-id="${e(t.id)}" data-field="description" value="${e(t.description)}" maxlength="2000" spellcheck="false"></div><div class="tool-field tool-field-top"><span class="tool-field-label">参数</span><div class="schema-editor"><pre class="schema-highlight" aria-hidden="true">${V.hlJSON(V.prettyJSON(t.schema))}\n</pre><textarea class="tool-schema-input mono" data-tool-id="${e(t.id)}" data-field="schema" rows="6" spellcheck="false">${e(V.prettyJSON(t.schema))}</textarea></div></div></div><div class="tool-setting-side">${custom}<button type="button" role="switch" aria-checked="${!!t.enabled}" class="switch" data-action="tool-toggle" data-id="${e(t.id)}" aria-label="启用 ${e(t.id)}" ${sciLocked && t.origin === 'sciverse' ? 'disabled title="需先在第三方 API Key 中配置 Sciverse API"' : ''}></button></div></div>`;
         };
         const groupBlocks = groups.map(g => {
           const collapsed = !!(CS.ui.toolGroupsCollapsed || {})[g.origin];
           const allOn = g.tools.every(t => !!t.enabled);
-          return `<div class="tool-group"><div class="tool-group-header"><button type="button" class="tool-group-toggle" data-action="tool-group-toggle" data-id="${e(g.origin)}" aria-expanded="${!collapsed}" aria-label="展开或折叠 ${e(g.label)}"><span class="tool-group-title">${e(g.label)}</span><span class="row gap-6"><span class="tiny muted">${g.tools.length} 个工具</span>${i('down','tool-group-chevron',15)}</span></button><button type="button" role="switch" aria-checked="${allOn}" class="switch tool-group-switch" data-action="tool-group-switch" data-id="${e(g.origin)}" aria-label="整组启用或禁用 ${e(g.label)}" title="整组启用/禁用"></button></div><div class="tool-group-rows ${collapsed ? 'collapsed' : ''}">${g.tools.map(row).join('')}</div></div>`;
+          return `<div class="tool-group"><div class="tool-group-header"><button type="button" class="tool-group-toggle" data-action="tool-group-toggle" data-id="${e(g.origin)}" aria-expanded="${!collapsed}" aria-label="展开或折叠 ${e(g.label)}"><span class="tool-group-title">${e(g.label)}</span><span class="row gap-6"><span class="tiny muted">${g.tools.length} 个工具</span>${g.origin === 'sciverse' && sciLocked ? pill('未配置 API Key') : ''}${i('down','tool-group-chevron',15)}</span></button><button type="button" role="switch" aria-checked="${allOn}" class="switch tool-group-switch" data-action="tool-group-switch" data-id="${e(g.origin)}" aria-label="整组启用或禁用 ${e(g.label)}" ${g.origin === 'sciverse' && sciLocked ? 'disabled title="需先在第三方 API Key 中配置 Sciverse API"' : 'title="整组启用/禁用"'}></button></div><div class="tool-group-rows ${collapsed ? 'collapsed' : ''}">${g.tools.map(row).join('')}</div></div>`;
         }).join('');
-        return `<div class="panel settings-section"><div class="row-between"><h2>Agent 工具</h2>${pill('服务端存储')}</div><p class="small muted mb-20">按来源分组展示 Agent 会话可用的工具(基础/Sciverse/arXiv 与各 MCP 服务器, 点击组标题可折叠): 同一行内两列卡片等高; 启用开关、名称、描述与参数 schema 随下一次请求生效; 禁用的工具不再发给模型, 也不再占用上下文。参数 schema 需为合法 JSON 对象。</p><div class="tool-groups">${groupBlocks}</div><div class="settings-actions row wrap">${btn('save-tools','保存','check','primary')}${btn('reset-tools','恢复默认','refresh','flat')}</div></div>`;
+        return `<div class="panel settings-section"><div class="row-between"><h2>Agent 工具</h2>${pill('服务端存储')}</div><p class="small muted mb-20">按来源分组展示 Agent 会话可用的工具(基础/Sciverse/arXiv 与各 MCP 服务器, 点击组标题可折叠): 同一行内两列卡片等高; 启用开关、名称、描述与参数 schema 随下一次请求生效; 禁用的工具不再发给模型, 也不再占用上下文。参数 schema 需为合法 JSON 对象。Sciverse 分组需先在第三方 API Key 中配置密钥, 未配置时整组保持关闭。</p><div class="tool-groups">${groupBlocks}</div><div class="settings-actions row wrap">${btn('save-tools','保存','check','primary')}${btn('reset-tools','恢复默认','refresh','flat')}</div></div>`;
       })(),
       skills: (() => {
         // Agent 技能设置: 与工具设定同构, 未保存的修改存 skillDraft, 重渲染不丢
@@ -262,6 +264,19 @@
           return `<div class="tool-setting-row" data-idx="${e(s.key)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">名称</span><input class="mcp-name-input" data-mcp-id="${e(s.key)}" data-field="name" value="${e(s.name)}" maxlength="64" spellcheck="false"></div><div class="tool-field"><span class="tool-field-label">地址</span><input class="mcp-url-input" data-mcp-id="${e(s.key)}" data-field="url" value="${e(s.url)}" maxlength="500" spellcheck="false"></div></div><div class="tool-setting-side">${custom}${builtin}<div class="row gap-6"><button type="button" class="icon-btn" data-action="mcp-remove" data-id="${e(s.key)}" aria-label="移除 ${e(s.name) || '新服务器'}" title="移除">${i('trash')}</button><button type="button" role="switch" aria-checked="${!!s.enabled}" class="switch" data-action="mcp-toggle" data-id="${e(s.key)}" aria-label="启用 ${e(s.name) || '新服务器'}"></button></div></div></div>`;
         }).join('');
         return `<div class="panel settings-section"><div class="row-between"><h2>MCP 服务</h2>${pill('服务端存储')}</div><p class="small muted mb-20">配置 Agent 会话可用的 MCP 服务器: 保存后服务端连接各服务器拉取工具清单, 启用的服务器工具并入“Agent 工具”并占用上下文; 禁用或移除的服务器不参与会话。内置 medical-apis 提供基因、疾病、药物等医学数据查询。</p>${rows}<div class="settings-actions row wrap">${btn('add-mcp','新增服务器','plus','primary')}${btn('save-mcp','保存','check','primary')}${btn('reset-mcp','恢复默认','refresh','flat')}</div></div>`;
+      })(),
+      keys: (() => {
+        // 第三方 API Key 设置: 懒加载; 密钥不回显, 仅保存/清除; 保存后同步 Sciverse 工具启用状态
+        if (!CS.ui.tokens) return `<div class="panel settings-section"><h2>第三方 API Key</h2><p class="small muted mb-20">正在加载 Token 配置…</p></div>`;
+        const rows = CS.ui.tokens.map(t => {
+          const draft = (CS.ui.tokensDraft || {})[t.id] ?? '';
+          const status = t.configured ? pill('已配置', 'green') : pill('未配置');
+          const placeholder = t.saved ? '当前已保存，留空保持不变' : t.fromEnv ? '来自环境变量，输入后覆盖' : '输入 API Key…';
+          return `<div class="tool-setting-row" data-idx="token-${e(t.id)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">服务</span><div class="row gap-6"><span class="small">${e(t.label)}</span>${status}${t.fromEnv ? '<span class="tiny muted">来自环境变量</span>' : ''}</div></div><div class="tool-field"><span class="tool-field-label">API Key</span><input id="token-${e(t.id)}" class="token-input" type="password" value="${e(draft)}" placeholder="${placeholder}" spellcheck="false" autocomplete="off"><span class="hint">仅保存在服务端，接口不回传完整密钥；保存后相关工具的启用状态自动同步。</span></div></div><div class="tool-setting-side">${t.saved ? `<button type="button" class="icon-btn" data-action="token-clear" data-id="${e(t.id)}" aria-label="清除 ${e(t.label)}" title="清除已保存密钥">${i('trash')}</button>` : ''}</div></div>`;
+        }).join('');
+        const sci = CS.ui.tokens.find(t => t.id === 'sciverse');
+        const hint = sci && !sci.configured ? '<p class="small muted">Sciverse API 未配置: Sciverse 工具当前保持关闭, 配置并保存后自动启用。</p>' : '';
+        return `<div class="panel settings-section"><div class="row-between"><h2>第三方 API Key</h2>${pill('服务端存储')}</div><p class="small muted mb-20">配置第三方服务的访问密钥。未配置 Sciverse API 时 Sciverse 工具保持关闭, 配置后自动启用; 也可以在“Agent 工具”里单独控制各工具。密钥仅存服务端, 页面不回显完整内容。</p>${rows}${hint}<div class="settings-actions row wrap">${btn('save-tokens','保存','check','primary')}</div></div>`;
       })(),
       sysprompt: (() => {
         // 系统提示词设置: draft 含 prompt/enabled; 内置默认供参考, 内联折叠展示

@@ -237,6 +237,8 @@ POST /api/mcp   → {"servers": [...]}   # 保存全量列表；{"reset": true} 
 留空或关闭 `enabled` 表示使用内置默认。
 
 ```http
+GET  /api/tokens → {"tokens": [{id: "sciverse", label, configured, saved, fromEnv}]}  # 密钥不回传，只报状态
+POST /api/tokens → {"tokens": [...]}   # 保存 {"tokens": {"sciverse": str}}；空串 = 删除；保存后自动同步 Sciverse 工具启用状态（有密钥→启用，无密钥→关闭）
 GET  /api/system-prompt   → {"prompt": str, "enabled": bool, "builtin": str, "builtinTokens": int}
 POST /api/system-prompt   → {"prompt": str, "enabled": bool}   # 保存; 启用时 prompt 不能为空
 ```

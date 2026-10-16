@@ -115,6 +115,10 @@ class SystemPromptIn(BaseModel):
     enabled: Optional[bool] = None
 
 
+class TokensUpdateIn(BaseModel):
+    tokens: Dict[str, Optional[str]] = Field(default_factory=dict)
+
+
 def _test_provider(base_url: str, api_key: str) -> dict:
     """Ping `{base_url}/models` on the provider and report real latency."""
     url = base_url.rstrip("/") + "/models"
@@ -202,6 +206,7 @@ def _agent_tools_module():
         if _src_root not in _sys.path:
             _sys.path.insert(0, _src_root)
         from sigmaflow.agent import tools
+    _apply_sciverse_key()
     return tools
 
 
@@ -211,6 +216,43 @@ def _science_data_root() -> str:
 
 def _tool_config_path() -> str:
     return os.path.join(_science_data_root(), "tools.json")
+
+
+def _tokens_config_path() -> str:
+    return os.path.join(_science_data_root(), "tokens.json")
+
+
+def _sciverse_key_file() -> str:
+    """Sciverse API key saved through the settings page, if any."""
+    try:
+        with open(_tokens_config_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return ""
+    tokens = data.get("tokens") if isinstance(data, dict) else None
+    return str((tokens or {}).get("sciverse") or "") if isinstance(tokens, dict) else ""
+
+
+def _sciverse_key() -> str:
+    """Effective Sciverse API key: the settings-page token first, then the agent config default."""
+    saved = _sciverse_key_file().strip()
+    if saved:
+        return saved
+    try:
+        return str(getattr(_agent_tools_module(), "Sciverse_API_KEY", "") or "")
+    except Exception:
+        return ""
+
+
+def _apply_sciverse_key() -> None:
+    """Push the effective key into the sciverse client module;
+    SciverseAPI reads the module global at request time, so cached clients pick it up."""
+    try:
+        from sigmaflow.agent import sciverse_api
+        if hasattr(sciverse_api, "Sciverse_API_KEY"):
+            sciverse_api.Sciverse_API_KEY = _sciverse_key()
+    except Exception:
+        pass
 
 
 def _load_tool_overrides() -> Dict[str, dict]:
@@ -232,6 +274,72 @@ def _save_tool_overrides(overrides: Dict[str, dict]) -> None:
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump({"overrides": overrides}, fh, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
+
+
+def _token_listing() -> list:
+    """Settings-page view of configured third-party API tokens; secrets never leave the server."""
+    saved = _sciverse_key_file().strip()
+    try:
+        env_key = str(getattr(_agent_tools_module(), "Sciverse_API_KEY", "") or "")
+    except Exception:
+        env_key = ""
+    effective = saved or env_key
+    return [{
+        "id": "sciverse",
+        "label": "Sciverse API",
+        "configured": bool(effective.strip()),
+        "saved": bool(saved),
+        "fromEnv": not saved and bool(env_key.strip()),
+    }]
+
+
+def _apply_token_updates(updates: dict) -> None:
+    """Persist submitted tokens, refresh the Sciverse client, and auto-sync the
+    enablement of Sciverse tools in tools.json: enabled when a key exists,
+    force-disabled when it does not (name/description/schema overrides preserved)."""
+    path = _tokens_config_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        tokens = data.get("tokens") if isinstance(data, dict) and isinstance(data.get("tokens"), dict) else {}
+    except Exception:
+        tokens = {}
+    tokens = dict(tokens)
+    for key, value in (updates or {}).items():
+        if key != "sciverse":
+            raise HTTPException(status_code=400, detail=f"Unknown token: {key}")
+        text = str(value or "").strip()
+        if text:
+            tokens[key] = text
+        else:
+            tokens.pop(key, None)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump({"tokens": tokens}, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+    _apply_sciverse_key()
+    # 同步 Sciverse 工具: 无密钥 → 覆盖里显式 enabled=False; 有密钥 → 移除 enabled 覆盖恢复默认开启
+    overrides = _load_tool_overrides()
+    on = bool(_sciverse_key())
+    changed = False
+    for t in _tool_defaults():
+        name = str(t.get("name") or "")
+        if not name.startswith("sciverse_"):
+            continue
+        entry = dict(overrides.get(name) or {})
+        if on:
+            entry.pop("enabled", None)
+        else:
+            entry["enabled"] = False
+        if entry != (overrides.get(name) or {}):
+            if entry:
+                overrides[name] = entry
+            else:
+                overrides.pop(name, None)
+            changed = True
+    if changed:
+        _save_tool_overrides(overrides)
 
 
 def _tool_defaults() -> list:
@@ -260,6 +368,9 @@ def _effective_agent_tools() -> list:
         for t in defaults:
             override = overrides.get(t["name"]) or {}
             if override.get("enabled") is False:
+                continue
+            # 未配置 Sciverse API 时 Sciverse 工具不进入会话 payload, 也不注册别名
+            if t["name"].startswith("sciverse_") and not _sciverse_key():
                 continue
             entry = dict(t)
             display = str(override.get("name") or "").strip()
@@ -299,15 +410,20 @@ def _tool_origin(name: str) -> str:
 
 def _tool_listing(defaults: list, overrides: Dict[str, dict]) -> list:
     """Settings-page view of the tool set: original id plus effective name/description/schema/enabled."""
+    sciverse_locked = not _sciverse_key()
     out = []
     for t in defaults:
         override = overrides.get(t["name"]) or {}
         schema = override.get("schema") if isinstance(override.get("schema"), dict) else (t.get("input_schema") or {})
+        enabled = override.get("enabled") is not False
+        # 未配置 Sciverse API 时 Sciverse 工具固定关闭, 忽略历史覆盖
+        if t["name"].startswith("sciverse_") and sciverse_locked:
+            enabled = False
         out.append({
             "id": t["name"],
             "name": str(override.get("name") or "").strip() or t["name"],
             "description": str(override.get("description") or "").strip() or t.get("description") or "",
-            "enabled": override.get("enabled") is not False,
+            "enabled": enabled,
             "schema": json.dumps(schema, ensure_ascii=False, separators=(",", ":")),
             "modified": bool(override),
             "origin": _tool_origin(t["name"]),
@@ -1394,6 +1510,18 @@ class ScienceAPI:
             # 自定义提示词改变系统提示长度, 清空缓存让 /context-info 重新测量
             _AGENT_CONTEXT_SIZES.clear()
             return {"prompt": prompt_text, "enabled": enabled}
+
+        @router.get("/tokens")
+        async def list_tokens():
+            return {"tokens": await asyncio.to_thread(_token_listing)}
+
+        @router.post("/tokens")
+        async def save_tokens(payload: TokensUpdateIn, request: Request):
+            _check_origin(request)
+            await asyncio.to_thread(_apply_token_updates, payload.tokens or {})
+            # 密钥变化会同步调整 Sciverse 工具启用状态, 固定开销随之变化
+            _AGENT_CONTEXT_SIZES.clear()
+            return {"tokens": await asyncio.to_thread(_token_listing)}
 
         @router.get("/conversations")
         async def list_conversations():

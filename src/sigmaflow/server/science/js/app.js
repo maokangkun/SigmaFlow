@@ -265,6 +265,14 @@
       CS.render();
     } catch (error) { CS.toast('工具列表加载失败：' + CS.api.friendlyError(error), 'error'); }
   };
+  CS.loadAgentTokens = async () => {
+    if (CS.ui.tokens) return;
+    try {
+      const d = await CS.api.request('/tokens');
+      CS.ui.tokens = d.tokens || [];
+      CS.render();
+    } catch (error) { CS.toast('Token 配置加载失败：' + CS.api.friendlyError(error), 'error'); }
+  };
   CS.refreshContextInfo = async () => {
     try { CS.ui.contextInfo = await CS.api.request('/context-info'); } catch {}
     CS.updateContextRing();
@@ -741,7 +749,7 @@
     },
     'connect-project': () => { CS.ui.projectMenu = false; CS.showModal('remote-project'); },
     'submit-remote-project': () => {},
-    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') CS.loadAgentTools(); if (id === 'skills') CS.loadAgentSkills(); if (id === 'mcp') CS.loadAgentMcp(); if (id === 'sysprompt') CS.loadSystemPrompt(); },
+    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') { CS.loadAgentTools(); CS.loadAgentTokens(); } if (id === 'skills') CS.loadAgentSkills(); if (id === 'mcp') CS.loadAgentMcp(); if (id === 'keys') CS.loadAgentTokens(); if (id === 'sysprompt') CS.loadSystemPrompt(); },
     'configure-model': () => { CS.ui.modelMenu = false; CS.ui.settingsTab = 'agent'; CS.navigate('settings'); },
     'add-provider': () => { CS.ui.edit = { type: 'provider', id: null }; CS.render(); },
     'edit-provider': id => { CS.ui.edit = { type: 'provider', id }; CS.render(); },
@@ -816,6 +824,38 @@
         CS.render();
         CS.toast('工具设置已恢复默认。');
       } catch (error) { CS.toast('恢复失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'save-tokens': async () => {
+      // 只提交有变化的条目: 非空值 → 保存/覆盖; 空值且已保存 → 不提交(用清除按钮删除)
+      const draft = CS.ui.tokensDraft || {};
+      const updates = {};
+      for (const t of (CS.ui.tokens || [])) {
+        const value = String(draft[t.id] ?? '').trim();
+        if (value) updates[t.id] = value;
+      }
+      if (!Object.keys(updates).length) { CS.toast('没有需要保存的修改。'); return; }
+      try {
+        const d = await CS.api.request('/tokens', { method: 'POST', body: JSON.stringify({ tokens: updates }) });
+        CS.ui.tokens = d.tokens || [];
+        CS.ui.tokensDraft = null;
+        CS.ui.agentTools = null;
+        CS.ui.toolDraft = null;
+        await CS.loadAgentTools();
+        await CS.refreshContextInfo();
+        CS.toast('API Key 已保存，相关工具启用状态已同步。');
+      } catch (error) { CS.toast('保存失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'token-clear': async id => {
+      try {
+        const d = await CS.api.request('/tokens', { method: 'POST', body: JSON.stringify({ tokens: { [id]: '' } }) });
+        CS.ui.tokens = d.tokens || [];
+        CS.ui.tokensDraft = null;
+        CS.ui.agentTools = null;
+        CS.ui.toolDraft = null;
+        await CS.loadAgentTools();
+        await CS.refreshContextInfo();
+        CS.toast('密钥已清除，相关工具已关闭。');
+      } catch (error) { CS.toast('清除失败：' + CS.api.friendlyError(error), 'error'); }
     },
     'skill-toggle': id => {
       const s = (CS.ui.skillDraft || []).find(x => x.id === id);
@@ -1180,6 +1220,7 @@
     else if(target.dataset?.toolId){ const t=(CS.ui.toolDraft||[]).find(x=>x.id===target.dataset.toolId); if(t) t[target.dataset.field]=target.value; if(target.dataset.field==='schema') CS.syncSchemaHighlight(target); }
     else if(target.dataset?.skillId){ const s=(CS.ui.skillDraft||[]).find(x=>x.id===target.dataset.skillId); if(s) s[target.dataset.field]=target.value; }
     else if(target.dataset?.mcpId){ const s=(CS.ui.mcpDraft||[]).find(x=>x.key===target.dataset.mcpId); if(s) s[target.dataset.field]=target.value; }
+    else if(id.startsWith('token-')) { const d=CS.ui.tokensDraft||(CS.ui.tokensDraft={}); d[id.slice(6)]=target.value; }
   });
   // 窗口尺寸变化会改变软换行位置, 重新计算两层高度
   window.addEventListener('resize', () => CS.sizeSchemaEditors());
