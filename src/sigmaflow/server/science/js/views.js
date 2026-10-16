@@ -17,9 +17,43 @@
     const d = Math.floor(min / 1440), h = Math.floor((min % 1440) / 60);
     return d ? `${d} 天 ${h} 小时` : h ? `${h} 小时 ${Math.floor(min % 60)} 分钟` : `${min} 分钟`;
   };
+  // GitHub 贡献热力图风格: 列=周, 行=星期, 色阶=当日 token 量; 数据跨度不足 18 周时补空列撑起网格
+  const usageHeatmap = days => {
+    if (!days?.length) return H.notice('暂无每日用量记录。');
+    const byDay = new Map(days.map(d => [d.date, d]));
+    const fmt = str => { const [y, m, dd] = str.split('-').map(Number); return new Date(y, m - 1, dd); };
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const firstData = fmt(days[0].date);
+    const lastData = fmt(days[days.length - 1].date);
+    const start = new Date(firstData); start.setDate(start.getDate() - ((start.getDay() + 6) % 7));  // 对齐周一
+    const MIN_WEEKS = 18;
+    const minStart = new Date(today); minStart.setDate(minStart.getDate() - (MIN_WEEKS - 1) * 7);
+    const startAt = start < minStart ? start : minStart;
+    const end = lastData > today ? lastData : today;
+    const endAligned = new Date(end); endAligned.setDate(endAligned.getDate() + (6 - ((endAligned.getDay() + 6) % 7)));  // 对齐周日
+    const weeks = Math.max(1, Math.round((endAligned - startAt) / (7 * 86400000)) + 1);
+    const maxTotal = Math.max(...days.map(d => d.totalTokens || 0), 1);
+    const levelOf = d => { if (!d) return 0; const t = d.totalTokens || 0; if (!t) return 0; return Math.min(4, 1 + Math.floor((t / maxTotal) * 3.999)); };
+    const cells = [];
+    const monthLabels = [];  // 每列一个标签(或空)
+    let lastMonth = -1;
+    for (let w = 0; w < weeks; w++) {
+      const colStart = new Date(startAt); colStart.setDate(colStart.getDate() + w * 7);
+      if (colStart.getMonth() !== lastMonth) { monthLabels.push(`<span style="grid-column:${w + 1}">${colStart.getMonth() + 1}月</span>`); lastMonth = colStart.getMonth(); }
+      for (let dow = 0; dow < 7; dow++) {
+        const d = new Date(colStart); d.setDate(d.getDate() + dow);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const data = byDay.get(key);
+        const level = levelOf(data);
+        cells.push(`<span class="heatmap-cell" data-level="${level}" title="${key}${data ? ` · ${CS.usageNum(data.totalTokens)} tokens${data.sessions ? ` · ${data.sessions} 个会话` : ''}` : ''}"></span>`);
+      }
+    }
+    const dayLabels = ['一', '', '三', '', '五', '', '日'].map(x => `<span>${x}</span>`).join('');
+    return `<div class="usage-heatmap" role="img" aria-label="Token 每日活动热力图"><div class="heatmap-wrap"><div class="heatmap-months">${monthLabels.join('')}</div><div class="heatmap-main"><div class="heatmap-day-labels">${dayLabels}</div><div class="heatmap-cells">${cells.join('')}</div></div><div class="heatmap-legend tiny muted"><span>少</span><span class="heatmap-cell" data-level="0"></span><span class="heatmap-cell" data-level="1"></span><span class="heatmap-cell" data-level="2"></span><span class="heatmap-cell" data-level="3"></span><span class="heatmap-cell" data-level="4"></span><span>多</span><span class="heatmap-legend-total">峰值日 ${e((days.reduce((a, b) => (b.totalTokens > a.totalTokens ? b : a), days[0])).date)}</span></div></div></div>`;
+  };
   const usageChart = (days, gran) => {
     if (!days?.length) return H.notice('暂无每日用量记录。');
-    // daily: 每日一柱; weekly: 按自然周(周一起)聚合; total: 按日累计折线
+    // daily: GitHub 风格热力图(usageHeatmap); weekly: 按自然周(周一起)聚合为柱; total: 按日累计折线
     const W = 720, Hh = 150, pad = 8;
     let items;
     if (gran === 'weekly') {
@@ -34,7 +68,8 @@
       if (acc) items.push(acc);  // 收尾不完整的一周
     } else if (gran === 'total') {
       let run = 0; items = days.map(day => ({ date: day.date, total: (run += day.totalTokens || 0), sessions: day.sessions || 0, cost: day.costUsd || 0 }));
-    } else items = days.map(day => ({ date: day.date, total: day.totalTokens || 0, sessions: day.sessions || 0, cost: day.costUsd || 0 }));
+    } else if (gran === 'daily') return usageHeatmap(days);
+    else items = days.map(day => ({ date: day.date, total: day.totalTokens || 0, sessions: day.sessions || 0, cost: day.costUsd || 0 }));
     const fmtTitle = it => `${it.date} · ${CS.usageNum(it.total)} tokens${it.cost ? ` · $${it.cost.toFixed(2)}` : ''}`;
     if (gran === 'total') {
       const max = Math.max(...items.map(x => x.total), 1);
