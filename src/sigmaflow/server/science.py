@@ -277,14 +277,24 @@ def _effective_agent_tools() -> list:
     return tools
 
 
+_ARXIV_TOOLS = ("arxiv_search", "read_arxiv")
+
+
 def _tool_origin(name: str) -> str:
     """Origin of a tool for the settings grouping: MCP server name for tools exposed
-    by the active MCP client, 'builtin' for the agent package's own tools."""
+    by the active MCP client, otherwise one of the builtin taxonomy buckets
+    (sciverse / arxiv / generic builtin)."""
     try:
         tool = _agent_tools_module().MCP.tools.get(name)
-        return tool.server_name if tool else "builtin"
+        if tool:
+            return tool.server_name
     except Exception:
-        return "builtin"
+        pass
+    if name.startswith("sciverse_"):
+        return "sciverse"
+    if name in _ARXIV_TOOLS:
+        return "arxiv"
+    return "builtin"
 
 
 def _tool_listing(defaults: list, overrides: Dict[str, dict]) -> list:

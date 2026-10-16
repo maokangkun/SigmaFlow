@@ -301,14 +301,31 @@
   };
   // 参数编辑框: 透明 textarea 叠在高亮 pre 上, 输入时刷新高亮; 高度由 sizeSchemaEditors 统一管理
   CS.sizeSchemaEditors = () => {
-    document.querySelectorAll('.schema-editor').forEach(ed => {
-      const ta = ed.querySelector('.tool-schema-input');
-      if (!ta) return;
-      ta.style.height = 'auto';
-      ta.style.height = `${ta.scrollHeight}px`;
-      const pre = ed.querySelector('.schema-highlight');
-      if (pre) pre.style.height = `${ta.scrollHeight}px`;
+    // 先按内容自适应, 再把同一网格行(左右两列)的编辑器统一到该行最大高度, 保证每行两卡等高
+    const byRow = new Map();
+    document.querySelectorAll('.tool-group-rows').forEach(grid => {
+      const gridKey = Math.round(grid.getBoundingClientRect().top);
+      grid.querySelectorAll(':scope > .tool-setting-row').forEach(row => {
+        const ed = row.querySelector('.schema-editor');
+        const ta = ed?.querySelector('.tool-schema-input');
+        if (!ta) return;
+        ta.style.height = 'auto';
+        ta.style.height = `${ta.scrollHeight}px`;
+        const pre = ed.querySelector('.schema-highlight');
+        if (pre) pre.style.height = `${ta.scrollHeight}px`;
+        const key = `${gridKey}|${Math.round(row.getBoundingClientRect().top)}`;
+        if (!byRow.has(key)) byRow.set(key, []);
+        byRow.get(key).push({ ta, pre });
+      });
     });
+    for (const pair of byRow.values()) {
+      if (pair.length < 2) continue;
+      const h = Math.max(...pair.map(p => parseFloat(p.ta.style.height)));
+      for (const p of pair) {
+        p.ta.style.height = `${h}px`;
+        if (p.pre) p.pre.style.height = `${h}px`;
+      }
+    }
   };
   CS.syncSchemaHighlight = ta => {
     const pre = ta.closest('.schema-editor')?.querySelector('.schema-highlight');

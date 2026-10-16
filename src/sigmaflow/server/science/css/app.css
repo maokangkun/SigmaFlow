@@ -275,5 +275,5 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
 .tool-group:nth-child(1) .tool-group-title::before{background:var(--blue)}
 .tool-group-chevron{transition:transform .18s ease;color:var(--muted)}
 .tool-group-header[aria-expanded="false"] .tool-group-chevron{transform:rotate(-90deg)}
-.tool-group-rows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px;align-items:start}
+.tool-group-rows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px}
 .tool-group-rows.collapsed{display:none}

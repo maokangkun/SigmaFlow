@@ -185,7 +185,7 @@ GET    /api/context-info      → {"systemTokens": int, "toolsTokens": int}  # A
 模型用新名称调用时仍路由到原实现。
 
 ```http
-GET  /api/tools   → {"tools": [{id, name, description, enabled, schema, modified, origin}]}  # origin: "builtin" 或 MCP 服务器名
+GET  /api/tools   → {"tools": [{id, name, description, enabled, schema, modified, origin}]}  # origin: "builtin"(基础)/"sciverse"/"arxiv" 或 MCP 服务器名
 POST /api/tools   → {"tools": [...]}   # 保存全量列表；{"reset": true} 恢复默认
 ```
 
