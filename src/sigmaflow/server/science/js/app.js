@@ -1015,7 +1015,7 @@
       finally { CS.ui.testing = false; emitRender(); }
     },
     'add-model': id => { CS.ui.edit = { type: 'model', id: null }; CS.ui.providerModels = null; CS.ui.draftModelName = ''; CS.ui.draftProviderId = id || null; CS.render(); },
-    'edit-model': id => { const m = CS.ui.models.find(x => x.id === id); CS.ui.edit = { type: 'model', id }; CS.ui.providerModels = null; CS.ui.draftModelName = m?.model || ''; CS.ui.draftProviderId = m?.providerId || null; CS.render(); },
+    'edit-model': id => { const m = CS.ui.models.find(x => x.id === id); CS.ui.edit = { type: 'model', id }; CS.ui.providerModels = null; CS.ui.draftModelName = m?.model || ''; CS.ui.draftProviderId = m?.providerId || null; CS.render(); CS.fetchModelMetaSoon(true); },
     'cancel-edit': () => { CS.ui.edit = null; CS.ui.providerModels = null; CS.render(); },
     'tool-toggle': id => {
       const t = (CS.ui.toolDraft || []).find(x => x.id === id);
@@ -1231,7 +1231,7 @@
     },
     'dd-toggle': id => { CS.ui.dropdown = CS.ui.dropdown === id ? null : id; CS.render(); },
     'dd-pick-provider': id => { CS.ui.draftProviderId = id; CS.ui.dropdown = null; CS.render(); },
-    'dd-pick-model': name => { CS.ui.draftModelName = name; CS.ui.dropdown = null; CS.render(); },
+    'dd-pick-model': name => { CS.ui.draftModelName = name; CS.ui.dropdown = null; CS.render(); CS.fetchModelMetaSoon(true); },
     'test-provider': async id => {
       const provider = CS.ui.providers.find(x => x.id === id); if (!provider) return;
       CS.ui.testing = true; CS.render();
@@ -1445,6 +1445,30 @@
       const text=document.getElementById('paper-note-text').value; CS.state.notes[CS.ui.modal.id]=text;CS.save();CS.closeModal();CS.render();CS.toast('阅读笔记已保存。');
     }
   });
+  // LiteLLM 自动查询: 输入或选择模型名后拉取价格/上下文, 填进表单提示行; 局部更新 hint 不触发重渲染
+  CS.fetchModelMetaSoon = immediate => {
+    clearTimeout(CS.ui._metaTimer);
+    const run = async () => {
+      const name = CS.ui.draftModelName?.trim() || '';
+      const box = document.getElementById('model-meta-hint');
+      if (!box) return;
+      if (!name) { box.textContent = ''; CS.ui.modelMeta = null; return; }
+      box.textContent = '正在查询 LiteLLM 模型库…';
+      try {
+        const meta = await CS.api.request('/model-meta?model=' + encodeURIComponent(name));
+        CS.ui.modelMeta = meta;
+        if (!document.getElementById('model-meta-hint')) return;
+        box.innerHTML = meta.matched ? [
+          meta.priceInUsdPerM != null ? `输入 $${meta.priceInUsdPerM}/M` : '输入价未公布',
+          meta.priceOutUsdPerM != null ? `输出 $${meta.priceOutUsdPerM}/M` : '输出价未公布',
+          meta.contextWindow ? `上下文 ${CS.usageNum(meta.contextWindow)}` : '',
+          meta.maxOutputTokens ? `最大输出 ${CS.usageNum(meta.maxOutputTokens)}` : '',
+          `目录键 ${meta.litellmKey}`,
+        ].filter(Boolean).join(' · ') + '（自动读取，可手动覆盖）' : 'LiteLLM 模型库未收录此模型，上下文按默认 131072，建议手动填写。';
+      } catch { box.textContent = ''; }
+    };
+    CS.ui._metaTimer = setTimeout(run, immediate ? 0 : 500);
+  };
   const searchBindings={ 'data-search':'data','project-search':'project','paper-search':'literature','tool-search':'tools' };
   document.addEventListener('input',event=>{
     const target=event.target,id=target.id;
@@ -1452,7 +1476,7 @@
     else if(searchBindings[id]) {CS.ui.filters[searchBindings[id]]=target.value;CS.render();}
     else if(id==='marker-search') {CS.ui.markerSearch=target.value;CS.render();}
     else if(id==='sequence-input') CS.ui.sequence=target.value;
-    else if(id==='model-name') CS.ui.draftModelName=target.value;
+    else if(id==='model-name') { CS.ui.draftModelName=target.value; CS.fetchModelMetaSoon(); }
     else if(id==='pubmed-query') CS.ui.pubmedQuery=target.value;
     else if(id==='min-genes') CS.ui.minGenes=target.value;
     else if(id==='max-mito') CS.ui.maxMito=target.value;

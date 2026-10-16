@@ -180,7 +180,38 @@ def _list_provider_models(base_url: str, api_key: str) -> dict:
 
 _LITELLM_LOCK = threading.Lock()
 _LITELLM_DB: Optional[Dict[str, dict]] = None
+_LITELLM_MODULE: Any = None  # 懒加载的 litellm 模块; 未加载为 None, 导入失败为 False
 _LITELLM_LOOKUP_CACHE: Dict[str, Optional[dict]] = {}
+
+
+def _litellm_module():
+    """Import litellm on demand (its import takes ~2s, so it runs in a
+    background thread at startup and callers may get None before it's ready)."""
+    global _LITELLM_MODULE
+    if _LITELLM_MODULE is not None:
+        return _LITELLM_MODULE
+    with _LITELLM_LOCK:
+        if _LITELLM_MODULE is not None:
+            return _LITELLM_MODULE
+        try:
+            os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")  # 无外网时禁止远程拉取价格表
+            import logging
+            logging.getLogger("LiteLLM").setLevel(logging.ERROR)
+            import litellm
+            _LITELLM_MODULE = litellm
+        except Exception:
+            _LITELLM_MODULE = False
+    return _LITELLM_MODULE
+
+
+def _litellm_warm():
+    """Synchronously warm up the litellm import.
+
+    Must NOT be a background thread: while litellm is half-imported any log
+    record routed through its logging filter re-enters its module space and
+    crashes the process (KeyError litellm). Doing it during app startup keeps
+    the fully-initialized guarantee before the first request is served."""
+    _litellm_module()
 
 # 匹配到多个 <provider>/<model> 候选时, 优先模型厂商官方与主流平台的定价,
 # 避免选中 azure/bedrock/databricks 等托管变体的高价条目
@@ -199,21 +230,30 @@ def _litellm_db() -> Dict[str, dict]:
     with _LITELLM_LOCK:
         if _LITELLM_DB is not None:
             return _LITELLM_DB
-        db: Dict[str, dict] = {}
-        try:
-            import importlib.util
-            spec = importlib.util.find_spec("litellm")
-            if spec and spec.submodule_search_locations:
-                base = Path(list(spec.submodule_search_locations)[0])
-                for name in ("model_prices_and_context_window.json", "model_prices_and_context_window_backup.json"):
-                    path = base / name
-                    if path.exists():
-                        loaded = json.loads(path.read_text(encoding="utf-8"))
-                        if isinstance(loaded, dict):
-                            db = loaded
-                        break
-        except Exception:
-            db = {}
+        dicc: Dict[str, dict] = {}
+        module = _litellm_module()
+        if module and module is not False:
+            # 首选官方 API 暴露的 model_cost 数据
+            mc = getattr(module, "model_cost", None)
+            if isinstance(mc, dict):
+                dicc = mc
+        if not dicc:
+            # litellm 未就绪或导入失败: 直接读包内价格表文件兜底
+            try:
+                import importlib.util
+                spec = importlib.util.find_spec("litellm")
+                if spec and spec.submodule_search_locations:
+                    base = Path(list(spec.submodule_search_locations)[0])
+                    for name in ("model_prices_and_context_window.json", "model_prices_and_context_window_backup.json"):
+                        path = base / name
+                        if path.exists():
+                            loaded = json.loads(path.read_text(encoding="utf-8"))
+                            if isinstance(loaded, dict):
+                                dicc = loaded
+                            break
+            except Exception:
+                dicc = {}
+        db = dicc
         # 只保留带有效价格或窗口数据的条目, 滤掉 map_config_to_model 等元数据键
         _LITELLM_DB = {
             k: v for k, v in db.items()
@@ -238,8 +278,12 @@ def _litellm_lookup(model_name):
     if key in cache:
         return cache[key]
     db = _litellm_db()
-    hit: Optional[dict] = db.get(key)
-    if hit is None:
+    hit: Optional[dict] = None
+    exact = db.get(key)
+    if exact is not None:
+        hit = dict(exact)
+        hit["_litellm_key"] = key  # 官方 API(completion_cost 等)需要的精确目录键
+    else:
         suffix = "/" + key
         hits: list = [(k, v) for k, v in db.items() if k.lower().endswith(suffix)]
 
@@ -255,13 +299,15 @@ def _litellm_lookup(model_name):
             return (tier, len(k))
 
         if hits:
-            hit = sorted(hits, key=_rank)[0][1]
+            matched_key, entry = sorted(hits, key=_rank)[0]
+            hit = dict(entry)
+            hit["_litellm_key"] = matched_key
     cache[key] = hit
     return hit
 
 
 def _model_pricing(entry) -> tuple:
-    """(input, output) USD per token for a LiteLLM database entry."""
+    """(input, output) USD per token for a LiteLLM model-info entry."""
     if not entry:
         return 0.0, 0.0
     edge = entry.get("input_cost_per_token")
@@ -269,6 +315,25 @@ def _model_pricing(entry) -> tuple:
     pin = float(edge) if isinstance(edge, (int, float)) else 0.0
     pout = float(edp) if isinstance(edp, (int, float)) else 0.0
     return pin, pout
+
+
+def _litellm_message_cost(model_name: str, prompt_tokens: int, completion_tokens: int) -> Optional[float]:
+    """Price one message via LiteLLM's official completion_cost API.
+
+    Uses the resolved catalog key so short names (e.g. glm-5.3-flash) map to
+    their provider entry (zai/glm-5.3-flash); returns None when unavailable."""
+    module = _litellm_module()
+    if not module or module is False or not hasattr(module, "completion_cost"):
+        return None
+    try:
+        from litellm.types.utils import ModelResponse, Usage
+        entry = _litellm_lookup(model_name)
+        model_ref = (entry or {}).get("_litellm_key") or model_name
+        resp = ModelResponse(model=model_ref, usage=Usage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens))
+        cost = module.completion_cost(completion_response=resp)
+        return float(cost) if isinstance(cost, (int, float)) else None
+    except Exception:
+        return None
 
 
 def _model_context_window(model_name: str, override: Optional[int] = None) -> int:
@@ -1489,6 +1554,10 @@ class ScienceAPI:
         self.manager = ScienceRunManager()
         self.model_store = ScienceModelStore()
         self.project_store = ScienceProjectStore()
+        try:
+            _litellm_warm()  # 先完成 litellm 导入再对外服务, 避免半初始化竞态
+        except Exception:
+            pass
         router = APIRouter(prefix="/api")
 
         # ------------------------------------------------------------- HTTP
@@ -1579,6 +1648,25 @@ class ScienceAPI:
             """Token estimate of the agent's fixed request overhead (system
             prompt + tool definitions), used by the ring widget."""
             return await asyncio.to_thread(_agent_context_sizes)
+
+        @router.get("/model-meta")
+        async def model_meta(model: str = ""):
+            """LiteLLM catalog lookup for one model name (form auto-fill preview)."""
+            def _work():
+                entry = _litellm_lookup(model or "")
+                pin, pout = _model_pricing(entry)
+                max_output = entry.get("max_tokens") if entry else None
+                ctx = entry.get("max_input_tokens") or entry.get("max_tokens") if entry else None
+                return {
+                    "model": model or "",
+                    "matched": bool(entry),
+                    "litellmKey": (entry or {}).get("_litellm_key") or None,
+                    "contextWindow": int(ctx) if isinstance(ctx, (int, float)) and ctx > 0 else None,
+                    "maxOutputTokens": int(max_output) if isinstance(max_output, (int, float)) and max_output > 0 else None,
+                    "priceInUsdPerM": round(pin * 1e6, 4) if pin > 0 else None,
+                    "priceOutUsdPerM": round(pout * 1e6, 4) if pout > 0 else None,
+                }
+            return await asyncio.to_thread(_work)
 
         @router.get("/usage-tokens")
         async def usage_tokens(request: Request):
@@ -2493,8 +2581,17 @@ def _sigma_usage(conversations: Dict[str, dict]) -> Dict[str, object]:
     def _price(model_name: str) -> tuple:
         """(input, output) USD/token for a message model name, cached."""
         if model_name not in pricing_cache:
-            pricing_cache[model_name] = _model_pricing(_litellm_lookup(model_name))
+            entry = _litellm_lookup(model_name)
+            pricing_cache[model_name] = _model_pricing(entry)
         return pricing_cache[model_name]
+
+    def _msg_cost(model_name: str, prompt_tokens: int, completion_tokens: int) -> float:
+        """Cost of one assistant message: LiteLLM's official API first, price table as fallback."""
+        official = _litellm_message_cost(model_name, prompt_tokens, completion_tokens)
+        if official is not None:
+            return official
+        pin, pout = _price(model_name)
+        return prompt_tokens * pin + completion_tokens * pout
 
     def _ms(conv_msg_at) -> int:
         """ISO 字符串转 epoch 毫秒; 非法值回退 0。"""
@@ -2531,8 +2628,7 @@ def _sigma_usage(conversations: Dict[str, dict]) -> Dict[str, object]:
             conv_out += tokens
             model = (msg.get("model") or "").strip() or "未记录"
             conv_models.add(model)
-            pin, pout = _price(model)
-            cost = prompt * pin + tokens * pout
+            cost = _msg_cost(model, prompt, tokens)
             day_key = (msg.get("at") or "")[:10]
             if not day_key:
                 day_key = str(date.today())
