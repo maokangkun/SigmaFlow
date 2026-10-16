@@ -1735,7 +1735,9 @@ class ScienceAPI:
             _check_origin(request)
             base_url, api_key, model_name = _resolve_chat(self.model_store, payload.modelId)
             messages = [m for m in (payload.messages or []) if isinstance(m, dict)]
-            workdir = self.project_store.projects.get(payload.projectId or "", {}).get("dir")
+            conv_ref = self.project_store.conversations.get(payload.runId or "") or {}
+            effective_pid = payload.projectId or conv_ref.get("projectId")
+            workdir = self.project_store.projects.get(effective_pid or "", {}).get("dir")
             try:
                 stats: dict = {}
                 content = await asyncio.to_thread(_run_agent_chat, base_url, api_key, model_name, messages, None, None, None, stats, workdir)
@@ -2144,7 +2146,8 @@ class ScienceAPI:
                     if conv is None:
                         await fail(request_id, "Conversation not found")
                         return
-                    await reply("conversation.content", request_id, {"id": conv["id"], "content": conv.get("content") or []})
+                    await reply("conversation.content", request_id, {"id": conv["id"], "title": conv.get("title") or "",
+                                                                    "projectId": conv.get("projectId"), "content": conv.get("content") or []})
                 elif action == "conversation.delete":
                     if not self.project_store.delete_conversation(run_id_of(data)):
                         await fail(request_id, "Conversation not found")
@@ -2165,7 +2168,9 @@ class ScienceAPI:
                     if not messages:
                         await fail(request_id, "消息列表为空")
                         return
-                    chat_workdir = self.project_store.projects.get(data.get("projectId") or "", {}).get("dir")
+                    conv_ref = self.project_store.conversations.get(data.get("runId") or "") or {}
+                    effective_pid = data.get("projectId") or conv_ref.get("projectId")
+                    chat_workdir = self.project_store.projects.get(effective_pid or "", {}).get("dir")
                     # 同一 requestId 重发前先复位停止标记
                     chat_stops[request_id] = False
                     # 工作线程阻塞产出事件, 经线程安全回调投递回队列
@@ -2282,6 +2287,7 @@ def _push_loop(ws: WebSocket, queue: asyncio.Queue):
 class ChatIn(BaseModel):
     modelId: Optional[str] = None
     projectId: Optional[str] = None
+    runId: Optional[str] = None
     messages: list = []
 
 
