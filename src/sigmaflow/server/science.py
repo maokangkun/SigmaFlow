@@ -238,8 +238,13 @@ def _sciverse_key() -> str:
     saved = _sciverse_key_file().strip()
     if saved:
         return saved
+    # 回退只查已加载的 tools 模块绑定, 不经过 _agent_tools_module(): 该函数每次调用都会
+    # 再走 _apply_sciverse_key(), 与这里构成无基准情形的相互递归——未保存密钥时每次
+    # 请求都烧穿递归栈, 靠内层吞 RecursionError 才得到正确结果。
+    import sys as _sys
+    tools_mod = _sys.modules.get("sigmaflow.agent.tools")
     try:
-        return str(getattr(_agent_tools_module(), "Sciverse_API_KEY", "") or "")
+        return str(getattr(tools_mod, "Sciverse_API_KEY", "") or "") if tools_mod is not None else ""
     except Exception:
         return ""
 

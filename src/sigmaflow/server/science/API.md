@@ -240,13 +240,26 @@ POST /api/mcp   → {"servers": [...]}   # 保存全量列表；{"reset": true} 
 留空或关闭 `enabled` 表示使用内置默认。
 
 ```http
-GET  /api/tokens → {"tokens": [{id: "sciverse", label, configured, saved, fromEnv, keyHint}]}  # 密钥不回传，只报掩码(如 sk-a****6789)
-POST /api/tokens → {"tokens": [...]}   # 保存 {"tokens": {"sciverse": str}}；空串 = 删除；保存后自动同步 Sciverse 工具启用状态（有密钥→启用，无密钥→关闭）
 GET  /api/system-prompt   → {"prompt": str, "enabled": bool, "builtin": str, "builtinTokens": int}
 POST /api/system-prompt   → {"prompt": str, "enabled": bool}   # 保存; 启用时 prompt 不能为空
 ```
 
 `prompt` ≤ 32000 字符；`enabled: true` 时上下文用量圆环将按自定义提示词重新测量。
+写操作要求同源（跨域返回 403）。
+
+### 6d. 第三方 API Key 配置（服务端存储）
+
+设置页可配置第三方服务的访问密钥（目前：Sciverse 工具、anysearch MCP），落盘到
+`<science_dir>/tokens.json`。密钥只存服务端，接口只回传掩码（如 `sk-a****6789`）；
+从环境变量（`Sciverse_API_KEY` / `ANYSEARCH_API_KEY`）继承的密钥在页面上标注来源。
+保存后自动同步依赖方的启用状态：Sciverse 工具（有密钥→启用，无密钥→关闭）与
+anysearch MCP 服务器（凭密钥加入/退出活动集）。
+
+```http
+GET  /api/tokens → {"tokens": [{id: "sciverse", label, configured, saved, fromEnv, keyHint}]}  # 密钥不回传，只报掩码(如 sk-a****6789)
+POST /api/tokens → {"tokens": [...]}   # 保存 {"tokens": {"sciverse": str}}；空串 = 删除
+```
+
 写操作要求同源（跨域返回 403）。
 
 ### 7. 暂停、继续、取消
