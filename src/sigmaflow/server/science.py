@@ -174,11 +174,113 @@ def _list_provider_models(base_url: str, api_key: str) -> dict:
     return {"ok": True, "models": sorted(set(names)), "error": None}
 
 
+# ==================== LiteLLM 模型价格与上下文数据库 ====================
+# 只读取 litellm 包内置的 model_prices 数据文件(500+ 模型的价格与上下文窗口),
+# 不 import litellm 模块本身, 避免其启动开销; 数据缺失时所有查询静默降级。
+
+_LITELLM_LOCK = threading.Lock()
+_LITELLM_DB: Optional[Dict[str, dict]] = None
+_LITELLM_LOOKUP_CACHE: Dict[str, Optional[dict]] = {}
+
+# 匹配到多个 <provider>/<model> 候选时, 优先模型厂商官方与主流平台的定价,
+# 避免选中 azure/bedrock/databricks 等托管变体的高价条目
+_LITELLM_PRIMARY_PROVIDERS = {
+    "openai", "anthropic", "gemini", "deepseek", "zai", "zhipuai", "moonshot", "moonshotai",
+    "xai", "mistral", "dashscope", "qwen", "cohere", "groq", "perplexity", "together_ai",
+    "fireworks_ai", "volcengine", "nvidia_nim", "sambanova", "cerebras", "custom_openai",
+}
+
+
+def _litellm_db() -> Dict[str, dict]:
+    """Load LiteLLM's bundled model database once from its package files."""
+    global _LITELLM_DB
+    if _LITELLM_DB is not None:
+        return _LITELLM_DB
+    with _LITELLM_LOCK:
+        if _LITELLM_DB is not None:
+            return _LITELLM_DB
+        db: Dict[str, dict] = {}
+        try:
+            import importlib.util
+            spec = importlib.util.find_spec("litellm")
+            if spec and spec.submodule_search_locations:
+                base = Path(list(spec.submodule_search_locations)[0])
+                for name in ("model_prices_and_context_window.json", "model_prices_and_context_window_backup.json"):
+                    path = base / name
+                    if path.exists():
+                        loaded = json.loads(path.read_text(encoding="utf-8"))
+                        if isinstance(loaded, dict):
+                            db = loaded
+                        break
+        except Exception:
+            db = {}
+        # 只保留带有效价格或窗口数据的条目, 滤掉 map_config_to_model 等元数据键
+        _LITELLM_DB = {
+            k: v for k, v in db.items()
+            if isinstance(v, dict) and (
+                isinstance(v.get("input_cost_per_token"), (int, float))
+                or isinstance(v.get("output_cost_per_token"), (int, float))
+                or v.get("max_input_tokens") or v.get("max_tokens")
+            )
+        }
+    return _LITELLM_DB
+
+
+def _litellm_lookup(model_name):
+    """Resolve a configured model name against LiteLLM's database.
+
+    Exact (case-insensitive) keys win; then `<provider>/<name>` suffix keys,
+    preferring canonical provider entries over cloud-hosted variants."""
+    if not model_name:
+        return None
+    key = str(model_name).strip().lower()
+    cache = _LITELLM_LOOKUP_CACHE
+    if key in cache:
+        return cache[key]
+    db = _litellm_db()
+    hit: Optional[dict] = db.get(key)
+    if hit is None:
+        suffix = "/" + key
+        hits: list = [(k, v) for k, v in db.items() if k.lower().endswith(suffix)]
+
+        def _rank(item):
+            k, v = item
+            provider = str(v.get("litellm_provider") or "").lower()
+            if "/" not in k:
+                tier = 0
+            elif provider in _LITELLM_PRIMARY_PROVIDERS:
+                tier = 1
+            else:
+                tier = 2
+            return (tier, len(k))
+
+        if hits:
+            hit = sorted(hits, key=_rank)[0][1]
+    cache[key] = hit
+    return hit
+
+
+def _model_pricing(entry) -> tuple:
+    """(input, output) USD per token for a LiteLLM database entry."""
+    if not entry:
+        return 0.0, 0.0
+    edge = entry.get("input_cost_per_token")
+    edp = entry.get("output_cost_per_token")
+    pin = float(edge) if isinstance(edge, (int, float)) else 0.0
+    pout = float(edp) if isinstance(edp, (int, float)) else 0.0
+    return pin, pout
+
+
 def _model_context_window(model_name: str, override: Optional[int] = None) -> int:
-    """Resolve a model's context window (tokens). Explicit configuration
-    takes precedence; otherwise fall back to the agent's per-model table."""
-    if override and override > 0:
+    """Resolve a model's context window (tokens). Explicit configuration takes
+    precedence; otherwise LiteLLM's database, then the agent's per-model table."""
+    if override and int(override) > 0:
         return int(override)
+    entry = _litellm_lookup(model_name)
+    if entry:
+        cw = entry.get("max_input_tokens") or entry.get("max_tokens")
+        if isinstance(cw, (int, float)) and cw > 0:
+            return int(cw)
     try:
         from sigmaflow.agent.conf import MAX_MODEL_LEN
         return int(MAX_MODEL_LEN.get((model_name or "").lower(), MAX_MODEL_LEN.get("default", 131072)))
@@ -1159,15 +1261,23 @@ class ScienceModelStore:
 
     def _public_model(self, model: dict) -> dict:
         provider = self.providers.get(model.get("providerId")) or {}
+        name = model.get("model") or ""
+        entry = _litellm_lookup(name)
+        pin, pout = _model_pricing(entry)
+        max_output = entry.get("max_tokens") if entry else None
         return {
             "id": model["id"],
             "providerId": model.get("providerId"),
             "providerName": provider.get("name") or "",
             "baseUrl": provider.get("baseUrl") or "",
-            "model": model.get("model") or "",
+            "model": name,
             "keyHint": provider.get("keyHint"),
             "isDefault": bool(model.get("isDefault")),
-            "contextWindow": _model_context_window(model.get("model"), model.get("contextWindow")),
+            "contextWindow": _model_context_window(name, model.get("contextWindow")),
+            "maxOutputTokens": int(max_output) if isinstance(max_output, (int, float)) and max_output > 0 else None,
+            "priceInUsdPerM": round(pin * 1e6, 4) if pin > 0 else None,
+            "priceOutUsdPerM": round(pout * 1e6, 4) if pout > 0 else None,
+            "catalogMatched": bool(entry),
             "createdAt": model.get("createdAt"),
             "updatedAt": model.get("updatedAt"),
         }
@@ -2375,8 +2485,16 @@ def _sigma_usage(conversations: Dict[str, dict]) -> Dict[str, object]:
     model_stats: Dict[str, dict] = {}
     session_rows: list = []
     total_in = total_out = 0
+    total_cost = 0.0
     total_sessions = 0
     longest_session_ms = 0
+    pricing_cache: Dict[str, tuple] = {}
+
+    def _price(model_name: str) -> tuple:
+        """(input, output) USD/token for a message model name, cached."""
+        if model_name not in pricing_cache:
+            pricing_cache[model_name] = _model_pricing(_litellm_lookup(model_name))
+        return pricing_cache[model_name]
 
     def _ms(conv_msg_at) -> int:
         """ISO 字符串转 epoch 毫秒; 非法值回退 0。"""
@@ -2392,6 +2510,7 @@ def _sigma_usage(conversations: Dict[str, dict]) -> Dict[str, object]:
         content = conv.get("content") or []
         first_ms = last_ms = 0
         conv_in = conv_out = 0
+        conv_cost = 0.0
         conv_models: set = set()
         has_usage = False
         for msg in content:
@@ -2412,22 +2531,28 @@ def _sigma_usage(conversations: Dict[str, dict]) -> Dict[str, object]:
             conv_out += tokens
             model = (msg.get("model") or "").strip() or "未记录"
             conv_models.add(model)
+            pin, pout = _price(model)
+            cost = prompt * pin + tokens * pout
             day_key = (msg.get("at") or "")[:10]
             if not day_key:
                 day_key = str(date.today())
-            day = day_stats.setdefault(day_key, {"inputTokens": 0, "outputTokens": 0, "totalTokens": 0, "sessions": set()})
+            day = day_stats.setdefault(day_key, {"inputTokens": 0, "outputTokens": 0, "totalTokens": 0, "costUsd": 0.0, "sessions": set()})
             day["inputTokens"] += prompt
             day["outputTokens"] += tokens
             day["totalTokens"] += prompt + tokens
+            day["costUsd"] += cost
             day["sessions"].add(conv["id"])
-            m = model_stats.setdefault(model, {"inputTokens": 0, "outputTokens": 0, "totalTokens": 0, "sessions": set()})
+            m = model_stats.setdefault(model, {"inputTokens": 0, "outputTokens": 0, "totalTokens": 0, "costUsd": 0.0, "sessions": set()})
             m["inputTokens"] += prompt
             m["outputTokens"] += tokens
             m["totalTokens"] += prompt + tokens
+            m["costUsd"] += cost
             m["sessions"].add(conv["id"])
+            conv_cost = conv_cost + cost
         if has_usage:
             total_in += conv_in
             total_out += conv_out
+            total_cost += conv_cost
             total_sessions += 1
             duration = max(0, last_ms - first_ms) if first_ms and last_ms else 0
             longest_session_ms = max(longest_session_ms, duration)
@@ -2438,12 +2563,13 @@ def _sigma_usage(conversations: Dict[str, dict]) -> Dict[str, object]:
                 "durationMs": duration,
                 "inputTokens": conv_in, "outputTokens": conv_out,
                 "totalTokens": conv_in + conv_out,
+                "costUsd": round(conv_cost, 6),
                 "models": sorted(conv_models) if conv_models else [],
             })
 
     days = sorted(
         ({"date": key, "inputTokens": v["inputTokens"], "outputTokens": v["outputTokens"],
-          "totalTokens": v["totalTokens"], "sessions": len(v["sessions"]), "costUsd": 0.0}
+          "totalTokens": v["totalTokens"], "sessions": len(v["sessions"]), "costUsd": round(v["costUsd"], 6)}
          for key, v in day_stats.items()),
         key=lambda x: x["date"]
     )
@@ -2481,7 +2607,7 @@ def _sigma_usage(conversations: Dict[str, dict]) -> Dict[str, object]:
         "totalOutputTokens": total_out,
         "totalTokens": total_in + total_out,
         "totalSessions": total_sessions,
-        "totalCostUsd": 0.0,
+        "totalCostUsd": round(total_cost, 4),
         "longestSessionMs": longest_session_ms,
         "currentStreakDays": _current_streak(day_keys),
         "longestStreakDays": _longest_streak(day_keys),
@@ -2489,7 +2615,7 @@ def _sigma_usage(conversations: Dict[str, dict]) -> Dict[str, object]:
         "days": days,
         "models": [
             {"model": name, "inputTokens": v["inputTokens"], "outputTokens": v["outputTokens"],
-             "totalTokens": v["totalTokens"], "sessions": len(v["sessions"]), "costUsd": 0.0}
+             "totalTokens": v["totalTokens"], "sessions": len(v["sessions"]), "costUsd": round(v["costUsd"], 6)}
             for name, v in sorted(model_stats.items(), key=lambda kv: -(kv[1]["totalTokens"]))
         ],
         "sessions": sorted(session_rows, key=lambda x: -(x["endMs"] or x["startMs"]))[:30],

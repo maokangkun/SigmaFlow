@@ -58,6 +58,14 @@ CS.kfmt = n => {
 };
 // 当前会话的上下文占用估算: 系统提示词 + 工具定义 + 对话消息(含草稿)
 // 对话部分优先用最近一次请求的真实 promptTokens 锚定, 其后新增内容再用启发式估算
+// 成本格式化: 大数取整, 小数保留有效位
+CS.fmtCost = u => {
+  if (!u || u <= 0) return '—';
+  if (u >= 100) return '$' + Math.round(u).toLocaleString('en-US');
+  if (u >= 1) return '$' + u.toFixed(2);
+  if (u >= 0.01) return '$' + u.toFixed(3);
+  return '$' + u.toFixed(4);
+};
 CS.contextUsage = () => {
   const model = CS.ui.models.find(x => x.id === CS.state.settings.modelId);
   const win = model?.contextWindow || 131072;
