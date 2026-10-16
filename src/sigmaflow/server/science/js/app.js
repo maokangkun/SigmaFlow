@@ -662,7 +662,12 @@
         if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       }, toolEvent);
       // 正文以流式时间线为准(保留各轮文本); 服务端最终内容仅在本地没收到任何文本时兑底
-      if (!reply.content && typeof done.content === 'string') reply.content = done.content;
+      if (!reply.content && typeof done.content === 'string' && done.content) {
+        reply.content = done.content;
+        // WS 断线后走 HTTP 同步接口的场景没有流式回调, blocks 里不会有文本段;
+        // 兑底内容必须同时转成 text 块, 否则渲染出空消息
+        if (!reply.blocks.some(b => b.type === 'text')) reply.blocks.push({ type: 'text', text: done.content });
+      }
       if (done.tokens) reply.tokens = done.tokens;  // 真实 usage(含思考 token), 覆盖流式粗估
       if (done.promptTokens) reply.promptTokens = done.promptTokens;
     } catch (error) {
