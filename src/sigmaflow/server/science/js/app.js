@@ -152,7 +152,184 @@
     const el = document.getElementById('sys-stats');
     if (el && _sysStatsHtml) el.innerHTML = _sysStatsHtml;
     if (hadConv) { const fresh = document.querySelector('.conversation'); if (fresh) fresh.scrollTop = savedTop; }
+    CS.syncAnchorRail();
   };
+
+  // ===== 会话锚点轨(Codex 风格左侧短横线) =====
+  // 参考 dsh-conversation-anchors(biggerboy) 的交互设计: 每轮用户提问一条短横线,
+  // scroll-spy 高亮当前轮; 悬停时邻近横线按距离缩短形成菱形起伏并弹出预览卡;
+  // 点击平滑定位并闪光; 超出 70vh 时内部滚动 + 悬停出现上下步进按钮; 支持键盘跳转。
+  const _anchorRail = {
+    el: null, tip: null, waveIndex: -1, spyRaf: 0, bound: false,
+  };
+  const _anchorTurns = () => {
+    // 一轮 = 一个用户提问气泡; 标题取气泡正文(去掉时间戳/附件), 摘要取随后第一段回复文本
+    const conv = document.querySelector('.conversation');
+    if (!conv || CS.ui.route !== 'chat') return [];
+    const clean = el => {
+      const clone = el.cloneNode(true);
+      clone.querySelectorAll('.message-meta,.message-meta-row,.attachment-list').forEach(x => x.remove());
+      return (clone.textContent || '').replace(/\s+/g, ' ').trim();
+    };
+    return [...conv.querySelectorAll('.user-message')].map((el, idx) => {
+      let body = '';
+      const block = el.closest('.msg-block') || el;
+      for (let s = block.nextElementSibling; s && !body; s = s.nextElementSibling) {
+        const textEl = s.matches('.user-message') ? null : (s.querySelector?.('.agent-intro') || s.querySelector?.('.think-summary-text'));
+        if (textEl) body = (textEl.textContent || '').replace(/\s+/g, ' ').trim();
+      }
+      return { key: 'u' + idx, el, title: clean(el).slice(0, 160), body: body.slice(0, 200) };
+    });
+  };
+  const _anchorSpy = () => {
+    const rail = _anchorRail.el;
+    if (!rail?.classList.contains('show')) return;
+    const conv = document.querySelector('.conversation');
+    if (!conv) return;
+    const cRect = conv.getBoundingClientRect();
+    const rows = [...rail.querySelectorAll('.anchor-tick-row')];
+    const turns = _anchorTurns();
+    if (rows.length !== turns.length) return;  // 渲染未同步, 等 sync
+    let active = 0;
+    const line = cRect.top + Math.max(140, cRect.height * 0.35);
+    turns.forEach((t, i) => { if (t.el.getBoundingClientRect().top <= line) active = i; });
+    rows.forEach((row, i) => row.toggleAttribute('data-active', i === active));
+    const activeRow = rows[active];
+    if (activeRow && rail.dataset.spyKey !== activeRow.dataset.key) {
+      rail.dataset.spyKey = activeRow.dataset.key;
+      // 当前项跟进可视区: 整列溢出内部滚动时把活动行滚进滚动器可视区
+      const scroller = rail.querySelector('.anchor-rail-scroll');
+      if (scroller && scroller.scrollHeight > scroller.clientHeight + 1) {
+        const top = activeRow.offsetTop - scroller.clientHeight / 2 + activeRow.offsetHeight / 2;
+        scroller.scrollTop = Math.max(0, Math.min(top, scroller.scrollHeight - scroller.clientHeight));
+      }
+    }
+  };
+  const _anchorJump = (idx, flash = true) => {
+    const turns = _anchorTurns();
+    const t = turns[idx];
+    if (!t) return;
+    const reduced = document.documentElement.dataset.motion === 'reduced';
+    t.el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+    if (flash) { t.el.setAttribute('data-flash', ''); setTimeout(() => t.el.removeAttribute('data-flash'), 1200); }
+  };
+  const _anchorClearWave = () => {
+    _anchorRail.waveIndex = -1;
+    const rail = _anchorRail.el; if (!rail) return;
+    rail.removeAttribute('data-waving');
+    rail.querySelectorAll('[data-wave]').forEach(x => x.removeAttribute('data-wave'));
+    _anchorRail.tip.hidden = true;
+  };
+  const _anchorWave = index => {
+    const rail = _anchorRail.el; if (!rail) return;
+    const rows = [...rail.querySelectorAll('.anchor-tick-row')];
+    if (index < 0 || index >= rows.length) { _anchorClearWave(); return; }
+    rail.setAttribute('data-waving', '');
+    rows.forEach((row, i) => {
+      const dist = Math.abs(i - index);
+      if (dist > 5) row.removeAttribute('data-wave');
+      else row.setAttribute('data-wave', String(dist));
+    });
+    _anchorRail.waveIndex = index;
+    const turns = _anchorTurns();
+    const t = turns[index];
+    const tip = _anchorRail.tip;
+    if (!t || !tip) return;
+    tip.querySelector('.anchor-tip-title').textContent = t.title || '(空提问)';
+    tip.querySelector('.anchor-tip-body').textContent = t.body || '还没有回复内容。';
+    tip.hidden = false;
+    const r = rows[index].getBoundingClientRect();
+    const th = tip.offsetHeight || 70;
+    const top = Math.min(window.innerHeight - th - 10, Math.max(10, r.top + r.height / 2 - th / 2));
+    tip.style.left = Math.round(r.right + 10) + 'px';
+    tip.style.top = Math.round(top) + 'px';
+  };
+  CS.syncAnchorRail = () => {
+    const rail = _anchorRail.el; if (!rail) return;
+    const turns = _anchorTurns();
+    const main = document.querySelector('.chat-main');
+    const mRect = main?.getBoundingClientRect();
+    const left = mRect ? Math.round(mRect.left) - 50 : 6;
+    const fits = mRect && left >= 4 && window.innerWidth - (mRect.right || 0) > 0;
+    if (turns.length < 2 || !fits) { rail.classList.remove('show'); _anchorRail.tip.hidden = true; return; }
+    rail.classList.add('show');
+    rail.style.left = Math.max(4, left) + 'px';
+    _anchorClearWave();
+    rail.querySelector('.anchor-rail-scroll').innerHTML = turns.map(t =>
+      `<button type="button" class="anchor-tick-row" data-key="${e(t.key)}" aria-label="第 ${Number(t.key.slice(1)) + 1} 轮提问: ${e(t.title.slice(0, 60))}"><span class="anchor-tick"></span></button>`).join('');
+    const scroller = rail.querySelector('.anchor-rail-scroll');
+    scroller.scrollTop = scroller.scrollHeight;  // 常态底部对齐同 dsh: 最新轮在轨尾
+    _anchorRail.spyRaf && cancelAnimationFrame(_anchorRail.spyRaf);
+    _anchorRail.spyRaf = requestAnimationFrame(_anchorSpy);
+    // 溢出时 hover 显示步进按钮
+    scroller.parentElement.toggleAttribute('data-overflow', scroller.scrollHeight > scroller.clientHeight + 1);
+  };
+  const _anchorInit = () => {
+    if (document.getElementById('anchor-rail')) return;
+    const rail = document.createElement('nav');
+    rail.id = 'anchor-rail';
+    rail.setAttribute('aria-label', '会话锚点导航');
+    rail.innerHTML = `<button type="button" class="anchor-step anchor-step-up" aria-label="上一轮提问">${i('chevron', '', 14)}</button><div class="anchor-rail-scroll"></div><button type="button" class="anchor-step anchor-step-down" aria-label="下一轮提问">${i('chevron', '', 14)}</button>`;
+    document.body.append(rail);
+    const tip = document.createElement('div');
+    tip.id = 'anchor-tip'; tip.hidden = true;
+    tip.innerHTML = `<div class="anchor-tip-title"></div><div class="anchor-tip-body"></div>`;
+    document.body.append(tip);
+    _anchorRail.el = rail; _anchorRail.tip = tip;
+    // 事件委托: 点击定位
+    rail.addEventListener('click', ev => {
+      const row = ev.target.closest?.('.anchor-tick-row');
+      if (row) { _anchorJump(Number(row.dataset.key.replace('u', '')), true); return; }
+      const step = ev.target.closest?.('.anchor-step');
+      if (step) {
+        const rows = [...rail.querySelectorAll('.anchor-tick-row')];
+        let cur = rows.findIndex(r => r.hasAttribute('data-active'));
+        cur = step.classList.contains('anchor-step-up') ? cur - 1 : cur + 1;
+        if (cur >= 0 && cur < rows.length) { rows[cur].focus({ preventScroll: true }); _anchorJump(cur, true); }
+      }
+    });
+    // 悬停菱形起伏 + 预览卡
+    rail.addEventListener('mousemove', ev => {
+      if (ev.target.closest?.('.anchor-step')) { _anchorClearWave(); return; }
+      const rows = [...rail.querySelectorAll('.anchor-tick-row')];
+      let best = -1, bestDist = Infinity;
+      rows.forEach((row, i) => {
+        const r = row.getBoundingClientRect();
+        const d = Math.abs(ev.clientY - (r.top + r.bottom) / 2);
+        if (d < bestDist) { bestDist = d; best = i; }
+      });
+      if (best >= 0 && best !== _anchorRail.waveIndex) _anchorWave(best);
+      else if (best >= 0) _anchorWave(best);  // 每次移动都刷新 tip 位置
+    });
+    rail.addEventListener('mouseleave', _anchorClearWave);
+    // 键盘跳转: 焦点在轨上时 ↑↓ j k Home End; 输入框内不抢键(事件绑定在 rail 上自然不会收到)
+    rail.addEventListener('keydown', ev => {
+      const rows = [...rail.querySelectorAll('.anchor-tick-row')];
+      if (!rows.length) return;
+      let cur = rows.indexOf(document.activeElement);
+      if (cur < 0) cur = rows.findIndex(r => r.hasAttribute('data-active'));
+      if (cur < 0) cur = rows.length - 1;
+      let next = null;
+      if (ev.key === 'ArrowUp' || ev.key === 'k') next = cur - 1;
+      else if (ev.key === 'ArrowDown' || ev.key === 'j') next = cur + 1;
+      else if (ev.key === 'Home') next = 0;
+      else if (ev.key === 'End') next = rows.length - 1;
+      if (next === null) return;
+      ev.preventDefault();
+      next = Math.max(0, Math.min(next, rows.length - 1));
+      rows[next].focus({ preventScroll: true });
+      _anchorJump(next, false);
+    });
+    // 对话区滚动 scroll-spy(rAF 节流)
+    window.addEventListener('scroll', ev => {
+      const t = ev.target;
+      if (!(t instanceof Element) || !t.classList?.contains('conversation')) return;
+      if (_anchorRail.spyRaf) cancelAnimationFrame(_anchorRail.spyRaf);
+      _anchorRail.spyRaf = requestAnimationFrame(_anchorSpy);
+    }, true);
+    window.addEventListener('resize', () => CS.syncAnchorRail());
+  };
+  _anchorInit();
   // 对话区滚动条: 滚动时短暂显示, 停止后隐藏
   let _scrollbarTimer = null;
   window.addEventListener('scroll', event => {
