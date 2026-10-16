@@ -910,6 +910,8 @@
     'clear-project': () => { CS.state.projectId = null; CS.ui.projectMenu = false; CS.save(); CS.render(); },
     'pick-project': id => { CS.state.projectId = id; CS.ui.projectMenu = false; CS.save(); CS.render(); },
     'toggle-project': id => { CS.ui.expandedProjects.has(id) ? CS.ui.expandedProjects.delete(id) : CS.ui.expandedProjects.add(id); CS.persistFold(); CS.render(); },
+    'toggle-projects-section': () => { CS.ui.projectsCollapsed = !CS.ui.projectsCollapsed; CS.persistFoldSection(); CS.render(); },
+    'toggle-unassigned': () => { CS.ui.unassignedCollapsed = !CS.ui.unassignedCollapsed; CS.persistFoldLoose(); CS.render(); },
     'toggle-project-settings': id => { CS.ui.projectSettingsMenu = CS.ui.projectSettingsMenu === id ? null : id; CS.render(); },
     'copy-message': id => {
       const run = CS.currentRun(); const m = run?.messages[Number(id)];

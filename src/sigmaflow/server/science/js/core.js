@@ -218,6 +218,13 @@ CS.markdown = text => {
   try { const fold = JSON.parse(localStorage.getItem(key + '.fold') || 'null'); if (Array.isArray(fold)) CS.ui.expandedProjects = new Set(fold.map(String)); } catch {}
   CS.persistFold = () => { try { localStorage.setItem(key + '.fold', JSON.stringify([...CS.ui.expandedProjects])); } catch {} };
   CS.expandProject = id => { if (id && !CS.ui.expandedProjects.has(id)) { CS.ui.expandedProjects.add(id); CS.persistFold(); } };
+  // 侧栏「项目」大类的整体折叠: 隐藏全部项目行与会话列表, 新建入口保留。
+  try {
+    CS.ui.projectsCollapsed = localStorage.getItem(key + '.foldProj') === '1';
+    CS.ui.unassignedCollapsed = localStorage.getItem(key + '.foldLoose') === '1';
+  } catch {}
+  CS.persistFoldSection = () => { try { localStorage.setItem(key + '.foldProj', CS.ui.projectsCollapsed ? '1' : '0'); } catch {} };
+  CS.persistFoldLoose = () => { try { localStorage.setItem(key + '.foldLoose', CS.ui.unassignedCollapsed ? '1' : '0'); } catch {} };
   CS.files = new Map(); // File objects only live in memory; raw file bytes never enter localStorage.
   CS.save = () => {
     try {
