@@ -108,16 +108,6 @@ SUBAGENT_SYSTEM = f"""You are a coding subagent at {WORKDIR}. Complete the given
 
 CHILD_TOOLS = [
     {
-        "name": "ls", 
-        "description": "List files in a directory.",
-        "input_schema": {
-            "type": "object", 
-            "properties": {
-                "param": {"type": "string", "description": "Directory path or ls parameters"}
-            }
-        }
-    },
-    {
         "name": "bash", 
         "description": "Run a shell command.",
         "input_schema": {

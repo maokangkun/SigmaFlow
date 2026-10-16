@@ -24,16 +24,6 @@ def safe_path(p: str) -> Path:
         raise ValueError(f"Path escapes workspace: {p}")
     return path
 
-def run_ls(param: str) -> str:
-    command = f"ls {param}" if param else "ls"
-    try:
-        r = subprocess.run(command, shell=True, cwd=WORKDIR,
-                            capture_output=True, text=True, timeout=30)
-        out = (r.stdout + r.stderr).strip()
-        return out or "(no files)"
-    except Exception as e:
-        return f"Error: {e}"
-
 def run_bash(command: str) -> str:
     if command == "":
         return "Error: command cannot be empty"
@@ -695,7 +685,6 @@ TOOL_HANDLERS = {
     "read_inbox":      lambda **kw: json.dumps(BUS.read_inbox("lead"), indent=2),
     "broadcast":       lambda **kw: BUS.broadcast("lead", kw["content"], TEAM.member_names()),
     "rag":             lambda **kw: rag(kw.get("query", "")),
-    "ls":              lambda **kw: run_ls(kw.get("param", "")),
 }
 
 TOOL_HANDLERS.update(SCIVERSE_TOOL_HANDLERS)

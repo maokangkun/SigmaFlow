@@ -237,8 +237,7 @@ def _save_tool_overrides(overrides: Dict[str, dict]) -> None:
 def _tool_defaults() -> list:
     """Copy of sigmaflow.agent.tools.TOOLS; empty list when the agent package is unavailable."""
     try:
-        # ls 与 bash 能力重复, 不下发给模型也不在设置中展示
-        return [dict(t) for t in _agent_tools_module().TOOLS if t.get("name") != "ls"]
+        return [dict(t) for t in _agent_tools_module().TOOLS]
     except Exception:
         return []
 
