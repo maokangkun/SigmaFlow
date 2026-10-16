@@ -31,7 +31,7 @@ CS.tokRateText = m => {
   return (m.tokens / seconds).toFixed(1) + ' tok/s';
 };
 CS.num = tokens => Math.round(tokens || 0).toLocaleString();
-// 中文数量级缩写(仿 csusage 页统计卡): 1.2亿 / 45.6万 / 123
+// 中文数量级缩写(Token 用量统计卡): 1.2亿 / 45.6万 / 123
 CS.usageNum = n => {
   n = Math.round(n || 0);
   if (n >= 1e8) return (n / 1e8).toFixed(1) + '亿';

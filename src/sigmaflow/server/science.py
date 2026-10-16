@@ -1472,28 +1472,14 @@ class ScienceAPI:
 
         @router.get("/usage-tokens")
         async def usage_tokens(request: Request):
-            """Proxy local csusage aggregate stats for the settings usage card.
+            """Token usage of SigmaFlow's own conversations for the settings card.
 
-            Served from `SIGMAFLOW_USAGE_API` (default `http://127.0.0.1:4100/api/usage`);
-            the payload is cached briefly so opening the settings page does not
-            re-aggregate the whole token ledger every time. The agent
-            breakdown is dropped because the settings page never renders it.
+            Aggregated on the fly from the persisted conversation records
+            (each assistant message carries tokens/promptTokens/elapsed);
+            no external usage service is involved.
             """
             _check_origin(request)
-            now = time.time()
-            if _usage_cache["data"] is not None and now - _usage_cache["at"] < _USAGE_CACHE_TTL:
-                return _usage_cache["data"]
-            try:
-                data = await asyncio.to_thread(_fetch_usage_payload)
-            except Exception as exc:
-                if _usage_cache["data"] is not None:
-                    # 拉取失败时回退旧缓存, 保证设置页不会白屏
-                    _usage_cache["at"] = now
-                    return _usage_cache["data"]
-                raise HTTPException(status_code=502, detail=f"用法数据源不可达: {exc}")
-            _usage_cache["data"] = data
-            _usage_cache["at"] = now
-            return data
+            return _sigma_usage(self.project_store.conversations)
 
         @router.post("/models")
         async def save_model(payload: ModelIn, request: Request):
@@ -2261,6 +2247,10 @@ class ScienceProjectStore:
                     item["tokens"] = msg.get("tokens")
                 if msg.get("promptTokens") is not None:
                     item["promptTokens"] = msg.get("promptTokens")
+                if msg.get("model"):
+                    item["model"] = _clip(str(msg.get("model")), 120)
+                if msg.get("at"):
+                    item["at"] = _clip(str(msg.get("at")), 40)
                 if msg.get("error") is not None:
                     _err = msg.get("error")
                     if isinstance(_err, dict):
@@ -2371,23 +2361,142 @@ def _run_agent_chat(base_url: str, api_key: str, model_name: str, messages: list
 _AGENT_CONTEXT_SIZES: Dict[str, int] = {}
 
 
-# csusage 聚合数据的内存缓存: 打开设置页频繁刷新时避免每次重拉完整台账
-_USAGE_CACHE_TTL = 300.0
-_usage_cache: Dict[str, object] = {"data": None, "at": 0.0}
+def _sigma_usage(conversations: Dict[str, dict]) -> Dict[str, object]:
+    """Aggregate SigmaFlow's own token usage from persisted conversations.
 
+    Each assistant message may carry tokens (completion), promptTokens (input)
+    and an ISO timestamp; the result mirrors the csusage payload shape the
+    settings card expects (days/models/sessions/streaks), minus fields
+    SigmaFlow has no data for (cache read/write, per-model cost).
+    """
+    from datetime import date, datetime, timedelta, timezone
 
-def _fetch_usage_payload() -> Dict[str, object]:
-    """Fetch the local csusage aggregate (blocking; run via to_thread)."""
-    import json as _json
-    import urllib.request
+    day_stats: Dict[str, dict] = {}
+    model_stats: Dict[str, dict] = {}
+    session_rows: list = []
+    total_in = total_out = 0
+    total_sessions = 0
+    longest_session_ms = 0
 
-    url = os.environ.get("SIGMAFLOW_USAGE_API") or "http://127.0.0.1:4100/api/usage"
-    with urllib.request.urlopen(url, timeout=20) as resp:
-        payload = _json.loads(resp.read().decode("utf-8"))
-    # 设置页不渲染 Agent 明细, 直接丢弃以减小载荷
-    if isinstance(payload, dict):
-        payload.pop("agents", None)
-    return payload
+    def _ms(conv_msg_at) -> int:
+        """ISO 字符串转 epoch 毫秒; 非法值回退 0。"""
+        if not conv_msg_at or not isinstance(conv_msg_at, str):
+            return 0
+        try:
+            dt = datetime.fromisoformat(conv_msg_at.replace("Z", "+00:00"))
+            return int(dt.timestamp() * 1000)
+        except Exception:
+            return 0
+
+    for conv in conversations.values():
+        content = conv.get("content") or []
+        first_ms = last_ms = 0
+        conv_in = conv_out = 0
+        conv_models: set = set()
+        has_usage = False
+        for msg in content:
+            if msg.get("role") != "assistant":
+                if not first_ms and msg.get("at"):
+                    first_ms = _ms(msg.get("at"))
+                continue
+            at_ms = _ms(msg.get("at"))
+            if at_ms:
+                if not last_ms or at_ms > last_ms:
+                    last_ms = at_ms
+            tokens = msg.get("tokens") or 0
+            prompt = msg.get("promptTokens") or 0
+            if not tokens and not prompt:
+                continue
+            has_usage = True
+            conv_in += prompt
+            conv_out += tokens
+            model = (msg.get("model") or "").strip() or "未记录"
+            conv_models.add(model)
+            day_key = (msg.get("at") or "")[:10]
+            if not day_key:
+                day_key = str(date.today())
+            day = day_stats.setdefault(day_key, {"inputTokens": 0, "outputTokens": 0, "totalTokens": 0, "sessions": set()})
+            day["inputTokens"] += prompt
+            day["outputTokens"] += tokens
+            day["totalTokens"] += prompt + tokens
+            day["sessions"].add(conv["id"])
+            m = model_stats.setdefault(model, {"inputTokens": 0, "outputTokens": 0, "totalTokens": 0, "sessions": set()})
+            m["inputTokens"] += prompt
+            m["outputTokens"] += tokens
+            m["totalTokens"] += prompt + tokens
+            m["sessions"].add(conv["id"])
+        if has_usage:
+            total_in += conv_in
+            total_out += conv_out
+            total_sessions += 1
+            duration = max(0, last_ms - first_ms) if first_ms and last_ms else 0
+            longest_session_ms = max(longest_session_ms, duration)
+            session_rows.append({
+                "sessionId": conv.get("id") or "",
+                "title": conv.get("title") or "",
+                "startMs": first_ms, "endMs": last_ms,
+                "durationMs": duration,
+                "inputTokens": conv_in, "outputTokens": conv_out,
+                "totalTokens": conv_in + conv_out,
+                "models": sorted(conv_models) if conv_models else [],
+            })
+
+    days = sorted(
+        ({"date": key, "inputTokens": v["inputTokens"], "outputTokens": v["outputTokens"],
+          "totalTokens": v["totalTokens"], "sessions": len(v["sessions"]), "costUsd": 0.0}
+         for key, v in day_stats.items()),
+        key=lambda x: x["date"]
+    )
+
+    def _longest_streak(day_keys: list) -> int:
+        """历史最长连续有用量天数: 相邻日期逐段累计。"""
+        ds = sorted(set(day_keys))
+        if not ds:
+            return 0
+        best = run = 1
+        for prev, cur in zip(ds, ds[1:]):
+            if (date.fromisoformat(cur) - date.fromisoformat(prev)).days == 1:
+                run += 1
+            else:
+                run = 1
+            best = max(best, run)
+        return best
+
+    def _current_streak(day_keys: list) -> int:
+        """当前连续天数: 从今天(或昨天)往回连续有用量的天数。"""
+        days_set = set(day_keys)
+        cur = date.today()
+        if str(cur) not in days_set:
+            cur -= timedelta(days=1)
+        streak = 0
+        while str(cur) in days_set:
+            streak += 1
+            cur -= timedelta(days=1)
+        return streak
+
+    day_keys = [d["date"] for d in days]
+    peak = max(days, key=lambda x: x["totalTokens"]) if days else None
+    return {
+        "totalInputTokens": total_in,
+        "totalOutputTokens": total_out,
+        "totalTokens": total_in + total_out,
+        "totalSessions": total_sessions,
+        "totalCostUsd": 0.0,
+        "longestSessionMs": longest_session_ms,
+        "currentStreakDays": _current_streak(day_keys),
+        "longestStreakDays": _longest_streak(day_keys),
+        "peakDay": peak,
+        "days": days,
+        "models": [
+            {"model": name, "inputTokens": v["inputTokens"], "outputTokens": v["outputTokens"],
+             "totalTokens": v["totalTokens"], "sessions": len(v["sessions"]), "costUsd": 0.0}
+            for name, v in sorted(model_stats.items(), key=lambda kv: -(kv[1]["totalTokens"]))
+        ],
+        "sessions": sorted(session_rows, key=lambda x: -(x["endMs"] or x["startMs"]))[:30],
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "user": "sigmaflow",
+        "version": "sigmaflow-1.0",
+    }
 
 
 def _agent_context_sizes() -> Dict[str, int]:

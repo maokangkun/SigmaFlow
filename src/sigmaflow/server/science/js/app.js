@@ -484,7 +484,7 @@
       CS.render();
     } catch (error) { CS.toast('系统提示词加载失败：' + CS.api.friendlyError(error), 'error'); }
   };
-  // Token 用量卡数据: 服务端代理 csusage(带 5 分钟缓存); force=true 跳过前端缓存重拉
+  // Token 用量卡数据: 服务端聚合 SigmaFlow 自身会话记录; force=true 跳过前端缓存重拉
   CS.loadUsage = async force => {
     if (CS.ui.usage && !force) return;
     try {
@@ -571,7 +571,7 @@
       id: run.id, title: run.title, projectId: run.projectId,
       pinned: !!conv?.pinned, archived: !!conv?.archived,
       content: run.messages.filter(m => m.role === 'user' || m.role === 'assistant')
-        .map(m => ({ role: m.role, content: m.content, at: m.at, ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) })),
+        .map(m => ({ role: m.role, content: m.content, at: m.at, ...(m.model ? { model: m.model } : {}), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) })),
     };
     try { await CS.api.modelCall('conversation.save', 'POST', '/conversations', payload); }
     catch { if (retry) setTimeout(() => syncConversation(run, false), 3000); }
@@ -605,7 +605,7 @@
         else reply.blocks.push({ type: 'tool', name: t.name, result: t.result });
       }
     };
-    const reply = { role: 'assistant', content: '', blocks: [], streaming: true, at: new Date().toISOString() };
+    const reply = { role: 'assistant', content: '', blocks: [], streaming: true, at: new Date().toISOString(), model: CS.state.settings.model || '默认模型' };
     run.messages.push(reply);
     CS.save(); CS.render();
     setTimeout(scrollToLatest, 20);

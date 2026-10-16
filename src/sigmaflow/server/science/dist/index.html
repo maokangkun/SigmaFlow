@@ -583,7 +583,7 @@ CS.tokRateText = m => {
   return (m.tokens / seconds).toFixed(1) + ' tok/s';
 };
 CS.num = tokens => Math.round(tokens || 0).toLocaleString();
-// 中文数量级缩写(仿 csusage 页统计卡): 1.2亿 / 45.6万 / 123
+// 中文数量级缩写(Token 用量统计卡): 1.2亿 / 45.6万 / 123
 CS.usageNum = n => {
   n = Math.round(n || 0);
   if (n >= 1e8) return (n / 1e8).toFixed(1) + '亿';
@@ -3583,7 +3583,7 @@ CS.markdown = text => {
   const search = (id, placeholder, value) => `<div class="search-input">${i('search')}<input id="${id}" type="search" aria-label="${e(placeholder)}" placeholder="${e(placeholder)}" value="${e(value)}" autocomplete="off"></div>`;
   const tab = (action, id, title, selected, count) => `<button type="button" class="tab ${selected ? 'active' : ''}" data-action="${action}" data-id="${id}" aria-pressed="${!!selected}">${e(title)}${count !== undefined ? `<span class="count">${count}</span>` : ''}</button>`;
   const tile = (name, color = '') => `<span class="icon-tile ${color}">${i(name, '', 19)}</span>`;
-  // Token 用量卡辅助: 会话时长与 SVG 活动图(仿 csusage 页, 去 Agent 明细)
+  // Token 用量卡辅助: 会话时长与 SVG 活动图(统计 SigmaFlow 自身会话)
   const usageDur = ms => {
     if (!ms) return '—';
     const min = Math.floor(ms / 60000);
@@ -3895,17 +3895,17 @@ CS.markdown = text => {
         return `<div class="panel settings-section"><div class="row-between"><h2>第三方 API Key</h2>${pill('服务端存储')}</div><p class="small muted mb-20">配置第三方服务的访问密钥: Sciverse 工具与 anysearch MCP 服务依赖对应密钥, 未配置时保持关闭, 配置后自动启用; 也可在各自设置页单独控制。页面仅显示掩码, 不回传完整密钥。</p>${rows}${missingHints}<div class="settings-actions row wrap">${btn('save-tokens','保存','check','primary')}</div></div>`;
       })(),
       usage: (() => {
-        // Token 用量卡: 仿 csusage 页(去 Agent 明细), 统计卡 + 每日/每周/累计活动图 + 两张明细表
+        // Token 用量卡: 服务端聚合 SigmaFlow 自身会话记录, 统计卡 + 每日/每周/累计活动图 + 两张明细表
         const u = CS.ui.usage;
-        if (u?.error) return `<div class="panel settings-section"><div class="row-between"><h2>Token 用量</h2>${pill('csusage')}</div><p class="small muted mb-20">本卡的用量统计来自本机 csusage 数据源（可重启 csusage-web 后重试）。</p>${H.notice('无法读取用量数据源：' + u.error)}</div>`;
+        if (u?.error) return `<div class="panel settings-section"><div class="row-between"><h2>Token 用量</h2>${pill('本地统计')}</div><p class="small muted mb-20">统计 SigmaFlow 对话的 token 消耗（服务端聚合本机会话记录）。</p>${H.notice('无法聚合用量数据：' + u.error)}</div>`;
         if (!u?.totalTokens && !u?.days) return `<div class="panel settings-section"><h2>Token 用量</h2><p class="small muted mb-20">${u?.loading !== false ? '正在加载用量数据…' : '暂无用量数据。'}</p></div>`;
         const peakTitle = u.peakDay?.date ? `峰值日 ${u.peakDay.date}` : '';
-        const stats = [[CS.usageNum(u.totalTokens), '累计 Token 数', `输入 ${CS.usageNum(u.totalInputTokens)} · 输出 ${CS.usageNum(u.totalOutputTokens)}`], [CS.usageNum(u.peakDay?.totalTokens || 0), '峰值 Token 数', peakTitle], [usageDur(u.longestSessionMs), '最长聊天时长', `${CS.num(u.totalSessions)} 个会话`], [`${u.currentStreakDays || 0} 天`, '当前连续天数', `累计生成 ${u.generatedAt ? e(u.generatedAt.slice(0, 10)) : '—'}`], [`${u.longestStreakDays || 0} 天`, '最长连续天数', `总成本 $${(u.totalCostUsd || 0).toFixed(2)}`]];
+        const stats = [[CS.usageNum(u.totalTokens), '累计 Token 数', `输入 ${CS.usageNum(u.totalInputTokens)} · 输出 ${CS.usageNum(u.totalOutputTokens)}`], [CS.usageNum(u.peakDay?.totalTokens || 0), '峰值 Token 数', peakTitle], [usageDur(u.longestSessionMs), '最长聊天时长', `${CS.num(u.totalSessions)} 个会话`], [`${u.currentStreakDays || 0} 天`, '当前连续天数', `数据截至 ${u.generatedAt ? e(u.generatedAt.slice(0, 10)) : '—'}`], [`${u.longestStreakDays || 0} 天`, '最长连续天数', `共 ${(u.days || []).length} 天有用量`]];
         const gran = CS.ui.usageGran || 'daily';
         const models = [...(u.models || [])].sort((x, y2) => (y2.totalTokens || 0) - (x.totalTokens || 0));
         const sessions = [...(u.sessions || [])].sort((x, y2) => (y2.endMs || 0) - (x.endMs || 0)).slice(0, 30);
-        return `<div class="panel settings-section"><div class="row-between"><h2>Token 用量</h2><span class="row gap-6">${pill('csusage')}${iconBtn('reload-usage','refresh','重新拉取')}</span></div><p class="small muted mb-20">统计本机所有 Agent 工具的 token 消耗与成本（数据源：csusage），打开设置时缓存 5 分钟内不重复拉取。</p><div class="usage-stats">${stats.map(([v, l, t]) => `<div class="usage-stat" ${t ? `title="${e(t)}"` : ''}><div class="usage-stat-value">${v}</div><div class="usage-stat-label">${e(l)}</div></div>`).join('')}</div><div class="panel-head" style="margin-top:20px"><h3 style="margin:0">Token 活动</h3><div class="row gap-6">${['daily','weekly','total'].map(g => `<button type="button" class="tab-label ${gran === g ? 'usage-gran-active' : ''}" data-action="usage-gran" data-id="${g}">${{ daily: '每日', weekly: '每周', total: '累计' }[g]}</button>`).join('')}</div></div>${usageChart(u.days || [], gran)}<div class="panel-head" style="margin-top:20px"><h3 style="margin:0">模型明细</h3><span class="tiny muted">${models.length} 个模型${pill(`总成本 $${(u.totalCostUsd || 0).toFixed(2)}`)}</span></div>${models.length ? `<div class="table-wrap"><table><thead><tr><th>模型</th><th class="num">输入</th><th class="num">输出</th><th class="num">缓存读</th><th class="num">缓存写</th><th class="num">合计 ↓</th><th class="num">成本</th><th class="num">会话</th></tr></thead><tbody>${models.map(m => `<tr><td title="${e(m.model)}">${e(m.model)}</td><td class="num">${CS.num(m.inputTokens)}</td><td class="num">${CS.num(m.outputTokens)}</td><td class="num">${CS.num(m.cacheReadTokens)}</td><td class="num">${CS.num(m.cacheWriteTokens)}</td><td class="num"><strong>${CS.num(m.totalTokens)}</strong></td><td class="num">$${(m.costUsd || 0).toFixed(2)}</td><td class="num">${CS.num(m.sessions)}</td></tr>`).join('')}</tbody></table></div>` : H.notice('暂无模型用量记录。')}
-        <div class="panel-head" style="margin-top:20px"><h3 style="margin:0">最近会话</h3><span class="tiny muted">最近 30 个</span></div>${sessions.length ? `<div class="table-wrap"><table><thead><tr><th>Agent</th><th>会话</th><th>开始时间</th><th>时长</th><th class="num">合计</th><th class="num">成本</th><th>模型</th></tr></thead><tbody>${sessions.map(sm2 => `<tr><td>${e(sm2.agent || '—')}</td><td title="${e(sm2.sessionId || '')}">${e((sm2.sessionId || '—').slice(0, 16))}${(sm2.sessionId || '').length > 16 ? '…' : ''}</td><td>${e(sm2.startMs ? new Date(sm2.startMs).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—')}</td><td>${usageDur(sm2.durationMs)}</td><td class="num"><strong>${CS.num(sm2.totalTokens)}</strong></td><td class="num">$${(sm2.costUsd || 0).toFixed(2)}</td><td title="${e((sm2.models || []).join(', '))}">${e((sm2.models || []).slice(0, 2).join(', '))}${(sm2.models || []).length > 2 ? ' …' : ''}</td></tr>`).join('')}</tbody></table></div>` : H.notice('暂无会话记录。')}</div>`;
+        return `<div class="panel settings-section"><div class="row-between"><h2>Token 用量</h2><span class="row gap-6">${pill('本地统计')}${iconBtn('reload-usage','refresh','重新拉取')}</span></div><p class="small muted mb-20">统计 SigmaFlow 对话的 token 消耗与聊天时长，由服务端实时聚合本机会话记录；模型明细与模型名从新会话开始记录。</p><div class="usage-stats">${stats.map(([v, l, t]) => `<div class="usage-stat" ${t ? `title="${e(t)}"` : ''}><div class="usage-stat-value">${v}</div><div class="usage-stat-label">${e(l)}</div></div>`).join('')}</div><div class="panel-head" style="margin-top:20px"><h3 style="margin:0">Token 活动</h3><div class="row gap-6">${['daily','weekly','total'].map(g => `<button type="button" class="tab-label ${gran === g ? 'usage-gran-active' : ''}" data-action="usage-gran" data-id="${g}">${{ daily: '每日', weekly: '每周', total: '累计' }[g]}</button>`).join('')}</div></div>${usageChart(u.days || [], gran)}<div class="panel-head" style="margin-top:20px"><h3 style="margin:0">模型明细</h3><span class="tiny muted">${models.length} 个模型 · 无定价数据时不统计成本</span></div>${models.length ? `<div class="table-wrap"><table><thead><tr><th>模型</th><th class="num">输入</th><th class="num">输出</th><th class="num">合计 ↓</th><th class="num">会话</th></tr></thead><tbody>${models.map(m => `<tr><td title="${e(m.model)}">${e(m.model)}</td><td class="num">${CS.num(m.inputTokens)}</td><td class="num">${CS.num(m.outputTokens)}</td><td class="num"><strong>${CS.num(m.totalTokens)}</strong></td><td class="num">${CS.num(m.sessions)}</td></tr>`).join('')}</tbody></table></div>` : H.notice('暂无模型用量记录。')}
+        <div class="panel-head" style="margin-top:20px"><h3 style="margin:0">最近会话</h3><span class="tiny muted">最近 30 个</span></div>${sessions.length ? `<div class="table-wrap"><table><thead><tr><th>会话</th><th>开始时间</th><th>时长</th><th class="num">合计</th><th>模型</th></tr></thead><tbody>${sessions.map(sm2 => `<tr><td title="${e(sm2.sessionId || '')}">${e(sm2.title || sm2.sessionId || '—').slice(0, 22)}${(sm2.title || '').length > 22 ? '…' : ''}</td><td>${e(sm2.startMs ? new Date(sm2.startMs).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—')}</td><td>${usageDur(sm2.durationMs)}</td><td class="num"><strong>${CS.num(sm2.totalTokens)}</strong></td><td title="${e((sm2.models || []).join(', '))}">${e((sm2.models || []).slice(0, 2).join(', ')) || '—'}${(sm2.models || []).length > 2 ? ' …' : ''}</td></tr>`).join('')}</tbody></table></div>` : H.notice('暂无会话记录。')}</div>`;
       })(),
       sysprompt: (() => {
         // 系统提示词设置: draft 含 prompt/enabled; 内置默认供参考, 内联折叠展示
@@ -4415,7 +4415,7 @@ CS.markdown = text => {
       CS.render();
     } catch (error) { CS.toast('系统提示词加载失败：' + CS.api.friendlyError(error), 'error'); }
   };
-  // Token 用量卡数据: 服务端代理 csusage(带 5 分钟缓存); force=true 跳过前端缓存重拉
+  // Token 用量卡数据: 服务端聚合 SigmaFlow 自身会话记录; force=true 跳过前端缓存重拉
   CS.loadUsage = async force => {
     if (CS.ui.usage && !force) return;
     try {
@@ -4502,7 +4502,7 @@ CS.markdown = text => {
       id: run.id, title: run.title, projectId: run.projectId,
       pinned: !!conv?.pinned, archived: !!conv?.archived,
       content: run.messages.filter(m => m.role === 'user' || m.role === 'assistant')
-        .map(m => ({ role: m.role, content: m.content, at: m.at, ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) })),
+        .map(m => ({ role: m.role, content: m.content, at: m.at, ...(m.model ? { model: m.model } : {}), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) })),
     };
     try { await CS.api.modelCall('conversation.save', 'POST', '/conversations', payload); }
     catch { if (retry) setTimeout(() => syncConversation(run, false), 3000); }
@@ -4536,7 +4536,7 @@ CS.markdown = text => {
         else reply.blocks.push({ type: 'tool', name: t.name, result: t.result });
       }
     };
-    const reply = { role: 'assistant', content: '', blocks: [], streaming: true, at: new Date().toISOString() };
+    const reply = { role: 'assistant', content: '', blocks: [], streaming: true, at: new Date().toISOString(), model: CS.state.settings.model || '默认模型' };
     run.messages.push(reply);
     CS.save(); CS.render();
     setTimeout(scrollToLatest, 20);
