@@ -244,6 +244,20 @@ def _sciverse_key() -> str:
         return ""
 
 
+def _anysearch_key() -> str:
+    """Effective Anysearch API key: the settings-page token first, then the environment."""
+    try:
+        with open(_tokens_config_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+        tokens = data.get("tokens") if isinstance(data, dict) else None
+    except Exception:
+        tokens = {}
+    saved = str((tokens or {}).get("anysearch") or "").strip()
+    if saved:
+        return saved
+    return os.getenv("ANYSEARCH_API_KEY", "").strip()
+
+
 def _apply_sciverse_key() -> None:
     """Push the effective key into the sciverse client module;
     SciverseAPI reads the module global at request time, so cached clients pick it up."""
@@ -278,30 +292,44 @@ def _save_tool_overrides(overrides: Dict[str, dict]) -> None:
 
 def _token_listing() -> list:
     """Settings-page view of configured third-party API tokens; secrets only appear masked."""
-    saved = _sciverse_key_file().strip()
     try:
-        env_key = str(getattr(_agent_tools_module(), "Sciverse_API_KEY", "") or "")
+        with open(_tokens_config_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+        tokens = data.get("tokens") if isinstance(data, dict) and isinstance(data.get("tokens"), dict) else {}
     except Exception:
-        env_key = ""
-    effective = (saved or env_key).strip()
+        tokens = {}
+    tokens = tokens if isinstance(tokens, dict) else {}
 
-    def _hint(key: str) -> Optional[str]:
-        return key if len(key) <= 8 else f"{key[:4]}****{key[-4:]}"
+    def _row(token_id: str, label: str, saved: str, env: str) -> dict:
+        saved = str(saved or "").strip()
+        env = str(env or "").strip()
+        effective = saved or env
+        return {
+            "id": token_id,
+            "label": label,
+            "configured": bool(effective),
+            "saved": bool(saved),
+            "fromEnv": not saved and bool(env),
+            "keyHint": (effective if len(effective) <= 8 else f"{effective[:4]}****{effective[-4:]}") if effective else "",
+        }
 
-    return [{
-        "id": "sciverse",
-        "label": "Sciverse API",
-        "configured": bool(effective),
-        "saved": bool(saved),
-        "fromEnv": not saved and bool(env_key.strip()),
-        "keyHint": _hint(effective),
-    }]
+    try:
+        env_sciverse = str(getattr(_agent_tools_module(), "Sciverse_API_KEY", "") or "")
+    except Exception:
+        env_sciverse = ""
+    return [
+        _row("sciverse", "Sciverse API", str(tokens.get("sciverse") or ""), env_sciverse),
+        _row("anysearch", "Anysearch API", str(tokens.get("anysearch") or ""), os.getenv("ANYSEARCH_API_KEY", "")),
+    ]
+
+
+_TOKEN_IDS = ("sciverse", "anysearch")
 
 
 def _apply_token_updates(updates: dict) -> None:
-    """Persist submitted tokens, refresh the Sciverse client, and auto-sync the
-    enablement of Sciverse tools in tools.json: enabled when a key exists,
-    force-disabled when it does not (name/description/schema overrides preserved)."""
+    """Persist submitted tokens, refresh the Sciverse client, and auto-sync
+    dependent enablement: sciverse tools in tools.json and the anysearch MCP
+    server (joins/leaves the active set through its token template)."""
     path = _tokens_config_path()
     os.makedirs(os.path.dirname(path), exist_ok=True)
     try:
@@ -310,9 +338,9 @@ def _apply_token_updates(updates: dict) -> None:
         tokens = data.get("tokens") if isinstance(data, dict) and isinstance(data.get("tokens"), dict) else {}
     except Exception:
         tokens = {}
-    tokens = dict(tokens)
+    tokens = dict(tokens) if isinstance(tokens, dict) else {}
     for key, value in (updates or {}).items():
-        if key != "sciverse":
+        if key not in _TOKEN_IDS:
             raise HTTPException(status_code=400, detail=f"Unknown token: {key}")
         text = str(value or "").strip()
         if text:
@@ -345,8 +373,12 @@ def _apply_token_updates(updates: dict) -> None:
             changed = True
     if changed:
         _save_tool_overrides(overrides)
-
-
+    # anysearch 密钥变化后重建 MCP 客户端: 模板解析后的 header 生效, 服务随密钥有无进入/退出活动集
+    if "anysearch" in (updates or {}):
+        try:
+            _rebuild_agent_mcp()
+        except Exception:
+            pass
 def _tool_defaults() -> list:
     """Copy of sigmaflow.agent.tools.TOOLS; empty list when the agent package is unavailable."""
     try:
@@ -804,28 +836,78 @@ def _load_mcp_servers() -> Dict[str, dict]:
     return {str(k): dict(v) for k, v in servers.items() if isinstance(v, dict)}
 
 
-def _save_mcp_servers(servers: Dict[str, dict]) -> None:
+def _save_mcp_servers(servers: Dict[str, dict], removed: Optional[list] = None) -> None:
     path = _mcp_config_path()
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    if removed is None:
+        # 未显式传入时保留文件中已有的移除记录, 避免内置服务器被回填复活
+        try:
+            with open(path, encoding="utf-8") as fh:
+                old = json.load(fh)
+            removed = old.get("removedBuiltins") if isinstance(old, dict) else None
+        except Exception:
+            removed = None
+    payload = {"servers": servers}
+    if removed:
+        payload["removedBuiltins"] = sorted(str(x) for x in removed)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump({"servers": servers}, fh, ensure_ascii=False, indent=2)
+        json.dump(payload, fh, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
 
 
+def _removed_builtins() -> set:
+    """Builtin server names the user explicitly deleted from the MCP settings."""
+    try:
+        with open(_mcp_config_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+        removed = data.get("removedBuiltins") if isinstance(data, dict) else None
+    except Exception:
+        return set()
+    return {str(x) for x in removed} if isinstance(removed, list) else set()
+
+
 def _seed_mcp_config() -> None:
-    if not os.path.exists(_mcp_config_path()):
-        _save_mcp_servers(_builtin_mcp_servers())
+    """Create the config with builtin servers on first run; later runs backfill
+    newly shipped builtin servers unless the user removed them on purpose."""
+    servers = _load_mcp_servers()
+    skip = _removed_builtins()
+    missing = {k: v for k, v in _builtin_mcp_servers().items() if k not in servers and k not in skip}
+    if missing or not os.path.exists(_mcp_config_path()):
+        servers.update(missing)
+        _save_mcp_servers(servers)
 
 
 def _active_mcp_servers() -> Dict[str, dict]:
-    """Enabled servers in the wire format MCP_CONF expects (enabled flag stripped)."""
+    """Enabled servers in the wire format MCP_CONF expects (enabled flag stripped);
+    ${ANYSEARCH_API_KEY} placeholders in headers are replaced with the saved token,
+    and gated servers whose token is missing are dropped entirely."""
     servers = _load_mcp_servers()
     active = {}
     for name, cfg in servers.items():
         if cfg.get("enabled") is False or not str(cfg.get("url") or "").strip():
             continue
-        active[name] = {k: v for k, v in cfg.items() if k != "enabled"}
+        if name == "anysearch" and not _anysearch_key():
+            continue  # 未配置 Anysearch API key 时该服务器等同禁用
+        entry = {}
+        for k, v in cfg.items():
+            if k != "enabled":
+                entry[k] = v
+        headers = entry.get("headers")
+        if isinstance(headers, dict):
+            key = _anysearch_key()
+            resolved = {}
+            for hk, hv in headers.items():
+                if isinstance(hv, str) and "${ANYSEARCH_API_KEY}" in hv:
+                    if not key:
+                        continue  # 双保险: 无 key 时不发送哨兵头
+                    hv = hv.replace("${ANYSEARCH_API_KEY}", key)
+                resolved[hk] = hv
+            if resolved:
+                entry["headers"] = resolved
+            else:
+                entry.pop("headers", None)
+        active[name] = entry
     return active
 
 
@@ -874,21 +956,26 @@ def _mcp_listing() -> list:
     servers = _load_mcp_servers()
     out = []
     for name, cfg in servers.items():
+        enabled = cfg.get("enabled") is not False
+        locked = name == "anysearch" and not _anysearch_key()
         out.append({
             "id": name,
             "name": name,
             "url": str(cfg.get("url") or ""),
-            "enabled": cfg.get("enabled") is not False,
+            "enabled": enabled and not locked,
             "builtin": name in builtin,
+            "locked": locked,  # 需先在第三方 API Key 中配置密钥, 服务端强制关闭
             "modified": builtin.get(name) != cfg,
         })
     return out
 
 
 def _build_mcp_servers(items: list, reset: bool) -> Dict[str, dict]:
-    """Validate the submitted MCP server list and convert it into the stored config."""
+    """Validate the submitted MCP server list and convert it into the stored config;
+    builtin servers keep their packaged headers (e.g. the anysearch token template)."""
+    builtin = _builtin_mcp_servers()
     if reset:
-        return _builtin_mcp_servers()
+        return {k: dict(v) for k, v in builtin.items()}
     servers: Dict[str, dict] = {}
     for item in items or []:
         if not isinstance(item, dict):
@@ -902,6 +989,11 @@ def _build_mcp_servers(items: list, reset: bool) -> Dict[str, dict]:
         if name in servers:
             raise HTTPException(status_code=400, detail=f"MCP 服务器名称重复: {name}")
         entry = {"url": url}
+        if name in builtin:
+            # 认证头等非页面字段以内置资产为准, 不随设置页保存丢失
+            for k, v in builtin[name].items():
+                if k != "url":
+                    entry[k] = v
         if item.get("enabled") is False:
             entry["enabled"] = False
         servers[name] = entry
@@ -1488,7 +1580,9 @@ class ScienceAPI:
         async def save_mcp(payload: MCPIn, request: Request):
             _check_origin(request)
             servers = _build_mcp_servers(payload.servers or [], reset=bool(payload.reset))
-            await asyncio.to_thread(_save_mcp_servers, servers)
+            # 记录被移除的内置服务器, 避免每次启动回填复活
+            removed = [] if payload.reset else [n for n in _builtin_mcp_servers() if n not in servers]
+            await asyncio.to_thread(_save_mcp_servers, servers, removed)
             # 重建 MCPClient 会真实调用各服务器的 tools/list, 放到线程里避免阻塞事件循环
             await asyncio.to_thread(_rebuild_agent_mcp)
             _AGENT_CONTEXT_SIZES.clear()

@@ -840,9 +840,11 @@
         CS.ui.tokensDraft = null;
         CS.ui.agentTools = null;
         CS.ui.toolDraft = null;
+        CS.ui.mcpServers = null;
+        CS.ui.mcpDraft = null;
         await CS.loadAgentTools();
         await CS.refreshContextInfo();
-        CS.toast('API Key 已保存，相关工具启用状态已同步。');
+        CS.toast('API Key 已保存，相关工具/服务启用状态已同步。');
       } catch (error) { CS.toast('保存失败：' + CS.api.friendlyError(error), 'error'); }
     },
     'token-clear': async id => {
@@ -852,9 +854,11 @@
         CS.ui.tokensDraft = null;
         CS.ui.agentTools = null;
         CS.ui.toolDraft = null;
+        CS.ui.mcpServers = null;
+        CS.ui.mcpDraft = null;
         await CS.loadAgentTools();
         await CS.refreshContextInfo();
-        CS.toast('密钥已清除，相关工具已关闭。');
+        CS.toast('密钥已清除，相关工具/服务已关闭。');
       } catch (error) { CS.toast('清除失败：' + CS.api.friendlyError(error), 'error'); }
     },
     'skill-toggle': id => {
