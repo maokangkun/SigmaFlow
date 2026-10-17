@@ -21,6 +21,7 @@ dependencies = [
     "anthropic",
     "prompt_toolkit",
     "psutil",
+    "litellm",
     "uvicorn[standard]",
 ]
 classifiers=[
