@@ -2461,6 +2461,9 @@ class ScienceAPI:
         except Exception:
             pass
         router = APIRouter(prefix="/api", dependencies=[Depends(_auth_http)])
+        # WebSocket 路由单独挂载: router 级依赖对 WS 握手不可用(Request 注解无法解析),
+        # 且 WS 端点内部已手动做同源与会话校验。
+        ws_router = APIRouter(prefix="/api")
         auth_router = APIRouter(prefix="/api/auth")
 
         # ------------------------------------------------------- auth API
@@ -2637,6 +2640,7 @@ class ScienceAPI:
             )
             return {"mode": "multi", "user": {"name": name}}
 
+        self.ws_router = ws_router
         self.auth_router = auth_router
 
         # ------------------------------------------------------------- HTTP
@@ -3154,7 +3158,7 @@ class ScienceAPI:
         async def _pty_shutdown_event():
             _pty_shutdown_all()
 
-        @router.websocket("/ws")
+        @ws_router.websocket("/ws")
         async def websocket_endpoint(ws: WebSocket):
             # 与 HTTP 写接口的同源策略保持一致: 拒绝跨源连接, 防止恶意页面
             # 借 WS 读取会话内容或消耗服务端保存的 API 密钥。
