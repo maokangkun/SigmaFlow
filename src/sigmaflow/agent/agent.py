@@ -243,6 +243,9 @@ class Agent:
                                     max_tokens=MAX_TOKENS,
                                     **_fallback
                                 )
+                            # 空流检测: 部分网关(deepseek/pjlab)对 stream_options 返回无 deltas 的流
+                            # (HTTP 200 但 completion=1 token 直接收 eos) — 此时去掉 stream_options 重发一次。
+                            _had_content = False
                             for chunk in _stream:
                                 if getattr(chunk, "usage", None):
                                     usage.total_tokens = getattr(chunk.usage, "total_tokens", 0) or 0
@@ -254,6 +257,7 @@ class Agent:
                                 delta = choices[0].delta
                                 think = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
                                 if think:
+                                    _had_content = True
                                     info.setdefault("reasoning_parts", []).append(think)
                                     try:
                                         self.on_delta(None, think)
@@ -261,12 +265,14 @@ class Agent:
                                         pass
                                 piece = getattr(delta, "content", None)
                                 if piece:
+                                    _had_content = True
                                     response_text_parts.append(piece)
                                     try:
                                         self.on_delta(piece)
                                     except Exception:
                                         pass
                                 for tc in (getattr(delta, "tool_calls", None) or []):
+                                    _had_content = True
                                     if tc.index is None:
                                         tc.index = len(tool_calls_acc)
                                     while len(tool_calls_acc) <= tc.index:
@@ -277,17 +283,72 @@ class Agent:
                                         tool_calls_acc[tc.index]["function"]["name"] += tc.function.name
                                     if getattr(tc.function, "arguments", None):
                                         tool_calls_acc[tc.index]["function"]["arguments"] += tc.function.arguments
+                            if not _had_content and stream_kwargs.get("stream_options"):
+                                # 空流(无 deltas 无 tool_calls)且带了 stream_options: 认定网关不支持,
+                                # 去掉后重发一次; usage 由不含 stream_options 的路径无法获得, 保持 0。
+                                try:
+                                    _stream.close()
+                                except Exception:
+                                    pass
+                                _fallback = dict(stream_kwargs)
+                                _fallback.pop("stream_options", None)
+                                _stream = self.client.chat.completions.create(
+                                    model=self.model,
+                                    messages=messages,
+                                    max_tokens=MAX_TOKENS,
+                                    **_fallback
+                                )
+                                stream_kwargs = _fallback
+                                _had_content = False
+                                for chunk in _stream:
+                                    if getattr(chunk, "usage", None):
+                                        usage.total_tokens = getattr(chunk.usage, "total_tokens", 0) or 0
+                                        usage.prompt_tokens = getattr(chunk.usage, "prompt_tokens", 0) or 0
+                                        usage.completion_tokens = getattr(chunk.usage, "completion_tokens", 0) or 0
+                                    choices = getattr(chunk, "choices", None)
+                                    if not choices:
+                                        continue
+                                    delta = choices[0].delta
+                                    think = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+                                    if think:
+                                        info.setdefault("reasoning_parts", []).append(think)
+                                        try:
+                                            self.on_delta(None, think)
+                                        except Exception:
+                                            pass
+                                    piece = getattr(delta, "content", None)
+                                    if piece:
+                                        response_text_parts.append(piece)
+                                        try:
+                                            self.on_delta(piece)
+                                        except Exception:
+                                            pass
+                                    for tc in (getattr(delta, "tool_calls", None) or []):
+                                        if tc.index is None:
+                                            tc.index = len(tool_calls_acc)
+                                        while len(tool_calls_acc) <= tc.index:
+                                            tool_calls_acc.append({"id": None, "type": "function", "function": {"name": "", "arguments": ""}})
+                                        if tc.id:
+                                            tool_calls_acc[tc.index]["id"] = tc.id
+                                        if getattr(tc.function, "name", None):
+                                            tool_calls_acc[tc.index]["function"]["name"] += tc.function.name
+                                        if getattr(tc.function, "arguments", None):
+                                            tool_calls_acc[tc.index]["function"]["arguments"] += tc.function.arguments
                             info["cost_tokens"] += usage.total_tokens
                             info["prompt_tokens"] += usage.prompt_tokens or 0
                             info["completion_tokens"] += usage.completion_tokens or 0
                             msg = _DeltaMsg()
                             msg.content = "".join(response_text_parts)
                             msg.tool_calls = [_ToolCall(t["id"], t["function"]["name"], t["function"]["arguments"]) for t in tool_calls_acc] or None
+                            # 空响应校验在写回 messages 之前: 空轮次不能进入历史,
+                            # 否则重试时发回"空 assistant 消息"会触发上游 400。
+                            if not msg.tool_calls and not (msg.content or '').strip():
+                                raise ValueError("Model returned an empty response (no content, no tool calls)")
                             if msg.tool_calls:
                                 # 与非流式分支一致: 工具调用轮的 assistant 消息要写回 messages,
                                 # 供下一轮连同 tool 结果一起发送
                                 m = {"role": "assistant"}
-                                if msg.content: m["content"] = msg.content
+                                if msg.content and msg.content.strip(): m["content"] = msg.content
                                 m["tool_calls"] = tool_calls_acc
                                 messages.append(m)
                                 info["messages"].append(m)
@@ -310,8 +371,11 @@ class Agent:
                             info["completion_tokens"] += getattr(response.usage, "completion_tokens", 0) if response.usage else 0
                             assert response.choices is not None, f"Response is None: {response}"
                             msg = response.choices[0].message
+                            # 与流式分支一致: 空轮次不进入历史, 直接触发重试。
+                            if not getattr(msg, "tool_calls", None) and not (getattr(msg, "content", None) or '').strip():
+                                raise ValueError("Model returned an empty response (no content, no tool calls)")
                             m = {"role": "assistant"}
-                            if msg.content: m["content"] = msg.content
+                            if msg.content and msg.content.strip(): m["content"] = msg.content
                             if msg.tool_calls: m["tool_calls"] = [t.dict() for t in msg.tool_calls]
                             messages.append(m)
                             if (r:= msg.reasoning_content if hasattr(msg, 'reasoning_content') else None):
@@ -328,6 +392,7 @@ class Agent:
                                     info["messages"].append(m | {'reasoning': r})
                             else:
                                 info["messages"].append(m)
+
 
                     cost_time = time.time() - start_time
                     if knight_rider: knight_rider.stop()
@@ -389,16 +454,22 @@ class Agent:
                     if (r:= msg.reasoning_content if hasattr(msg, 'reasoning_content') else (msg.reasoning if hasattr(msg, 'reasoning') else None)):
                         print(f"{Prompt.Assistant}[dim][italic]thinking[/]\n{r}[/]")
 
+                    # content 可能为 None(deepseek 只回 reasoning/工具调用时给 content:null), 统一安全化
+                    content_txt = msg.content or ''
                     if not msg.tool_calls:
-                        if 'qwen' in self.model.lower() and msg.content and '<tool_call>' in msg.content and msg.content.endswith('</tool_call>'):
-                            msg.tool_calls = self._parse_to_openai_toolcall(msg.content)
-                        elif 'intern' in self.model.lower() and msg.content and ('```tool' in msg.content or '"tool_calls": [' in msg.content):
-                            msg.tool_calls = self._parse_intern_to_openai_toolcall(msg.content)
-                        elif self.support_tool and '<tool_call>' in msg.content and msg.content.endswith('</tool_call>'):
-                            msg.tool_calls = self._parse_to_openai_toolcall(msg.content)
+                        if 'qwen' in self.model.lower() and content_txt and '<tool_call>' in content_txt and content_txt.endswith('</tool_call>'):
+                            msg.tool_calls = self._parse_to_openai_toolcall(content_txt)
+                        elif 'intern' in self.model.lower() and content_txt and ('```tool' in content_txt or '"tool_calls": [' in content_txt):
+                            msg.tool_calls = self._parse_intern_to_openai_toolcall(content_txt)
+                        elif self.support_tool and (('<tool_call>' in content_txt and content_txt.endswith('</tool_call>')) or ('｜DSML｜invoke' in content_txt)):
+                            msg.tool_calls = self._parse_to_openai_toolcall(content_txt)
                         else:
-                            print(f"{Prompt.Assistant}{msg.content}")
-                            info["last_response"] = msg.content
+                            # 空响应(无内容也无工具调用)视为可重试失败: 提供商偶发提前断流时
+                            # 原实现把空串当最终回复返回, 上层只报"模型没有返回内容"且不重试。
+                            if not content_txt.strip():
+                                raise ValueError("Model returned an empty response (no content, no tool calls)")
+                            print(f"{Prompt.Assistant}{content_txt}")
+                            info["last_response"] = content_txt
 
                             _usage = response.usage if hasattr(response.usage, 'total_tokens') else None
                             ratio = _usage.total_tokens / max_model_len if _usage else 0
@@ -492,6 +563,24 @@ class Agent:
                 except Exception as tool_err:
                     return "Error: " + (f"{type(tool_err).__name__}: {tool_err}")[:400]
 
+            # 重复调用拦截: deepseek 等模型拿到结果后偶尔坚持"再跑一遍同样命令",
+            # 造成空回复+重复工具的死循环。发现同一工具+相同参数在最近历史中已执行过时,
+            # 不再实际执行, 直接把上次结果返回并在后面附上提示, 引导模型总结作答。
+            for c in calls:
+                if c["output"] is not None:
+                    continue
+                try:
+                    key = (c['func'], json.dumps(c['inp'], sort_keys=True, ensure_ascii=False))
+                except Exception:
+                    key = (c['func'], repr(c['inp']))
+                prev = next((u for u in reversed(info['used_tools'])
+                             if u[0] == c['func'] and (u[1] == c['inp'] or json.dumps(u[1], sort_keys=True, ensure_ascii=False) == key[1])), None)
+                if prev is not None:
+                    c["output"] = (str(prev[2])[:4000]
+                                   + "\n[System] This exact tool call was already executed with the result above. "
+                                   "Do NOT call it again; answer the user now based on the results you already have.")
+                    continue
+
             needs_wd = {"bash", "grep", "read", "write", "edit"}
             def _tool_exec_cwd(c):
                 # 工具的工作目录存在 thread-local 上, 并行线程需要重新绑定
@@ -545,8 +634,12 @@ class Agent:
                 match self.method:
                     case "anthropic":
                         results.append({"type": "tool_result", "tool_use_id": c["block"].id, "content": output})
+                        # anthropic: 同样把 tool_result 补回 messages, 供下一轮发送。
+                        messages.append({"role": "user", "content": [{"type": "tool_result", "tool_use_id": c["block"].id, "content": output}]})
                     case "openai":
                         results.append({"role": "tool", "tool_call_id": c["block"].id, "content": str(output)})
+                        # 工具结果必须进入 messages, 否则下一轮模型看不到结果 (deepseek 等会反复空回)
+                        messages.append({"role": "tool", "tool_call_id": c["block"].id, "content": str(output)})
 
                 if func == 'load_skill':
                     info['used_skills'].append((inp.get('name'), output))
@@ -629,10 +722,28 @@ class Agent:
         from openai.types.chat import ChatCompletionMessageToolCall
         from openai.types.chat.chat_completion_message_tool_call import Function
 
+        tool_calls: list = []
         pattern = r'<tool_call>\s*<function=([\w\d_.-]+)>\s*(.*?)\s*</function>\s*</tool_call>'
         matches = re.findall(pattern, xml_string, re.DOTALL)
+        # DeepSeek 系模型常把工具调用以 DSML 形式泄漏到正文:
+        # <｜DSML｜invoke name="bash"><｜DSML｜parameter name="command" string="true">ls</｜DSML｜parameter></｜DSML｜invoke>
+        if not matches:
+            dsml_re = re.compile(r'<｜DSML｜invoke name="([\w\d_.-]+)"\s*>([\s\S]*?)</｜DSML｜invoke>')
+            for func_name, func_body in dsml_re.findall(xml_string):
+                params = {}
+                pre = re.compile(r'<｜DSML｜parameter name="([\w_.-]+)"[^>]*>([\s\S]*?)</｜DSML｜parameter>')
+                for p_name, p_value in pre.findall(func_body):
+                    if p_value.strip():
+                        params[p_name] = p_value.strip()
+                tool_calls.append(
+                    ChatCompletionMessageToolCall(
+                        id=f"call_{str(uuid.uuid4()).replace('-', '')[:8]}",
+                        type="function",
+                        function=Function(name=func_name, arguments=json.dumps(params)),
+                    )
+                )
+            return tool_calls
 
-        tool_calls = []
         for func_name, func_body in matches:
             params = {}
             param_pattern = r'<parameter=([\w_.-]+)>\s*(.*?)\s*</parameter>'
