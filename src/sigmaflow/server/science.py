@@ -3935,9 +3935,19 @@ class ScienceProjectStore:
         project["icon"] = _clip(payload.icon or "folder", 50)
         project["remote"] = _clip(payload.remote, 500) if payload.remote else None
         project["dir"] = _clip(payload.dir, 500) if payload.dir else None
+        self._ensure_project_dir(project["dir"])
         project["updatedAt"] = now
         self._save()
         return self._public_project(project)
+
+    def _ensure_project_dir(self, dirpath) -> None:
+        """Create the project folder when saving, so terminal and fs open work."""
+        if not dirpath or os.path.isdir(dirpath):
+            return
+        try:
+            os.makedirs(dirpath, exist_ok=True)
+        except OSError:
+            pass  # fs/timeout turns later report the unusable path explicitly
 
     def delete_project(self, project_id: str) -> bool:
         if project_id not in self.projects:
