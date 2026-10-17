@@ -32,6 +32,8 @@ import struct
 import subprocess
 import threading
 import time
+import urllib.parse
+import urllib.request
 import uuid
 
 import requests
@@ -618,6 +620,109 @@ def _ensure_user_data(user: str) -> None:
         Path(marker).write_text(time.strftime("%Y-%m-%dT%H:%M:%S"), encoding="utf-8")
     except Exception:
         pass
+
+
+# ------------------------------------------------------------- 微信扫码登录
+
+_WECHAT_STATE_TTL = 300.0
+_WECHAT_STATE_LOCK = threading.Lock()
+_WECHAT_STATES: Dict[str, float] = {}
+
+
+def _wechat_config_path() -> str:
+    return os.path.join(_science_data_root(), "wechat.json")
+
+
+def _load_wechat_config() -> dict:
+    """WeChat OAuth app credentials kept server-side; absent file disables it."""
+    try:
+        with open(_wechat_config_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _wechat_appid() -> str:
+    cfg = _load_wechat_config()
+    return str(cfg.get("app_id") or "").strip()
+
+
+def _wechat_enabled() -> bool:
+    """Toggle is on when credentials exist; users without them see no button."""
+    if not _multi_user():
+        return False
+    cfg = _load_wechat_config()
+    if cfg.get("enabled") is False:
+        return False
+    return bool(_wechat_appid() and str(cfg.get("app_secret") or "").strip())
+
+
+def _wechat_redirect_uri(request: Any) -> str:
+    """OAuth return address; redirect_base in wechat.json wins over heuristics."""
+    cfg = _load_wechat_config()
+    base = str(cfg.get("redirect_base") or "").strip()
+    if base:
+        return base.rstrip("/") + "/"
+    proto = request.url.scheme
+    forwarded = str(request.headers.get("x-forwarded-proto") or "").split(",")[0]
+    forwarded = forwarded.strip().lower()
+    if forwarded:
+        proto = forwarded
+    host = request.headers.get("host") or "localhost"
+    prefix = str(request.headers.get("x-forwarded-prefix") or "").strip()
+    if not prefix:
+        prefix = "/sigmaflow"  # 网关约定路径; 例外场景用 redirect_base 覆盖
+    return f"{proto}://{host}{prefix}/science/"
+
+
+def _wechat_qrconnect_url(request: Any) -> str:
+    """Build the WeChat QR page URL; issues a one-shot state for CSRF checks."""
+    state = secrets.token_urlsafe(16)
+    now = time.time()
+    with _WECHAT_STATE_LOCK:
+        for key in [k for k, exp in _WECHAT_STATES.items() if exp < now]:
+            _WECHAT_STATES.pop(key, None)
+        _WECHAT_STATES[state] = now + _WECHAT_STATE_TTL
+    redirect = _wechat_redirect_uri(request)
+    query = urllib.parse.urlencode(
+        {
+            "appid": _wechat_appid(),
+            "redirect_uri": redirect,
+            "response_type": "code",
+            "scope": "snsapi_login",
+            "state": state,
+        }
+    )
+    return "https://open.weixin.qq.com/connect/qrconnect?" + query + "#wechat_redirect"
+
+
+def _wechat_consume_state(state: str) -> bool:
+    """Accept a pending state exactly once within its TTL."""
+    with _WECHAT_STATE_LOCK:
+        expiry = _WECHAT_STATES.pop(state or "", None)
+    return bool(expiry and expiry >= time.time())
+
+
+def _wechat_fetch_json(url: str) -> dict:
+    """Minimal timed GET returning parsed JSON; failures become empty dicts."""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "SigmaFlow-Science"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8", "replace"))
+    except Exception:
+        return {}
+
+
+def _wechat_account_name(users: dict, key_union: str) -> str:
+    """Unique account name derived from the stable WeChat identity key."""
+    base = "wx_" + hashlib.sha256(key_union.encode("utf-8")).hexdigest()[:8]
+    name = base
+    n = 2
+    while name in users:
+        name = f"{base}_{n}"
+        n += 1
+    return name
 
 
 def _tool_config_path() -> str:
@@ -2437,6 +2542,100 @@ class ScienceAPI:
         async def auth_logout(request: Request, response: Response):
             response.delete_cookie(_SESSION_COOKIE)
             return {"ok": True}
+
+        # --------------------------------------------------- 微信扫码登录
+
+        @auth_router.get("/wechat/config")
+        async def auth_wechat_config():
+            return {"enabled": _wechat_enabled()}
+
+        @auth_router.get("/wechat/start")
+        async def auth_wechat_start(request: Request):
+            """Return the WeChat QR page URL; the SPA opens it in a popup."""
+            if not _wechat_enabled():
+                raise HTTPException(status_code=503, detail="微信扫码登录未配置")
+            url = _wechat_qrconnect_url(request)
+            return {"url": url}
+
+        @auth_router.post("/wechat/exchange")
+        async def auth_wechat_exchange(request: Request, response: Response):
+            """Trade a one-time code for a local session; auto-registers."""
+            _check_origin(request)
+            if not _wechat_enabled():
+                raise HTTPException(status_code=503, detail="微信扫码登录未配置")
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+            body = body if isinstance(body, dict) else {}
+            code = str(body.get("code") or "").strip()
+            state = str(body.get("state") or "").strip()
+            if not (code and _wechat_consume_state(state)):
+                raise HTTPException(status_code=400, detail="登录会话已失效，请重新扫码")
+            cfg = _load_wechat_config()
+            appid = _wechat_appid()
+            token = _wechat_fetch_json(
+                "https://api.weixin.qq.com/sns/oauth2/access_token"
+                + "?"
+                + urllib.parse.urlencode(
+                    {
+                        "appid": appid,
+                        "secret": str(cfg.get("app_secret") or "").strip(),
+                        "code": code,
+                        "grant_type": "authorization_code",
+                    }
+                )
+            )
+            openid = str(token.get("openid") or "")
+            unionid = str(token.get("unionid") or "")
+            if not openid:
+                raise HTTPException(
+                    status_code=401, detail="微信登录未完成，请稍后重新扫码"
+                )
+            key_union = unionid or f"{appid}:{openid}"
+            userinfo = _wechat_fetch_json(
+                "https://api.weixin.qq.com/sns/userinfo"
+                + "?"
+                + urllib.parse.urlencode(
+                    {
+                        "access_token": str(token.get("access_token") or ""),
+                        "openid": openid,
+                    }
+                )
+            )
+            nickname = _clip(str(userinfo.get("nickname") or ""), 48)
+            name = ""
+            with _USER_REGISTRY_LOCK:
+                users = _load_users()
+                for rec_name, rec in users.items():
+                    wx = rec.get("wechat") if isinstance(rec, dict) else None
+                    key = str(wx.get("key") or "") if isinstance(wx, dict) else ""
+                    if key and hmac.compare_digest(key, key_union):
+                        name = rec_name
+                        break
+                if not name:
+                    name = _wechat_account_name(users, key_union)
+                    users[name] = {
+                        "salt": "",
+                        "hash": "",
+                        "createdAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "wechat": {
+                            "key": key_union,
+                            "openid": openid,
+                            "unionid": unionid,
+                            "nickname": nickname,
+                        },
+                    }
+                    _save_users(users)
+            _ensure_user_data(name)
+            response.set_cookie(
+                _SESSION_COOKIE,
+                _session_token(name),
+                max_age=_SESSION_TTL,
+                httponly=True,
+                samesite="lax",
+            )
+            return {"mode": "multi", "user": {"name": name}}
 
         self.auth_router = auth_router
 

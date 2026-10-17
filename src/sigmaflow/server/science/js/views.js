@@ -120,6 +120,7 @@
           ${tab === 'register' ? `<div class="field"><label for="auth-confirm">确认密码</label><input id="auth-confirm" name="confirm" type="password" minlength="6" maxlength="128" required autocomplete="new-password" placeholder="再输入一次"></div>` : ''}
           <button class="auth-submit" type="submit" form="auth-form">${tab === 'register' ? '创建账号并进入' : '登录'}${i('arrowright', '', 15)}</button>
         </form>
+        ${CS.state.wechatLogin ? `<div class="auth-or">或</div><button type="button" class="auth-wechat" data-action="wechat-login">${i('wechat', '', 17)}微信扫码登录</button>` : ''}
         <p class="auth-note tiny muted">${tab === 'register' ? '登录凭据以 PBKDF2 存储，不可逆向还原。' : '登录会话在本机保留 7 天。'}</p>
       </section>
       <p class="auth-foot tiny muted">SigmaFlow Science · 多用户模式</p>

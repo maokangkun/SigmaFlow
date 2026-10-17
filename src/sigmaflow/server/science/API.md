@@ -365,6 +365,11 @@ WebSocket `/api/ws` 还承载终端 actions（与聊天共用连接，前端通�
 | `POST /api/auth/register` | `{username, password}` 注册并自动登录；用户名 3-32 位字母数字与 `-_`，密码 ≥6 位 |
 | `POST /api/auth/login` | `{username, password}` 登录 |
 | `POST /api/auth/logout` | 清除会话 cookie |
+| `GET /api/auth/wechat/config` | `{enabled}`：是否可微信扫码登录 |
+| `GET /api/auth/wechat/start` | `{url}`：微信二维码页地址（弹窗打开） |
+| `POST /api/auth/wechat/exchange` | `{code,state}`：一次性 code 换会话，按 unionid 自动注册（`wx_xxxxxxxx` 无密码账号），返回 `{mode,user}` |
+
+微信扫码登录为可选功能：在数据根目录放 `wechat.json`（`{"app_id":"\u2026","app_secret":"\u2026","redirect_base":"\u53ef\u9009"}`）即启用，`"enabled":false` 临时关闭；`app_secret` 不出服务器，state 只存内存（5 分钟一次性）。
 
 多用户模式的隔离范围：
 

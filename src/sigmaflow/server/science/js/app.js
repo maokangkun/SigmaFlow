@@ -744,6 +744,26 @@
     CS.toast('已复制到剪贴板。');
   };
   const citation = p => `${p.authors} (${p.year}). ${p.title}. ${p.journal}. https://doi.org/${p.doi}`;
+  CS.enterAccount = (out, message) => {
+    // 账号切换: 清掉上个用户的本地工作区缓存再重新加载; reset 会恢复 defaults
+    // (含 me: null 与默认 endpoint), 所以 reset 之后再写入 me 与实际接口地址
+    const keepEndpoint = CS.state.settings.endpoint;
+    CS.reset();
+    CS.state.settings.endpoint = keepEndpoint;
+    CS.state.me = out;
+    CS.ui.composer = ''; CS.ui.attachments = []; CS.save();
+    CS.navigate('home');
+    if (message) CS.toast(message);
+  };
+  // 微信扫码: 服务端签发跳转地址, 弹窗完成扫码后由回跳页换发会话
+  // 微信弹窗回跳页换票成功后通知主窗进入工作区
+  window.addEventListener('message', (event) => {
+    if (event.origin !== location.origin || !event.data) return;
+    if (event.data.type === 'wechat-login-ok' && event.data.user && event.data.user.name) {
+      CS.enterAccount({ mode: 'multi', user: event.data.user }, `欢迎，${event.data.user.name}。`);
+    }
+  });
+
   // 多用户模式: 未登录时的统一入口, 跳转完整登录/注册页面 rather than 浮层。
   CS.showAuthGate = () => {
     const me = CS.state.me;
@@ -936,6 +956,12 @@
     if (freshRow && freshConv) freshConv.scrollTop += freshRow.getBoundingClientRect().top - rowTop;
   };
   const actions = {
+    // 微信扫码登录: 服务端拿跳转地址并弹窗, 回跳页交换会话后发 message
+    'wechat-login': async () => {
+      const out = await CS.api.request('/auth/wechat/start');
+      window.open(out.url, 'wechat_login', 'width=660,height=780');
+      CS.toast('请在微信弹窗中扫码确认。');
+    },
     'toggle-sidebar': () => { CS.ui.mobileSidebar = !CS.ui.mobileSidebar; CS.render(); },
     'toggle-user-menu': () => { CS.ui.userMenu = !CS.ui.userMenu; CS.render(); },
     'auth-tab': (id, target) => {
@@ -1541,15 +1567,7 @@
           const out=await CS.api.request(path,{method:'POST',body:JSON.stringify({username,password})});
           const welcome = CS.ui.authTab === 'register';
           CS.ui.authTab='login'; CS.ui.authDraft=null;
-          // 账号切换: 清掉上个用户的本地工作区缓存再重新加载; reset 会恢复 defaults
-          // (含 me: null 与默认 endpoint), 所以 reset 之后再写入 me 与实际接口地址
-          const keepEndpoint = CS.state.settings.endpoint;
-          CS.reset();
-          CS.state.settings.endpoint = keepEndpoint;
-          CS.state.me=out;
-          CS.ui.composer=''; CS.ui.attachments=[]; CS.save();
-          CS.navigate('home');
-          CS.toast(welcome ? `欢迎，${out.user.name}。` : `欢迎回来，${out.user.name}。`);
+          CS.enterAccount(out, welcome ? `欢迎，${out.user.name}。` : `欢迎回来，${out.user.name}。`);
           CS.agent.loadModels();
           CS.agent.loadProjects().then(() => CS.agent.loadConversations());
           CS.render();
@@ -1785,7 +1803,28 @@
     } catch { CS.toast('无法读取该文件。', 'error'); }
   };
   CS.api.detectEndpoint().finally(async () => {
+    // 微信扫码回跳: 主窗或弹窗先交换会话再继续启动; 弹窗关闭并通知主窗
+    const qp = new URLSearchParams(location.search);
+    if (qp.get('code') && qp.get('state')) {
+      const wasPopup = !!window.opener;
+      history.replaceState(null, '', location.pathname + location.hash);
+      try {
+        const out = await CS.api.request('/auth/wechat/exchange', { method: 'POST', body: JSON.stringify({ code: qp.get('code'), state: qp.get('state') }) });
+        if (wasPopup) {
+          try { window.opener.postMessage({ type: 'wechat-login-ok', user: out.user }, location.origin); } catch {}
+          setTimeout(() => window.close(), 100);
+          return;
+        }
+        CS.state.me = out;
+      } catch (wxError) {
+        CS.toast('微信登录未完成：' + ((wxError && wxError.message) || '请重新扫码'), 'error');
+      }
+    }
     try { CS.state.me = await CS.api.request('/auth/me', { method: 'GET' }); } catch { CS.state.me = null; }
+    CS.api.request('/auth/wechat/config').then(cfg => {
+      const on = !!(cfg && cfg.enabled);
+      if (on !== CS.state.wechatLogin) { CS.state.wechatLogin = on; if (CS.ui.route === 'auth') CS.render(); }
+    }).catch(() => { });
     CS.emit('render');
     const me = CS.state.me;
     if (me && me.mode === 'multi' && !(me.user && me.user.name)) { CS.ui.route = 'auth'; CS.showAuthGate(); return; }
