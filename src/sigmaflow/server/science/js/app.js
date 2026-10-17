@@ -690,26 +690,35 @@
         return cjk + (s.length - cjk) / 4;
       };
       const toolEvent = t => {
+        if (CS.ui.chatRetry) CS.ui.chatRetry = null;  // 已有产出, 不再处于重试等待
         pushTool(t);
         mirror();
         const follow = nearBottom() && !CS.ui.followLock;
         CS.render();
         if (follow) scrollToLatest();
       };
+      // 模型请求失败进入重试: 在等待指示处显示第 N/3 次失败与原因
+      const retryEvent = r => {
+        if (!r || !r.attempt) return;
+        CS.ui.chatRetry = { runId: run.id, attempt: r.attempt, total: r.total || 3, error: r.error || '' };
+        CS.render();
+      };
       const done = await CS.api.chat(history, delta => {
+        if (CS.ui.chatRetry) CS.ui.chatRetry = null;
         pushDelta(delta);
         mirror();
         reply.tokens = (reply.tokens || 0) + estTokens(delta);
         const now = Date.now();
         if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       }, think => {
+        if (CS.ui.chatRetry) CS.ui.chatRetry = null;
         pushThink(think);
         mirror();
         reply.tokens = (reply.tokens || 0) + estTokens(think);
         CS.ui.thinkingText = reply.reasoning;
         const now = Date.now();
         if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
-      }, toolEvent);
+      }, toolEvent, retryEvent);
       // 正文以流式时间线为准(保留各轮文本); 服务端最终内容仅在本地没收到任何文本时兑底
       if (!reply.content && typeof done.content === 'string' && done.content) {
         reply.content = done.content;

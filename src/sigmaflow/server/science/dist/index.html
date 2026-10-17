@@ -1272,13 +1272,13 @@ CS.markdown = text => {
     }
     return CS.api.request(httpPath, { method: httpMethod, body: body ? JSON.stringify(body) : undefined });
   };
-  CS.api.chat = async (messages, onDelta, onThink, onTool) => {
+  CS.api.chat = async (messages, onDelta, onThink, onTool, onRetry) => {
     // 会话所属项目随请求下发: 服务端把项目工作目录绑定为本次对话的工具执行目录;
     // 优先取当前会话自身绑定的 projectId(全局 state 可能停留在无项目状态)
     const run = CS.state.runs.find(x => x.id === CS.state.currentRunId);
     const payload = { modelId: CS.state.settings.modelId, projectId: run?.projectId ?? CS.state.projectId, runId: CS.state.currentRunId, messages };
     if (await CS.api.ws.connect()) {
-      const data = await CS.api.ws.chat(payload, onDelta, onThink, onTool);
+      const data = await CS.api.ws.chat(payload, onDelta, onThink, onTool, onRetry);
       return { content: data.content, tokens: data.tokens || 0, promptTokens: data.promptTokens || 0 };
     }
     const data = await CS.api.request('/chat', { method: 'POST', timeout: 600000, body: JSON.stringify(payload) });
@@ -1323,6 +1323,7 @@ CS.markdown = text => {
             if (message.event === 'chat.stop.ack') { return; }  // 停止确认不是聊天回复, 等真正的 chat.done
             if (message.event === 'chat.think' && entry.onThink) { entry.onThink(message.data?.delta || ''); return; }
             if (message.event === 'chat.tool' && entry.onTool) { entry.onTool(message.data?.tool || {}); return; }
+            if (message.event === 'chat.retry') { entry.onRetry && entry.onRetry(message.data?.retry || {}); return; }
             if (message.event === 'chat.delta' && entry.onDelta) { entry.onDelta(message.data?.delta || ''); return; }
             CS.api.ws.pending.delete(message.requestId);
             CS.api.ws.activeChats.delete(message.requestId);
@@ -1350,7 +1351,7 @@ CS.markdown = text => {
         this.socket.send(JSON.stringify({ action, requestId, ...payload }));
       });
     },
-    chat(payload, onDelta, onThink, onTool) {
+    chat(payload, onDelta, onThink, onTool, onRetry) {
       if (!this.open()) return Promise.reject(new Error('WebSocket 未连接。'));
       const requestId = String(++this.seq);
       this.activeChats.add(requestId);
@@ -1360,7 +1361,7 @@ CS.markdown = text => {
         // 只折断真正卡死的连接
         const idleMs = ws.chatIdleTimeout || 180000;
         const fail = () => { CS.api.ws.pending.delete(requestId); CS.api.ws.activeChats.delete(requestId); reject(new Error('模型响应超时。')); };
-        const entry = { resolve, reject, timer: null, resetTimer: null, onDelta, onThink, onTool };
+        const entry = { resolve, reject, timer: null, resetTimer: null, onDelta, onThink, onTool, onRetry };
         entry.timer = setTimeout(fail, idleMs);
         entry.resetTimer = () => { clearTimeout(entry.timer); entry.timer = setTimeout(fail, idleMs); };
         CS.api.ws.pending.set(requestId, entry);
@@ -4316,7 +4317,7 @@ CS.agent.pty = {
               // 等待模型响应: 流式中没有正在输出的正文; 典型场景是工具刚返回完,
               // 模型下一轮首字尚未到达, 给出一个轻量等待指示
               const waitingModel = m.streaming && !tailText && (!blocks.length || (blocks[lastIdx].type === 'tool' && blocks[lastIdx].result != null));
-              const waitHint = waitingModel ? `<div class="model-wait" role="status"><span class="wait-dots" aria-hidden="true"><span class="wait-dot"></span><span class="wait-dot"></span><span class="wait-dot"></span></span><span>等待模型响应</span></div>` : '';
+              const waitHint = waitingModel ? (() => { const rt = CS.ui.chatRetry; const active = rt && rt.runId === run.id; const label = active ? `第 ${Math.min(rt.attempt + 1, rt.total)}/${rt.total} 次尝试中` : '等待模型响应'; const tip = active && rt.error ? ` title="${e(rt.error)}"` : ''; return `<div class="model-wait" role="status"${tip}><span class="wait-dots" aria-hidden="true"><span class="wait-dot"></span><span class="wait-dot"></span><span class="wait-dot"></span></span><span>${label}${active ? ' · 上次失败' : ''}</span></div>`; })() : '';
               // 流式期间最后一块不是正文时补一个空正文占位, 供增量更新定位与底部跟随
               segments = `${blocks.map(seg).join('')}${m.streaming && !tailText ? `<div class="agent-intro md-body" data-stream-at="${e(m.at)}"></div>${waitHint}` : ''}`;
             }
@@ -5221,26 +5222,35 @@ CS.agent.pty = {
         return cjk + (s.length - cjk) / 4;
       };
       const toolEvent = t => {
+        if (CS.ui.chatRetry) CS.ui.chatRetry = null;  // 已有产出, 不再处于重试等待
         pushTool(t);
         mirror();
         const follow = nearBottom() && !CS.ui.followLock;
         CS.render();
         if (follow) scrollToLatest();
       };
+      // 模型请求失败进入重试: 在等待指示处显示第 N/3 次失败与原因
+      const retryEvent = r => {
+        if (!r || !r.attempt) return;
+        CS.ui.chatRetry = { runId: run.id, attempt: r.attempt, total: r.total || 3, error: r.error || '' };
+        CS.render();
+      };
       const done = await CS.api.chat(history, delta => {
+        if (CS.ui.chatRetry) CS.ui.chatRetry = null;
         pushDelta(delta);
         mirror();
         reply.tokens = (reply.tokens || 0) + estTokens(delta);
         const now = Date.now();
         if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       }, think => {
+        if (CS.ui.chatRetry) CS.ui.chatRetry = null;
         pushThink(think);
         mirror();
         reply.tokens = (reply.tokens || 0) + estTokens(think);
         CS.ui.thinkingText = reply.reasoning;
         const now = Date.now();
         if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
-      }, toolEvent);
+      }, toolEvent, retryEvent);
       // 正文以流式时间线为准(保留各轮文本); 服务端最终内容仅在本地没收到任何文本时兑底
       if (!reply.content && typeof done.content === 'string' && done.content) {
         reply.content = done.content;

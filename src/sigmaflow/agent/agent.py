@@ -41,7 +41,9 @@ class Agent:
             support_tool=False,
             on_delta=None,
             on_tool=None,
+            on_retry=None,
         ):
+        self.on_retry = on_retry  # 重试回调: 每次可重试失败后调用 on_retry({"attempt", "total", "error"})
         self.on_delta = on_delta  # 流式回调: 每收到一段增量文本时调用 on_delta(text)
         self.on_tool = on_tool  # 工具事件回调: on_tool({"kind": "call"|"result", "name": ..., ...})
         self.method = method
@@ -339,6 +341,12 @@ class Agent:
                         tried = self.retry
                     else:
                         tried += 1
+                        if self.on_retry is not None and tried < self.retry:
+                            # 只对还会重试的失败发通知; 可重试错误在 UI 上显示第 N 次失败与原因
+                            try:
+                                self.on_retry({"attempt": tried, "total": self.retry, "error": str(e)[:200]})
+                            except Exception:
+                                pass
                         time.sleep(random.randint(2, 5))
                         if tried == self.retry:
                             console.print(f"{Prompt.Error}{traceback.format_exc()}")

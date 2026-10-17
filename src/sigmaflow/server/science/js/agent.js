@@ -61,13 +61,13 @@
     }
     return CS.api.request(httpPath, { method: httpMethod, body: body ? JSON.stringify(body) : undefined });
   };
-  CS.api.chat = async (messages, onDelta, onThink, onTool) => {
+  CS.api.chat = async (messages, onDelta, onThink, onTool, onRetry) => {
     // 会话所属项目随请求下发: 服务端把项目工作目录绑定为本次对话的工具执行目录;
     // 优先取当前会话自身绑定的 projectId(全局 state 可能停留在无项目状态)
     const run = CS.state.runs.find(x => x.id === CS.state.currentRunId);
     const payload = { modelId: CS.state.settings.modelId, projectId: run?.projectId ?? CS.state.projectId, runId: CS.state.currentRunId, messages };
     if (await CS.api.ws.connect()) {
-      const data = await CS.api.ws.chat(payload, onDelta, onThink, onTool);
+      const data = await CS.api.ws.chat(payload, onDelta, onThink, onTool, onRetry);
       return { content: data.content, tokens: data.tokens || 0, promptTokens: data.promptTokens || 0 };
     }
     const data = await CS.api.request('/chat', { method: 'POST', timeout: 600000, body: JSON.stringify(payload) });
@@ -112,6 +112,7 @@
             if (message.event === 'chat.stop.ack') { return; }  // 停止确认不是聊天回复, 等真正的 chat.done
             if (message.event === 'chat.think' && entry.onThink) { entry.onThink(message.data?.delta || ''); return; }
             if (message.event === 'chat.tool' && entry.onTool) { entry.onTool(message.data?.tool || {}); return; }
+            if (message.event === 'chat.retry') { entry.onRetry && entry.onRetry(message.data?.retry || {}); return; }
             if (message.event === 'chat.delta' && entry.onDelta) { entry.onDelta(message.data?.delta || ''); return; }
             CS.api.ws.pending.delete(message.requestId);
             CS.api.ws.activeChats.delete(message.requestId);
@@ -139,7 +140,7 @@
         this.socket.send(JSON.stringify({ action, requestId, ...payload }));
       });
     },
-    chat(payload, onDelta, onThink, onTool) {
+    chat(payload, onDelta, onThink, onTool, onRetry) {
       if (!this.open()) return Promise.reject(new Error('WebSocket 未连接。'));
       const requestId = String(++this.seq);
       this.activeChats.add(requestId);
@@ -149,7 +150,7 @@
         // 只折断真正卡死的连接
         const idleMs = ws.chatIdleTimeout || 180000;
         const fail = () => { CS.api.ws.pending.delete(requestId); CS.api.ws.activeChats.delete(requestId); reject(new Error('模型响应超时。')); };
-        const entry = { resolve, reject, timer: null, resetTimer: null, onDelta, onThink, onTool };
+        const entry = { resolve, reject, timer: null, resetTimer: null, onDelta, onThink, onTool, onRetry };
         entry.timer = setTimeout(fail, idleMs);
         entry.resetTimer = () => { clearTimeout(entry.timer); entry.timer = setTimeout(fail, idleMs); };
         CS.api.ws.pending.set(requestId, entry);

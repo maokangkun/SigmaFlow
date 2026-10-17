@@ -3574,6 +3574,9 @@ class ScienceAPI:
                                     lambda e: loop.call_soon_threadsafe(
                                         chat_queue.put_nowait, ("tool", e)
                                     ),
+                                    lambda r: loop.call_soon_threadsafe(
+                                        chat_queue.put_nowait, ("retry", r)
+                                    ),
                                     stats,
                                     chat_workdir,
                                 )
@@ -3639,6 +3642,15 @@ class ScienceAPI:
                                         "event": "chat.tool",
                                         "requestId": request_id,
                                         "data": {"tool": value},
+                                    },
+                                )
+                            elif kind == "retry":
+                                event, message = (
+                                    "chat.retry",
+                                    {
+                                        "event": "chat.retry",
+                                        "requestId": request_id,
+                                        "data": {"retry": value},
                                     },
                                 )
                             elif kind == "done":
@@ -4126,6 +4138,7 @@ def _run_agent_chat(
     on_delta=None,
     on_reasoning=None,
     on_tool=None,
+    on_retry=None,
     stats: dict = None,
     workdir: Optional[str] = None,
 ) -> str:
@@ -4187,6 +4200,7 @@ def _run_agent_chat(
         sub_system=sub_system,
         on_delta=_make_chat_delta_callback(on_delta, on_reasoning),
         on_tool=on_tool,
+        on_retry=on_retry,
     )
     agent.client.timeout = 90
     agent.client.max_retries = 0  # 不用 SDK 内置重试; 统一由 agent 循环重试三次
@@ -4461,6 +4475,7 @@ def _stream_agent_chat(
     on_delta,
     on_reasoning=None,
     on_tool=None,
+    on_retry=None,
     stats: dict = None,
     workdir: Optional[str] = None,
 ):
@@ -4476,6 +4491,7 @@ def _stream_agent_chat(
         on_delta=on_delta,
         on_reasoning=on_reasoning,
         on_tool=on_tool,
+        on_retry=on_retry,
         stats=stats,
         workdir=workdir,
     )
