@@ -14,10 +14,16 @@ THIS SERVER, using the model/provider configured in the settings.
 
 import asyncio
 import base64
+import atexit
+import fcntl
 import json
 import math
 import os
+import pty as _pty_mod
 import re
+import select
+import signal
+import struct
 import subprocess
 import threading
 import time
@@ -130,9 +136,21 @@ def _test_provider(base_url: str, api_key: str) -> dict:
     try:
         resp = requests.get(url, headers=headers, timeout=10)
     except Exception as err:
-        return {"ok": False, "latencyMs": round((time.time() - start) * 1000), "status": 0, "modelCount": None, "error": str(err)}
+        return {
+            "ok": False,
+            "latencyMs": round((time.time() - start) * 1000),
+            "status": 0,
+            "modelCount": None,
+            "error": str(err),
+        }
     latency = round((time.time() - start) * 1000)
-    result = {"ok": resp.status_code == 200, "latencyMs": latency, "status": resp.status_code, "modelCount": None, "error": None}
+    result = {
+        "ok": resp.status_code == 200,
+        "latencyMs": latency,
+        "status": resp.status_code,
+        "modelCount": None,
+        "error": None,
+    }
     try:
         data = resp.json()
         if isinstance(data, dict) and isinstance(data.get("data"), list):
@@ -145,10 +163,16 @@ def _test_provider(base_url: str, api_key: str) -> dict:
         detail = None
         try:
             body = resp.json()
-            detail = body.get("error", {}).get("message") if isinstance(body.get("error"), dict) else body.get("error") or body.get("message")
+            detail = (
+                body.get("error", {}).get("message")
+                if isinstance(body.get("error"), dict)
+                else body.get("error") or body.get("message")
+            )
         except Exception:
             pass
-        result["error"] = f"HTTP {resp.status_code}" + (f"：{str(detail)[:200]}" if detail else "")
+        result["error"] = f"HTTP {resp.status_code}" + (
+            f"：{str(detail)[:200]}" if detail else ""
+        )
     return result
 
 
@@ -197,10 +221,14 @@ def _litellm_module():
         if _LITELLM_MODULE is not None:
             return _LITELLM_MODULE
         try:
-            os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")  # 无外网时禁止远程拉取价格表
+            os.environ.setdefault(
+                "LITELLM_LOCAL_MODEL_COST_MAP", "True"
+            )  # 无外网时禁止远程拉取价格表
             import logging
+
             logging.getLogger("LiteLLM").setLevel(logging.ERROR)
             import litellm
+
             _LITELLM_MODULE = litellm
         except Exception:
             _LITELLM_MODULE = False
@@ -216,12 +244,32 @@ def _litellm_warm():
     the fully-initialized guarantee before the first request is served."""
     _litellm_module()
 
+
 # 匹配到多个 <provider>/<model> 候选时, 优先模型厂商官方与主流平台的定价,
 # 避免选中 azure/bedrock/databricks 等托管变体的高价条目
 _LITELLM_PRIMARY_PROVIDERS = {
-    "openai", "anthropic", "gemini", "deepseek", "zai", "zhipuai", "moonshot", "moonshotai",
-    "xai", "mistral", "dashscope", "qwen", "cohere", "groq", "perplexity", "together_ai",
-    "fireworks_ai", "volcengine", "nvidia_nim", "sambanova", "cerebras", "custom_openai",
+    "openai",
+    "anthropic",
+    "gemini",
+    "deepseek",
+    "zai",
+    "zhipuai",
+    "moonshot",
+    "moonshotai",
+    "xai",
+    "mistral",
+    "dashscope",
+    "qwen",
+    "cohere",
+    "groq",
+    "perplexity",
+    "together_ai",
+    "fireworks_ai",
+    "volcengine",
+    "nvidia_nim",
+    "sambanova",
+    "cerebras",
+    "custom_openai",
 }
 
 
@@ -244,10 +292,14 @@ def _litellm_db() -> Dict[str, dict]:
             # litellm 未就绪或导入失败: 直接读包内价格表文件兜底
             try:
                 import importlib.util
+
                 spec = importlib.util.find_spec("litellm")
                 if spec and spec.submodule_search_locations:
                     base = Path(list(spec.submodule_search_locations)[0])
-                    for name in ("model_prices_and_context_window.json", "model_prices_and_context_window_backup.json"):
+                    for name in (
+                        "model_prices_and_context_window.json",
+                        "model_prices_and_context_window_backup.json",
+                    ):
                         path = base / name
                         if path.exists():
                             loaded = json.loads(path.read_text(encoding="utf-8"))
@@ -259,11 +311,14 @@ def _litellm_db() -> Dict[str, dict]:
         db = dicc
         # 只保留带有效价格或窗口数据的条目, 滤掉 map_config_to_model 等元数据键
         _LITELLM_DB = {
-            k: v for k, v in db.items()
-            if isinstance(v, dict) and (
+            k: v
+            for k, v in db.items()
+            if isinstance(v, dict)
+            and (
                 isinstance(v.get("input_cost_per_token"), (int, float))
                 or isinstance(v.get("output_cost_per_token"), (int, float))
-                or v.get("max_input_tokens") or v.get("max_tokens")
+                or v.get("max_input_tokens")
+                or v.get("max_tokens")
             )
         }
     return _LITELLM_DB
@@ -320,7 +375,9 @@ def _model_pricing(entry) -> tuple:
     return pin, pout
 
 
-def _litellm_message_cost(model_name: str, prompt_tokens: int, completion_tokens: int) -> Optional[float]:
+def _litellm_message_cost(
+    model_name: str, prompt_tokens: int, completion_tokens: int
+) -> Optional[float]:
     """Price one message via LiteLLM's official completion_cost API.
 
     Uses the resolved catalog key so short names (e.g. glm-5.3-flash) map to
@@ -330,9 +387,15 @@ def _litellm_message_cost(model_name: str, prompt_tokens: int, completion_tokens
         return None
     try:
         from litellm.types.utils import ModelResponse, Usage
+
         entry = _litellm_lookup(model_name)
         model_ref = (entry or {}).get("_litellm_key") or model_name
-        resp = ModelResponse(model=model_ref, usage=Usage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens))
+        resp = ModelResponse(
+            model=model_ref,
+            usage=Usage(
+                prompt_tokens=prompt_tokens, completion_tokens=completion_tokens
+            ),
+        )
         cost = module.completion_cost(completion_response=resp)
         return float(cost) if isinstance(cost, (int, float)) else None
     except Exception:
@@ -351,7 +414,12 @@ def _model_context_window(model_name: str, override: Optional[int] = None) -> in
             return int(cw)
     try:
         from sigmaflow.agent.conf import MAX_MODEL_LEN
-        return int(MAX_MODEL_LEN.get((model_name or "").lower(), MAX_MODEL_LEN.get("default", 131072)))
+
+        return int(
+            MAX_MODEL_LEN.get(
+                (model_name or "").lower(), MAX_MODEL_LEN.get("default", 131072)
+            )
+        )
     except Exception:
         return 131072
 
@@ -372,7 +440,10 @@ def _agent_tools_module():
         from sigmaflow.agent import tools
     except ModuleNotFoundError:
         import sys as _sys
-        _src_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+        _src_root = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
         if _src_root not in _sys.path:
             _sys.path.insert(0, _src_root)
         from sigmaflow.agent import tools
@@ -381,7 +452,9 @@ def _agent_tools_module():
 
 
 def _science_data_root() -> str:
-    return os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(os.path.expanduser("~"), ".sigmaflow", "science")
+    return os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
+        os.path.expanduser("~"), ".sigmaflow", "science"
+    )
 
 
 def _tool_config_path() -> str:
@@ -412,9 +485,14 @@ def _sciverse_key() -> str:
     # 再走 _apply_sciverse_key(), 与这里构成无基准情形的相互递归——未保存密钥时每次
     # 请求都烧穿递归栈, 靠内层吞 RecursionError 才得到正确结果。
     import sys as _sys
+
     tools_mod = _sys.modules.get("sigmaflow.agent.tools")
     try:
-        return str(getattr(tools_mod, "Sciverse_API_KEY", "") or "") if tools_mod is not None else ""
+        return (
+            str(getattr(tools_mod, "Sciverse_API_KEY", "") or "")
+            if tools_mod is not None
+            else ""
+        )
     except Exception:
         return ""
 
@@ -438,6 +516,7 @@ def _apply_sciverse_key() -> None:
     SciverseAPI reads the module global at request time, so cached clients pick it up."""
     try:
         from sigmaflow.agent import sciverse_api
+
         if hasattr(sciverse_api, "Sciverse_API_KEY"):
             sciverse_api.Sciverse_API_KEY = _sciverse_key()
     except Exception:
@@ -470,7 +549,11 @@ def _token_listing() -> list:
     try:
         with open(_tokens_config_path(), encoding="utf-8") as fh:
             data = json.load(fh)
-        tokens = data.get("tokens") if isinstance(data, dict) and isinstance(data.get("tokens"), dict) else {}
+        tokens = (
+            data.get("tokens")
+            if isinstance(data, dict) and isinstance(data.get("tokens"), dict)
+            else {}
+        )
     except Exception:
         tokens = {}
     tokens = tokens if isinstance(tokens, dict) else {}
@@ -485,7 +568,13 @@ def _token_listing() -> list:
             "configured": bool(effective),
             "saved": bool(saved),
             "fromEnv": not saved and bool(env),
-            "keyHint": (effective if len(effective) <= 8 else f"{effective[:4]}****{effective[-4:]}") if effective else "",
+            "keyHint": (
+                effective
+                if len(effective) <= 8
+                else f"{effective[:4]}****{effective[-4:]}"
+            )
+            if effective
+            else "",
         }
 
     try:
@@ -493,8 +582,15 @@ def _token_listing() -> list:
     except Exception:
         env_sciverse = ""
     return [
-        _row("sciverse", "Sciverse API", str(tokens.get("sciverse") or ""), env_sciverse),
-        _row("anysearch", "Anysearch API", str(tokens.get("anysearch") or ""), os.getenv("ANYSEARCH_API_KEY", "")),
+        _row(
+            "sciverse", "Sciverse API", str(tokens.get("sciverse") or ""), env_sciverse
+        ),
+        _row(
+            "anysearch",
+            "Anysearch API",
+            str(tokens.get("anysearch") or ""),
+            os.getenv("ANYSEARCH_API_KEY", ""),
+        ),
     ]
 
 
@@ -510,7 +606,11 @@ def _apply_token_updates(updates: dict) -> None:
     try:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
-        tokens = data.get("tokens") if isinstance(data, dict) and isinstance(data.get("tokens"), dict) else {}
+        tokens = (
+            data.get("tokens")
+            if isinstance(data, dict) and isinstance(data.get("tokens"), dict)
+            else {}
+        )
     except Exception:
         tokens = {}
     tokens = dict(tokens) if isinstance(tokens, dict) else {}
@@ -554,6 +654,8 @@ def _apply_token_updates(updates: dict) -> None:
             _rebuild_agent_mcp()
         except Exception:
             pass
+
+
 def _tool_defaults() -> list:
     """Copy of sigmaflow.agent.tools.TOOLS; empty list when the agent package is unavailable."""
     try:
@@ -626,20 +728,28 @@ def _tool_listing(defaults: list, overrides: Dict[str, dict]) -> list:
     out = []
     for t in defaults:
         override = overrides.get(t["name"]) or {}
-        schema = override.get("schema") if isinstance(override.get("schema"), dict) else (t.get("input_schema") or {})
+        schema = (
+            override.get("schema")
+            if isinstance(override.get("schema"), dict)
+            else (t.get("input_schema") or {})
+        )
         enabled = override.get("enabled") is not False
         # 未配置 Sciverse API 时 Sciverse 工具固定关闭, 忽略历史覆盖
         if t["name"].startswith("sciverse_") and sciverse_locked:
             enabled = False
-        out.append({
-            "id": t["name"],
-            "name": str(override.get("name") or "").strip() or t["name"],
-            "description": str(override.get("description") or "").strip() or t.get("description") or "",
-            "enabled": enabled,
-            "schema": json.dumps(schema, ensure_ascii=False, separators=(",", ":")),
-            "modified": bool(override),
-            "origin": _tool_origin(t["name"]),
-        })
+        out.append(
+            {
+                "id": t["name"],
+                "name": str(override.get("name") or "").strip() or t["name"],
+                "description": str(override.get("description") or "").strip()
+                or t.get("description")
+                or "",
+                "enabled": enabled,
+                "schema": json.dumps(schema, ensure_ascii=False, separators=(",", ":")),
+                "modified": bool(override),
+                "origin": _tool_origin(t["name"]),
+            }
+        )
     return out
 
 
@@ -673,12 +783,22 @@ def _build_tool_overrides(items: list, known: Dict[str, dict]) -> Dict[str, dict
             try:
                 schema = json.loads(schema_text)
             except Exception:
-                raise HTTPException(status_code=400, detail=f"工具 {tool_id} 参数 schema 不是合法 JSON")
+                raise HTTPException(
+                    status_code=400, detail=f"工具 {tool_id} 参数 schema 不是合法 JSON"
+                )
             if not isinstance(schema, dict):
-                raise HTTPException(status_code=400, detail=f"工具 {tool_id} 参数 schema 必须是 JSON 对象")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"工具 {tool_id} 参数 schema 必须是 JSON 对象",
+                )
             # 长度按解析结果的紧凑形式计算, 允许前端提交带缩进的格式化文本
-            if len(json.dumps(schema, ensure_ascii=False, separators=(",", ":"))) > 8000:
-                raise HTTPException(status_code=400, detail=f"工具 {tool_id} 参数 schema 过长")
+            if (
+                len(json.dumps(schema, ensure_ascii=False, separators=(",", ":")))
+                > 8000
+            ):
+                raise HTTPException(
+                    status_code=400, detail=f"工具 {tool_id} 参数 schema 过长"
+                )
             if schema != (known[tool_id].get("input_schema") or {}):
                 entry["schema"] = schema
         if entry:
@@ -762,12 +882,13 @@ def _parse_skill_frontmatter(text: str) -> tuple:
         return {}, text
     try:
         import yaml
+
         meta = yaml.safe_load(text[4:end].strip())
     except Exception:
         meta = {}
     if not isinstance(meta, dict):
         meta = {}
-    return meta, text[end + 5:].strip()
+    return meta, text[end + 5 :].strip()
 
 
 def _discover_skills() -> list:
@@ -786,7 +907,9 @@ def _discover_skills() -> list:
         except OSError:
             continue
         meta, body = _parse_skill_frontmatter(text)
-        skill_id = str(meta.get("name") or "").strip() or os.path.basename(dirpath.rstrip("/\\"))
+        skill_id = str(meta.get("name") or "").strip() or os.path.basename(
+            dirpath.rstrip("/\\")
+        )
         if skill_id in seen:
             continue
         seen.add(skill_id)
@@ -860,7 +983,9 @@ class _ScienceSkillView:
         skill = self.skills.get(name)
         if not skill:
             return f"Error: Unknown skill '{name}'. Available: {', '.join(self.skills.keys())}"
-        return f"<skill name=\"{name}\" path=\"{skill['path']}\">\n{skill['body']}\n</skill>"
+        return (
+            f'<skill name="{name}" path="{skill["path"]}">\n{skill["body"]}\n</skill>'
+        )
 
 
 def _ensure_skills_installed() -> None:
@@ -879,6 +1004,7 @@ def _ensure_skills_installed() -> None:
             original_block = ""
         tools_mod.skill_loader = _ScienceSkillView()
         import sigmaflow.agent.agent as agent_module
+
         if original_block and original_block in agent_module.SYSTEM:
             _SKILL_BLOCK_BASE = {"system": original_block, "sub": original_block}
         else:
@@ -892,7 +1018,10 @@ def _agent_agent_module():
         import sigmaflow.agent.agent as agent_module
     except ModuleNotFoundError:
         import sys as _sys
-        _src_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+        _src_root = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
         if _src_root not in _sys.path:
             _sys.path.insert(0, _src_root)
         import sigmaflow.agent.agent as agent_module
@@ -908,8 +1037,16 @@ def _default_system_prompts() -> tuple:
     if _SKILL_BLOCK_BASE is None:
         _SKILL_BLOCK_BASE = {"system": "", "sub": ""}
     listing = _agent_tools_module().skill_loader.get_descriptions()
-    system = agent_module.SYSTEM.replace(_SKILL_BLOCK_BASE["system"], listing) if _SKILL_BLOCK_BASE["system"] else agent_module.SYSTEM
-    sub_system = agent_module.SUBAGENT_SYSTEM.replace(_SKILL_BLOCK_BASE["sub"], listing) if _SKILL_BLOCK_BASE["sub"] else agent_module.SUBAGENT_SYSTEM
+    system = (
+        agent_module.SYSTEM.replace(_SKILL_BLOCK_BASE["system"], listing)
+        if _SKILL_BLOCK_BASE["system"]
+        else agent_module.SYSTEM
+    )
+    sub_system = (
+        agent_module.SUBAGENT_SYSTEM.replace(_SKILL_BLOCK_BASE["sub"], listing)
+        if _SKILL_BLOCK_BASE["sub"]
+        else agent_module.SUBAGENT_SYSTEM
+    )
     return system, sub_system
 
 
@@ -933,14 +1070,17 @@ def _skill_listing(defaults: list, overrides: Dict[str, dict]) -> list:
     out = []
     for s in defaults:
         override = overrides.get(s["id"]) or {}
-        out.append({
-            "id": s["id"],
-            "name": str(override.get("name") or "").strip() or s["id"],
-            "description": str(override.get("description") or "").strip() or str(s["meta"].get("description") or ""),
-            "enabled": override.get("enabled") is not False,
-            "builtin": s["id"] in builtin,
-            "modified": bool(override),
-        })
+        out.append(
+            {
+                "id": s["id"],
+                "name": str(override.get("name") or "").strip() or s["id"],
+                "description": str(override.get("description") or "").strip()
+                or str(s["meta"].get("description") or ""),
+                "enabled": override.get("enabled") is not False,
+                "builtin": s["id"] in builtin,
+                "modified": bool(override),
+            }
+        )
     return out
 
 
@@ -965,7 +1105,11 @@ def _build_skill_overrides(items: list, known: Dict[str, dict]) -> Dict[str, dic
         entry: Dict[str, Any] = {}
         if display != skill_id:
             entry["name"] = display
-        if description and description != str(known[skill_id]["meta"].get("description") or "").strip()[:2000]:
+        if (
+            description
+            and description
+            != str(known[skill_id]["meta"].get("description") or "").strip()[:2000]
+        ):
             entry["description"] = description
         if item.get("enabled") is False:
             entry["enabled"] = False
@@ -1000,20 +1144,174 @@ _FS_CWD_SENTINEL = "SIGMAFLOW_CWD"
 _FS_EXEC_RE = None
 
 
+# Interactive terminal: one real PTY per project, shared across websocket
+# connections. The reader thread copies master output into a ring buffer and
+# fans it out to every attached websocket; a reconnect replays the buffer.
+_PTY_BUFFER_MAX = 200 * 1024
+_PTY_SESSIONS_MAX = 8
+
+
+class _PtySession:
+    """One bash running on a PTY, with a bounded replay buffer and fan-out."""
+
+    def __init__(self, key: str, cwd: str, cols: int = 90, rows: int = 28):
+        self.key = key
+        self.cwd = cwd
+        self.created = time.time()
+        self.lock = threading.Lock()
+        self.buffer = bytearray()
+        self.seq = 0
+        self.subs: list = []
+        self.alive = True
+        self.cols, self.rows = cols, rows
+        self.master, slave = _pty_mod.openpty()
+        try:
+            fcntl.ioctl(slave, 0x5414, struct.pack("HHHH", rows, cols, 0, 0))
+        except OSError:
+            pass
+        env = dict(os.environ)
+        env.update(
+            {
+                "TERM": "xterm-256color",
+                "COLORTERM": "truecolor",
+                "PS1": r"\u@\h \w $ ",
+                "PAGER": "cat",
+            }
+        )
+        self.proc = subprocess.Popen(
+            ["/bin/bash", "--login", "-i"],
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            cwd=cwd,
+            env=env,
+            start_new_session=True,
+            close_fds=True,
+        )
+        os.close(slave)
+        self.thread = threading.Thread(target=self._pump, daemon=True)
+        self.thread.start()
+
+    def _dispatch(self, kind: str, payload: bytes = None):
+        """Deliver a frame to every attached websocket queue (thread safe)."""
+        with self.lock:
+            subs = [(sub["queue"], sub["loop"], sub["seq"]) for sub in self.subs]
+        for queue, loop, sub_seq in subs:
+            try:
+                loop.call_soon_threadsafe(queue.put_nowait, (kind, payload))
+            except RuntimeError:
+                pass
+
+    def _pump(self):
+        try:
+            while True:
+                try:
+                    ready, _, _ = select.select([self.master], [], [], 0.5)
+                except (OSError, ValueError):
+                    break
+                if not ready:
+                    if self.proc.poll() is not None:
+                        break
+                    continue
+                try:
+                    data = os.read(self.master, 65536)
+                except OSError:
+                    break
+                if not data:
+                    break
+                with self.lock:
+                    self.buffer.extend(data)
+                    overflow = len(self.buffer) - _PTY_BUFFER_MAX
+                    if overflow > 0:
+                        del self.buffer[:overflow]
+                    self.seq += 1
+                    current = self.seq
+                    for sub in self.subs:
+                        if current > sub["seq"]:
+                            sub["seq"] = current
+                            try:
+                                sub["loop"].call_soon_threadsafe(
+                                    sub["queue"].put_nowait, ("out", data)
+                                )
+                            except RuntimeError:
+                                pass
+            self.proc.wait(timeout=2)
+        except Exception:
+            pass
+        finally:
+            self.alive = False
+            self._dispatch("closed")
+            with self.lock:
+                subs = self.subs
+                self.subs = []
+            for queue, loop, _seq in subs:
+                try:
+                    loop.call_soon_threadsafe(queue.put_nowait, ("closed", None))
+                except RuntimeError:
+                    pass
+
+    def subscribe(self, loop, queue):
+        """Register a websocket; returns (snapshot bytes, seq start)."""
+        with self.lock:
+            sub = {"loop": loop, "queue": queue, "seq": self.seq}
+            self.subs.append(sub)
+            return bytes(self.buffer), self.seq
+
+    def unsubscribe(self, queue):
+        with self.lock:
+            self.subs = [s for s in self.subs if s["queue"] is not queue]
+
+    def write(self, data: bytes):
+        try:
+            os.write(self.master, data)
+        except OSError:
+            pass
+
+    def resize(self, cols: int, rows: int):
+        if cols < 2 or rows < 1 or cols > 500 or rows > 300:
+            return
+        self.cols, self.rows = cols, rows
+        try:
+            fcntl.ioctl(self.master, 0x5414, struct.pack("HHHH", rows, cols, 0, 0))
+            os.killpg(self.proc.pid, signal.SIGWINCH)
+        except OSError:
+            pass
+
+    def kill(self):
+        self.alive = False
+        try:
+            os.killpg(self.proc.pid, signal.SIGKILL)
+        except OSError:
+            pass
+        for fd in (self.master,):
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+
+def _pty_key_of(project_id: str) -> str:
+    return f"pty:{(project_id or '').strip()[:64]}"
+
+
 def _fs_exec_payload(project, cmd: str, cwd: str) -> dict:
     """Run one shell command under the project dir; bash session cwd is kept by
     the client passing the previously reported directory back each time."""
     base = str((project or {}).get("dir") or "").strip()
     if not base or not os.path.isdir(base):
-        raise HTTPException(status_code=404, detail="项目目录不存在，请编辑项目并填写本地路径")
+        raise HTTPException(
+            status_code=404, detail="项目目录不存在，请编辑项目并填写本地路径"
+        )
     start, root = _fs_resolve(base, cwd or "")
     if start is None or not os.path.isdir(start):
         raise HTTPException(status_code=400, detail="工作目录不可用，已重置到项目根")
     script = (
         cmd
-        + '\n__sf_code=$?\n'
-        + 'printf "\001' + _FS_CWD_SENTINEL + ':%s\001\n" "$PWD"\n'
-        + 'exit $__sf_code'
+        + "\n__sf_code=$?\n"
+        + 'printf "\001'
+        + _FS_CWD_SENTINEL
+        + ':%s\001\n" "$PWD"\n'
+        + "exit $__sf_code"
     )
 
     def _text(value) -> str:
@@ -1024,28 +1322,45 @@ def _fs_exec_payload(project, cmd: str, cwd: str) -> dict:
         return value
 
     try:
-        proc = subprocess.run(["bash", "-c", script], cwd=start, capture_output=True, text=True, timeout=_FS_EXEC_TIMEOUT)
+        proc = subprocess.run(
+            ["bash", "-c", script],
+            cwd=start,
+            capture_output=True,
+            text=True,
+            timeout=_FS_EXEC_TIMEOUT,
+        )
         out, err, code = _text(proc.stdout), _text(proc.stderr), proc.returncode
     except subprocess.TimeoutExpired as exc:
-        out, err, code = _text(exc.stdout), _text(exc.stderr) + "\n[命令执行超时，已终止]", 124
+        out, err, code = (
+            _text(exc.stdout),
+            _text(exc.stderr) + "\n[命令执行超时，已终止]",
+            124,
+        )
     newcwd = start
     marker = f"\x01{_FS_CWD_SENTINEL}:"
     sbegin = out.find(marker)
     if sbegin >= 0:
         send = out.find("\x01", sbegin + len(marker))
         if send > sbegin:
-            candidate = out[sbegin + len(marker):send]
+            candidate = out[sbegin + len(marker) : send]
             resolved = None
             if candidate:
-                resolved, _ = _fs_resolve(base, os.path.relpath(candidate, root) if os.path.isabs(candidate) else candidate)
+                resolved, _ = _fs_resolve(
+                    base,
+                    os.path.relpath(candidate, root)
+                    if os.path.isabs(candidate)
+                    else candidate,
+                )
             if resolved and os.path.isdir(resolved):
                 newcwd = resolved
-            out = out[:sbegin] + out[send + 1:]
+            out = out[:sbegin] + out[send + 1 :]
     return {
         "stdout": out,
         "stderr": err,
         "code": code,
-        "cwd": os.path.relpath(newcwd, root).replace(os.sep, "/") if newcwd != root else "",
+        "cwd": os.path.relpath(newcwd, root).replace(os.sep, "/")
+        if newcwd != root
+        else "",
         "root": root.replace(os.sep, "/"),
     }
 
@@ -1054,8 +1369,12 @@ def _fs_upload_payload(project, name: str, data_base64: str) -> dict:
     """Upload one file into the project directory (no overwrite)."""
     base = str((project or {}).get("dir") or "").strip()
     if not base or not os.path.isdir(base):
-        raise HTTPException(status_code=404, detail="项目目录不存在，请编辑项目并填写本地路径")
-    clean = os.path.basename(str(name or "").replace("\\", "/").replace("\x00", ""))[:200]
+        raise HTTPException(
+            status_code=404, detail="项目目录不存在，请编辑项目并填写本地路径"
+        )
+    clean = os.path.basename(str(name or "").replace("\\", "/").replace("\x00", ""))[
+        :200
+    ]
     if not clean or clean in (".", ".."):
         raise HTTPException(status_code=400, detail="文件名无效")
     try:
@@ -1074,7 +1393,11 @@ def _fs_upload_payload(project, name: str, data_base64: str) -> dict:
     with open(target, "wb") as fh:
         fh.write(raw)
     try:
-        subprocess.run(["git", "-C", root, "add", "-A", "--", clean], capture_output=True, timeout=10)
+        subprocess.run(
+            ["git", "-C", root, "add", "-A", "--", clean],
+            capture_output=True,
+            timeout=10,
+        )
     except Exception:
         pass
     return {"name": clean, "size": len(raw), "path": clean.replace(os.sep, "/")}
@@ -1093,8 +1416,18 @@ def _git_status_map(root: str) -> Dict[str, str]:
     result: Dict[str, str] = {}
     try:
         proc = subprocess.run(
-            ["git", "-C", root, "status", "--porcelain=v1", "-z", "--untracked-files=all"],
-            capture_output=True, text=True, timeout=8,
+            [
+                "git",
+                "-C",
+                root,
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=8,
         )
         if proc.returncode == 0:
             items = proc.stdout.split("\0")
@@ -1124,7 +1457,9 @@ def _fs_tree_payload(project, rel: str) -> dict:
     """Directory listing + git status for the project file browser."""
     base = str((project or {}).get("dir") or "").strip()
     if not base or not os.path.isdir(base):
-        raise HTTPException(status_code=404, detail="项目目录不存在，请编辑项目并填写本地路径")
+        raise HTTPException(
+            status_code=404, detail="项目目录不存在，请编辑项目并填写本地路径"
+        )
     target, root = _fs_resolve(base, rel)
     if target is None or not os.path.isdir(target):
         raise HTTPException(status_code=404, detail="目录不存在")
@@ -1140,14 +1475,21 @@ def _fs_tree_payload(project, rel: str) -> dict:
         is_dir = os.path.isdir(full)
         if not is_dir and not os.path.isfile(full):
             continue  # sockets / broken symlinks 等
-        entries.append({
-            "name": name,
-            "type": "dir" if is_dir else "file",
-            "path": os.path.relpath(full, root).replace(os.sep, "/"),
-        })
+        entries.append(
+            {
+                "name": name,
+                "type": "dir" if is_dir else "file",
+                "path": os.path.relpath(full, root).replace(os.sep, "/"),
+            }
+        )
         if len(entries) >= 500:
             break
-    return {"root": root.replace(os.sep, "/"), "path": rel, "entries": entries, "git": _git_status_map(root)}
+    return {
+        "root": root.replace(os.sep, "/"),
+        "path": rel,
+        "entries": entries,
+        "git": _git_status_map(root),
+    }
 
 
 def _fs_file_payload(project, rel: str) -> dict:
@@ -1167,7 +1509,13 @@ def _fs_file_payload(project, rel: str) -> dict:
         return {"path": rel, "size": size, "binary": True, "content": ""}
     truncated = size > _FS_TEXT_MAX
     text = head[:_FS_TEXT_MAX].decode("utf-8", "replace")
-    return {"path": rel, "size": size, "binary": False, "content": text, "truncated": truncated}
+    return {
+        "path": rel,
+        "size": size,
+        "binary": False,
+        "content": text,
+        "truncated": truncated,
+    }
 
 
 _MCP_REBUILD_LOCK = threading.Lock()
@@ -1180,14 +1528,25 @@ def _mcp_config_path() -> str:
 def _builtin_mcp_servers() -> Dict[str, dict]:
     """Built-in MCP servers shipped as a package asset next to the science app."""
     try:
-        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "science", "mcp_servers.json"), encoding="utf-8") as fh:
+        with open(
+            os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "science",
+                "mcp_servers.json",
+            ),
+            encoding="utf-8",
+        ) as fh:
             data = json.load(fh)
     except Exception:
         return {}
     servers = data.get("servers") if isinstance(data, dict) else None
     if not isinstance(servers, dict):
         return {}
-    return {str(k): dict(v) for k, v in servers.items() if isinstance(v, dict) and v.get("url")}
+    return {
+        str(k): dict(v)
+        for k, v in servers.items()
+        if isinstance(v, dict) and v.get("url")
+    }
 
 
 def _load_mcp_servers() -> Dict[str, dict]:
@@ -1238,7 +1597,11 @@ def _seed_mcp_config() -> None:
     newly shipped builtin servers unless the user removed them on purpose."""
     servers = _load_mcp_servers()
     skip = _removed_builtins()
-    missing = {k: v for k, v in _builtin_mcp_servers().items() if k not in servers and k not in skip}
+    missing = {
+        k: v
+        for k, v in _builtin_mcp_servers().items()
+        if k not in servers and k not in skip
+    }
     if missing or not os.path.exists(_mcp_config_path()):
         servers.update(missing)
         _save_mcp_servers(servers)
@@ -1284,6 +1647,7 @@ def _sync_mcp_env() -> None:
     os.environ["MCP_ENDPOINT"] = json.dumps(active, ensure_ascii=False)
     try:
         import sigmaflow.agent.conf as agent_conf
+
         agent_conf.MCP_CONF = {"mcpServers": active}
     except Exception:
         pass
@@ -1305,15 +1669,25 @@ def _rebuild_agent_mcp() -> dict:
         old_names = set(old.tools.keys())
         for name in old_names:
             tools_mod.TOOL_HANDLERS.pop(name, None)
-        tools_mod.TOOLS[:] = [t for t in tools_mod.TOOLS if t.get("name") not in old_names]
-        tools_mod.CHILD_TOOLS[:] = [t for t in tools_mod.CHILD_TOOLS if t.get("name") not in old_names]
+        tools_mod.TOOLS[:] = [
+            t for t in tools_mod.TOOLS if t.get("name") not in old_names
+        ]
+        tools_mod.CHILD_TOOLS[:] = [
+            t for t in tools_mod.CHILD_TOOLS if t.get("name") not in old_names
+        ]
         client = tools_mod.MCPClient()
         tools_mod.MCP = client
         for mcp_tool in client.tools.values():
-            t = {"name": mcp_tool.name, "description": mcp_tool.description, "input_schema": mcp_tool.input_schema}
+            t = {
+                "name": mcp_tool.name,
+                "description": mcp_tool.description,
+                "input_schema": mcp_tool.input_schema,
+            }
             tools_mod.CHILD_TOOLS.append(dict(t))
             tools_mod.TOOLS.append(dict(t))
-            tools_mod.TOOL_HANDLERS[mcp_tool.name] = (lambda n: lambda **kw: client.call_tool(n, kw))(mcp_tool.name)
+            tools_mod.TOOL_HANDLERS[mcp_tool.name] = (
+                lambda n: lambda **kw: client.call_tool(n, kw)
+            )(mcp_tool.name)
     return client.tools
 
 
@@ -1324,15 +1698,17 @@ def _mcp_listing() -> list:
     for name, cfg in servers.items():
         enabled = cfg.get("enabled") is not False
         locked = name == "anysearch" and not _anysearch_key()
-        out.append({
-            "id": name,
-            "name": name,
-            "url": str(cfg.get("url") or ""),
-            "enabled": enabled and not locked,
-            "builtin": name in builtin,
-            "locked": locked,  # 需先在第三方 API Key 中配置密钥, 服务端强制关闭
-            "modified": builtin.get(name) != cfg,
-        })
+        out.append(
+            {
+                "id": name,
+                "name": name,
+                "url": str(cfg.get("url") or ""),
+                "enabled": enabled and not locked,
+                "builtin": name in builtin,
+                "locked": locked,  # 需先在第三方 API Key 中配置密钥, 服务端强制关闭
+                "modified": builtin.get(name) != cfg,
+            }
+        )
     return out
 
 
@@ -1351,7 +1727,9 @@ def _build_mcp_servers(items: list, reset: bool) -> Dict[str, dict]:
             raise HTTPException(status_code=400, detail="MCP 服务器名称不能为空")
         url = str(item.get("url") or "").strip()[:500]
         if not url.startswith(("http://", "https://")):
-            raise HTTPException(status_code=400, detail=f"MCP 地址需要以 http(s):// 开头: {name}")
+            raise HTTPException(
+                status_code=400, detail=f"MCP 地址需要以 http(s):// 开头: {name}"
+            )
         if name in servers:
             raise HTTPException(status_code=400, detail=f"MCP 服务器名称重复: {name}")
         entry = {"url": url}
@@ -1435,7 +1813,8 @@ class ScienceModelStore:
                     seen[key] = pid
                     data["providers"][pid] = {
                         "id": pid,
-                        "name": old["baseUrl"].split("//", 1)[-1].split("/", 1)[0] or "provider",
+                        "name": old["baseUrl"].split("//", 1)[-1].split("/", 1)[0]
+                        or "provider",
                         "baseUrl": old["baseUrl"],
                         "apiKey": old.get("apiKey", ""),
                         "keyHint": old.get("keyHint"),
@@ -1456,7 +1835,11 @@ class ScienceModelStore:
 
     def _save(self):
         self.path.write_text(
-            json.dumps({"providers": self.providers, "models": self.models}, ensure_ascii=False, indent=2),
+            json.dumps(
+                {"providers": self.providers, "models": self.models},
+                ensure_ascii=False,
+                indent=2,
+            ),
             encoding="utf-8",
         )
 
@@ -1489,12 +1872,18 @@ class ScienceModelStore:
                 raise HTTPException(status_code=404, detail="Provider not found")
             if len(self.providers) >= MAX_MODELS:
                 raise HTTPException(status_code=429, detail="Provider limit reached")
-            provider = {"id": f"pv-{uuid.uuid4().hex[:12]}", "apiKey": "", "createdAt": now}
+            provider = {
+                "id": f"pv-{uuid.uuid4().hex[:12]}",
+                "apiKey": "",
+                "createdAt": now,
+            }
             self.providers[provider["id"]] = provider
         base_url = payload.baseUrl.strip()
         if not base_url:
             raise HTTPException(status_code=400, detail="Base URL is required")
-        provider["name"] = _clip(payload.name or base_url.split("//", 1)[-1].split("/", 1)[0], 200)
+        provider["name"] = _clip(
+            payload.name or base_url.split("//", 1)[-1].split("/", 1)[0], 200
+        )
         provider["baseUrl"] = _clip(base_url, 500)
         if payload.apiKey:  # absent/empty keeps the stored key
             provider["apiKey"] = _clip(payload.apiKey, 4096)
@@ -1508,7 +1897,9 @@ class ScienceModelStore:
             return False
         self.providers.pop(provider_id, None)
         lost_default = False
-        for mid in [k for k, m in self.models.items() if m.get("providerId") == provider_id]:
+        for mid in [
+            k for k, m in self.models.items() if m.get("providerId") == provider_id
+        ]:
             lost_default = lost_default or self.models[mid].get("isDefault")
             self.models.pop(mid, None)
         if lost_default:
@@ -1533,7 +1924,9 @@ class ScienceModelStore:
             "keyHint": provider.get("keyHint"),
             "isDefault": bool(model.get("isDefault")),
             "contextWindow": _model_context_window(name, model.get("contextWindow")),
-            "maxOutputTokens": int(max_output) if isinstance(max_output, (int, float)) and max_output > 0 else None,
+            "maxOutputTokens": int(max_output)
+            if isinstance(max_output, (int, float)) and max_output > 0
+            else None,
             "priceInUsdPerM": round(pin * 1e6, 4) if pin > 0 else None,
             "priceOutUsdPerM": round(pout * 1e6, 4) if pout > 0 else None,
             "catalogMatched": bool(entry),
@@ -1648,11 +2041,18 @@ class ScienceRunManager:
     def create(self, payload: RunCreate) -> str:
         prompt = payload.prompt or ""
         if not prompt.strip() or len(prompt) > MAX_PROMPT_CHARS:
-            raise HTTPException(status_code=400, detail="A non-empty prompt of at most 6000 characters is required")
+            raise HTTPException(
+                status_code=400,
+                detail="A non-empty prompt of at most 6000 characters is required",
+            )
         if not 1 <= len(payload.steps) <= MAX_STEPS:
-            raise HTTPException(status_code=400, detail=f"1-{MAX_STEPS} steps are required")
+            raise HTTPException(
+                status_code=400, detail=f"1-{MAX_STEPS} steps are required"
+            )
         if len(self.runs) >= MAX_RUNS:
-            raise HTTPException(status_code=429, detail="Run limit reached; restart to reset")
+            raise HTTPException(
+                status_code=429, detail="Run limit reached; restart to reset"
+            )
 
         run_id = str(uuid.uuid4())
         run = {
@@ -1683,10 +2083,15 @@ class ScienceRunManager:
 
     def control(self, run_id: str, action: str) -> dict:
         if action not in self.CONTROL:
-            raise HTTPException(status_code=400, detail="action must be pause, resume, or cancel")
+            raise HTTPException(
+                status_code=400, detail="action must be pause, resume, or cancel"
+            )
         run = self.runs.get(run_id)
         if run is None:
-            raise HTTPException(status_code=404, detail="Run not found. Demo state is lost when the server restarts.")
+            raise HTTPException(
+                status_code=404,
+                detail="Run not found. Demo state is lost when the server restarts.",
+            )
         if run["status"] in self.TERMINAL:
             raise HTTPException(status_code=409, detail="Run is already terminal")
         run["status"] = self.CONTROL[action]
@@ -1735,7 +2140,9 @@ class ScienceRunManager:
             if step["progress"] == 100:
                 step["status"] = "complete"
                 step["output"] = f"模拟步骤「{step['title']}」已完成。未执行真实分析。"
-            run["progress"] = round(sum(s["progress"] for s in run["steps"]) / len(run["steps"]))
+            run["progress"] = round(
+                sum(s["progress"] for s in run["steps"]) / len(run["steps"])
+            )
             if all(s["status"] == "complete" for s in run["steps"]):
                 run["status"] = "complete"
             self.broadcast(run)
@@ -1783,8 +2190,15 @@ class ScienceAPI:
         @router.get("/runs")
         async def list_runs():
             return [
-                {"id": run["id"], "status": run["status"], "progress": run["progress"], "createdAt": run["createdAt"]}
-                for run in sorted(self.manager.runs.values(), key=lambda r: r["createdAt"])
+                {
+                    "id": run["id"],
+                    "status": run["status"],
+                    "progress": run["progress"],
+                    "createdAt": run["createdAt"],
+                }
+                for run in sorted(
+                    self.manager.runs.values(), key=lambda r: r["createdAt"]
+                )
             ]
 
         @router.get("/runs/{run_id}")
@@ -1792,7 +2206,10 @@ class ScienceAPI:
             try:
                 return self.manager.snapshot(run_id)
             except KeyError:
-                raise HTTPException(status_code=404, detail="Run not found. Demo state is lost when the server restarts.")
+                raise HTTPException(
+                    status_code=404,
+                    detail="Run not found. Demo state is lost when the server restarts.",
+                )
 
         @router.post("/runs/{run_id}/control")
         async def control_run(run_id: str, payload: RunControl, request: Request):
@@ -1812,14 +2229,20 @@ class ScienceAPI:
         async def save_provider(payload: ProviderIn, request: Request):
             _check_origin(request)
             provider = self.model_store.upsert_provider(payload)
-            return {"provider": provider, "providers": self.model_store.list_providers()}
+            return {
+                "provider": provider,
+                "providers": self.model_store.list_providers(),
+            }
 
         @router.delete("/providers/{provider_id}")
         async def delete_provider(provider_id: str, request: Request):
             _check_origin(request)
             if not self.model_store.delete_provider(provider_id):
                 raise HTTPException(status_code=404, detail="Provider not found")
-            return {"providers": self.model_store.list_providers(), "models": self.model_store.list_models()}
+            return {
+                "providers": self.model_store.list_providers(),
+                "models": self.model_store.list_models(),
+            }
 
         @router.post("/providers/test")
         async def test_provider(payload: ProviderRef, request: Request):
@@ -1850,20 +2273,30 @@ class ScienceAPI:
         @router.get("/model-meta")
         async def model_meta(model: str = ""):
             """LiteLLM catalog lookup for one model name (form auto-fill preview)."""
+
             def _work():
                 entry = _litellm_lookup(model or "")
                 pin, pout = _model_pricing(entry)
                 max_output = entry.get("max_tokens") if entry else None
-                ctx = entry.get("max_input_tokens") or entry.get("max_tokens") if entry else None
+                ctx = (
+                    entry.get("max_input_tokens") or entry.get("max_tokens")
+                    if entry
+                    else None
+                )
                 return {
                     "model": model or "",
                     "matched": bool(entry),
                     "litellmKey": (entry or {}).get("_litellm_key") or None,
-                    "contextWindow": int(ctx) if isinstance(ctx, (int, float)) and ctx > 0 else None,
-                    "maxOutputTokens": int(max_output) if isinstance(max_output, (int, float)) and max_output > 0 else None,
+                    "contextWindow": int(ctx)
+                    if isinstance(ctx, (int, float)) and ctx > 0
+                    else None,
+                    "maxOutputTokens": int(max_output)
+                    if isinstance(max_output, (int, float)) and max_output > 0
+                    else None,
                     "priceInUsdPerM": round(pin * 1e6, 4) if pin > 0 else None,
                     "priceOutUsdPerM": round(pout * 1e6, 4) if pout > 0 else None,
                 }
+
             return await asyncio.to_thread(_work)
 
         @router.get("/usage-tokens")
@@ -1912,14 +2345,18 @@ class ScienceAPI:
             """在项目目录执行一条 shell 命令(非交互, 逐条提交)。"""
             _check_origin(request)
             project = self.project_store.projects.get(payload.projectId or "")
-            return await asyncio.to_thread(_fs_exec_payload, project, payload.cmd, payload.cwd)
+            return await asyncio.to_thread(
+                _fs_exec_payload, project, payload.cmd, payload.cwd
+            )
 
         @router.post("/fs/upload")
         async def fs_upload(payload: _FsUploadIn, request: Request):
             """上传一个文件到项目目录(base64, 不覆盖已有文件)。"""
             _check_origin(request)
             project = self.project_store.projects.get(payload.projectId or "")
-            return await asyncio.to_thread(_fs_upload_payload, project, payload.name, payload.dataBase64)
+            return await asyncio.to_thread(
+                _fs_upload_payload, project, payload.name, payload.dataBase64
+            )
 
         @router.get("/projects")
         async def list_projects():
@@ -1929,7 +2366,11 @@ class ScienceAPI:
         async def list_dirs(request: Request, path: str = ""):
             _check_origin(request)
             root = os.environ.get("SIGMAFLOW_PROJECTS_DIR") or os.path.expanduser("~")
-            base = os.path.realpath(os.path.expanduser(path)) if path else os.path.realpath(root)
+            base = (
+                os.path.realpath(os.path.expanduser(path))
+                if path
+                else os.path.realpath(root)
+            )
             dirs, error = [], ""
             try:
                 for entry in os.scandir(base):
@@ -1939,8 +2380,13 @@ class ScienceAPI:
                 error = "目录不存在或不可访问"
             dirs.sort(key=lambda d: d["name"].lower())
             parent = os.path.dirname(base.rstrip("/")) or "/"
-            return {"root": root, "path": base, "parent": parent if parent != base else None,
-                    "dirs": dirs, "error": error}
+            return {
+                "root": root,
+                "path": base,
+                "parent": parent if parent != base else None,
+                "dirs": dirs,
+                "error": error,
+            }
 
         @router.post("/projects")
         async def save_project(payload: ProjectIn, request: Request):
@@ -1953,22 +2399,44 @@ class ScienceAPI:
             _check_origin(request)
             if not self.project_store.delete_project(project_id):
                 raise HTTPException(status_code=404, detail="Project not found")
-            return {"projects": self.project_store.list_projects(), "conversations": self.project_store.list_conversations()}
+            return {
+                "projects": self.project_store.list_projects(),
+                "conversations": self.project_store.list_conversations(),
+            }
 
         @router.post("/chat")
         async def chat(payload: ChatIn, request: Request):
             _check_origin(request)
-            base_url, api_key, model_name = _resolve_chat(self.model_store, payload.modelId)
+            base_url, api_key, model_name = _resolve_chat(
+                self.model_store, payload.modelId
+            )
             messages = [m for m in (payload.messages or []) if isinstance(m, dict)]
             conv_ref = self.project_store.conversations.get(payload.runId or "") or {}
             effective_pid = payload.projectId or conv_ref.get("projectId")
-            workdir = self.project_store.projects.get(effective_pid or "", {}).get("dir")
+            workdir = self.project_store.projects.get(effective_pid or "", {}).get(
+                "dir"
+            )
             try:
                 stats: dict = {}
-                content = await asyncio.to_thread(_run_agent_chat, base_url, api_key, model_name, messages, None, None, None, stats, workdir)
+                content = await asyncio.to_thread(
+                    _run_agent_chat,
+                    base_url,
+                    api_key,
+                    model_name,
+                    messages,
+                    None,
+                    None,
+                    None,
+                    stats,
+                    workdir,
+                )
             except RuntimeError as err:
                 raise HTTPException(status_code=400, detail=str(err))
-            return {"content": content, "tokens": stats.get("completion_tokens") or 0, "promptTokens": stats.get("prompt_tokens") or 0}
+            return {
+                "content": content,
+                "tokens": stats.get("completion_tokens") or 0,
+                "promptTokens": stats.get("prompt_tokens") or 0,
+            }
 
         @router.get("/tools")
         async def list_tools():
@@ -2021,9 +2489,15 @@ class ScienceAPI:
         @router.post("/mcp")
         async def save_mcp(payload: MCPIn, request: Request):
             _check_origin(request)
-            servers = _build_mcp_servers(payload.servers or [], reset=bool(payload.reset))
+            servers = _build_mcp_servers(
+                payload.servers or [], reset=bool(payload.reset)
+            )
             # 记录被移除的内置服务器, 避免每次启动回填复活
-            removed = [] if payload.reset else [n for n in _builtin_mcp_servers() if n not in servers]
+            removed = (
+                []
+                if payload.reset
+                else [n for n in _builtin_mcp_servers() if n not in servers]
+            )
             await asyncio.to_thread(_save_mcp_servers, servers, removed)
             # 重建 MCPClient 会真实调用各服务器的 tools/list, 放到线程里避免阻塞事件循环
             await asyncio.to_thread(_rebuild_agent_mcp)
@@ -2034,11 +2508,17 @@ class ScienceAPI:
         async def get_system_prompt():
             def _builtin_text():
                 return _default_system_prompts()[0]
+
             builtin = await asyncio.to_thread(_builtin_text)
             cfg = _load_system_prompt_config()
             prompt = str(cfg.get("prompt") or "")
             enabled = bool(cfg.get("enabled")) and bool(prompt.strip())
-            return {"prompt": prompt, "enabled": enabled, "builtin": builtin, "builtinTokens": math.ceil(len(builtin) / 3.7)}
+            return {
+                "prompt": prompt,
+                "enabled": enabled,
+                "builtin": builtin,
+                "builtinTokens": math.ceil(len(builtin) / 3.7),
+            }
 
         @router.post("/system-prompt")
         async def save_system_prompt(payload: SystemPromptIn, request: Request):
@@ -2046,8 +2526,12 @@ class ScienceAPI:
             prompt_text = str(payload.prompt or "")[:32000]
             enabled = bool(payload.enabled)
             if enabled and not prompt_text.strip():
-                raise HTTPException(status_code=400, detail="启用自定义系统提示词时内容不能为空")
-            await asyncio.to_thread(_save_system_prompt_config, {"prompt": prompt_text, "enabled": enabled})
+                raise HTTPException(
+                    status_code=400, detail="启用自定义系统提示词时内容不能为空"
+                )
+            await asyncio.to_thread(
+                _save_system_prompt_config, {"prompt": prompt_text, "enabled": enabled}
+            )
             # 自定义提示词改变系统提示长度, 清空缓存让 /context-info 重新测量
             _AGENT_CONTEXT_SIZES.clear()
             return {"prompt": prompt_text, "enabled": enabled}
@@ -2072,15 +2556,22 @@ class ScienceAPI:
         async def save_conversation(payload: ConversationIn, request: Request):
             _check_origin(request)
             conversation = self.project_store.upsert_conversation(payload)
-            return {"conversation": conversation, "conversations": self.project_store.list_conversations()}
+            return {
+                "conversation": conversation,
+                "conversations": self.project_store.list_conversations(),
+            }
 
         @router.get("/conversations/{conversation_id}/content")
         async def get_conversation_content(conversation_id: str):
             conv = self.project_store.conversations.get(conversation_id)
             if conv is None:
                 raise HTTPException(status_code=404, detail="Conversation not found")
-            return {"id": conversation_id, "title": conv.get("title") or "", "projectId": conv.get("projectId"),
-                    "content": conv.get("content") or []}
+            return {
+                "id": conversation_id,
+                "title": conv.get("title") or "",
+                "projectId": conv.get("projectId"),
+                "content": conv.get("content") or [],
+            }
 
         @router.delete("/conversations/{conversation_id}")
         async def delete_conversation(conversation_id: str, request: Request):
@@ -2096,7 +2587,10 @@ class ScienceAPI:
             try:
                 self.manager.snapshot(run_id)
             except KeyError:
-                raise HTTPException(status_code=404, detail="Run not found. Demo state is lost when the server restarts.")
+                raise HTTPException(
+                    status_code=404,
+                    detail="Run not found. Demo state is lost when the server restarts.",
+                )
 
             async def event_stream():
                 queue: asyncio.Queue = asyncio.Queue()
@@ -2157,6 +2651,21 @@ class ScienceAPI:
         #   <- {"event":"state","data":{snapshot}}                  # push
         #   <- {"event":"error","requestId":..?,"data":{"error":..}}
 
+        self._pty_sessions: Dict[str, "_PtySession"] = {}
+        self._pty_exit_hook_done = False
+
+        def _pty_shutdown_all():
+            for session in list(self._pty_sessions.values()):
+                try:
+                    session.kill()
+                except Exception:
+                    pass
+            self._pty_sessions.clear()
+
+        @router.on_event("shutdown")
+        async def _pty_shutdown_event():
+            _pty_shutdown_all()
+
         @router.websocket("/ws")
         async def websocket_endpoint(ws: WebSocket):
             # 与 HTTP 写接口的同源策略保持一致: 拒绝跨源连接, 防止恶意页面
@@ -2175,9 +2684,38 @@ class ScienceAPI:
             chat_tasks: Set[asyncio.Task] = set()
             # 请求级停止标记: chat.stop 置 True, 流式循环轮询后自行收尾
             chat_stops: dict = {}
+            # 交互终端: 本连接当前 attach 的 PTY(一个连接同一时刻只挂一个项目会话)
+            pty_attached: Dict[str, asyncio.Queue] = {}
+            pty_queue: asyncio.Queue = asyncio.Queue()
+            pty_pump: Optional[asyncio.Task] = None
+
+            async def _pty_pump_loop():
+                try:
+                    while True:
+                        kind, payload = await pty_queue.get()
+                        if kind == "out":
+                            await ws.send_bytes(payload)
+                        elif kind == "closed":
+                            await ws.send_json({"event": "pty.closed"})
+                except Exception:
+                    pass
+
+            def _pty_get(project_id: str) -> Optional["_PtySession"]:
+                session = self._pty_sessions.get(_pty_key_of(project_id))
+                return session if session is not None and session.alive else None
+
+            def _pty_detach_all():
+                for key, att_queue in list(pty_attached.items()):
+                    session = self._pty_sessions.get(key)
+                    if session is not None:
+                        session.unsubscribe(att_queue)
+                pty_attached.clear()
 
             async def reply(event: str, request_id, data=None):
-                message: Dict[str, Any] = {"event": event, "data": data if data is not None else {}}
+                message: Dict[str, Any] = {
+                    "event": event,
+                    "data": data if data is not None else {},
+                }
                 if request_id:
                     message["requestId"] = request_id
                 await ws.send_json(message)
@@ -2191,7 +2729,11 @@ class ScienceAPI:
             async def handle(message: dict):
                 action = message.get("action")
                 request_id = message.get("requestId")
-                data = message.get("data") if isinstance(message.get("data"), dict) else message
+                data = (
+                    message.get("data")
+                    if isinstance(message.get("data"), dict)
+                    else message
+                )
                 if action == "ping":
                     await reply("pong", request_id)
                 elif action == "run.create":
@@ -2202,7 +2744,11 @@ class ScienceAPI:
                             projectId=data.get("projectId"),
                             datasetIds=data.get("datasetIds"),
                             config=data.get("config"),
-                            steps=[StepSpec(**s) for s in (data.get("steps") or []) if isinstance(s, dict)],
+                            steps=[
+                                StepSpec(**s)
+                                for s in (data.get("steps") or [])
+                                if isinstance(s, dict)
+                            ],
                         )
                     except Exception:
                         await fail(request_id, "Invalid run payload")
@@ -2215,13 +2761,17 @@ class ScienceAPI:
                     # Creating a run implies subscribing this connection.
                     self.manager.subscribe(run_id, queue)
                     subscribed.add(run_id)
-                    await reply("run.created", request_id, {"id": run_id, "isDemo": True})
+                    await reply(
+                        "run.created", request_id, {"id": run_id, "isDemo": True}
+                    )
                 elif action == "run.get":
                     run_id = run_id_of(data)
                     if run_id not in self.manager.runs:
                         await fail(request_id, "Run not found")
                         return
-                    await reply("run.snapshot", request_id, self.manager.snapshot(run_id))
+                    await reply(
+                        "run.snapshot", request_id, self.manager.snapshot(run_id)
+                    )
                 elif action == "run.subscribe":
                     run_id = run_id_of(data)
                     if run_id not in self.manager.runs:
@@ -2238,13 +2788,19 @@ class ScienceAPI:
                 elif action == "run.control":
                     run_id = run_id_of(data)
                     try:
-                        snapshot = self.manager.control(run_id, _clip(data.get("control"), 16))
+                        snapshot = self.manager.control(
+                            run_id, _clip(data.get("control"), 16)
+                        )
                     except HTTPException as err:
                         await fail(request_id, err.detail)
                         return
                     await reply("run.control", request_id, snapshot)
                 elif action == "provider.list":
-                    await reply("provider.list", request_id, {"providers": self.model_store.list_providers()})
+                    await reply(
+                        "provider.list",
+                        request_id,
+                        {"providers": self.model_store.list_providers()},
+                    )
                 elif action == "provider.save":
                     try:
                         payload = ProviderIn(
@@ -2261,15 +2817,33 @@ class ScienceAPI:
                     except HTTPException as err:
                         await fail(request_id, err.detail)
                         return
-                    await reply("provider.saved", request_id, {"provider": provider, "providers": self.model_store.list_providers()})
+                    await reply(
+                        "provider.saved",
+                        request_id,
+                        {
+                            "provider": provider,
+                            "providers": self.model_store.list_providers(),
+                        },
+                    )
                 elif action == "provider.delete":
                     if not self.model_store.delete_provider(run_id_of(data)):
                         await fail(request_id, "Provider not found")
                         return
-                    await reply("provider.deleted", request_id, {"providers": self.model_store.list_providers(), "models": self.model_store.list_models()})
+                    await reply(
+                        "provider.deleted",
+                        request_id,
+                        {
+                            "providers": self.model_store.list_providers(),
+                            "models": self.model_store.list_models(),
+                        },
+                    )
                 elif action == "provider.test":
                     try:
-                        ref = ProviderRef(id=data.get("id") or None, baseUrl=data.get("baseUrl"), apiKey=data.get("apiKey"))
+                        ref = ProviderRef(
+                            id=data.get("id") or None,
+                            baseUrl=data.get("baseUrl"),
+                            apiKey=data.get("apiKey"),
+                        )
                     except Exception:
                         await fail(request_id, "Invalid provider payload")
                         return
@@ -2281,7 +2855,11 @@ class ScienceAPI:
                     await reply("provider.test", request_id, result)
                 elif action == "provider.models":
                     try:
-                        ref = ProviderRef(id=data.get("id") or None, baseUrl=data.get("baseUrl"), apiKey=data.get("apiKey"))
+                        ref = ProviderRef(
+                            id=data.get("id") or None,
+                            baseUrl=data.get("baseUrl"),
+                            apiKey=data.get("apiKey"),
+                        )
                     except Exception:
                         await fail(request_id, "Invalid provider payload")
                         return
@@ -2289,12 +2867,22 @@ class ScienceAPI:
                     if not base_url:
                         await fail(request_id, "模型接口地址为空")
                         return
-                    result = await asyncio.to_thread(_list_provider_models, base_url, api_key)
+                    result = await asyncio.to_thread(
+                        _list_provider_models, base_url, api_key
+                    )
                     await reply("provider.models", request_id, result)
                 elif action == "model.list":
-                    await reply("model.list", request_id, {"models": self.model_store.list_models()})
+                    await reply(
+                        "model.list",
+                        request_id,
+                        {"models": self.model_store.list_models()},
+                    )
                 elif action == "context.info":
-                    await reply("context.info", request_id, await asyncio.to_thread(_agent_context_sizes))
+                    await reply(
+                        "context.info",
+                        request_id,
+                        await asyncio.to_thread(_agent_context_sizes),
+                    )
                 elif action == "model.save":
                     try:
                         payload = ModelIn(
@@ -2312,14 +2900,26 @@ class ScienceAPI:
                     except HTTPException as err:
                         await fail(request_id, err.detail)
                         return
-                    await reply("model.saved", request_id, {"model": model, "models": self.model_store.list_models()})
+                    await reply(
+                        "model.saved",
+                        request_id,
+                        {"model": model, "models": self.model_store.list_models()},
+                    )
                 elif action == "model.delete":
                     if not self.model_store.delete_model(run_id_of(data)):
                         await fail(request_id, "Model not found")
                         return
-                    await reply("model.deleted", request_id, {"models": self.model_store.list_models()})
+                    await reply(
+                        "model.deleted",
+                        request_id,
+                        {"models": self.model_store.list_models()},
+                    )
                 elif action == "project.list":
-                    await reply("project.list", request_id, {"projects": self.project_store.list_projects()})
+                    await reply(
+                        "project.list",
+                        request_id,
+                        {"projects": self.project_store.list_projects()},
+                    )
                 elif action == "project.save":
                     try:
                         payload = ProjectIn(
@@ -2339,14 +2939,32 @@ class ScienceAPI:
                     except HTTPException as err:
                         await fail(request_id, err.detail)
                         return
-                    await reply("project.saved", request_id, {"project": project, "projects": self.project_store.list_projects()})
+                    await reply(
+                        "project.saved",
+                        request_id,
+                        {
+                            "project": project,
+                            "projects": self.project_store.list_projects(),
+                        },
+                    )
                 elif action == "project.delete":
                     if not self.project_store.delete_project(run_id_of(data)):
                         await fail(request_id, "Project not found")
                         return
-                    await reply("project.deleted", request_id, {"projects": self.project_store.list_projects(), "conversations": self.project_store.list_conversations()})
+                    await reply(
+                        "project.deleted",
+                        request_id,
+                        {
+                            "projects": self.project_store.list_projects(),
+                            "conversations": self.project_store.list_conversations(),
+                        },
+                    )
                 elif action == "conversation.list":
-                    await reply("conversation.list", request_id, {"conversations": self.project_store.list_conversations()})
+                    await reply(
+                        "conversation.list",
+                        request_id,
+                        {"conversations": self.project_store.list_conversations()},
+                    )
                 elif action == "conversation.save":
                     try:
                         payload = ConversationIn(
@@ -2365,19 +2983,38 @@ class ScienceAPI:
                     except HTTPException as err:
                         await fail(request_id, err.detail)
                         return
-                    await reply("conversation.saved", request_id, {"conversation": conversation, "conversations": self.project_store.list_conversations()})
+                    await reply(
+                        "conversation.saved",
+                        request_id,
+                        {
+                            "conversation": conversation,
+                            "conversations": self.project_store.list_conversations(),
+                        },
+                    )
                 elif action == "conversation.content":
                     conv = self.project_store.conversations.get(run_id_of(data))
                     if conv is None:
                         await fail(request_id, "Conversation not found")
                         return
-                    await reply("conversation.content", request_id, {"id": conv["id"], "title": conv.get("title") or "",
-                                                                    "projectId": conv.get("projectId"), "content": conv.get("content") or []})
+                    await reply(
+                        "conversation.content",
+                        request_id,
+                        {
+                            "id": conv["id"],
+                            "title": conv.get("title") or "",
+                            "projectId": conv.get("projectId"),
+                            "content": conv.get("content") or [],
+                        },
+                    )
                 elif action == "conversation.delete":
                     if not self.project_store.delete_conversation(run_id_of(data)):
                         await fail(request_id, "Conversation not found")
                         return
-                    await reply("conversation.deleted", request_id, {"conversations": self.project_store.list_conversations()})
+                    await reply(
+                        "conversation.deleted",
+                        request_id,
+                        {"conversations": self.project_store.list_conversations()},
+                    )
                 elif action == "chat.stop":
                     # 置位停止标记, 流式循环会在收尾时补发 chat.done
                     if request_id in chat_stops:
@@ -2385,19 +3022,29 @@ class ScienceAPI:
                     await reply("chat.stop.ack", request_id, {"stopped": True})
                 elif action == "chat.send":
                     try:
-                        base_url, api_key, model_name = _resolve_chat(self.model_store, data.get("modelId"))
+                        base_url, api_key, model_name = _resolve_chat(
+                            self.model_store, data.get("modelId")
+                        )
                     except HTTPException as err:
                         await fail(request_id, err.detail)
                         return
-                    messages = [m for m in (data.get("messages") or []) if isinstance(m, dict)]
+                    messages = [
+                        m for m in (data.get("messages") or []) if isinstance(m, dict)
+                    ]
                     if not messages:
                         await fail(request_id, "消息列表为空")
                         return
-                    conv_ref = self.project_store.conversations.get(data.get("runId") or "") or {}
+                    conv_ref = (
+                        self.project_store.conversations.get(data.get("runId") or "")
+                        or {}
+                    )
                     effective_pid = data.get("projectId") or conv_ref.get("projectId")
-                    chat_workdir = self.project_store.projects.get(effective_pid or "", {}).get("dir")
+                    chat_workdir = self.project_store.projects.get(
+                        effective_pid or "", {}
+                    ).get("dir")
                     # 同一 requestId 重发前先复位停止标记
                     chat_stops[request_id] = False
+
                     # 工作线程阻塞产出事件, 经线程安全回调投递回队列
                     async def stream_chat() -> None:
                         loop = asyncio.get_running_loop()
@@ -2405,17 +3052,35 @@ class ScienceAPI:
                         content: list = []
                         stats: dict = {}
                         closed = False
+
                         # 事件元组 (kind, value): delta/think/tool/done/error
                         def work():
                             try:
-                                _stream_agent_chat(base_url, api_key, model_name, messages,
-                                    lambda d: loop.call_soon_threadsafe(chat_queue.put_nowait, ("delta", d)),
-                                    lambda t: loop.call_soon_threadsafe(chat_queue.put_nowait, ("think", t)),
-                                    lambda e: loop.call_soon_threadsafe(chat_queue.put_nowait, ("tool", e)),
-                                    stats, chat_workdir)
-                                loop.call_soon_threadsafe(chat_queue.put_nowait, ("done", None))
+                                _stream_agent_chat(
+                                    base_url,
+                                    api_key,
+                                    model_name,
+                                    messages,
+                                    lambda d: loop.call_soon_threadsafe(
+                                        chat_queue.put_nowait, ("delta", d)
+                                    ),
+                                    lambda t: loop.call_soon_threadsafe(
+                                        chat_queue.put_nowait, ("think", t)
+                                    ),
+                                    lambda e: loop.call_soon_threadsafe(
+                                        chat_queue.put_nowait, ("tool", e)
+                                    ),
+                                    stats,
+                                    chat_workdir,
+                                )
+                                loop.call_soon_threadsafe(
+                                    chat_queue.put_nowait, ("done", None)
+                                )
                             except Exception as err:
-                                loop.call_soon_threadsafe(chat_queue.put_nowait, ("error", str(err)))
+                                loop.call_soon_threadsafe(
+                                    chat_queue.put_nowait, ("error", str(err))
+                                )
+
                         # to_thread 在默认执行器中运行 work, 不阻塞事件循环
                         worker = asyncio.create_task(asyncio.to_thread(work))
                         while not closed:
@@ -2423,23 +3088,72 @@ class ScienceAPI:
                                 # 客户端请求停止: 直接补发 chat.done(stopped=true)
                                 closed = True
                                 try:
-                                    await ws.send_json({"event": "chat.done", "requestId": request_id,
-                                                        "data": {"content": "".join(content), "stopped": True}})
+                                    await ws.send_json(
+                                        {
+                                            "event": "chat.done",
+                                            "requestId": request_id,
+                                            "data": {
+                                                "content": "".join(content),
+                                                "stopped": True,
+                                            },
+                                        }
+                                    )
                                 except Exception:
                                     pass
                                 break
                             kind, value = await chat_queue.get()
                             if kind == "delta":
                                 content.append(value)
-                                event, message = "chat.delta", {"event": "chat.delta", "requestId": request_id, "data": {"delta": value}}
+                                event, message = (
+                                    "chat.delta",
+                                    {
+                                        "event": "chat.delta",
+                                        "requestId": request_id,
+                                        "data": {"delta": value},
+                                    },
+                                )
                             elif kind == "think":
-                                event, message = "chat.think", {"event": "chat.think", "requestId": request_id, "data": {"delta": value}}
+                                event, message = (
+                                    "chat.think",
+                                    {
+                                        "event": "chat.think",
+                                        "requestId": request_id,
+                                        "data": {"delta": value},
+                                    },
+                                )
                             elif kind == "tool":
-                                event, message = "chat.tool", {"event": "chat.tool", "requestId": request_id, "data": {"tool": value}}
+                                event, message = (
+                                    "chat.tool",
+                                    {
+                                        "event": "chat.tool",
+                                        "requestId": request_id,
+                                        "data": {"tool": value},
+                                    },
+                                )
                             elif kind == "done":
-                                event, message = "chat.done", {"event": "chat.done", "requestId": request_id, "data": {"content": "".join(content), "tokens": stats.get("completion_tokens") or 0, "promptTokens": stats.get("prompt_tokens") or 0}}
+                                event, message = (
+                                    "chat.done",
+                                    {
+                                        "event": "chat.done",
+                                        "requestId": request_id,
+                                        "data": {
+                                            "content": "".join(content),
+                                            "tokens": stats.get("completion_tokens")
+                                            or 0,
+                                            "promptTokens": stats.get("prompt_tokens")
+                                            or 0,
+                                        },
+                                    },
+                                )
                             else:
-                                event, message = "error", {"event": "error", "requestId": request_id, "data": {"error": value}}
+                                event, message = (
+                                    "error",
+                                    {
+                                        "event": "error",
+                                        "requestId": request_id,
+                                        "data": {"error": value},
+                                    },
+                                )
                             try:
                                 await ws.send_json(message)
                             except Exception:
@@ -2450,12 +3164,100 @@ class ScienceAPI:
                                 break
                         await worker
                         chat_stops.pop(request_id, None)
+
                     # 流式任务与请求解耦: handle 立即返回, 事件异步推送
                     # 停止通过 chat_stops 轮询生效, 不强杀工作线程
                     # 任务句柄收进 chat_tasks, 服务退出时统一取消
                     chat_task = asyncio.create_task(stream_chat())
                     chat_tasks.add(chat_task)
                     chat_task.add_done_callback(chat_tasks.discard)
+                elif action == "pty.open":
+                    project_id = str(data.get("projectId") or data.get("id") or "")[:64]
+                    project = self.project_store.projects.get(project_id or "")
+                    basedir = str((project or {}).get("dir") or "").strip()
+                    if not basedir or not os.path.isdir(basedir):
+                        await fail(
+                            request_id, "项目未配置本地目录，先在项目设置里填写路径"
+                        )
+                        return
+                    key = _pty_key_of(project_id)
+                    _pty_detach_all()
+                    session = _pty_get(project_id)
+                    if session is None:
+                        if len(self._pty_sessions) >= _PTY_SESSIONS_MAX:
+                            victim = min(
+                                self._pty_sessions.items(),
+                                key=lambda kv: kv[1].created,
+                            )
+                            victim_key, victim_session = victim
+                            try:
+                                victim_session.kill()
+                            except Exception:
+                                pass
+                            self._pty_sessions.pop(victim_key, None)
+                        try:
+                            cols = int(data.get("cols") or 90)
+                            rows = int(data.get("rows") or 28)
+                        except Exception:
+                            cols, rows = 90, 28
+                        session = _PtySession(key, basedir, cols=cols, rows=rows)
+                        self._pty_sessions[key] = session
+                    snapshot, _seq = session.subscribe(
+                        asyncio.get_running_loop(), pty_queue
+                    )
+                    pty_attached[key] = pty_queue
+                    if not self._pty_exit_hook_done:
+                        self._pty_exit_hook_done = True
+                        atexit.register(_pty_shutdown_all)
+                    if snapshot:
+                        try:
+                            await ws.send_bytes(snapshot)
+                        except Exception:
+                            return
+                    await reply(
+                        "pty.opened",
+                        request_id,
+                        {
+                            "projectId": project_id,
+                            "cwd": basedir,
+                            "cols": session.cols,
+                            "rows": session.rows,
+                        },
+                    )
+                elif action == "pty.input":
+                    project_id = str(data.get("projectId") or data.get("id") or "")[:64]
+                    session = _pty_get(project_id)
+                    if session is None:
+                        await fail(request_id, "终端会话已退出")
+                        return
+                    payload = data.get("data")
+                    if isinstance(payload, str) and len(payload) <= 8192:
+                        session.write(payload.encode("utf-8", "replace"))
+                    await reply("pty.input", request_id)
+                elif action == "pty.resize":
+                    project_id = str(data.get("projectId") or data.get("id") or "")[:64]
+                    session = _pty_get(project_id)
+                    if session is None:
+                        await fail(request_id, "终端会话已退出")
+                        return
+                    try:
+                        session.resize(
+                            int(data.get("cols") or 0), int(data.get("rows") or 0)
+                        )
+                    except Exception:
+                        pass
+                    await reply("pty.resize", request_id)
+                elif action == "pty.kill":
+                    project_id = str(data.get("projectId") or data.get("id") or "")[:64]
+                    key = _pty_key_of(project_id)
+                    _pty_detach_all()
+                    session = self._pty_sessions.pop(key, None)
+                    if session is not None:
+                        try:
+                            session.kill()
+                        except Exception:
+                            pass
+                    await reply("pty.kill", request_id)
                 else:
                     await fail(request_id, f"Unknown action: {action}")
 
@@ -2467,16 +3269,23 @@ class ScienceAPI:
                         if not isinstance(message, dict):
                             raise ValueError("not an object")
                     except Exception:
-                        await ws.send_json({"event": "error", "data": {"error": "Invalid JSON format"}})
+                        await ws.send_json(
+                            {"event": "error", "data": {"error": "Invalid JSON format"}}
+                        )
                         continue
                     if pump is None:
                         pump = asyncio.create_task(_push_loop(ws, queue))
+                    if pty_pump is None:
+                        pty_pump = asyncio.create_task(_pty_pump_loop())
                     await handle(message)
             except WebSocketDisconnect:
                 pass
             finally:
                 if pump:
                     pump.cancel()
+                if pty_pump:
+                    pty_pump.cancel()
+                _pty_detach_all()
                 for task in chat_tasks:
                     task.cancel()
                 for run_id in subscribed:
@@ -2562,7 +3371,11 @@ class ScienceProjectStore:
 
     def _save(self):
         self.path.write_text(
-            json.dumps({"projects": self.projects, "conversations": self.conversations}, ensure_ascii=False, indent=2),
+            json.dumps(
+                {"projects": self.projects, "conversations": self.conversations},
+                ensure_ascii=False,
+                indent=2,
+            ),
             encoding="utf-8",
         )
 
@@ -2591,7 +3404,10 @@ class ScienceProjectStore:
             if pid and not conv.get("archived"):
                 latest[pid] = max(latest.get(pid, 0), conv.get("updatedAt") or 0)
         projects = [self._public_project(p) for p in self.projects.values()]
-        projects.sort(key=lambda p: max(p.get("updatedAt") or 0, latest.get(p["id"], 0)), reverse=True)
+        projects.sort(
+            key=lambda p: max(p.get("updatedAt") or 0, latest.get(p["id"], 0)),
+            reverse=True,
+        )
         return projects
 
     def upsert_project(self, payload: ProjectIn) -> dict:
@@ -2647,14 +3463,22 @@ class ScienceProjectStore:
 
     def upsert_conversation(self, payload: ConversationIn) -> dict:
         now = int(time.time() * 1000)
-        if payload.id and payload.id not in self.conversations and not self._valid_id(payload.id):
+        if (
+            payload.id
+            and payload.id not in self.conversations
+            and not self._valid_id(payload.id)
+        ):
             raise HTTPException(status_code=400, detail="Invalid conversation id")
         conv = self.conversations.get(payload.id or "")
         if conv is None:
             conv = {"id": payload.id or f"cn-{uuid.uuid4().hex[:12]}", "createdAt": now}
             self.conversations[conv["id"]] = conv
         conv["title"] = _clip(payload.title, 300) or "新会话"
-        conv["projectId"] = payload.projectId if  payload.projectId and payload.projectId in self.projects else  None
+        conv["projectId"] = (
+            payload.projectId
+            if payload.projectId and payload.projectId in self.projects
+            else None
+        )
         if payload.pinned is not None:
             conv["pinned"] = bool(payload.pinned)
         elif "pinned" not in conv:
@@ -2668,7 +3492,10 @@ class ScienceProjectStore:
             for msg in payload.content[-100:]:
                 if not isinstance(msg, dict):
                     continue
-                item: dict[str, str] = {"role": _clip(str(msg.get("role", "")), 16), "content": _clip(str(msg.get("content", "")), 20000)}
+                item: dict[str, str] = {
+                    "role": _clip(str(msg.get("role", "")), 16),
+                    "content": _clip(str(msg.get("content", "")), 20000),
+                }
                 # 保留思考与工具调用记录, 便于前端回放
                 # 每条消息截断到固定长度, 防止历史无限膨胀
                 reasoning = msg.get("reasoning")
@@ -2680,11 +3507,15 @@ class ScienceProjectStore:
                     for t in tools:
                         if not isinstance(t, dict):
                             continue
-                        saved_tools.append({"name":
-                                    _clip(str(t.get("name", "")), 200),
-                            "args": t.get("args") if isinstance(t.get("args"), (dict, list)) else {},
-                            "result": _clip(str(t.get("result", "")), 5000)
-                        })
+                        saved_tools.append(
+                            {
+                                "name": _clip(str(t.get("name", "")), 200),
+                                "args": t.get("args")
+                                if isinstance(t.get("args"), (dict, list))
+                                else {},
+                                "result": _clip(str(t.get("result", "")), 5000),
+                            }
+                        )
                     if saved_tools:
                         item["tools"] = saved_tools
                 if msg.get("tokens") is not None:
@@ -2698,7 +3529,10 @@ class ScienceProjectStore:
                 if msg.get("error") is not None:
                     _err = msg.get("error")
                     if isinstance(_err, dict):
-                        item["error"] = {"message": _clip(str(_err.get("message", "")), 2000), "detail": _clip(str(_err.get("detail", "")), 20000)}
+                        item["error"] = {
+                            "message": _clip(str(_err.get("message", "")), 2000),
+                            "detail": _clip(str(_err.get("detail", "")), 20000),
+                        }
                     else:
                         item["error"] = {"message": _clip(str(_err), 2000)}
                 if msg.get("elapsed") is not None:
@@ -2722,9 +3556,13 @@ def _resolve_chat(model_store, model_id: Optional[str]):
     models = list(model_store.models.values())
     model = model_store.models.get(model_id or "")
     if model is None:
-        model = next((m for m in models if m.get("isDefault")), None) or (models[0] if models else None)
+        model = next((m for m in models if m.get("isDefault")), None) or (
+            models[0] if models else None
+        )
     if model is None:
-        raise HTTPException(status_code=400, detail="尚未配置模型，请先在设置中添加模型")
+        raise HTTPException(
+            status_code=400, detail="尚未配置模型，请先在设置中添加模型"
+        )
     provider = model_store.providers.get(model.get("providerId")) or {}
     base_url = (provider.get("baseUrl") or "").strip()
     if not base_url:
@@ -2739,6 +3577,7 @@ def _make_chat_delta_callback(on_delta, on_reasoning):
     """统一 Agent 流式回调: cb(text)→正文; cb(None, think)→思考."""
     if on_delta is None and on_reasoning is None:
         return None
+
     def _cb(piece, think=None):
         if think is not None:
             if on_reasoning:
@@ -2746,10 +3585,21 @@ def _make_chat_delta_callback(on_delta, on_reasoning):
         elif piece is not None:
             if on_delta:
                 on_delta(piece)
+
     return _cb
 
 
-def _run_agent_chat(base_url: str, api_key: str, model_name: str, messages: list, on_delta=None, on_reasoning=None, on_tool=None, stats: dict = None, workdir: Optional[str] = None) -> str:
+def _run_agent_chat(
+    base_url: str,
+    api_key: str,
+    model_name: str,
+    messages: list,
+    on_delta=None,
+    on_reasoning=None,
+    on_tool=None,
+    stats: dict = None,
+    workdir: Optional[str] = None,
+) -> str:
     """Run a chat through the SigmaFlow agent/agent.Agent stack.
 
     Builds an Agent (openai-compatible method) against the configured
@@ -2763,17 +3613,32 @@ def _run_agent_chat(base_url: str, api_key: str, model_name: str, messages: list
     tools_mod = _agent_tools_module()
     tools_mod.set_session_workdir(workdir)
 
-    convo = [{"role": m.get("role"), "content": m.get("content", "")} for m in messages if m.get("role") in ("user", "assistant")]
+    convo = [
+        {"role": m.get("role"), "content": m.get("content", "")}
+        for m in messages
+        if m.get("role") in ("user", "assistant")
+    ]
     # 仅保留 user/assistant 两类角色, 其余消息直接丢弃
     # 轮次上限按助手消息数加预留余量, 防止无限循环
     max_turn = max(1, sum(1 for m in convo if m["role"] == "assistant") + 17)
     system, sub_system = _effective_system_prompts()
-    sub_system = re.sub(r"(subagent at )\S+", lambda mo: mo.group(1) + (workdir or mo.group(0)), sub_system, count=1) if workdir else sub_system
+    sub_system = (
+        re.sub(
+            r"(subagent at )\S+",
+            lambda mo: mo.group(1) + (workdir or mo.group(0)),
+            sub_system,
+            count=1,
+        )
+        if workdir
+        else sub_system
+    )
     bound_system = system
     if workdir:
         # 内置提示词首句形如 "You are a ... agent at <服务进程 cwd>", 会覆盖末尾的
         # 项目目录说明; 先把这类句子里的路径改写为会话工作目录, 再附加显式说明。
-        bound_system = re.sub(r"(agent at )\S+", lambda mo: mo.group(1) + workdir, f"{system}", count=1)
+        bound_system = re.sub(
+            r"(agent at )\S+", lambda mo: mo.group(1) + workdir, f"{system}", count=1
+        )
         bound_system = (
             f"{bound_system}"
             "\n\n# 工作目录\n本次会话绑定项目工作目录 `{workdir}`。"
@@ -2896,13 +3761,31 @@ def _sigma_usage(conversations: Dict[str, dict]) -> Dict[str, object]:
             day_key = (msg.get("at") or "")[:10]
             if not day_key:
                 day_key = str(date.today())
-            day = day_stats.setdefault(day_key, {"inputTokens": 0, "outputTokens": 0, "totalTokens": 0, "costUsd": 0.0, "sessions": set()})
+            day = day_stats.setdefault(
+                day_key,
+                {
+                    "inputTokens": 0,
+                    "outputTokens": 0,
+                    "totalTokens": 0,
+                    "costUsd": 0.0,
+                    "sessions": set(),
+                },
+            )
             day["inputTokens"] += prompt
             day["outputTokens"] += tokens
             day["totalTokens"] += prompt + tokens
             day["costUsd"] += cost
             day["sessions"].add(conv["id"])
-            m = model_stats.setdefault(model, {"inputTokens": 0, "outputTokens": 0, "totalTokens": 0, "costUsd": 0.0, "sessions": set()})
+            m = model_stats.setdefault(
+                model,
+                {
+                    "inputTokens": 0,
+                    "outputTokens": 0,
+                    "totalTokens": 0,
+                    "costUsd": 0.0,
+                    "sessions": set(),
+                },
+            )
             m["inputTokens"] += prompt
             m["outputTokens"] += tokens
             m["totalTokens"] += prompt + tokens
@@ -2916,22 +3799,34 @@ def _sigma_usage(conversations: Dict[str, dict]) -> Dict[str, object]:
             total_sessions += 1
             duration = max(0, last_ms - first_ms) if first_ms and last_ms else 0
             longest_session_ms = max(longest_session_ms, duration)
-            session_rows.append({
-                "sessionId": conv.get("id") or "",
-                "title": conv.get("title") or "",
-                "startMs": first_ms, "endMs": last_ms,
-                "durationMs": duration,
-                "inputTokens": conv_in, "outputTokens": conv_out,
-                "totalTokens": conv_in + conv_out,
-                "costUsd": round(conv_cost, 6),
-                "models": sorted(conv_models) if conv_models else [],
-            })
+            session_rows.append(
+                {
+                    "sessionId": conv.get("id") or "",
+                    "title": conv.get("title") or "",
+                    "startMs": first_ms,
+                    "endMs": last_ms,
+                    "durationMs": duration,
+                    "inputTokens": conv_in,
+                    "outputTokens": conv_out,
+                    "totalTokens": conv_in + conv_out,
+                    "costUsd": round(conv_cost, 6),
+                    "models": sorted(conv_models) if conv_models else [],
+                }
+            )
 
     days = sorted(
-        ({"date": key, "inputTokens": v["inputTokens"], "outputTokens": v["outputTokens"],
-          "totalTokens": v["totalTokens"], "sessions": len(v["sessions"]), "costUsd": round(v["costUsd"], 6)}
-         for key, v in day_stats.items()),
-        key=lambda x: x["date"]
+        (
+            {
+                "date": key,
+                "inputTokens": v["inputTokens"],
+                "outputTokens": v["outputTokens"],
+                "totalTokens": v["totalTokens"],
+                "sessions": len(v["sessions"]),
+                "costUsd": round(v["costUsd"], 6),
+            }
+            for key, v in day_stats.items()
+        ),
+        key=lambda x: x["date"],
     )
 
     def _longest_streak(day_keys: list) -> int:
@@ -2974,11 +3869,21 @@ def _sigma_usage(conversations: Dict[str, dict]) -> Dict[str, object]:
         "peakDay": peak,
         "days": days,
         "models": [
-            {"model": name, "inputTokens": v["inputTokens"], "outputTokens": v["outputTokens"],
-             "totalTokens": v["totalTokens"], "sessions": len(v["sessions"]), "costUsd": round(v["costUsd"], 6)}
-            for name, v in sorted(model_stats.items(), key=lambda kv: -(kv[1]["totalTokens"]))
+            {
+                "model": name,
+                "inputTokens": v["inputTokens"],
+                "outputTokens": v["outputTokens"],
+                "totalTokens": v["totalTokens"],
+                "sessions": len(v["sessions"]),
+                "costUsd": round(v["costUsd"], 6),
+            }
+            for name, v in sorted(
+                model_stats.items(), key=lambda kv: -(kv[1]["totalTokens"])
+            )
         ],
-        "sessions": sorted(session_rows, key=lambda x: -(x["endMs"] or x["startMs"]))[:30],
+        "sessions": sorted(session_rows, key=lambda x: -(x["endMs"] or x["startMs"]))[
+            :30
+        ],
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "user": "sigmaflow",
         "version": "sigmaflow-1.0",
@@ -3000,9 +3905,16 @@ def _agent_context_sizes() -> Dict[str, int]:
     Agent = agent_module.Agent
 
     system, sub_system = _effective_system_prompts()
-    agent = Agent(method="openai", model="estimate", base_url="http://127.0.0.1:9/v1",
-                  api_key="sk-empty", support_tool=True, tools=_effective_agent_tools(),
-                  system=system, sub_system=sub_system)
+    agent = Agent(
+        method="openai",
+        model="estimate",
+        base_url="http://127.0.0.1:9/v1",
+        api_key="sk-empty",
+        support_tool=True,
+        tools=_effective_agent_tools(),
+        system=system,
+        sub_system=sub_system,
+    )
     tools_wire = json.dumps(agent.tools, ensure_ascii=False, separators=(",", ":"))
     sizes = {
         "systemTokens": math.ceil(len(agent.system) / 3.7),
@@ -3012,12 +3924,32 @@ def _agent_context_sizes() -> Dict[str, int]:
     return sizes
 
 
-def _stream_agent_chat(base_url: str, api_key: str, model_name: str, messages: list, on_delta, on_reasoning=None, on_tool=None, stats: dict = None, workdir: Optional[str] = None):
+def _stream_agent_chat(
+    base_url: str,
+    api_key: str,
+    model_name: str,
+    messages: list,
+    on_delta,
+    on_reasoning=None,
+    on_tool=None,
+    stats: dict = None,
+    workdir: Optional[str] = None,
+):
     """Streaming chat. Runs synchronously on the caller's worker thread
     (the WS handler invokes it via asyncio.to_thread); on_delta is called
     on this same thread and forwarded into the asyncio queue by the
     caller with loop.call_soon_threadsafe."""
-    return _run_agent_chat(base_url, api_key, model_name, messages, on_delta=on_delta, on_reasoning=on_reasoning, on_tool=on_tool, stats=stats, workdir=workdir)
+    return _run_agent_chat(
+        base_url,
+        api_key,
+        model_name,
+        messages,
+        on_delta=on_delta,
+        on_reasoning=on_reasoning,
+        on_tool=on_tool,
+        stats=stats,
+        workdir=workdir,
+    )
 
 
 def _check_origin(request: Request):
@@ -3025,7 +3957,12 @@ def _check_origin(request: Request):
     origin = request.headers.get("origin")
     host = request.headers.get("host", "")
     if origin and origin not in (f"http://{host}", f"https://{host}"):
-        raise HTTPException(status_code=403, detail="Cross-origin writes are disabled in the demo server")
+        raise HTTPException(
+            status_code=403,
+            detail="Cross-origin writes are disabled in the demo server",
+        )
+
+
 # ==================== 系统状态面板 ====================
 # 全局缓存: 网速上次采样与 GPU 最近一次查询结果
 # nvidia-smi 结果缓存 5 秒, 避免每次 /system 请求都 fork 子进程
@@ -3042,16 +3979,29 @@ def _gpu_stats() -> list:
     gpus: list = []
     try:
         import subprocess
+
         out = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name,utilization.gpu,memory.used,memory.total",
-             "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=3, check=True).stdout
+            [
+                "nvidia-smi",
+                "--query-gpu=name,utilization.gpu,memory.used,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=True,
+        ).stdout
         for line in out.strip().splitlines():
             parts = [p.strip() for p in line.split(",")]
             if len(parts) == 4:
-                gpus.append({"name": parts[0], "usage": float(parts[1]),
-                             "mem_used_gb": round(float(parts[2]) / 1024, 1),
-                             "mem_total_gb": round(float(parts[3]) / 1024, 1)})
+                gpus.append(
+                    {
+                        "name": parts[0],
+                        "usage": float(parts[1]),
+                        "mem_used_gb": round(float(parts[2]) / 1024, 1),
+                        "mem_total_gb": round(float(parts[3]) / 1024, 1),
+                    }
+                )
     except Exception:
         gpus = []
     _sys_state["gpu"], _sys_state["gpu_at"] = gpus, now
@@ -3062,6 +4012,7 @@ def _system_stats() -> Dict[str, Any]:
     """Chat 页状态栏数据: 系统 / CPU / 内存 / 磁盘 / GPU / 网速。"""
     import platform
     import psutil
+
     # 发行版名称优先取 PRETTY_NAME
     # 读取失败时保留 uname 兜底
     os_name = f"{platform.system()} {platform.release()}"
@@ -3087,7 +4038,8 @@ def _system_stats() -> Dict[str, Any]:
     # 磁盘统计指向数据目录, /data 作为常见数据盘一并展示
     # 同一设备只统计一次
     disk_path = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
-        os.path.expanduser("~"), ".sigmaflow", "science")
+        os.path.expanduser("~"), ".sigmaflow", "science"
+    )
     disks: list = []
     disk = {"used_gb": 0, "total_gb": 0, "percent": 0, "path": disk_path}
     seen_devs: set = set()
@@ -3098,8 +4050,14 @@ def _system_stats() -> Dict[str, Any]:
             if dev in seen_devs:
                 continue
             seen_devs.add(dev)
-            disks.append({"used_gb": round(du.used / 2**30, 1), "total_gb": round(du.total / 2**30, 1),
-                          "percent": du.percent, "path": path})
+            disks.append(
+                {
+                    "used_gb": round(du.used / 2**30, 1),
+                    "total_gb": round(du.total / 2**30, 1),
+                    "percent": du.percent,
+                    "path": path,
+                }
+            )
         except Exception:
             continue
     if disks:
@@ -3112,17 +4070,23 @@ def _system_stats() -> Dict[str, Any]:
     if prev:
         dt = time.time() - prev[0]
         if dt > 0:
-            up_bps = max(0,  net.bytes_sent - prev[1].bytes_sent ) / dt
-            down_bps = max(0,  net.bytes_recv - prev[1].bytes_recv ) / dt
+            up_bps = max(0, net.bytes_sent - prev[1].bytes_sent) / dt
+            down_bps = max(0, net.bytes_recv - prev[1].bytes_recv) / dt
     _sys_state["net"] = (time.time(), net)
     # 快照存入全局状态, 供下次计算差值
     vm = psutil.virtual_memory()
     return {
         "os": os_name,
-        "cpu": {"model": cpu_model, "cores": psutil.cpu_count() or 0,
-                "usage": psutil.cpu_percent(interval=None)},
-        "memory": {"used_gb": round((vm.total - vm.available) / 2**30, 1),
-                   "total_gb": round(vm.total / 2**30, 1), "percent": vm.percent},
+        "cpu": {
+            "model": cpu_model,
+            "cores": psutil.cpu_count() or 0,
+            "usage": psutil.cpu_percent(interval=None),
+        },
+        "memory": {
+            "used_gb": round((vm.total - vm.available) / 2**30, 1),
+            "total_gb": round(vm.total / 2**30, 1),
+            "percent": vm.percent,
+        },
         "disk": disk,
         "disks": disks,
         "gpus": _gpu_stats(),

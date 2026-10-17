@@ -94,8 +94,11 @@
         const timer = setTimeout(() => finish(false), timeout);
         socket.onopen = () => { clearTimeout(timer); this.socket = socket; this.state = 'open'; this.failedAt = 0; finish(true); };
         socket.onmessage = event => {
+          if (event.data instanceof Blob) { event.data.arrayBuffer().then(ab => CS.agent.pty?.feed(new Uint8Array(ab))); return; }
+          if (event.data instanceof ArrayBuffer) { CS.agent.pty?.feed(new Uint8Array(event.data)); return; }
           let message;
           try { message = JSON.parse(event.data); } catch { return; }
+          if (message.event === 'pty.closed') { CS.agent.pty?.markDead(); if (message.requestId && CS.api.ws.pending.has(message.requestId)) CS.api.ws.pending.get(message.requestId).resolve?.({}); return; }
           if (message.event === 'state' && message.data?.id) {
             const handler = CS.api.ws.onState.get(message.data.id);
             if (handler) handler(message.data);
@@ -279,3 +282,94 @@
   };
   setInterval(() => CS.agent.tick(), 700);
 })();
+
+// ===== 交互终端(xterm.js + PTY): 与服务端共享持久会话, 断开重连回放缓冲 =====
+CS.agent.pty = {
+  term: null, fit: null, attached: null, dead: false, resizing: 0,
+
+  ensure() {
+    if (typeof Terminal === 'undefined') return false;
+    if (!this.term) {
+      const t = new Terminal({
+        fontSize: 12, fontFamily: 'Menlo, Consolas, "DejaVu Sans Mono", monospace',
+        cursorBlink: true, scrollback: 5000,
+        theme: { background: '#1d2135', foreground: '#e6e9f5', cursor: '#8b88d6', cursorAccent: '#1d2135', selectionBackground: '#3d405e' },
+      });
+      const fit = new FitAddon.FitAddon();
+      t.loadAddon(fit);
+      t.onData(text => this.input(text));
+      t.onResize(size => {
+        if (this.attached && size.cols > 0 && size.rows > 0) this.resize(size.cols, size.rows);
+      });
+      this.term = t; this.fit = fit;
+    }
+    return true;
+  },
+
+  mount() {
+    const host = document.getElementById('term-xhost');
+    if (!host || !CS.ui.terminal?.open || !this.ensure()) return;
+    if (!this.term.element) {
+      this.term.open(host);
+    } else if (this.term.element.parentNode !== host) {
+      host.appendChild(this.term.element);
+      try { this.term.refresh(0, this.term.rows - 1); } catch { /* 搬迁后强制重绘 */ }
+    }
+    requestAnimationFrame(() => this.fit && this.fitNow());
+    const project = CS.state.projectId;
+    if (project && this.attached !== project) this.attach(project);
+  },
+
+  fitNow() {
+    if (!this.fit || !this.term.element || !CS.ui.terminal?.open) return;
+    try {
+      const before = this.term.cols + 'x' + this.term.rows;
+      this.fit.fit();
+      const after = this.term.cols + 'x' + this.term.rows;
+      if (before !== after && this.attached) this.resize(this.term.cols, this.term.rows);
+    } catch { /* 容器不可见时忽略 */ }
+  },
+
+  async attach(projectId) {
+    this.attached = projectId;
+    this.dead = false;
+    try { this.term.reset(); } catch { /* 清屏以便回放 */ }
+    try {
+      const { cols, rows } = this.fit ? this.fit.proposeDimensions() : { cols: 90, rows: 28 };
+      CS.ui.terminal.cols = cols; CS.ui.terminal.rows = rows;
+      await CS.api.ws.send('pty.open', { projectId, cols, rows });
+      if (this.attached === projectId) requestAnimationFrame(() => { this.fitNow(); this.focus(); });
+    } catch { /* attach 失败解除标记, 允许输入/挂载时重试 */ if (this.attached === projectId) this.attached = null; }
+  },
+
+  input(text) {
+    if (!this.attached) { this.attach(CS.state.projectId); return; }
+    if (this.dead) { this.attach(this.attached); return; } // 进程退出后按 Enter 重开
+    CS.api.ws.send('pty.input', { projectId: this.attached, data: text }).catch(() => {});
+  },
+
+  resize(cols, rows) {
+    if (!this.attached) return;
+    CS.api.ws.send('pty.resize', { projectId: this.attached, cols, rows }).catch(() => {});
+  },
+
+  feed(bytes) {
+    if (!this.term || !this.attached) return;
+    this.term.write(bytes);
+  },
+
+  markDead() {
+    if (!this.term || !this.attached) return;
+    this.dead = true;
+    this.term.write('\r\n\x1b[33m── 进程已退出，按回车重新打开终端 ──\x1b[0m\r\n');
+    this.attached = null;
+  },
+
+  clear() {
+    try { this.term ? this.term.clear() : null; } catch { /* 忽略 */ }
+    if (this.dead === true) { this.dead = false; this.attach(CS.state.projectId); }
+    this.focus();
+  },
+
+  focus() { try { if (CS.ui.terminal.open) this.term?.focus(); } catch { /* 忽略 */ } },
+};

@@ -153,14 +153,8 @@
     if (el && _sysStatsHtml) el.innerHTML = _sysStatsHtml;
     if (hadConv) { const fresh = document.querySelector('.conversation'); if (fresh) fresh.scrollTop = savedTop; }
     CS.syncAnchorRail();
-    // 终端抽屉: 恢复草稿并保持输入焦点, 滚动到最新输出
-    const termInput = document.querySelector('form[data-form=term] .term-input');
-    if (termInput && CS.ui.terminal?.open) {
-      if (termInput.value !== CS.ui.terminal.draft) termInput.value = CS.ui.terminal.draft || '';
-      if (!CS.ui.terminal.busy) termInput.focus({ preventScroll: true });
-      termInput.setSelectionRange(termInput.value.length, termInput.value.length);
-      const body = document.getElementById('term-body'); if (body) body.scrollTop = body.scrollHeight;
-    }
+    // 终端面板: 迁移 xterm 到新容器并 attach/fit
+    if (CS.ui.terminal?.open) CS.agent.pty?.mount();
     // Token 用量热力图: 按容器宽度自适应列数(测量后才重排, 最多一次额外渲染)
     CS.fitUsageHeatmap();
   };
@@ -936,7 +930,7 @@
     'fs-open': (id, el) => { const path = el?.dataset?.path || id; if (path) CS.agent.previewFsFile(path); },
     'fs-term': () => { CS.ui.terminal.open = !CS.ui.terminal.open; CS.render(); },
     'term-close': () => { CS.ui.terminal.open = false; CS.render(); },
-    'term-clear': () => { CS.ui.terminal.lines = []; CS.ui.terminal.cwd = ''; CS.render(); },
+    'term-clear': () => { CS.agent.pty?.clear(); },
     'fs-upload': () => { document.getElementById('fs-upload-input')?.click(); },
     'fs-refresh': () => {
       const st = CS.ui.fs; if (!st) return;
@@ -1455,6 +1449,7 @@
       const w = Math.max(320, Math.min(window.innerWidth - 500, startW + (startX - e2.clientX)));
       CS.ui.terminal.width = w;
       const wrap = document.querySelector('.term-wrap'); if (wrap) wrap.style.width = w + 'px';
+      if (CS.ui.terminal.open) requestAnimationFrame(() => CS.agent.pty?.fitNow());
     };
     const up = () => {
       document.removeEventListener('pointermove', move);
@@ -1472,11 +1467,9 @@
     }
   });
   document.addEventListener('input', event => {
-    if (event.target?.classList?.contains('term-input')) CS.ui.terminal.draft = event.target.value;
   });
   document.addEventListener('submit', event => {
     const form=event.target; const type=form.dataset.form; if(!type) return; event.preventDefault();
-    if(type==='term') { CS.runTermCmd(); return; }
     if(type==='composer') {
       const prompt=CS.ui.composer.trim(); if(!prompt) return;
       const active=CS.currentRun();
@@ -1642,31 +1635,6 @@
       if (CS.state.projects.length && !CS.state.projects.some(p => p.id === CS.state.projectId)) CS.state.projectId = CS.state.projects[0].id;
       CS.save(); CS.emit('render');
     } catch (error) { /* 服务器不可用时保持本地项目列表 */ }
-  };
-  CS.runTermCmd = async () => {
-    const t = CS.ui.terminal;
-    if (!t || !t.open || t.busy) return;
-    const input = document.querySelector('form[data-form=term] .term-input');
-    const cmd = ((input ? input.value : t.draft) || '').trim();
-    if (!cmd) return;
-    t.lines.push({ type: 'cmd', text: cmd, cwd: t.cwd });
-    if (t.lines.length > 600) t.lines.splice(0, t.lines.length - 600);
-    t.draft = '';
-    t.busy = true;
-    CS.render();
-    try {
-      const data = await CS.api.request('/fs/exec', { method: 'POST', body: JSON.stringify({ projectId: CS.state.projectId, cmd, cwd: t.cwd }) });
-      const tt = CS.ui.terminal;
-      tt.cwd = data.cwd || '';
-      if ((data.stdout || '').trim()) tt.lines.push({ type: 'out', text: data.stdout.replace(/\n+$/, '') });
-      if ((data.stderr || '').trim()) tt.lines.push({ type: 'err', text: data.stderr.replace(/\n+$/, '') });
-      if ((data.code ?? 0) !== 0) tt.lines.push({ type: 'code', text: String(data.code) });
-      if (tt.lines.length > 600) tt.lines.splice(0, tt.lines.length - 600);
-    } catch (error) {
-      CS.ui.terminal.lines.push({ type: 'err', text: (error && error.message) || '命令执行失败' });
-    }
-    CS.ui.terminal.busy = false;
-    CS.render();
   };
   CS.uploadFsFiles = async fileList => {
     const files = [...(fileList || [])];
