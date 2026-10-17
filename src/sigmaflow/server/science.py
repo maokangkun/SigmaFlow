@@ -3936,6 +3936,7 @@ class ScienceProjectStore:
             "tags": project.get("tags") or [],
             "icon": project.get("icon") or "folder",
             "remote": project.get("remote"),
+            "dir": project.get("dir"),
             "createdAt": project.get("createdAt"),
             "updatedAt": project.get("updatedAt"),
         }
