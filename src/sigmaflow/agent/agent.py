@@ -6,6 +6,7 @@ import copy
 import base64
 import random
 import traceback
+import concurrent.futures
 from rich import print
 from openai import OpenAI
 from rich.console import Console
@@ -14,7 +15,7 @@ from rich.syntax import Syntax
 from anthropic import Anthropic
 from pathlib import Path
 from functools import singledispatchmethod
-from .tools import TOOL_HANDLERS, skill_loader, Compactor, BG, MCP
+from .tools import TOOL_HANDLERS, skill_loader, Compactor, BG, MCP, get_session_workdir, set_session_workdir
 from .utils import KnightRiderStatus, extract_json
 from .conf import *
 
@@ -413,7 +414,9 @@ class Agent:
                     print(f"{Prompt.Tokens}inp: {response.usage.prompt_tokens}, out: {response.usage.completion_tokens}, time: {cost_time:.2f}s, {(response.usage.completion_tokens or 0) / cost_time:.2f} tokens/s, tool calls: {len(msg.tool_calls)}, context: {Prompt.RedLine*round(ratio*10)}{Prompt.BlueLine*(10 - round(ratio*10))} {ratio:.1%}")
 
             # Tools calling
-            results = []
+            # 两段式: 第一段解析 tool_use 块并广播 call 事件; 第二段执行、打印并回填结果。
+            # 同轮的多个普通工具互不依赖, 可并行执行; task(子 agent)与单工具保持串行。
+            calls = []
             for block in response.content if self.method == 'anthropic' else msg.tool_calls:
                 match block.type:
                     case "text":
@@ -431,7 +434,7 @@ class Agent:
                             except json.JSONDecodeError:
                                 inp = block.function.arguments
                                 print(f"{Prompt.Error}Failed to parse function arguments as JSON, using raw string. Function: {func}, Arguments: {inp}")
-                                results.append({"role": "tool", "tool_call_id": block.id, "content": "Error: Failed to parse function arguments as JSON."})
+                                calls.append({"block": block, "func": func, "inp": None, "output": "Error: Failed to parse function arguments as JSON.", "task": False})
                                 continue
                         if func == 'write' and (t := inp.get('content', '')) and len(t) > 1000:
                             inp_prt = inp.copy()
@@ -445,69 +448,102 @@ class Agent:
                         else:
                             inp_prt = inp
                         print(f"{Prompt.Assistant}[orange3][italic]tool_use[/]\nname: {func}\ninput: [/]{inp_prt}")
+                        calls.append({"block": block, "func": func, "inp": inp, "output": None, "task": func == "task"})
                     case _:
                         print(f"{Prompt.Assistant}{block}")
 
-                if block.type in ["tool_use", "function"] and func:
-                    if self.on_tool is not None:
-                        try:
-                            self.on_tool({"kind": "call", "name": func, "args": inp if isinstance(inp, dict) else str(inp)})
-                        except Exception:
-                            pass
-                    manual_compact = func == "compact"
-                    if func == "task":
+            # call 事件按原始顺序广播, 前端按 name 与未完成状态配对结果
+            for c in calls:
+                if self.on_tool is not None:
+                    try:
+                        self.on_tool({"kind": "call", "name": c["func"], "args": c["inp"] if isinstance(c["inp"], dict) else str(c["inp"])})
+                    except Exception:
+                        pass
+
+            session_wd = get_session_workdir()
+
+            def _tool_exec(c):
+                # 失败不中断会话: 任何异常都转成错误文本, 作为该次调用的结果返回给模型
+                func, inp = c["func"], c["inp"]
+                try:
+                    if c["task"]:
                         console.rule("Subagent Started", style="bold red")
                         self.print_info(subagent=True)
                         sub_messages = [{"role": "user", "content": inp['prompt']}]
-                        agent(sub_messages, subagent=True)
-                        output = sub_messages[-1]['content'][0].text if sub_messages else "(no summary)"
-                        console.rule("Subagent End", style="bold red")
-                    else:
-                        handler = TOOL_HANDLERS.get(func)
-                        output = out_prt = str(handler(**inp)) if handler else f"Error: unknown tool {func}"
-                        if len(output) > 1000: out_prt = output[:400]+'\n......\n'+output[-400:]
-                    if func in MCP.tools:
-                        print(f"{Prompt.MCP}[magenta]{func.upper()}[/]\n{out_prt}")
-                    elif func == "edit" and not output.startswith("Error:"):
-                        print(f"{Prompt.Tool}[magenta]{func.upper()}[/]")
-                        self._print_syntax(output, "diff")
-                    elif func in {"read", "write"} and not output.startswith("Error:"):
-                        code = output if func == "read" else inp.get("content", "")
-                        print(f"{Prompt.Tool}[magenta]{func.upper()}[/]")
-                        offset = inp.get("offset")
-                        start_line = offset if offset and code.startswith(f"[{offset} lines skipped]") else 1
-                        self._print_syntax(
-                            code,
-                            Syntax.guess_lexer(inp.get("path", ""), code=code),
-                            start_line=start_line,
-                        )
-                        if func == "write": print(out_prt)
-                    else:
-                        print(f"{Prompt.Tool}[magenta]{func.upper()}[/]\n{out_prt}")
-
-                    if self.on_tool is not None:
                         try:
-                            self.on_tool({"kind": "result", "name": func, "result": str(output)[:2000]})
-                        except Exception:
-                            pass
-                    match self.method:
-                        case "anthropic":
-                            results.append({"type": "tool_result", "tool_use_id": block.id, "content": output})
-                        case "openai":
-                            results.append({"role": "tool", "tool_call_id": block.id, "content": str(output)})
+                            self(sub_messages, subagent=True)
+                            sub_out = sub_messages[-1]['content'][0].text if sub_messages else "(no summary)"
+                        except Exception as sub_err:
+                            sub_out = f"Error: subagent failed: {type(sub_err).__name__}: {str(sub_err)[:300]}"
+                        console.rule("Subagent End", style="bold red")
+                        return sub_out
+                    handler = TOOL_HANDLERS.get(func)
+                    if handler is None:
+                        return f"Error: unknown tool {func}"
+                    return str(handler(**inp))
+                except Exception as tool_err:
+                    return "Error: " + (f"{type(tool_err).__name__}: {tool_err}")[:400]
 
-                    if func == 'load_skill':
-                        info['used_skills'].append((inp.get('name'), output))
-                    else:
-                        info['used_tools'].append((func, inp, output))
+            needs_wd = {"bash", "grep", "read", "write", "edit"}
+            def _tool_exec_cwd(c):
+                # 工具的工作目录存在 thread-local 上, 并行线程需要重新绑定
+                if c["func"] in needs_wd:
+                    try:
+                        set_session_workdir(session_wd)
+                    except Exception:
+                        pass
+                return _tool_exec(c)
 
-            match self.method:
-                case "anthropic":
-                    messages.append((m := {"role": "user", "content": results}))
-                    info["messages"].append(m)
-                case "openai":
-                    messages.extend(results)
-                    info["messages"].extend(results)
+            runnable = [c for c in calls if c["output"] is None]
+            if len(runnable) > 1 and not any(c["task"] for c in runnable):
+                with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(runnable))) as pool:
+                    outs = list(pool.map(_tool_exec_cwd, runnable))
+                for c, o in zip(runnable, outs):
+                    c["output"] = o
+            else:
+                for c in runnable:
+                    c["output"] = _tool_exec(c) if c["task"] else _tool_exec_cwd(c)
+
+            results = []
+            for c in calls:
+                func, inp, output = c["func"], c["inp"], c["output"]
+                out_prt = output
+                if len(output) > 1000:
+                    out_prt = output[:400] + '\n......\n' + output[-400:]
+                if func in MCP.tools:
+                    print(f"{Prompt.MCP}[magenta]{func.upper()}[/]\n{out_prt}")
+                elif func == "edit" and not output.startswith("Error:"):
+                    print(f"{Prompt.Tool}[magenta]{func.upper()}[/]")
+                    self._print_syntax(output, "diff")
+                elif func in {"read", "write"} and not output.startswith("Error:"):
+                    code = output if func == "read" else inp.get("content", "")
+                    print(f"{Prompt.Tool}[magenta]{func.upper()}[/]")
+                    offset = inp.get("offset")
+                    start_line = offset if offset and code.startswith(f"[{offset} lines skipped]") else 1
+                    self._print_syntax(
+                        code,
+                        Syntax.guess_lexer(inp.get("path", ""), code=code),
+                        start_line=start_line,
+                    )
+                    if func == "write": print(out_prt)
+                else:
+                    print(f"{Prompt.Tool}[magenta]{func.upper()}[/]\n{out_prt}")
+
+                if self.on_tool is not None:
+                    try:
+                        self.on_tool({"kind": "result", "name": func, "result": str(output)[:2000]})
+                    except Exception:
+                        pass
+                match self.method:
+                    case "anthropic":
+                        results.append({"type": "tool_result", "tool_use_id": c["block"].id, "content": output})
+                    case "openai":
+                        results.append({"role": "tool", "tool_call_id": c["block"].id, "content": str(output)})
+
+                if func == 'load_skill':
+                    info['used_skills'].append((inp.get('name'), output))
+                else:
+                    info['used_tools'].append((func, inp, output))
 
             cur_turn += 1
             if cur_turn == max_turn -1:

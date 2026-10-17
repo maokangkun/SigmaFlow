@@ -1072,7 +1072,13 @@
       if (opening) CS.ui.followLock = true;
     }),
     'toggle-tools': (id, el) => _toggleAnchored(el, () => { CS.ui.toolsOpen = !CS.ui.toolsOpen; }),
-    'toggle-error': (id, el) => _toggleAnchored(el, () => { CS.ui.errorOpen = !CS.ui.errorOpen; }),
+    'toggle-error': (id, el) => _toggleAnchored(el, () => {
+      // 展开状态按 消息键 存储: 点哪条只开哪条, 不再全局串开
+      const k = el?.dataset?.errkey;
+      if (!k) return;
+      const set = CS.ui.errorOpenSet || (CS.ui.errorOpenSet = new Set());
+      if (set.has(k)) set.delete(k); else set.add(k);
+    }),
     'jump-latest': () => { CS.ui.canJumpLatest = false; CS.render(); scrollToLatest(); },
     'open-conversation': id => {
       if (!CS.state.runs.some(r => r.id === id) && !CS.ui.conversations.some(c => c.id === id)) { CS.toast('该会话不存在。', 'error'); return; }
