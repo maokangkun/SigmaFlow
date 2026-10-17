@@ -28,6 +28,7 @@ import re
 import secrets
 import select
 import signal
+import logging
 import struct
 import subprocess
 import threading
@@ -478,6 +479,8 @@ def _science_data_root() -> str:
 # 显示运行服务的系统用户名。多用户模式下注册/登录后按用户隔离全部
 # 配置与会话数据(projects/models/tools/tokens/skills/system_prompt),
 # 运行任务的归属也按用户过滤。
+
+_LOGGER_WS = logging.getLogger("uvicorn.error")  # 复用 uvicorn 已配置的输出通道访问 web.log
 
 _MULTI_USER_ENV = "SIGMAFLOW_MULTI_USER"
 _SESSION_COOKIE = "sigmaflow_session"
@@ -3796,13 +3799,24 @@ class ScienceAPI:
                             {"event": "error", "data": {"error": "Invalid JSON format"}}
                         )
                         continue
+                    if message.get("action") == "ws.close":
+                        # 客户端主动退出: 记录并结束本连接
+                        _LOGGER_WS.info(
+                            "[ws] client close requested: %r", message.get("reason")
+                        )
+                        await ws.close(code=1000)
+                        break
                     if pump is None:
                         pump = asyncio.create_task(_push_loop(ws, queue))
                     if pty_pump is None:
                         pty_pump = asyncio.create_task(_pty_pump_loop())
                     await handle(message)
-            except WebSocketDisconnect:
-                pass
+            except WebSocketDisconnect as disconnect_ev:
+                # 记录断开码/原因: 便于与 Caddy、节点前缀代理的断开时间对账定位掐断方
+                _LOGGER_WS.info(
+                    "[ws] disconnected code=%s reason=%r",
+                    disconnect_ev.code, disconnect_ev.reason,
+                )
             finally:
                 if pump:
                     pump.cancel()

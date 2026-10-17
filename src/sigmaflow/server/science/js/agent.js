@@ -120,7 +120,14 @@
             message.event === 'error' ? entry.reject(new Error(message.data?.error || '接口返回错误')) : entry.resolve(message.data);
           }
         };
-        socket.onclose = () => { if (this.socket === socket) { this.socket = null; this.state = 'closed'; } CS.api.ws._fail(new Error('WebSocket 连接已关闭。')); };
+        socket.onclose = (ev) => {
+          // 记录关闭码便于排查: 1006 表示异常断开(网络中断/被中间层掐断), 1000 为正常关闭
+          try { console.warn('[ws] connection closed', { code: ev && ev.code, reason: ev && ev.reason, hadChat: this.activeChats && this.activeChats.size > 0 }); } catch {}
+          if (this.socket === socket) { this.socket = null; this.state = 'closed'; }
+          const code = ev && ev.code;
+          const hint = code === 1006 ? 'WebSocket 异常断开（可能因网络中断或链路长时间无数据被回收）。当前回复已中断，可发送“继续”让模型接着此前内容重来。' : 'WebSocket 连接已关闭。';
+          CS.api.ws._fail(new Error(hint));
+        };
         socket.onerror = () => { clearTimeout(timer); finish(false); };
       });
       return this.connecting;
