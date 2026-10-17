@@ -728,6 +728,7 @@
       }
       if (done.tokens) reply.tokens = done.tokens;  // 真实 usage(含思考 token), 覆盖流式粗估
       if (done.promptTokens) reply.promptTokens = done.promptTokens;
+      CS.audio.playDone();  // 回复完成提示音; 出错分支不播放
     } catch (error) {
       // 失败不再伪装成正文追在 content 里, 而是挂到 error 字段,
       // 由红色错误块呈现(可展开看详情), 已流出的部分正文保持原样
