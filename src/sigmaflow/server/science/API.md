@@ -350,6 +350,29 @@ WebSocket `/api/ws` 还承载终端 actions（与聊天共用连接，前端通�
 - 服务端最多同时保留 8 个项目会话，超限按创建时间回收最旧的。
 - 终端以 `TERM=xterm-256color`、`COLORTERM=truecolor` 启动，支持全屏交互程序（vim / top）、补全与命令历史。
 
+### 8b. 单用户 / 多用户模式
+
+服务启动时通过环境变量选择模式，两种模式共用同一套 API：
+
+- **单用户（默认）**：无登录流程，行为与历史版本一致；`GET /api/auth/me` 返回 `{mode:"single", user:{name:"<运行服务的系统用户名>"}}`，前端右下角显示该用户名。全部数据仍在共享目录（`SIGMAFLOW_SCIENCE_DIR` 或 `~/.sigmaflow/science`）。
+- **多用户（`SIGMAFLOW_MULTI_USER=1`）**：注册 / 登录后按账号隔离会话与配置数据。
+
+鉴权相关端点（登录态走 HttpOnly cookie `sigmaflow_session`，有效期 7 天，HMAC 签名）：
+
+| 端点 | 说明 |
+|---|---|
+| `GET /api/auth/me` | 当前登录状态；多用户未登录时 `user` 为 `null` |
+| `POST /api/auth/register` | `{username, password}` 注册并自动登录；用户名 3-32 位字母数字与 `-_`，密码 ≥6 位 |
+| `POST /api/auth/login` | `{username, password}` 登录 |
+| `POST /api/auth/logout` | 清除会话 cookie |
+
+多用户模式的隔离范围：
+
+- 除 `/api/health` 与 `/api/auth/*` 外，所有 `/api` 请求与 WS 握手都必须携带有效会话，否则 401 / WS 关闭。
+- 项目、会话、模型与服务商配置、工具 / 技能 / MCP 开关、系统提示词、token 统计按用户隔离，存于 `<数据根>/users/<用户名>/`。
+- 运行任务按归属隔离：他人查询返回 404（不泄露存在性），列表只含本人任务。
+- 登录凭据存于数据根的 `users.json`（PBKDF2-SHA256），签名密钥自动生成于 `session_secret`。
+
 ## 前端状态机
 
 ```text
