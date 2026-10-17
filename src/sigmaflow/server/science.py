@@ -3605,7 +3605,14 @@ class ScienceAPI:
                                 except Exception:
                                     pass
                                 break
-                            kind, value = await chat_queue.get()
+                            # 等下一轮模型时队列可能长时间无事件, 若无限阻塞在 get(),
+                            # 停止标记就永远得不到检查; 用短超时让循环有机会轮询停止。
+                            try:
+                                kind, value = await asyncio.wait_for(
+                                    chat_queue.get(), timeout=0.5
+                                )
+                            except asyncio.TimeoutError:
+                                continue
                             if kind == "delta":
                                 content.append(value)
                                 event, message = (
@@ -4173,7 +4180,7 @@ def _run_agent_chat(
         base_url=base_url,
         api_key=api_key or "sk-empty",
         support_tool=True,
-        retry=2,
+        retry=3,  # 模型请求失败/超时重试三次, SDK 内部重试关闭避免叠加
         max_turn=max_turn,
         tools=_effective_agent_tools(),
         system=bound_system,
@@ -4182,7 +4189,7 @@ def _run_agent_chat(
         on_tool=on_tool,
     )
     agent.client.timeout = 90
-    agent.client.max_retries = 1
+    agent.client.max_retries = 0  # 不用 SDK 内置重试; 统一由 agent 循环重试三次
     info = agent(convo, is_print=False, max_turn=max_turn)
     try:
         if stats is not None and isinstance(info, dict):

@@ -252,7 +252,7 @@
               // 等待模型响应: 流式中没有正在输出的正文; 典型场景是工具刚返回完,
               // 模型下一轮首字尚未到达, 给出一个轻量等待指示
               const waitingModel = m.streaming && !tailText && (!blocks.length || (blocks[lastIdx].type === 'tool' && blocks[lastIdx].result != null));
-              const waitHint = waitingModel ? `<div class="model-wait" role="status"><span class="wait-dots" aria-hidden="true"><span class="wait-dot"></span><span class="wait-dot"></span><span class="wait-dot"></span></span><span>等待模型响应…</span></div>` : '';
+              const waitHint = waitingModel ? `<div class="model-wait" role="status"><span class="wait-dots" aria-hidden="true"><span class="wait-dot"></span><span class="wait-dot"></span><span class="wait-dot"></span></span><span>等待模型响应</span></div>` : '';
               // 流式期间最后一块不是正文时补一个空正文占位, 供增量更新定位与底部跟随
               segments = `${blocks.map(seg).join('')}${m.streaming && !tailText ? `<div class="agent-intro md-body" data-stream-at="${e(m.at)}"></div>${waitHint}` : ''}`;
             }
