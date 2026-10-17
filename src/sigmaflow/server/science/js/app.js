@@ -938,7 +938,13 @@
   const actions = {
     'toggle-sidebar': () => { CS.ui.mobileSidebar = !CS.ui.mobileSidebar; CS.render(); },
     'toggle-user-menu': () => { CS.ui.userMenu = !CS.ui.userMenu; CS.render(); },
-    'auth-tab': (id, target) => { CS.ui.authTab = target.dataset.tab === 'register' ? 'register' : 'login'; CS.render(); setTimeout(() => document.getElementById('auth-username')?.focus(), 30); },
+    'auth-tab': (id, target) => {
+      // 切换登录/注册会重绘表单; 先把已输入的内容存为草稿, 渲染后回填
+      CS.ui.authDraft = { username: document.getElementById('auth-username')?.value || '', password: document.getElementById('auth-password')?.value || '' };
+      CS.ui.authTab = target.dataset.tab === 'register' ? 'register' : 'login';
+      CS.render();
+      setTimeout(() => document.getElementById('auth-username')?.focus(), 30);
+    },
     'toggle-model-menu': () => { CS.ui.modelMenu = !CS.ui.modelMenu; CS.render(); },
     'toggle-context-menu': () => { CS.ui.contextMenu = !CS.ui.contextMenu; CS.ui.modelMenu = false; CS.render(); },
     'pick-model': async id => {
@@ -1534,7 +1540,7 @@
         try {
           const out=await CS.api.request(path,{method:'POST',body:JSON.stringify({username,password})});
           const welcome = CS.ui.authTab === 'register';
-          CS.ui.authTab='login';
+          CS.ui.authTab='login'; CS.ui.authDraft=null;
           // 账号切换: 清掉上个用户的本地工作区缓存再重新加载; reset 会恢复 defaults
           // (含 me: null 与默认 endpoint), 所以 reset 之后再写入 me 与实际接口地址
           const keepEndpoint = CS.state.settings.endpoint;
