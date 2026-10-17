@@ -24,7 +24,11 @@ def check(name):
     print("PASS:", name, flush=True)
 
 app = FastAPI()
-app.include_router(ScienceAPI().router)
+_sci_api = ScienceAPI()
+# WS 与 auth 端点在独立子路由上(见 ScienceAPI.__init__), 需一并挂载
+app.include_router(_sci_api.router)
+app.include_router(_sci_api.ws_router)
+app.include_router(_sci_api.auth_router)
 
 with TestClient(app) as client:
     r = client.get("/api/health")

@@ -1441,8 +1441,8 @@ class _PtySession:
         self.master, slave = _pty_mod.openpty()
         try:
             fcntl.ioctl(slave, 0x5414, struct.pack("HHHH", rows, cols, 0, 0))
-        except OSError:
-            pass
+        except Exception:
+            pass  # struct.error/OSError 都视为回退默认窗口尺寸
         env = dict(os.environ)
         env.update(
             {
@@ -1518,9 +1518,11 @@ class _PtySession:
             with self.lock:
                 subs = self.subs
                 self.subs = []
-            for queue, loop, _seq in subs:
+            for sub in subs:
                 try:
-                    loop.call_soon_threadsafe(queue.put_nowait, ("closed", None))
+                    sub["loop"].call_soon_threadsafe(
+                        sub["queue"].put_nowait, ("closed", None)
+                    )
                 except RuntimeError:
                     pass
 
@@ -3722,8 +3724,9 @@ class ScienceAPI:
                                 pass
                             self._pty_sessions.pop(victim_key, None)
                         try:
-                            cols = int(data.get("cols") or 90)
-                            rows = int(data.get("rows") or 28)
+                            # 与 resize 同范围收敛: 非法值会让 ioctl/struct 抛出未捕获异常
+                            cols = max(2, min(500, int(data.get("cols") or 90)))
+                            rows = max(1, min(300, int(data.get("rows") or 28)))
                         except Exception:
                             cols, rows = 90, 28
                         session = _PtySession(key, basedir, cols=cols, rows=rows)

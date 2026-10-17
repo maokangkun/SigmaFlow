@@ -1568,8 +1568,6 @@
       CS.uploadFsFiles(picked);
     }
   });
-  document.addEventListener('input', event => {
-  });
   document.addEventListener('submit', event => {
     const form=event.target; const type=form.dataset.form; if(!type) return; event.preventDefault();
     if(type==='auth') {
