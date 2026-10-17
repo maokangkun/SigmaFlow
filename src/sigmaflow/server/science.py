@@ -15,12 +15,17 @@ THIS SERVER, using the model/provider configured in the settings.
 import asyncio
 import base64
 import atexit
+import contextvars
 import fcntl
+import getpass
+import hashlib
+import hmac
 import json
 import math
 import os
 import pty as _pty_mod
 import re
+import secrets
 import select
 import signal
 import struct
@@ -33,7 +38,15 @@ import requests
 from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
-from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Request,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -457,12 +470,162 @@ def _science_data_root() -> str:
     )
 
 
+# ==================== 单用户 / 多用户模式 ====================
+# 通过环境变量 SIGMAFLOW_MULTI_USER=1 在服务启动时启用多用户模式。
+# 单用户模式(默认)与历史行为完全一致: 数据仍在共享根目录, 页面右下角
+# 显示运行服务的系统用户名。多用户模式下注册/登录后按用户隔离全部
+# 配置与会话数据(projects/models/tools/tokens/skills/system_prompt),
+# 运行任务的归属也按用户过滤。
+
+_MULTI_USER_ENV = "SIGMAFLOW_MULTI_USER"
+_SESSION_COOKIE = "sigmaflow_session"
+_SESSION_TTL = 7 * 24 * 3600
+
+
+def _multi_user() -> bool:
+    """Multi-user mode is opt-in via environment at server start."""
+    return os.environ.get(_MULTI_USER_ENV, "").strip() in ("1", "true", "yes")
+
+
+def _os_user() -> str:
+    """Name of the OS account running this service (single-user identity)."""
+    try:
+        return getpass.getuser() or "default"
+    except Exception:
+        return "default"
+
+
+_CURRENT_USER: "contextvars.ContextVar[str]" = contextvars.ContextVar(
+    "sigmaflow_user", default=""
+)
+
+
+def _current_user() -> str:
+    """Requested user for this task: logged-in account or service user name."""
+    user = _CURRENT_USER.get()
+    return user if user else _os_user()
+
+
+_USER_REGISTRY_LOCK = threading.Lock()
+
+
+def _users_registry_path() -> str:
+    return os.path.join(_science_data_root(), "users.json")
+
+
+def _load_users() -> dict:
+    try:
+        with open(_users_registry_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_users(users: dict) -> None:
+    path = _users_registry_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(users, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+
+
+def _hash_password(password: str, salt: bytes) -> str:
+    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 200_000).hex()
+
+
+def _session_secret() -> bytes:
+    """Stable HMAC secret persisted in the shared data root."""
+    path = os.path.join(_science_data_root(), "session_secret")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            value = fh.read().strip()
+    except OSError:
+        value = ""
+    if not value:
+        value = secrets.token_hex(32)
+        try:
+            os.makedirs(_science_data_root(), exist_ok=True)
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.write(value)
+            os.replace(tmp, path)
+        except Exception:
+            pass
+    return value.encode("utf-8")
+
+
+def _session_token(user: str) -> str:
+    """Signed and expiring session token, given out as an HttpOnly cookie."""
+    payload = f"{user}.{int(time.time()) + _SESSION_TTL}"
+    sig = hmac.new(
+        _session_secret(), payload.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+    return f"{payload}.{sig}"
+
+
+def _user_from_token(token: str) -> str:
+    try:
+        user, exp, sig = str(token).rsplit(".", 2)
+        payload = f"{user}.{exp}"
+        expected = hmac.new(
+            _session_secret(), payload.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+    except Exception:
+        return ""
+    if not hmac.compare_digest(sig, expected):
+        return ""
+    if not exp.isdigit() or int(exp) < time.time():
+        return ""
+    return user or ""
+
+
+def _cookie_user(request: Any) -> str:
+    try:
+        raw = request.cookies.get(_SESSION_COOKIE)
+    except Exception:
+        raw = ""
+    return _user_from_token(raw) if raw else ""
+
+
+def _user_data_dir(user: str) -> str:
+    """Storage root for the given user's configs; common layout when single."""
+    if not _multi_user():
+        return _science_data_root()
+    return os.path.join(_science_data_root(), "users", str(user)[:64])
+
+
+def _user_science_root() -> str:
+    """Per-request storage root for user-scoped config files."""
+    return _user_data_dir(_current_user())
+
+
+def _ensure_user_data(user: str) -> None:
+    """Prepare per-user storage: mirror builtin skills on first sight."""
+    if not _multi_user():
+        return
+    root = _user_data_dir(user)
+    marker = os.path.join(root, ".ready")
+    if os.path.exists(marker):
+        return
+    os.makedirs(root, exist_ok=True)
+    try:
+        _seed_builtin_skills()
+    except Exception:
+        pass
+    try:
+        Path(marker).write_text(time.strftime("%Y-%m-%dT%H:%M:%S"), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def _tool_config_path() -> str:
-    return os.path.join(_science_data_root(), "tools.json")
+    return os.path.join(_user_science_root(), "tools.json")
 
 
 def _tokens_config_path() -> str:
-    return os.path.join(_science_data_root(), "tokens.json")
+    return os.path.join(_user_science_root(), "tokens.json")
 
 
 def _sciverse_key_file() -> str:
@@ -816,11 +979,11 @@ _SKILL_BLOCK_BASE: Optional[Dict[str, str]] = None
 
 
 def _skills_data_dir() -> str:
-    return os.path.join(_science_data_root(), "skills")
+    return os.path.join(_user_science_root(), "skills")
 
 
 def _skill_config_path() -> str:
-    return os.path.join(_science_data_root(), "skills.json")
+    return os.path.join(_user_science_root(), "skills.json")
 
 
 def _builtin_skills_src() -> str:
@@ -945,11 +1108,14 @@ class _ScienceSkillView:
 
     def __init__(self):
         self.skills_dir = _skills_data_dir()
+        self.user = _current_user()
         self.skills = {}
         self.rebuild()
 
     def rebuild(self):
-        self.skills_dir = _skills_data_dir()
+        # 多用户模式下不同用户的技能目录与开关不同, 按 current user 切换缓存
+        self.user = _current_user()
+        self.skills_dir = _user_science_root()
         overrides = _load_skill_overrides()
         skills = {}
         for skill in _discover_skills():
@@ -2038,7 +2204,7 @@ class ScienceRunManager:
             "steps": [dict(step) for step in run["steps"]],
         }
 
-    def create(self, payload: RunCreate) -> str:
+    def create(self, payload: RunCreate, owner: str = "") -> str:
         prompt = payload.prompt or ""
         if not prompt.strip() or len(prompt) > MAX_PROMPT_CHARS:
             raise HTTPException(
@@ -2057,6 +2223,7 @@ class ScienceRunManager:
         run_id = str(uuid.uuid4())
         run = {
             "id": run_id,
+            "owner": owner,
             "status": "running",
             "progress": 0,
             "createdAt": int(time.time() * 1000),
@@ -2151,10 +2318,35 @@ class ScienceRunManager:
 class ScienceAPI:
     """HTTP/SSE + WebSocket routes for the Science workspace."""
 
+    @property
+    def model_store(self) -> ScienceModelStore:
+        """Model config store scoped to the request user (multi-user aware)."""
+        return self._scoped_store("m")
+
+    @property
+    def project_store(self) -> "ScienceProjectStore":
+        """Project/conversation store scoped to the request user."""
+        return self._scoped_store("p")
+
+    def _scoped_store(self, kind: str):
+        """Create and cache one store instance per user and kind."""
+        user = _current_user()
+        key = (kind, user)
+        cached = self._store_cache.get(key)
+        if cached is None:
+            storage_dir = _user_data_dir(user)
+            cached = (
+                ScienceModelStore(storage_dir=storage_dir)
+                if kind == "m"
+                else ScienceProjectStore(storage_dir=storage_dir)
+            )
+            self._store_cache[key] = cached
+        return cached
+
     def __init__(self, pipeline_manager=None):
         self.manager = ScienceRunManager()
-        self.model_store = ScienceModelStore()
-        self.project_store = ScienceProjectStore()
+        # 存储: 单用户即共享根目录; 多用户按请求用户懒加载独立目录。
+        self._store_cache: Dict[tuple, Any] = {}
         try:
             _litellm_warm()  # 先完成 litellm 导入再对外服务, 避免半初始化竞态
         except Exception:
@@ -2163,7 +2355,90 @@ class ScienceAPI:
             _seed_mcp_config()  # 启动即补种内置 MCP(如新增的 rcsb), agent 导入时即可激活
         except Exception:
             pass
-        router = APIRouter(prefix="/api")
+        router = APIRouter(prefix="/api", dependencies=[Depends(_auth_http)])
+        auth_router = APIRouter(prefix="/api/auth")
+
+        # ------------------------------------------------------- auth API
+
+        @auth_router.get("/me")
+        async def auth_me(request: Request):
+            if not _multi_user():
+                return {"mode": "single", "user": {"name": _os_user()}}
+            user = _cookie_user(request)
+            return {"mode": "multi", "user": {"name": user} if user else None}
+
+        @auth_router.post("/register")
+        async def auth_register(
+            payload: _AuthCredentials, request: Request, response: Response
+        ):
+            _check_origin(request)
+            if not _multi_user():
+                raise HTTPException(status_code=400, detail="当前为单用户模式")
+            name = _clip(str(payload.username or "").strip(), 64)
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{2,31}", name):
+                raise HTTPException(
+                    status_code=400,
+                    detail="用户名需 3-32 位字母、数字、- 或 _ 开头字母",
+                )
+            password = str(payload.password or "")
+            if len(password) < 6:
+                raise HTTPException(status_code=400, detail="密码至少 6 位")
+            salt = secrets.token_bytes(16)
+            with _USER_REGISTRY_LOCK:
+                users = _load_users()
+                if name in users:
+                    raise HTTPException(status_code=409, detail="用户名已存在")
+                users[name] = {
+                    "salt": salt.hex(),
+                    "hash": _hash_password(password, salt),
+                    "createdAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                }
+                _save_users(users)
+            _ensure_user_data(name)
+            response.set_cookie(
+                _SESSION_COOKIE,
+                _session_token(name),
+                max_age=_SESSION_TTL,
+                httponly=True,
+                samesite="lax",
+            )
+            return {"mode": "multi", "user": {"name": name}}
+
+        @auth_router.post("/login")
+        async def auth_login(
+            payload: _AuthCredentials, request: Request, response: Response
+        ):
+            _check_origin(request)
+            if not _multi_user():
+                raise HTTPException(status_code=400, detail="当前为单用户模式")
+            name = _clip(str(payload.username or "").strip(), 64)
+            password = str(payload.password or "")
+            users = _load_users()
+            record = users.get(name) if isinstance(users.get(name), dict) else {}
+            stored = str(record.get("hash") or "")
+            try:
+                salt = bytes.fromhex(str(record.get("salt") or ""))
+            except ValueError:
+                salt = b""
+            ok = stored and hmac.compare_digest(stored, _hash_password(password, salt))
+            if not ok:
+                raise HTTPException(status_code=401, detail="用户名或密码不正确")
+            _ensure_user_data(name)
+            response.set_cookie(
+                _SESSION_COOKIE,
+                _session_token(name),
+                max_age=_SESSION_TTL,
+                httponly=True,
+                samesite="lax",
+            )
+            return {"mode": "multi", "user": {"name": name}}
+
+        @auth_router.post("/logout")
+        async def auth_logout(request: Request, response: Response):
+            response.delete_cookie(_SESSION_COOKIE)
+            return {"ok": True}
+
+        self.auth_router = auth_router
 
         # ------------------------------------------------------------- HTTP
 
@@ -2184,11 +2459,24 @@ class ScienceAPI:
         @router.post("/runs")
         async def create_run(payload: RunCreate, request: Request):
             _check_origin(request)
-            run_id = self.manager.create(payload)
+            run_id = self.manager.create(payload, _current_user())
             return {"id": run_id, "isDemo": True}
+
+        def _check_run_owner(run_id: str) -> None:
+            """Multi-user isolation: a run is only visible to its owner."""
+            run = self.manager.runs.get(run_id)
+            if run is None:
+                return
+            if _multi_user() and run.get("owner") != _current_user():
+                raise HTTPException(status_code=404, detail="Run not found")
 
         @router.get("/runs")
         async def list_runs():
+            runs = [
+                run
+                for run in self.manager.runs.values()
+                if not _multi_user() or run.get("owner") == _current_user()
+            ]
             return [
                 {
                     "id": run["id"],
@@ -2196,13 +2484,12 @@ class ScienceAPI:
                     "progress": run["progress"],
                     "createdAt": run["createdAt"],
                 }
-                for run in sorted(
-                    self.manager.runs.values(), key=lambda r: r["createdAt"]
-                )
+                for run in sorted(runs, key=lambda r: r["createdAt"])
             ]
 
         @router.get("/runs/{run_id}")
         async def get_run(run_id: str):
+            _check_run_owner(run_id)
             try:
                 return self.manager.snapshot(run_id)
             except KeyError:
@@ -2214,6 +2501,7 @@ class ScienceAPI:
         @router.post("/runs/{run_id}/control")
         async def control_run(run_id: str, payload: RunControl, request: Request):
             _check_origin(request)
+            _check_run_owner(run_id)
             return self.manager.control(run_id, payload.action)
 
         # ---------------------------------------------------- provider & model configs
@@ -2584,6 +2872,7 @@ class ScienceAPI:
 
         @router.get("/runs/{run_id}/events")
         async def run_events(run_id: str):
+            _check_run_owner(run_id)
             try:
                 self.manager.snapshot(run_id)
             except KeyError:
@@ -2675,7 +2964,17 @@ class ScienceAPI:
             if origin and origin not in (f"http://{host}", f"https://{host}"):
                 await ws.close(code=1008)
                 return
+            ws_user = ""
+            if _multi_user():
+                # WS 不走 router 依赖, 握手阶段直接校验会话 cookie。
+                ws_user = _cookie_user(ws)
+                if not ws_user:
+                    await ws.close(code=1008)
+                    return
             await ws.accept()
+            if ws_user:
+                _CURRENT_USER.set(ws_user)
+                _ensure_user_data(ws_user)
             queue: asyncio.Queue = asyncio.Queue()
             subscribed: Set[str] = set()
             pump: Optional[asyncio.Task] = None
@@ -2738,7 +3037,7 @@ class ScienceAPI:
                     await reply("pong", request_id)
                 elif action == "run.create":
                     try:
-                        payload = RunCreate(
+                        run_payload = RunCreate(
                             prompt=data.get("prompt", ""),
                             workflowId=data.get("workflowId"),
                             projectId=data.get("projectId"),
@@ -2754,7 +3053,7 @@ class ScienceAPI:
                         await fail(request_id, "Invalid run payload")
                         return
                     try:
-                        run_id = self.manager.create(payload)
+                        run_id = self.manager.create(run_payload, _current_user())
                     except HTTPException as err:
                         await fail(request_id, err.detail)
                         return
@@ -2766,6 +3065,7 @@ class ScienceAPI:
                     )
                 elif action == "run.get":
                     run_id = run_id_of(data)
+                    _check_run_owner(run_id)
                     if run_id not in self.manager.runs:
                         await fail(request_id, "Run not found")
                         return
@@ -2774,6 +3074,7 @@ class ScienceAPI:
                     )
                 elif action == "run.subscribe":
                     run_id = run_id_of(data)
+                    _check_run_owner(run_id)
                     if run_id not in self.manager.runs:
                         await fail(request_id, "Run not found")
                         return
@@ -2803,7 +3104,7 @@ class ScienceAPI:
                     )
                 elif action == "provider.save":
                     try:
-                        payload = ProviderIn(
+                        pv_payload = ProviderIn(
                             id=data.get("id") or None,
                             name=data.get("name", ""),
                             baseUrl=data.get("baseUrl", ""),
@@ -2813,7 +3114,7 @@ class ScienceAPI:
                         await fail(request_id, "Invalid provider payload")
                         return
                     try:
-                        provider = self.model_store.upsert_provider(payload)
+                        provider = self.model_store.upsert_provider(pv_payload)
                     except HTTPException as err:
                         await fail(request_id, err.detail)
                         return
@@ -2885,7 +3186,7 @@ class ScienceAPI:
                     )
                 elif action == "model.save":
                     try:
-                        payload = ModelIn(
+                        md_payload = ModelIn(
                             id=data.get("id") or None,
                             providerId=data.get("providerId", ""),
                             model=data.get("model", ""),
@@ -2896,7 +3197,7 @@ class ScienceAPI:
                         await fail(request_id, "Invalid model payload")
                         return
                     try:
-                        model = self.model_store.upsert_model(payload)
+                        model = self.model_store.upsert_model(md_payload)
                     except HTTPException as err:
                         await fail(request_id, err.detail)
                         return
@@ -2922,7 +3223,7 @@ class ScienceAPI:
                     )
                 elif action == "project.save":
                     try:
-                        payload = ProjectIn(
+                        pj_payload = ProjectIn(
                             id=data.get("id") or None,
                             name=data.get("name", ""),
                             description=data.get("description", ""),
@@ -2935,7 +3236,7 @@ class ScienceAPI:
                         await fail(request_id, "Invalid project payload")
                         return
                     try:
-                        project = self.project_store.upsert_project(payload)
+                        project = self.project_store.upsert_project(pj_payload)
                     except HTTPException as err:
                         await fail(request_id, err.detail)
                         return
@@ -3230,9 +3531,9 @@ class ScienceAPI:
                     if session is None:
                         await fail(request_id, "终端会话已退出")
                         return
-                    payload = data.get("data")
-                    if isinstance(payload, str) and len(payload) <= 8192:
-                        session.write(payload.encode("utf-8", "replace"))
+                    px_payload = data.get("data")
+                    if isinstance(px_payload, str) and len(px_payload) <= 8192:
+                        session.write(px_payload.encode("utf-8", "replace"))
                     await reply("pty.input", request_id)
                 elif action == "pty.resize":
                     project_id = str(data.get("projectId") or data.get("id") or "")[:64]
@@ -3335,6 +3636,11 @@ class ChatIn(BaseModel):
     projectId: Optional[str] = None
     runId: Optional[str] = None
     messages: list = []
+
+
+class _AuthCredentials(BaseModel):
+    username: str = ""
+    password: str = ""
 
 
 class ScienceProjectStore:
@@ -3471,7 +3777,10 @@ class ScienceProjectStore:
             raise HTTPException(status_code=400, detail="Invalid conversation id")
         conv = self.conversations.get(payload.id or "")
         if conv is None:
-            conv = {"id": payload.id or f"cn-{uuid.uuid4().hex[:12]}", "createdAt": now}
+            conv = {
+                "id": payload.id or f"cn-{uuid.uuid4().hex[:12]}",
+                "createdAt": now,
+            }
             self.conversations[conv["id"]] = conv
         conv["title"] = _clip(payload.title, 300) or "新会话"
         conv["projectId"] = (
@@ -3692,7 +4001,7 @@ def _sigma_usage(conversations: Dict[str, dict]) -> Dict[str, object]:
     """Aggregate SigmaFlow's own token usage from persisted conversations.
 
     Each assistant message may carry tokens (completion), promptTokens (input)
-    and an ISO timestamp; the result mirrors the csusage payload shape the
+    and an ISO timestamp; the result mirrors the usage payload shape the
     settings card expects (days/models/sessions/streaks), minus fields
     SigmaFlow has no data for (cache read/write, per-model cost).
     """
@@ -3950,6 +4259,30 @@ def _stream_agent_chat(
         stats=stats,
         workdir=workdir,
     )
+
+
+async def _auth_http(request: Request) -> None:
+    """Router-wide guard: resolve the request user for multi-user mode.
+
+    In single-user mode every request runs as the service OS account, which
+    keeps the historical behaviour of a shared workspace. Multi-user mode
+    accepts only logged-in users; everything under /api except /health and
+    the /auth endpoints requires a valid session cookie.
+    """
+    if not _multi_user():
+        _CURRENT_USER.set(_os_user())
+        return
+    scope_type = request.scope.get("type")
+    if scope_type == "websocket":
+        # WebSocket 握手在 endpoint 内自行校验 cookie 并设置上下文。
+        return
+    if scope_type != "http" or request.url.path == "/api/health":
+        return
+    user = _cookie_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录")
+    _CURRENT_USER.set(user)
+    _ensure_user_data(user)
 
 
 def _check_origin(request: Request):

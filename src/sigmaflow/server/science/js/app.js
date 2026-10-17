@@ -725,6 +725,19 @@
     CS.toast('已复制到剪贴板。');
   };
   const citation = p => `${p.authors} (${p.year}). ${p.title}. ${p.journal}. https://doi.org/${p.doi}`;
+  // 多用户模式: 登录浮层的统一入口; 未登录时业务请求一律 401。
+  CS.showAuthModal = () => {
+    const me = CS.state.me;
+    if (me && me.mode === 'multi' && !(me.user && me.user.name) && !CS.ui.modal) CS.showModal('auth');
+  };
+  CS.handleAuthLoss = () => {
+    const me = CS.state.me;
+    if (me && me.mode === 'multi' && me.user && me.user.name) {
+      CS.state.me = { mode: 'multi', user: null };
+      CS.toast('登录已过期，请重新登录。', 'error');
+    }
+    CS.showAuthModal();
+  };
   CS.showModal = (type, payload = {}) => {
     modalReturnFocus = document.activeElement;
     CS.ui.modal = { type, ...payload };
@@ -739,6 +752,8 @@
     document.getElementById('app').inert = false; document.getElementById('app').removeAttribute('aria-hidden');
     document.body.style.overflow = '';
     if (modalReturnFocus?.isConnected) modalReturnFocus.focus({ preventScroll: true });
+    // 多用户模式未登录时登录浮层不可永久关闭: 关闭即重开
+    setTimeout(() => { try { CS.showAuthModal(); } catch {} }, 0);
   };
   CS.renderModal = () => {
     const modal = CS.ui.modal; if (!modal) return;
@@ -798,6 +813,12 @@
       const p = CS.data.papers.find(p => p.id === modal.id);
       body = `<p class="small muted mb-20">${e(p.title)}</p><form id="note-form" data-form="note"><textarea id="paper-note-text" class="note-editor" maxlength="10000" placeholder="记录你的阅读思考、证据局限与待验证问题…">${e(CS.state.notes[modal.id] || '')}</textarea></form><p class="tiny faint mt-12">笔记仅在本机保存，不自动发送到模型。</p>`;
       footer = `<button class="btn primary" form="note-form" type="submit">${i('check','',15)} 保存笔记</button>`;
+    } else if (modal.type === 'auth') {
+      // 登录/注册浮层: 多用户模式未登录时强制展示, 不提供关闭按钮
+      const tab = CS.ui.authTab === 'register' ? 'register' : 'login';
+      title = tab === 'register' ? '注册 SigmaFlow 账号' : '登录 SigmaFlow';
+      body = `<div class="auth-tabs" role="tablist"><button type="button" class="auth-tab${tab === 'login' ? ' active' : ''}" data-action="auth-tab" data-tab="login" role="tab" aria-selected="${tab === 'login'}">登录</button><button type="button" class="auth-tab${tab === 'register' ? ' active' : ''}" data-action="auth-tab" data-tab="register" role="tab" aria-selected="${tab === 'register'}">注册</button></div><form id="auth-form" data-form="auth" autocomplete="on"><div class="field"><label for="auth-username">用户名</label><input id="auth-username" name="username" maxlength="32" required autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="字母、数字、- 或 _"></div><div class="field"><label for="auth-password">密码</label><input id="auth-password" name="password" type="password" minlength="6" maxlength="128" required autocomplete="${tab === 'register' ? 'new-password' : 'current-password'}" placeholder="至少 6 位"></div>${tab === 'register' ? '<div class="field"><label for="auth-confirm">确认密码</label><input id="auth-confirm" name="confirm" type="password" minlength="6" maxlength="128" required autocomplete="new-password" placeholder="再次输入密码"></div>' : ''}<p class="tiny muted">本服务运行在多用户模式下，注册后将按账号隔离会话与配置数据。</p></form>`;
+      footer = `<button class="btn primary" type="submit" form="auth-form">${i(tab === 'register' ? 'plus' : 'arrowright', '', 15)} ${tab === 'register' ? '创建并进入' : '登录'}</button>`;
     } else if (modal.type === 'confirm') {
       title = modal.title;
       body = `<p class="confirm-text">${e(modal.message)}</p>`;
@@ -807,7 +828,8 @@
       title = '合成细胞详情';
       body = `<div class="row mb-20">${H.tile('cells')}<div><h3>${e(p.id)}</h3><span class="small muted">${e(g.name)} · 合成数据点</span></div></div><div class="info-pairs"><span>分组</span><span>${e(g.name)}</span><span>显示坐标 X</span><span>${p.x.toFixed(2)}</span><span>显示坐标 Y</span><span>${p.y.toFixed(2)}</span><span>数据来源</span><span>synthetic-ui-fixture</span></div><div class="mt-20">${H.notice('坐标是用于界面展示的二维随机点，不是实际降维计算结果。')}</div>`;
     }
-    document.getElementById('modal-root').innerHTML = `<div class="modal-backdrop"><section class="modal ${wide ? 'wide' : ''}" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><h2 id="modal-title">${e(title)}</h2>${H.iconBtn('close-modal','x','关闭对话框')}</header><div class="modal-body">${body}</div>${footer ? `<footer class="modal-footer">${footer}</footer>` : ''}</section></div>`;
+    const authHead = modal.type === 'auth' ? '' : H.iconBtn('close-modal','x','关闭对话框');
+    document.getElementById('modal-root').innerHTML = `<div class="modal-backdrop"><section class="modal ${wide ? 'wide' : ''}" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><h2 id="modal-title">${e(title)}</h2>${authHead}</header><div class="modal-body">${body}</div>${footer ? `<footer class="modal-footer">${footer}</footer>` : ''}</section></div>`;
   };
 
   const previewDataset = async id => {
@@ -903,6 +925,7 @@
   const actions = {
     'toggle-sidebar': () => { CS.ui.mobileSidebar = !CS.ui.mobileSidebar; CS.render(); },
     'toggle-user-menu': () => { CS.ui.userMenu = !CS.ui.userMenu; CS.render(); },
+    'auth-tab': (id, target) => { CS.ui.authTab = target.dataset.tab === 'register' ? 'register' : 'login'; CS.renderModal(); setTimeout(() => document.getElementById('auth-username')?.focus(), 30); },
     'toggle-model-menu': () => { CS.ui.modelMenu = !CS.ui.modelMenu; CS.render(); },
     'toggle-context-menu': () => { CS.ui.contextMenu = !CS.ui.contextMenu; CS.ui.modelMenu = false; CS.render(); },
     'pick-model': async id => {
@@ -1273,7 +1296,23 @@
       } catch (error) { CS.toast('测试失败：' + CS.api.friendlyError(error), 'error'); }
       finally { CS.ui.testing = false; CS.render(); }
     },
-    'logout': () => { CS.state.username = ''; CS.ui.userMenu = false; CS.save(); CS.render(); CS.toast('已退出登录。'); },
+    'logout': () => {
+      CS.ui.userMenu = false;
+      if (CS.state.me && CS.state.me.mode === 'multi') {
+        // 先在 reset 之前发登出请求: 此时 endpoint 是探测后的正确地址
+        // (reset 会把 endpoint 恢复成默认值, 挂错前缀的请求会落到静态文件 405)
+        const bye = CS.api.request('/auth/logout', { method: 'POST' }).catch(() => null);
+        // 等服务端清除会话 cookie 完成再整页刷新, 避免旧 cookie 残留导致登录层不弹出
+        ;(async () => {
+          await bye;
+          CS.reset();
+          CS.state.me = { mode: 'multi', user: null };
+          setTimeout(() => { window.location.reload(); }, 30);
+        })();
+        return;
+      }
+      CS.state.username = ''; CS.save(); CS.render(); CS.toast('已退出登录。');
+    },
     'go-home': () => CS.navigate('home'), 'go-data': () => CS.navigate('data'), 'go-workflows': () => CS.navigate('workflows'),
     'new-project': async () => {
       CS.showModal('project');
@@ -1472,6 +1511,32 @@
   });
   document.addEventListener('submit', event => {
     const form=event.target; const type=form.dataset.form; if(!type) return; event.preventDefault();
+    if(type==='auth') {
+      const username=document.getElementById('auth-username').value.trim();
+      const password=document.getElementById('auth-password').value;
+      const confirmEl=document.getElementById('auth-confirm');
+      if(confirmEl && password!==confirmEl.value){CS.toast('两次输入的密码不一致。','error');return;}
+      const path='/auth/' + (CS.ui.authTab==='register' ? 'register' : 'login');
+      (async () => {
+        try {
+          const out=await CS.api.request(path,{method:'POST',body:JSON.stringify({username,password})});
+          const welcome = CS.ui.authTab === 'register';
+          CS.ui.authTab='login';
+          // 账号切换: 清掉上个用户的本地工作区缓存再重新加载; reset 会恢复 defaults
+          // (含 me: null 与默认 endpoint), 所以 reset 之后再写入 me 与实际接口地址
+          const keepEndpoint = CS.state.settings.endpoint;
+          CS.reset();
+          CS.state.settings.endpoint = keepEndpoint;
+          CS.state.me=out;
+          CS.closeModal();
+          CS.toast(welcome ? `欢迎，${out.user.name}。` : `欢迎回来，${out.user.name}。`);
+          CS.agent.loadModels();
+          CS.agent.loadProjects().then(() => CS.agent.loadConversations());
+          CS.render();
+        } catch(error){ CS.toast((error && error.message) || '登录失败。','error'); }
+      })();
+      return;
+    }
     if(type==='composer') {
       const prompt=CS.ui.composer.trim(); if(!prompt) return;
       const active=CS.currentRun();
@@ -1699,6 +1764,13 @@
       CS.showModal('fs-preview', { name: path.split('/').pop(), ...data });
     } catch { CS.toast('无法读取该文件。', 'error'); }
   };
-  CS.api.detectEndpoint().finally(() => { CS.agent.loadModels(); CS.agent.loadProjects().then(() => CS.agent.loadConversations()); });
+  CS.api.detectEndpoint().finally(async () => {
+    try { CS.state.me = await CS.api.request('/auth/me', { method: 'GET' }); } catch { CS.state.me = null; }
+    CS.emit('render');
+    const me = CS.state.me;
+    if (me && me.mode === 'multi' && !(me.user && me.user.name)) { CS.showAuthModal(); return; }
+    CS.agent.loadModels();
+    CS.agent.loadProjects().then(() => CS.agent.loadConversations());
+  });
   if(CS.storageUnavailable)CS.toast('浏览器存储不可用，当前仅在内存运行。','error');
 })();

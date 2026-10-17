@@ -40,10 +40,12 @@ class PipelineServer:
         async def spa_no_cache(request, call_next):
             response = await call_next(request)
             # 设置页等 SPA 入口禁止缓存, 保证浏览器总能拿到最新前端代码
-            if request.url.path.endswith("index.html") or request.url.path.rstrip("/") == "/science":
+            if (
+                request.url.path.endswith("index.html")
+                or request.url.path.rstrip("/") == "/science"
+            ):
                 response.headers["Cache-Control"] = "no-cache"
             return response
-
 
         api = PipelineAPI(pipeline_manager)
         task = TaskAPI(pipeline_manager)
@@ -56,12 +58,13 @@ class PipelineServer:
         self.app.include_router(workspace.router)
         self.app.include_router(admin.router)
         self.app.include_router(science.router)
+        self.app.include_router(science.auth_router)
 
         web_root = Path(f"{__file__[: __file__.rindex('/')]}/website/dist/")
         work_root = Path(f"{__file__[: __file__.rindex('/')]}/comfyui/dist")
         admin_root = Path(f"{__file__[: __file__.rindex('/')]}/admin/dist")
         sci_root = Path(f"{__file__[: __file__.rindex('/')]}/science/dist")
-        
+
         # Mount static files in order of specificity
         # Admin panel static files
         if admin_root.exists():
@@ -70,7 +73,7 @@ class PipelineServer:
                 SPAStaticFiles(directory=admin_root, html=True),
                 name="SigmaFlow Admin",
             )
-        
+
         # ComfyUI workspace
         if work_root.exists():
             self.app.mount(
@@ -86,7 +89,7 @@ class PipelineServer:
                 StaticFiles(directory=sci_root, html=True),
                 name="SigmaFlow Science",
             )
-        
+
         # Main website (catch-all)
         if web_root.exists():
             self.app.mount(

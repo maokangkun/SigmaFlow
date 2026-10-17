@@ -398,7 +398,7 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
 .fullscreen-page .page-footer{margin-top:auto;padding-top:26px}.settings-layout{display:grid;grid-template-columns:210px minmax(0,1fr);gap:22px;align-items:start;max-width:1180px;margin:0 auto;width:100%}.settings-nav{padding:4px 8px;display:flex;flex-direction:column;gap:3px;position:sticky;top:20px}.settings-nav-item{display:flex;align-items:center;gap:11px;min-height:36px;padding:7px 12px;border-radius:9px;font-size:12px;color:#666e81;text-align:left;background:transparent}.settings-nav-item .icon{color:var(--muted)}.settings-nav-item:hover{background:var(--inset)}.settings-nav-item.active{background:var(--surface);color:var(--ink-strong);box-shadow:var(--shadow-small)}.settings-nav-item.active .icon{color:var(--accent-dark)}.settings-content .settings-section{margin-bottom:0}
 .settings-actions{margin:22px 0 0 0}.settings-section{padding:16px 29px;margin-bottom:24px}.settings-section h2{font-size:14px;margin-bottom:10px}.setting-row{display:flex;align-items:center;justify-content:space-between;gap:25px;padding:20px 0;border-bottom:1px solid var(--line-soft)}.setting-row:last-child{border-bottom:none;padding-bottom:3px}.setting-row h3{font-size:12px;font-weight:500}.setting-row p{font-size:10px;color:var(--muted);max-width:520px;margin-top:5px;line-height:1.8}.switch{position:relative;display:inline-flex;width:34px;height:20px;border-radius:20px;background:#d9dde6;padding:3px;flex-shrink:0}.switch[aria-checked=true]{background:var(--accent)}.switch::before{content:'';height:14px;width:14px;background:var(--surface);border-radius:50%;box-shadow:1px 1px 3px #0002;transition:transform .18s}.switch[aria-checked=true]::before{transform:translateX(14px)}.switch:disabled{opacity:.35;cursor:not-allowed}.help-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}.help-grid .panel{padding:25px}.help-grid h3{font-size:14px;margin-bottom:12px}.help-grid p,.help-grid li{font-size:12px;color:var(--muted);line-height:2}.help-grid ol{padding-left:20px}.shortcut-list{display:flex;flex-direction:column;gap:14px;font-size:12px;color:var(--muted)}.shortcut-list>div{display:flex;justify-content:space-between}
 /* Modal, notices, responsive */
-.modal-backdrop{position:fixed;inset:0;background:#22283835;backdrop-filter:blur(3px);z-index:90;display:flex;align-items:center;justify-content:center;padding:22px;animation:page-in .12s}.modal{width:580px;max-width:100%;max-height:88vh;background:var(--bg);box-shadow:0 20px 70px #2027352b;border:1px solid #ffffffd9;border-radius:19px;display:flex;flex-direction:column;overflow:hidden}.modal.wide{width:830px}.modal-head{padding:23px 26px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line-soft);gap:20px}.modal-head h2{font-size:16px}.modal-body{padding:24px 26px;overflow:auto;min-height:0}.modal-footer{padding:17px 26px;display:flex;align-items:center;justify-content:flex-end;gap:11px;border-top:1px solid var(--line)}.modal .dataset-picker-row{display:flex;align-items:center;gap:13px;padding:15px 13px;border-radius:10px;width:100%;background:none;text-align:left;border:1px solid var(--line);margin-bottom:11px}.modal .dataset-picker-row:hover{background:var(--accent-bg)}.modal .dataset-picker-row .grow strong{font-size:11px;font-weight:550}.modal .dataset-picker-row .grow p{font-size:10px;color:var(--muted);margin-top:3px}.file-preview{background:var(--surface);padding:16px;border-radius:9px;border:1px solid var(--line);max-height:370px;overflow:auto}.file-preview pre{white-space:pre;font-size:11px}.modal .table-wrap{max-height:370px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}.modal table th,.modal table td{font-size:10px;padding:10px 13px;max-width:230px;overflow:hidden;text-overflow:ellipsis}.session-list-group{display:flex;align-items:center;gap:10px;margin-top:18px;padding-bottom:8px;font-size:10px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--faint)}.session-list-group:first-child{margin-top:0}.session-list-group::after{content:'';flex:1;height:1px;background:var(--line-soft)}.session-list-group .count{font-weight:420;letter-spacing:.2px;text-transform:none}.session-list-item{padding:10px 2px;border-bottom:1px solid var(--line-soft);display:flex;flex-direction:column;gap:3px}.session-list-item:last-child{border-bottom:0}.session-list-item strong{font-size:12px;font-weight:550;color:var(--ink-strong)}.note-editor{min-height:190px;width:100%;font-size:12px}.confirm-text{font-size:12px;color:var(--muted);line-height:1.9}.toast{padding:12px 17px;display:flex;align-items:center;gap:9px;background:var(--surface);color:var(--ink);font-size:12px;border:1px solid var(--line);box-shadow:0 5px 25px #2228381f;border-radius:11px;animation:toast-in .2s}.toast>.icon{color:var(--green);height:16px;width:16px}.toast.error>.icon{color:var(--red)}#toast-root{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:150;display:flex;flex-direction:column;gap:9px;max-width:min(90vw,600px);pointer-events:none}.sidebar-scrim{display:none}.mobile-only{display:none}.rotate{transform:rotate(90deg)}.text-clip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.compact-preview{max-width:400px}.loading-shimmer{color:var(--faint)}@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}@keyframes page-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}@keyframes toast-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.modal-backdrop{position:fixed;inset:0;background:#22283835;backdrop-filter:blur(3px);z-index:90;display:flex;align-items:center;justify-content:center;padding:22px;animation:page-in .12s}.modal{width:580px;max-width:100%;max-height:88vh;background:var(--bg);box-shadow:0 20px 70px #2027352b;border:1px solid #ffffffd9;border-radius:19px;display:flex;flex-direction:column;overflow:hidden}.modal.wide{width:830px}.modal-head{padding:23px 26px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line-soft);gap:20px}.modal-head h2{font-size:16px}.modal-body{padding:24px 26px;overflow:auto;min-height:0}.modal-footer{padding:17px 26px;display:flex;align-items:center;justify-content:flex-end;gap:11px;border-top:1px solid var(--line)}.auth-tabs{display:flex;gap:7px;margin-bottom:18px}.auth-tab{flex:1;padding:9px 12px;font-size:12.5px;color:var(--muted);background:var(--bg);border:1px solid var(--line);border-radius:9px;cursor:pointer}.auth-tab.active{background:var(--surface);color:var(--ink);font-weight:600;border-color:var(--ink-soft)}.auth-legal{margin-top:14px}.modal .dataset-picker-row{display:flex;align-items:center;gap:13px;padding:15px 13px;border-radius:10px;width:100%;background:none;text-align:left;border:1px solid var(--line);margin-bottom:11px}.modal .dataset-picker-row:hover{background:var(--accent-bg)}.modal .dataset-picker-row .grow strong{font-size:11px;font-weight:550}.modal .dataset-picker-row .grow p{font-size:10px;color:var(--muted);margin-top:3px}.file-preview{background:var(--surface);padding:16px;border-radius:9px;border:1px solid var(--line);max-height:370px;overflow:auto}.file-preview pre{white-space:pre;font-size:11px}.modal .table-wrap{max-height:370px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}.modal table th,.modal table td{font-size:10px;padding:10px 13px;max-width:230px;overflow:hidden;text-overflow:ellipsis}.session-list-group{display:flex;align-items:center;gap:10px;margin-top:18px;padding-bottom:8px;font-size:10px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--faint)}.session-list-group:first-child{margin-top:0}.session-list-group::after{content:'';flex:1;height:1px;background:var(--line-soft)}.session-list-group .count{font-weight:420;letter-spacing:.2px;text-transform:none}.session-list-item{padding:10px 2px;border-bottom:1px solid var(--line-soft);display:flex;flex-direction:column;gap:3px}.session-list-item:last-child{border-bottom:0}.session-list-item strong{font-size:12px;font-weight:550;color:var(--ink-strong)}.note-editor{min-height:190px;width:100%;font-size:12px}.confirm-text{font-size:12px;color:var(--muted);line-height:1.9}.toast{padding:12px 17px;display:flex;align-items:center;gap:9px;background:var(--surface);color:var(--ink);font-size:12px;border:1px solid var(--line);box-shadow:0 5px 25px #2228381f;border-radius:11px;animation:toast-in .2s}.toast>.icon{color:var(--green);height:16px;width:16px}.toast.error>.icon{color:var(--red)}#toast-root{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:150;display:flex;flex-direction:column;gap:9px;max-width:min(90vw,600px);pointer-events:none}.sidebar-scrim{display:none}.mobile-only{display:none}.rotate{transform:rotate(90deg)}.text-clip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.compact-preview{max-width:400px}.loading-shimmer{color:var(--faint)}@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}@keyframes page-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}@keyframes toast-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @media(min-width:1700px){.home-content{width:830px}.home-brand h1{font-size:48px}.home-shortcuts{gap:18px}.page{max-width:1380px}.chat-page{max-width:1410px}.chat-layout{grid-template-columns:minmax(0,1fr) 280px;gap:36px}}
 @media(max-width:1200px){:root{--sidebar-width:206px}.sidebar{padding-left:12px;padding-right:12px}.brand{font-size:13px;gap:8px}.page{padding:24px 30px 40px}.topbar{padding:0 30px}.home-page{padding-left:35px;padding-right:35px}.home-brand h1{font-size:39px}.home-shortcuts{gap:11px}.shortcut-card{padding:16px 12px;gap:9px}.shortcut-card p{font-size:8px}.chat-layout{grid-template-columns:minmax(0,1fr) 225px;gap:22px}.chat-page{padding:15px 25px 26px}.tools-grid{grid-template-columns:repeat(3,1fr)}.result-grid{grid-template-columns:minmax(0,1.7fr) minmax(230px,1fr)}.workflow-layout{grid-template-columns:minmax(0,1fr) 290px;gap:20px}.workflow-config{padding:21px}.project-grid{grid-template-columns:repeat(2,1fr)}.literature-layout{grid-template-columns:minmax(0,1fr) 255px;gap:20px}}
 @media(max-width:1050px){.chat-layout{grid-template-columns:1fr}.inspector{display:none}.chat-main{max-width:800px;margin:auto;width:100%}.home-shortcuts{grid-template-columns:repeat(2,1fr);gap:14px}.shortcut-card{padding:17px}.home-content{max-width:630px;padding-top:40px}.home-brand{margin-bottom:32px}.home-shortcuts{margin-top:28px}.shortcut-card p{font-size:10px}.result-grid{grid-template-columns:1fr}.result-side-stack{display:grid;grid-template-columns:1fr 1fr;align-items:start}.literature-layout{grid-template-columns:1fr}.reading-panel{position:static}.result-stats{gap:12px}.result-stat{padding:18px 17px}.workflow-layout{grid-template-columns:1fr}.workflow-config{position:static}.workflow-config .config-inputs{display:grid;grid-template-columns:1fr 1fr;gap:0 20px}.workflow-config .config-inputs .full-span{grid-column:1/-1}.tool-workspace{grid-template-columns:1fr}}
@@ -1091,7 +1091,8 @@ CS.markdown = text => {
     version: 1, projects: clone(CS.data.projects), datasets: clone(CS.data.datasets), runs: [],
     bookmarks: [], notes: {}, projectId: 'pr-pbmc', currentRunId: null,
     settings: { persist: true, contrast: false, reducedMotion: false, mode: 'local', endpoint: '/sigmaflow/api', inspector: true, model: 'openrouter/free', modelId: null, apiKey: '', lastTest: null },
-    username: ''
+    username: '',
+    me: null
   });
   let stored;
   try { stored = JSON.parse(localStorage.getItem(key) || 'null'); } catch { CS.storageUnavailable = true; }
@@ -1116,7 +1117,7 @@ CS.markdown = text => {
     workflowId: 'singlecell', workflowCategory: 'all', datasetId: 'ds-pbmc', organism: 'Homo sapiens', advanced: false,
     minGenes: 200, maxMito: 20, activeTool: 'sequence', sequence: CS.data.sampleFASTA, sequenceResult: null,
     modal: null, expandedLogs: new Set(), selectedCell: null, note: '', apiHealth: null,
-    userMenu: false, modelMenu: false, projectMenu: false, projectSettingsMenu: null, expandedProjects: new Set(), conversations: [], settingsTab: 'appearance', models: [], providers: [], edit: null, providerModels: null, draftModelName: '', draftProviderId: null, dropdown: null, pendingDelete: null, modelsLoaded: false, thinkingOpen: false, thinkingText: '', toolsOpen: false, errorOpen: false, blockOpen: {}, canJumpLatest: false, contextInfo: null, contextMenu: false, agentTools: null, toolDraft: null, toolGroupsCollapsed: null, agentSkills: null, skillDraft: null, mcpServers: null, mcpDraft: null, systemPrompt: null, syspromptDraft: null, tokens: null, tokensDraft: null, fsCollapsed: false, fs: null, terminal: { open: false, cols: 0, rows: 0 }
+    userMenu: false, authTab: 'login', modelMenu: false, projectMenu: false, projectSettingsMenu: null, expandedProjects: new Set(), conversations: [], settingsTab: 'appearance', models: [], providers: [], edit: null, providerModels: null, draftModelName: '', draftProviderId: null, dropdown: null, pendingDelete: null, modelsLoaded: false, thinkingOpen: false, thinkingText: '', toolsOpen: false, errorOpen: false, blockOpen: {}, canJumpLatest: false, contextInfo: null, contextMenu: false, agentTools: null, toolDraft: null, toolGroupsCollapsed: null, agentSkills: null, skillDraft: null, mcpServers: null, mcpDraft: null, systemPrompt: null, syspromptDraft: null, tokens: null, tokensDraft: null, fsCollapsed: false, fs: null, terminal: { open: false, cols: 0, rows: 0 }
   };
   // 侧栏项目折叠状态持久化: 记录用户显式展开的项目, 刷新后保持一致。
   try { const fold = JSON.parse(localStorage.getItem(key + '.fold') || 'null'); if (Array.isArray(fold)) CS.ui.expandedProjects = new Set(fold.map(String)); } catch {}
@@ -1245,6 +1246,8 @@ CS.markdown = text => {
         if (!response.ok) {
           let detail = `HTTP ${response.status}`;
           try { const body = await response.json(); if (body?.detail) detail = String(body.detail); } catch {}
+          // 登录过期/未登录时统一唤起登录浮层
+          if (response.status === 401 && path !== '/auth/me' && typeof CS.handleAuthLoss === 'function') setTimeout(() => { try { CS.handleAuthLoss(); } catch {} }, 0);
           throw new Error(detail);
         }
         return await response.json();
@@ -4171,7 +4174,7 @@ CS.agent.pty = {
         ${CS.ui.unassignedCollapsed ? '' : (() => { const loose = CS.ui.conversations.filter(c => !c.projectId).slice(0, 8); return loose.length ? loose.filter(c => !c.archived).map(c => `<button type="button" class="conversation-link ${CS.state.currentRunId === c.id ? 'selected' : ''}" data-action="open-conversation" data-id="${e(c.id)}" title="${e(c.title)}">${i('message')}<span class="conversation-title">${e(c.title)}</span>${streaming.has(c.id) ? '<span class="conv-dot" title="生成中"></span>' : ''}<span class="conversation-actions${c.pinned ? ' has-pinned' : ''}"><span class="icon-btn" role="button" data-action="toggle-pin-conversation" data-id="${e(c.id)}" title="${c.pinned ? '取消置顶' : '置顶'}">${i(c.pinned ? 'x' : 'up','',12)}</span><span class="icon-btn" role="button" data-action="archive-conversation" data-id="${e(c.id)}" title="归档">${i('archive','',12)}</span></span></button>`).join('') : '<div class="conversation-empty small muted">暂无未归属项目的会话</div>'; })()}
       </section>
       <section class="sidebar-section"><div class="sidebar-section-label"><button type="button" class="text-button muted small ${CS.ui.fsCollapsed ? 'collapsed' : ''}" data-action="toggle-fs-section" aria-expanded="${!CS.ui.fsCollapsed}" title="${CS.ui.fsCollapsed ? '展开文件' : '折叠文件'}"><span>文件</span></button><span class="fs-actions">${iconBtn('fs-upload','upload','上传文件到项目根目录')}${iconBtn('fs-term','terminal','打开终端')}${iconBtn('fs-refresh','refresh','刷新文件')}</span></div>${CS.ui.fsCollapsed ? '' : V.fsTree()}<input type="file" id="fs-upload-input" multiple hidden aria-hidden="true"></section></div>
-      <div class="sidebar-bottom"><div class="workspace-chip" data-action="toggle-user-menu"><div class="workspace-monogram">${(CS.state.username || 'CS').slice(0,2).toUpperCase()}</div><div class="grow"><div class="name">${e(CS.state.username || '未登录用户')}</div><div class="sub">科研工作空间</div></div>${i('chevron','',12)}${CS.ui.userMenu ? `<div class="user-menu"><button class="menu-item" data-nav="settings">${i('settings','',15)}<span>设置</span><kbd>⌘,</kbd></button><button class="menu-item" data-nav="help">${i('help','',15)}<span>帮助与文档</span></button><div class="menu-divider"></div><button class="menu-item danger" data-action="logout">${i('logout','',15)}<span>退出登录</span></button></div>` : ''}</div></div>
+      <div class="sidebar-bottom"><div class="workspace-chip" data-action="toggle-user-menu"><div class="workspace-monogram">${((CS.state.me?.user?.name) || CS.state.username || 'CS').slice(0,2).toUpperCase()}</div><div class="grow"><div class="name">${e((CS.state.me?.user?.name) || CS.state.username || '未登录用户')}</div><div class="sub">科研工作空间</div></div>${i('chevron','',12)}${CS.ui.userMenu ? `<div class="user-menu"><button class="menu-item" data-nav="settings">${i('settings','',15)}<span>设置</span><kbd>⌘,</kbd></button><button class="menu-item" data-nav="help">${i('help','',15)}<span>帮助与文档</span></button>${CS.state.me?.mode === 'multi' ? `<div class="menu-divider"></div><button class="menu-item danger" data-action="logout">${i('logout','',15)}<span>退出登录</span></button>` : ''}</div>` : ''}</div></div>
     </aside>`;
   };
   V.topbar = () => `<div class="topbar"><div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div></div>`;
@@ -5214,6 +5217,19 @@ CS.agent.pty = {
     CS.toast('已复制到剪贴板。');
   };
   const citation = p => `${p.authors} (${p.year}). ${p.title}. ${p.journal}. https://doi.org/${p.doi}`;
+  // 多用户模式: 登录浮层的统一入口; 未登录时业务请求一律 401。
+  CS.showAuthModal = () => {
+    const me = CS.state.me;
+    if (me && me.mode === 'multi' && !(me.user && me.user.name) && !CS.ui.modal) CS.showModal('auth');
+  };
+  CS.handleAuthLoss = () => {
+    const me = CS.state.me;
+    if (me && me.mode === 'multi' && me.user && me.user.name) {
+      CS.state.me = { mode: 'multi', user: null };
+      CS.toast('登录已过期，请重新登录。', 'error');
+    }
+    CS.showAuthModal();
+  };
   CS.showModal = (type, payload = {}) => {
     modalReturnFocus = document.activeElement;
     CS.ui.modal = { type, ...payload };
@@ -5228,6 +5244,8 @@ CS.agent.pty = {
     document.getElementById('app').inert = false; document.getElementById('app').removeAttribute('aria-hidden');
     document.body.style.overflow = '';
     if (modalReturnFocus?.isConnected) modalReturnFocus.focus({ preventScroll: true });
+    // 多用户模式未登录时登录浮层不可永久关闭: 关闭即重开
+    setTimeout(() => { try { CS.showAuthModal(); } catch {} }, 0);
   };
   CS.renderModal = () => {
     const modal = CS.ui.modal; if (!modal) return;
@@ -5287,6 +5305,12 @@ CS.agent.pty = {
       const p = CS.data.papers.find(p => p.id === modal.id);
       body = `<p class="small muted mb-20">${e(p.title)}</p><form id="note-form" data-form="note"><textarea id="paper-note-text" class="note-editor" maxlength="10000" placeholder="记录你的阅读思考、证据局限与待验证问题…">${e(CS.state.notes[modal.id] || '')}</textarea></form><p class="tiny faint mt-12">笔记仅在本机保存，不自动发送到模型。</p>`;
       footer = `<button class="btn primary" form="note-form" type="submit">${i('check','',15)} 保存笔记</button>`;
+    } else if (modal.type === 'auth') {
+      // 登录/注册浮层: 多用户模式未登录时强制展示, 不提供关闭按钮
+      const tab = CS.ui.authTab === 'register' ? 'register' : 'login';
+      title = tab === 'register' ? '注册 SigmaFlow 账号' : '登录 SigmaFlow';
+      body = `<div class="auth-tabs" role="tablist"><button type="button" class="auth-tab${tab === 'login' ? ' active' : ''}" data-action="auth-tab" data-tab="login" role="tab" aria-selected="${tab === 'login'}">登录</button><button type="button" class="auth-tab${tab === 'register' ? ' active' : ''}" data-action="auth-tab" data-tab="register" role="tab" aria-selected="${tab === 'register'}">注册</button></div><form id="auth-form" data-form="auth" autocomplete="on"><div class="field"><label for="auth-username">用户名</label><input id="auth-username" name="username" maxlength="32" required autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="字母、数字、- 或 _"></div><div class="field"><label for="auth-password">密码</label><input id="auth-password" name="password" type="password" minlength="6" maxlength="128" required autocomplete="${tab === 'register' ? 'new-password' : 'current-password'}" placeholder="至少 6 位"></div>${tab === 'register' ? '<div class="field"><label for="auth-confirm">确认密码</label><input id="auth-confirm" name="confirm" type="password" minlength="6" maxlength="128" required autocomplete="new-password" placeholder="再次输入密码"></div>' : ''}<p class="tiny muted">本服务运行在多用户模式下，注册后将按账号隔离会话与配置数据。</p></form>`;
+      footer = `<button class="btn primary" type="submit" form="auth-form">${i(tab === 'register' ? 'plus' : 'arrowright', '', 15)} ${tab === 'register' ? '创建并进入' : '登录'}</button>`;
     } else if (modal.type === 'confirm') {
       title = modal.title;
       body = `<p class="confirm-text">${e(modal.message)}</p>`;
@@ -5296,7 +5320,8 @@ CS.agent.pty = {
       title = '合成细胞详情';
       body = `<div class="row mb-20">${H.tile('cells')}<div><h3>${e(p.id)}</h3><span class="small muted">${e(g.name)} · 合成数据点</span></div></div><div class="info-pairs"><span>分组</span><span>${e(g.name)}</span><span>显示坐标 X</span><span>${p.x.toFixed(2)}</span><span>显示坐标 Y</span><span>${p.y.toFixed(2)}</span><span>数据来源</span><span>synthetic-ui-fixture</span></div><div class="mt-20">${H.notice('坐标是用于界面展示的二维随机点，不是实际降维计算结果。')}</div>`;
     }
-    document.getElementById('modal-root').innerHTML = `<div class="modal-backdrop"><section class="modal ${wide ? 'wide' : ''}" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><h2 id="modal-title">${e(title)}</h2>${H.iconBtn('close-modal','x','关闭对话框')}</header><div class="modal-body">${body}</div>${footer ? `<footer class="modal-footer">${footer}</footer>` : ''}</section></div>`;
+    const authHead = modal.type === 'auth' ? '' : H.iconBtn('close-modal','x','关闭对话框');
+    document.getElementById('modal-root').innerHTML = `<div class="modal-backdrop"><section class="modal ${wide ? 'wide' : ''}" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><h2 id="modal-title">${e(title)}</h2>${authHead}</header><div class="modal-body">${body}</div>${footer ? `<footer class="modal-footer">${footer}</footer>` : ''}</section></div>`;
   };
 
   const previewDataset = async id => {
@@ -5392,6 +5417,7 @@ CS.agent.pty = {
   const actions = {
     'toggle-sidebar': () => { CS.ui.mobileSidebar = !CS.ui.mobileSidebar; CS.render(); },
     'toggle-user-menu': () => { CS.ui.userMenu = !CS.ui.userMenu; CS.render(); },
+    'auth-tab': (id, target) => { CS.ui.authTab = target.dataset.tab === 'register' ? 'register' : 'login'; CS.renderModal(); setTimeout(() => document.getElementById('auth-username')?.focus(), 30); },
     'toggle-model-menu': () => { CS.ui.modelMenu = !CS.ui.modelMenu; CS.render(); },
     'toggle-context-menu': () => { CS.ui.contextMenu = !CS.ui.contextMenu; CS.ui.modelMenu = false; CS.render(); },
     'pick-model': async id => {
@@ -5762,7 +5788,23 @@ CS.agent.pty = {
       } catch (error) { CS.toast('测试失败：' + CS.api.friendlyError(error), 'error'); }
       finally { CS.ui.testing = false; CS.render(); }
     },
-    'logout': () => { CS.state.username = ''; CS.ui.userMenu = false; CS.save(); CS.render(); CS.toast('已退出登录。'); },
+    'logout': () => {
+      CS.ui.userMenu = false;
+      if (CS.state.me && CS.state.me.mode === 'multi') {
+        // 先在 reset 之前发登出请求: 此时 endpoint 是探测后的正确地址
+        // (reset 会把 endpoint 恢复成默认值, 挂错前缀的请求会落到静态文件 405)
+        const bye = CS.api.request('/auth/logout', { method: 'POST' }).catch(() => null);
+        // 等服务端清除会话 cookie 完成再整页刷新, 避免旧 cookie 残留导致登录层不弹出
+        ;(async () => {
+          await bye;
+          CS.reset();
+          CS.state.me = { mode: 'multi', user: null };
+          setTimeout(() => { window.location.reload(); }, 30);
+        })();
+        return;
+      }
+      CS.state.username = ''; CS.save(); CS.render(); CS.toast('已退出登录。');
+    },
     'go-home': () => CS.navigate('home'), 'go-data': () => CS.navigate('data'), 'go-workflows': () => CS.navigate('workflows'),
     'new-project': async () => {
       CS.showModal('project');
@@ -5961,6 +6003,32 @@ CS.agent.pty = {
   });
   document.addEventListener('submit', event => {
     const form=event.target; const type=form.dataset.form; if(!type) return; event.preventDefault();
+    if(type==='auth') {
+      const username=document.getElementById('auth-username').value.trim();
+      const password=document.getElementById('auth-password').value;
+      const confirmEl=document.getElementById('auth-confirm');
+      if(confirmEl && password!==confirmEl.value){CS.toast('两次输入的密码不一致。','error');return;}
+      const path='/auth/' + (CS.ui.authTab==='register' ? 'register' : 'login');
+      (async () => {
+        try {
+          const out=await CS.api.request(path,{method:'POST',body:JSON.stringify({username,password})});
+          const welcome = CS.ui.authTab === 'register';
+          CS.ui.authTab='login';
+          // 账号切换: 清掉上个用户的本地工作区缓存再重新加载; reset 会恢复 defaults
+          // (含 me: null 与默认 endpoint), 所以 reset 之后再写入 me 与实际接口地址
+          const keepEndpoint = CS.state.settings.endpoint;
+          CS.reset();
+          CS.state.settings.endpoint = keepEndpoint;
+          CS.state.me=out;
+          CS.closeModal();
+          CS.toast(welcome ? `欢迎，${out.user.name}。` : `欢迎回来，${out.user.name}。`);
+          CS.agent.loadModels();
+          CS.agent.loadProjects().then(() => CS.agent.loadConversations());
+          CS.render();
+        } catch(error){ CS.toast((error && error.message) || '登录失败。','error'); }
+      })();
+      return;
+    }
     if(type==='composer') {
       const prompt=CS.ui.composer.trim(); if(!prompt) return;
       const active=CS.currentRun();
@@ -6188,7 +6256,14 @@ CS.agent.pty = {
       CS.showModal('fs-preview', { name: path.split('/').pop(), ...data });
     } catch { CS.toast('无法读取该文件。', 'error'); }
   };
-  CS.api.detectEndpoint().finally(() => { CS.agent.loadModels(); CS.agent.loadProjects().then(() => CS.agent.loadConversations()); });
+  CS.api.detectEndpoint().finally(async () => {
+    try { CS.state.me = await CS.api.request('/auth/me', { method: 'GET' }); } catch { CS.state.me = null; }
+    CS.emit('render');
+    const me = CS.state.me;
+    if (me && me.mode === 'multi' && !(me.user && me.user.name)) { CS.showAuthModal(); return; }
+    CS.agent.loadModels();
+    CS.agent.loadProjects().then(() => CS.agent.loadConversations());
+  });
   if(CS.storageUnavailable)CS.toast('浏览器存储不可用，当前仅在内存运行。','error');
 })();
 

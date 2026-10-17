@@ -38,6 +38,8 @@
         if (!response.ok) {
           let detail = `HTTP ${response.status}`;
           try { const body = await response.json(); if (body?.detail) detail = String(body.detail); } catch {}
+          // 登录过期/未登录时统一唤起登录浮层
+          if (response.status === 401 && path !== '/auth/me' && typeof CS.handleAuthLoss === 'function') setTimeout(() => { try { CS.handleAuthLoss(); } catch {} }, 0);
           throw new Error(detail);
         }
         return await response.json();
