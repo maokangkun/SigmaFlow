@@ -236,7 +236,9 @@
             } else {
               // 单块渲染: 思考/工具块可折叠(状态存 CS.ui.blockOpen), 正文块渲染 markdown
               const seg = (b, bi) => {
-                const live = m.streaming && bi === lastIdx;
+                // 已返回结果的工具块视为完成; 否则等多轮循环的下一批事件时,
+                // 尾部工具块会一直显示「运行中」
+                const live = m.streaming && bi === lastIdx && b.result == null;
                 if (b.type === 'text') return `<div class="agent-intro md-body"${live ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(b.text)}</div>`;
                 if (b.type === 'think') {
                   const open = blockOpen(bi);
