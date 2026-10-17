@@ -111,7 +111,7 @@
             if (message.event === 'chat.delta' || message.event === 'chat.think' || message.event === 'chat.tool') entry.resetTimer && entry.resetTimer();
             if (message.event === 'chat.stop.ack') { return; }  // 停止确认不是聊天回复, 等真正的 chat.done
             if (message.event === 'chat.think' && entry.onThink) { entry.onThink(message.data?.delta || ''); return; }
-            if (message.event === 'chat.tool' && entry.onTool) { entry.onTool(message.data?.tool || {}); return; }
+            if (message.event === 'chat.tool' && entry.onTool) { entry.onTool(message.data?.tool || {}, message.requestId); return; }
             if (message.event === 'chat.retry') { entry.onRetry && entry.onRetry(message.data?.retry || {}); return; }
             if (message.event === 'chat.delta' && entry.onDelta) { entry.onDelta(message.data?.delta || ''); return; }
             CS.api.ws.pending.delete(message.requestId);

@@ -732,6 +732,29 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .heatmap-legend{display:flex;align-items:center;gap:4px;margin-left:25px}
 .heatmap-legend .heatmap-cell{width:11px;height:11px;cursor:default}
 .heatmap-legend-total{margin-left:auto}
+/* ask 工具问题卡: 模型向用户提问并阻塞等待回答 */
+.ask-card{margin:6px 0 10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:15px 16px;display:flex;flex-direction:column;gap:12px}
+.ask-card[data-ask-state=answered]{border-color:var(--line-soft);background:var(--bg)}
+.ask-head{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--ink-strong)}
+.ask-head .icon{color:var(--accent);flex-shrink:0}
+.ask-head .tool-status{margin-left:auto;font-weight:450;color:var(--faint)}
+.ask-card[data-ask-state=pending] .ask-head .tool-status{color:var(--accent)}
+.ask-q{display:flex;flex-direction:column;gap:8px}
+.ask-q-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ask-q-chip{padding:2px 8px;border-radius:7px;background:var(--inset);color:var(--muted);font-size:10px;font-weight:600;letter-spacing:.4px}
+.ask-q-text{font-size:12px;color:var(--ink);line-height:1.7}
+.ask-options{display:flex;flex-direction:column;gap:6px}
+.ask-option{display:flex;flex-direction:column;gap:3px;text-align:left;padding:9px 12px;background:var(--bg);border:1px solid var(--line);border-radius:10px;font-size:11.5px}
+.ask-option:hover{border-color:#bdbad6;background:#f3f2f8}
+.ask-option.selected{border-color:var(--accent);background:var(--accent-bg);box-shadow:0 0 0 1px var(--accent)}
+.ask-option-label{font-weight:560;color:var(--ink-strong)}
+.ask-option-desc{font-size:10.5px;color:var(--muted);line-height:1.6}
+.ask-custom-input{width:100%;padding:8px 11px;font-size:11.5px;background:#fff;border:1px solid var(--line);border-radius:9px;color:var(--ink)}
+.ask-custom-input:focus-visible{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px #7775b61f}
+.ask-custom-input::placeholder{color:#b4b9c6}
+.ask-foot{display:flex;justify-content:flex-end}
+.ask-foot .hint{margin:0;font-size:10.5px;color:var(--faint);line-height:1.7;text-align:left;flex:1}
+.ask-card .tool-result{margin:0;background:var(--bg);border:1px solid var(--line-soft);border-radius:9px;padding:10px 12px;font-size:11px;white-space:pre-wrap;word-break:break-word;color:var(--ink);flex:1;max-height:220px;overflow:auto}
 
 </style>
 </head>
@@ -1111,7 +1134,8 @@ CS.markdown = text => {
   // 清除刷新前残留的流式标记: 消息以 streaming:true 落盘后, 若中途刷新页面,
   // 没有对应的生成循环来清除它, 会让 favicon/绿点永远误判为"生成中";
   // 工具调用的 running 标记同样属于页面内存态, 刷新后一并清除。
-  CS.state.runs.forEach(run => (run.messages || []).forEach(m => { delete m.streaming; (m.tools || []).forEach(t => { delete t.running; }); }));
+  // 未回答的 ask 也一并标记失效: 服务端已随断开取消了等待者。
+  CS.state.runs.forEach(run => (run.messages || []).forEach(m => { delete m.streaming; (m.tools || []).forEach(t => { delete t.running; }); (m.blocks || []).forEach(b => { if (b.type === 'ask' && !b.answered) b.stale = true; }); }));
   CS.ui = {
     route: 'home', mobileSidebar: false, composer: '', attachments: [],
     filters: { data: '', dataTab: 'all', project: '', projectTab: 'active', literature: '', paperTab: 'all', tools: '', toolTab: 'all' },
@@ -1321,7 +1345,7 @@ CS.markdown = text => {
             if (message.event === 'chat.delta' || message.event === 'chat.think' || message.event === 'chat.tool') entry.resetTimer && entry.resetTimer();
             if (message.event === 'chat.stop.ack') { return; }  // 停止确认不是聊天回复, 等真正的 chat.done
             if (message.event === 'chat.think' && entry.onThink) { entry.onThink(message.data?.delta || ''); return; }
-            if (message.event === 'chat.tool' && entry.onTool) { entry.onTool(message.data?.tool || {}); return; }
+            if (message.event === 'chat.tool' && entry.onTool) { entry.onTool(message.data?.tool || {}, message.requestId); return; }
             if (message.event === 'chat.retry') { entry.onRetry && entry.onRetry(message.data?.retry || {}); return; }
             if (message.event === 'chat.delta' && entry.onDelta) { entry.onDelta(message.data?.delta || ''); return; }
             CS.api.ws.pending.delete(message.requestId);
@@ -4337,8 +4361,9 @@ CS.audio = (function () {
               const seg = (b, bi) => {
                 // 已返回结果的工具块视为完成; 否则等多轮循环的下一批事件时,
                 // 尾部工具块会一直显示「运行中」
-                const live = m.streaming && bi === lastIdx && b.result == null;
+                const live = m.streaming && bi === lastIdx && b.result == null && b.type !== 'ask';
                 if (b.type === 'text') return `<div class="agent-intro md-body"${live ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(b.text)}</div>`;
+                if (b.type === 'ask') return renderAsk(b, bi);
                 if (b.type === 'think') {
                   const open = blockOpen(bi);
                   return `<div class="think-root${live ? ' think-live' : ''}" data-state="${live ? 'running' : 'ok'}"${live ? ' data-live="1"' : ''}${open ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-block" data-id="${e(bkey(bi))}" aria-expanded="${open}"><span class="think-leading">${i('spark', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${live ? '思考中' : '已深度思考'}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"${live ? ' data-follow-end=""' : ''}><span class="think-summary-text">${e(live ? b.text : ((b.text || '').split('\n').filter(Boolean)[0] || ''))}</span></span></button>${open ? `<div class="think-body"${live ? ' data-live-think="1"' : ''}>${e(b.text)}</div>` : ''}</div>`;
@@ -4347,11 +4372,28 @@ CS.audio = (function () {
                 const open = blockOpen(bi);
                 return `<div class="think-root tool-root${live ? ' think-live' : ''}" data-state="${live ? 'running' : 'ok'}"${open ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-block" data-id="${e(bkey(bi))}" aria-expanded="${open}"><span class="think-leading">${i(meta.icon, '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${meta.label} ${e(b.name)}${live ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(JSON.stringify(b.args || {}).slice(0, 160))}</span></span></button>${open ? `<div class="tool-list"><div class="tool-item${live ? ' tool-running' : ''}"><div class="tool-head"><code>${e(b.name)}</code><span class="tool-args">${e(JSON.stringify(b.args || {}).slice(0, 160))}</span>${live ? '<span class="tool-status">运行中…</span>' : ''}</div>${b.result != null ? `<pre class="tool-result">${e(String(b.result).slice(0, 600))}${String(b.result).length > 600 ? '\n…' : ''}</pre>` : ''}</div></div>` : ''}</div>`;
               };
+              // ask 问题卡: 未回答时可选项+自由输入, 已回答/失效后回放用户答复
+              const renderAsk = (b, bi) => {
+                const key = bkey(bi);
+                const qs = b.questions || [];
+                const state = b.answered ? 'answered' : (b.stale ? 'stale' : 'pending');
+                const sel = (CS.ui.askSel || {})[key] || {};
+                const body = qs.map((q, qi) => {
+                  const picked = sel[qi] || new Set();
+                  const opts = (q.options || []).map((o, oi) => `<button type="button" class="ask-option${picked.has(oi) ? ' selected' : ''}" data-action="ask-pick-option" data-id="${e(key)}" data-qi="${qi}" data-oi="${oi}"${o.description ? ` title="${e(o.description)}"` : ''}><span class="ask-option-label">${e(o.label)}</span>${o.description ? `<span class="ask-option-desc">${e(o.description)}</span>` : ''}</button>`).join('');
+                  const draft = ((CS.ui.askDraft || {})[`${key}|${qi}`] || '');
+                  return `<div class="ask-q"><div class="ask-q-head">${q.header ? `<span class="ask-q-chip">${e(q.header)}</span>` : ''}<span class="ask-q-text">${e(q.question)}</span></div>${opts ? `<div class="ask-options">${opts}</div>` : ''}${state === 'pending' ? `<input class="ask-custom-input" data-key="${e(key + '|' + qi)}" placeholder="${e(q.multi_select ? '补充说明（可选）' : '自由输入答案（可选）')}" value="${e(draft)}" autocomplete="off">` : ''}</div>`;
+                }).join('');
+                const footer = state === 'pending' ? `<button type="button" class="btn primary small-btn ask-submit-btn" data-action="ask-submit" data-id="${e(key)}"${b.submitting ? ' disabled' : ''}>${b.submitting ? '发送中…' : '发送回答'}</button>` : state === 'stale' ? `<p class="hint">该问题因页面刷新或停止已失效，无法再回答。</p>` : `<pre class="tool-result">${e(String(b.result || '').slice(0, 600))}</pre>`;
+                return `<div class="ask-card" data-ask-state="${state}"><div class="ask-head">${i('help', '', 14)}<span class="ask-title">${qs.length > 1 ? `模型向你提出了 ${qs.length} 个问题` : '模型向你提问'}</span><span class="tool-status">${state === 'pending' ? '等待你的回答…' : state === 'answered' ? '已回答' : '已失效'}</span></div>${body}<div class="ask-foot">${footer}</div></div>`;
+              };
               const tailText = blocks.length && blocks[lastIdx].type === 'text';
+              // 未回答的 ask 挂在尾部时, 等待指示改为「等待你的回答」
+              const tailAskPending = m.streaming && blocks.length && blocks[lastIdx].type === 'ask' && !blocks[lastIdx].answered && !blocks[lastIdx].stale;
               // 等待模型响应: 流式中没有正在输出的正文; 典型场景是工具刚返回完,
               // 模型下一轮首字尚未到达, 给出一个轻量等待指示
-              const waitingModel = m.streaming && !tailText && (!blocks.length || (blocks[lastIdx].type === 'tool' && blocks[lastIdx].result != null));
-              const waitHint = waitingModel ? (() => { const rt = CS.ui.chatRetry; const active = rt && rt.runId === run.id; const label = active ? `第 ${Math.min(rt.attempt + 1, rt.total)}/${rt.total} 次尝试中` : '等待模型响应'; const tip = active && rt.error ? ` title="${e(rt.error)}"` : ''; return `<div class="model-wait" role="status"${tip}><span class="wait-dots" aria-hidden="true"><span class="wait-dot"></span><span class="wait-dot"></span><span class="wait-dot"></span></span><span>${label}${active ? ' · 上次失败' : ''}</span></div>`; })() : '';
+              const waitingModel = m.streaming && !tailText && !tailAskPending && (!blocks.length || (blocks[lastIdx].type === 'tool' && blocks[lastIdx].result != null) || (blocks[lastIdx].type === 'ask' && (blocks[lastIdx].answered || blocks[lastIdx].stale)));
+              const waitHint = (waitingModel || tailAskPending) ? (() => { const rt = CS.ui.chatRetry; const active = rt && rt.runId === run.id; const label = tailAskPending ? '等待你的回答' : active ? `第 ${Math.min(rt.attempt + 1, rt.total)}/${rt.total} 次尝试中` : '等待模型响应'; const tip = active && rt.error ? ` title="${e(rt.error)}"` : ''; return `<div class="model-wait" role="status"${tip}><span class="wait-dots" aria-hidden="true"><span class="wait-dot"></span><span class="wait-dot"></span><span class="wait-dot"></span></span><span>${label}${active && !tailAskPending ? ' · 上次失败' : ''}</span></div>`; })() : '';
               // 流式期间最后一块不是正文时补一个空正文占位, 供增量更新定位与底部跟随
               segments = `${blocks.map(seg).join('')}${m.streaming && !tailText ? `<div class="agent-intro md-body" data-stream-at="${e(m.at)}"></div>${waitHint}` : ''}`;
             }
@@ -4961,12 +5003,13 @@ CS.audio = (function () {
       const meta = CS.ui.conversations.find(c => c.id === id) || {};
       const run = { id, kind: 'chat', title: meta.title || data.title || '会话', projectId: data.projectId, prompt: '', datasetIds: [], config: {},
               messages: data.content.map(m => {
-                const msg = { role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) };
+                const msg = { role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) };
                 // 旧格式记录压平了时间线, 加载时重建为 think/tool/text 块以便按时间线展示
-                if (msg.role === 'assistant' && (msg.reasoning || msg.tools?.length)) {
+                if (msg.role === 'assistant' && (msg.reasoning || msg.tools?.length || msg.asks?.length)) {
                   const blocks = [];
                   if (msg.reasoning) blocks.push({ type: 'think', text: msg.reasoning });
                   for (const t of msg.tools || []) blocks.push({ type: 'tool', name: t.name, args: t.args, result: t.result });
+                  for (const a of msg.asks || []) blocks.push({ type: 'ask', id: a.id, questions: a.questions, answered: !!a.answered, result: a.result, stale: !a.answered });
                   if (msg.content) blocks.push({ type: 'text', text: msg.content });
                   msg.blocks = blocks;
                 }
@@ -5177,7 +5220,7 @@ CS.audio = (function () {
       id: run.id, title: run.title, projectId: run.projectId,
       pinned: !!conv?.pinned, archived: !!conv?.archived,
       content: run.messages.filter(m => m.role === 'user' || m.role === 'assistant')
-        .map(m => ({ role: m.role, content: m.content, at: m.at, ...(m.model ? { model: m.model } : {}), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) })),
+        .map(m => ({ role: m.role, content: m.content, at: m.at, ...(m.model ? { model: m.model } : {}), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) })),
     };
     try { await CS.api.modelCall('conversation.save', 'POST', '/conversations', payload); }
     catch { if (retry) setTimeout(() => syncConversation(run, false), 3000); }
@@ -5190,6 +5233,7 @@ CS.audio = (function () {
       reply.content = reply.blocks.filter(b => b.type === 'text').map(b => b.text).join('');
       reply.reasoning = reply.blocks.filter(b => b.type === 'think').map(b => b.text).join('');
       reply.tools = reply.blocks.filter(b => b.type === 'tool').map(b => ({ name: b.name, args: b.args, result: b.result }));
+      reply.asks = reply.blocks.filter(b => b.type === 'ask').map(b => ({ id: b.id, questions: b.questions, answered: !!b.answered, result: b.result || '' }));
     };
     const lastBlock = () => reply.blocks[reply.blocks.length - 1];
     const pushThink = think => {
@@ -5202,10 +5246,19 @@ CS.audio = (function () {
       if (last && last.type === 'text') last.text += delta;
       else reply.blocks.push({ type: 'text', text: delta });
     };
-    const pushTool = t => {
+    const pushTool = (t, reqId) => {
       // 每次工具调用独立成块, 不再合并进之前的工具列表
-      if (t.kind === 'call') reply.blocks.push({ type: 'tool', name: t.name, args: t.args, result: null });
-      else {
+      if (t.kind === 'call') {
+        // ask 的通用工具卡跳过: 问题卡片由专门的 ask 事件负责
+        if (t.isAsk) return;
+        reply.blocks.push({ type: 'tool', name: t.name, args: t.args, result: null });
+      } else if (t.kind === 'ask') {
+        reply.blocks.push({ type: 'ask', id: t.id, requestId: reqId, questions: Array.isArray(t.questions) ? t.questions : [], answered: false });
+      } else {
+        if (t.isAsk) {
+          const ab = [...reply.blocks].reverse().find(b => b.type === 'ask' && !b.answered);
+          if (ab) { ab.answered = true; ab.result = t.result; return; }
+        }
         const ent = [...reply.blocks].reverse().find(b => b.type === 'tool' && b.name === t.name && b.result == null);
         if (ent) ent.result = t.result;
         else reply.blocks.push({ type: 'tool', name: t.name, result: t.result });
@@ -5255,10 +5308,11 @@ CS.audio = (function () {
         const cjk = (s.match(/[\u3400-\u9fff\u3000-\u303f\uff00-\uffef]/g) || []).length;
         return cjk + (s.length - cjk) / 4;
       };
-      const toolEvent = t => {
+      const toolEvent = (t, reqId) => {
         if (CS.ui.chatRetry) CS.ui.chatRetry = null;  // 已有产出, 不再处于重试等待
-        pushTool(t);
+        pushTool(t, reqId);
         mirror();
+        CS.save();  // 流式中途刷新会丢失工具/ask 块, 每个工具事件落盘一次
         const follow = nearBottom() && !CS.ui.followLock;
         CS.render();
         if (follow) scrollToLatest();
@@ -5302,7 +5356,7 @@ CS.audio = (function () {
       reply.error = { message: msg, detail: error?.stack ? (msg + '\n\n' + error.stack) : msg };
     }
     finishTimer();
-    reply.blocks = reply.blocks.filter(b => b.type === 'tool' || !!b.text);  // 丢弃中途产生的空段
+    reply.blocks = reply.blocks.filter(b => b.type === 'tool' || b.type === 'ask' || !!b.text);  // 丢弃中途产生的空段
     CS.save(); CS.render();
     if (!CS.ui.followLock) setTimeout(scrollToLatest, 20);  // 用户暂停跟随时完成后不拽到底部
     syncConversation(run);
@@ -5531,6 +5585,14 @@ CS.audio = (function () {
     const freshRow = freshBlock ? freshBlock.querySelector(sel) : null;
     if (freshRow && freshConv) freshConv.scrollTop += freshRow.getBoundingClientRect().top - rowTop;
   };
+  // ask 问题卡定位: bkey 形如 runId|msgIdx|blockIdx, 与时间线块渲染用的键一致
+  const _askCtx = bkey => {
+    const [runId, mi, bi] = String(bkey || '').split('|');
+    const run = CS.state.runs.find(r => r.id === runId);
+    const block = run?.messages?.[Number(mi)]?.blocks?.[Number(bi)];
+    if (!block || block.type !== 'ask') return null;
+    return { run, block };
+  };
   const actions = {
     // 微信扫码登录: 服务端拿跳转地址并弹窗, 回跳页交换会话后发 message
     'wechat-login': async () => {
@@ -5585,6 +5647,44 @@ CS.audio = (function () {
       CS.render();
     },
     'toggle-project-settings': id => { CS.ui.projectSettingsMenu = CS.ui.projectSettingsMenu === id ? null : id; CS.render(); },
+    'ask-pick-option': (id, el) => {
+      // id = 时间线块的 bkey; 点击选项切换选中, 单选互斥, 多选可叠加
+      const ctx = _askCtx(id); if (!ctx || ctx.block.answered) return;
+      const qi = Number(el?.dataset?.qi), oi = Number(el?.dataset?.oi);
+      if (!ctx.block.questions[qi] || !ctx.block.questions[qi].options?.[oi]) return;
+      CS.ui.askSel = CS.ui.askSel || {};
+      const per = CS.ui.askSel[id] = CS.ui.askSel[id] || {};
+      const set = per[qi] = per[qi] || new Set();
+      if (set.has(oi)) set.delete(oi);
+      else { if (!ctx.block.questions[qi].multi_select) set.clear(); set.add(oi); }
+      CS.render();
+    },
+    'ask-submit': id => {
+      const ctx = _askCtx(id); if (!ctx) return;
+      const block = ctx.block;
+      if (block.answered || block.submitting || block.stale) return;
+      const answers = (block.questions || []).map((q, qi) => {
+        const set = ((CS.ui.askSel || {})[id] || {})[qi] || new Set();
+        const selected = (q.options || []).filter((_, oi) => set.has(oi)).map(o => o.label);
+        const custom = (((CS.ui.askDraft || {})[`${id}|${qi}`]) || '').trim();
+        return { id: q.id || `q${qi + 1}`, selected, ...(custom ? { custom } : {}) };
+      });
+      if (answers.some(a => !a.selected.length && !a.custom)) { CS.toast('请先回答全部问题。', 'error'); return; }
+      block.submitting = true; CS.render();
+      (async () => {
+        try {
+          await CS.api.ws.send('ask.answer', { data: { id: block.id, answers } });
+          block.answered = true;
+          block.result = '已回答: ' + answers.map(a => a.selected.join('、') || a.custom).join(' | ');
+        } catch (error) {
+          CS.toast(CS.api.friendlyError(error), 'error');
+        }
+        block.submitting = false;
+        if (CS.ui.askSel) delete CS.ui.askSel[id];
+        CS.save(); CS.render();
+        syncConversation(ctx.run);
+      })();
+    },
     'copy-message': id => {
       const run = CS.currentRun(); const m = run?.messages[Number(id)];
       if (!m) return;
@@ -6126,6 +6226,14 @@ CS.audio = (function () {
     };
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);
+  });
+  document.addEventListener('input', event => {
+    const el = event.target;
+    // ask 自由输入草稿: 只存到 UI 状态里不重渲染, 否则每次键入都会重建 DOM 丢失焦点
+    if (el?.classList?.contains('ask-custom-input')) {
+      CS.ui.askDraft = CS.ui.askDraft || {};
+      CS.ui.askDraft[el.dataset.key || ''] = el.value;
+    }
   });
   document.addEventListener('change', event => {
     if (event.target?.id === 'fs-upload-input') {

@@ -686,6 +686,110 @@ class MCPClient:
 
 
 # -- The dispatch map: {tool_name: handler} --
+class AskManager:
+    """Bridge between the `ask` tool and the web UI.
+
+    `ask()` blocks the calling tool thread until the UI replies via `answer()`,
+    the chat is stopped via `cancel()`, or the timeout elapses.
+    """
+
+    def __init__(self, timeout: int = 3600):
+        self.timeout = timeout
+        self._lock = threading.Lock()
+        self._waiters: dict = {}
+
+    def ask(self, questions: list, notify=None) -> str:
+        """Block until the user answers from the UI; return the model-facing result."""
+        ask_id = "ask-" + uuid.uuid4().hex[:12]
+        entry = {"event": threading.Event(), "answers": None, "cancelled": False}
+        with self._lock:
+            self._waiters[ask_id] = entry
+        if notify is not None:
+            try:
+                notify({"kind": "ask", "id": ask_id, "questions": questions})
+            except Exception:
+                pass
+        entry["event"].wait(self.timeout)
+        with self._lock:
+            self._waiters.pop(ask_id, None)
+            answers, cancelled = entry["answers"], entry["cancelled"]
+        if cancelled:
+            return (
+                "Error: the user stopped this chat before answering. "
+                "Do not call ask again; finalize with what you already have."
+            )
+        if answers is None:
+            return (
+                "Error: no answer arrived (timeout or no live UI). "
+                "Do not call ask again; finalize with what you already have."
+            )
+        return "User answers (JSON list of {id, selected, custom}):\n" + json.dumps(
+            answers, ensure_ascii=False, indent=2
+        )
+
+    def answer(self, ask_id: str, answers) -> bool:
+        """Deliver UI answers to the blocked ask(); False when nobody is waiting."""
+        with self._lock:
+            entry = self._waiters.get(ask_id)
+            if entry is None or entry["event"].is_set():
+                return False
+            entry["answers"] = answers
+            entry["event"].set()
+            return True
+
+    def cancel(self, ask_id: str) -> None:
+        """Wake a pending ask() without answers (chat stopped or socket dropped)."""
+        with self._lock:
+            entry = self._waiters.get(ask_id)
+            if entry is not None and not entry["event"].is_set():
+                entry["cancelled"] = True
+                entry["event"].set()
+
+
+ASK = AskManager()
+
+
+def run_ask(questions=None, _notify=None):
+    """Handle the `ask` tool; normalize model input and wait for the user's reply."""
+    if _notify is None:
+        return (
+            "Error: ask is unavailable in this session (no live UI channel). "
+            "Finalize with what you already have."
+        )
+    raw = questions if isinstance(questions, list) else [{"question": str(questions or "")}]
+    out = []
+    for idx, q in enumerate(raw):
+        if isinstance(q, str):
+            q = {"question": q}
+        if not isinstance(q, dict):
+            continue
+        question = str(q.get("question") or "").strip()
+        if not question:
+            continue
+        item = {"id": str(q.get("id") or f"q{idx + 1}")[:64], "question": question}
+        header = str(q.get("header") or "").strip()
+        if header:
+            item["header"] = header[:80]
+        options = []
+        if isinstance(q.get("options"), list):
+            for opt in q["options"]:
+                label = str((opt or {}).get("label") if isinstance(opt, dict) else opt or "").strip()
+                if not label:
+                    continue
+                desc = str((opt.get("description") or "").strip()) if isinstance(opt, dict) else ""
+                options.append({"label": label, **({"description": desc} if desc else {})})
+        if options:
+            item["options"] = options[:12]
+        if q.get("multi_select") is True and options:
+            item["multi_select"] = True
+        out.append(item)
+    if not out:
+        return "Error: ask received no valid question; do not call it with empty questions."
+    return ASK.ask(out, notify=_notify)
+
+
+run_ask.__ask_tool__ = True
+
 TOOL_HANDLERS = {
     "bash":       lambda **kw: run_bash(kw.get("command", "")),
     "grep":       lambda **kw: run_grep(kw.get("tool", ""), kw.get("args", "")),
@@ -706,6 +810,7 @@ TOOL_HANDLERS = {
     "read_inbox":      lambda **kw: json.dumps(BUS.read_inbox("lead"), indent=2),
     "broadcast":       lambda **kw: BUS.broadcast("lead", kw["content"], TEAM.member_names()),
     "rag":             lambda **kw: rag(kw.get("query", "")),
+    "ask":             run_ask,
 }
 
 TOOL_HANDLERS.update(SCIVERSE_TOOL_HANDLERS)

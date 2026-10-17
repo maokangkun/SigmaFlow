@@ -395,12 +395,13 @@
       const meta = CS.ui.conversations.find(c => c.id === id) || {};
       const run = { id, kind: 'chat', title: meta.title || data.title || '会话', projectId: data.projectId, prompt: '', datasetIds: [], config: {},
               messages: data.content.map(m => {
-                const msg = { role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) };
+                const msg = { role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) };
                 // 旧格式记录压平了时间线, 加载时重建为 think/tool/text 块以便按时间线展示
-                if (msg.role === 'assistant' && (msg.reasoning || msg.tools?.length)) {
+                if (msg.role === 'assistant' && (msg.reasoning || msg.tools?.length || msg.asks?.length)) {
                   const blocks = [];
                   if (msg.reasoning) blocks.push({ type: 'think', text: msg.reasoning });
                   for (const t of msg.tools || []) blocks.push({ type: 'tool', name: t.name, args: t.args, result: t.result });
+                  for (const a of msg.asks || []) blocks.push({ type: 'ask', id: a.id, questions: a.questions, answered: !!a.answered, result: a.result, stale: !a.answered });
                   if (msg.content) blocks.push({ type: 'text', text: msg.content });
                   msg.blocks = blocks;
                 }
@@ -611,7 +612,7 @@
       id: run.id, title: run.title, projectId: run.projectId,
       pinned: !!conv?.pinned, archived: !!conv?.archived,
       content: run.messages.filter(m => m.role === 'user' || m.role === 'assistant')
-        .map(m => ({ role: m.role, content: m.content, at: m.at, ...(m.model ? { model: m.model } : {}), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) })),
+        .map(m => ({ role: m.role, content: m.content, at: m.at, ...(m.model ? { model: m.model } : {}), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) })),
     };
     try { await CS.api.modelCall('conversation.save', 'POST', '/conversations', payload); }
     catch { if (retry) setTimeout(() => syncConversation(run, false), 3000); }
@@ -624,6 +625,7 @@
       reply.content = reply.blocks.filter(b => b.type === 'text').map(b => b.text).join('');
       reply.reasoning = reply.blocks.filter(b => b.type === 'think').map(b => b.text).join('');
       reply.tools = reply.blocks.filter(b => b.type === 'tool').map(b => ({ name: b.name, args: b.args, result: b.result }));
+      reply.asks = reply.blocks.filter(b => b.type === 'ask').map(b => ({ id: b.id, questions: b.questions, answered: !!b.answered, result: b.result || '' }));
     };
     const lastBlock = () => reply.blocks[reply.blocks.length - 1];
     const pushThink = think => {
@@ -636,10 +638,19 @@
       if (last && last.type === 'text') last.text += delta;
       else reply.blocks.push({ type: 'text', text: delta });
     };
-    const pushTool = t => {
+    const pushTool = (t, reqId) => {
       // 每次工具调用独立成块, 不再合并进之前的工具列表
-      if (t.kind === 'call') reply.blocks.push({ type: 'tool', name: t.name, args: t.args, result: null });
-      else {
+      if (t.kind === 'call') {
+        // ask 的通用工具卡跳过: 问题卡片由专门的 ask 事件负责
+        if (t.isAsk) return;
+        reply.blocks.push({ type: 'tool', name: t.name, args: t.args, result: null });
+      } else if (t.kind === 'ask') {
+        reply.blocks.push({ type: 'ask', id: t.id, requestId: reqId, questions: Array.isArray(t.questions) ? t.questions : [], answered: false });
+      } else {
+        if (t.isAsk) {
+          const ab = [...reply.blocks].reverse().find(b => b.type === 'ask' && !b.answered);
+          if (ab) { ab.answered = true; ab.result = t.result; return; }
+        }
         const ent = [...reply.blocks].reverse().find(b => b.type === 'tool' && b.name === t.name && b.result == null);
         if (ent) ent.result = t.result;
         else reply.blocks.push({ type: 'tool', name: t.name, result: t.result });
@@ -689,10 +700,11 @@
         const cjk = (s.match(/[\u3400-\u9fff\u3000-\u303f\uff00-\uffef]/g) || []).length;
         return cjk + (s.length - cjk) / 4;
       };
-      const toolEvent = t => {
+      const toolEvent = (t, reqId) => {
         if (CS.ui.chatRetry) CS.ui.chatRetry = null;  // 已有产出, 不再处于重试等待
-        pushTool(t);
+        pushTool(t, reqId);
         mirror();
+        CS.save();  // 流式中途刷新会丢失工具/ask 块, 每个工具事件落盘一次
         const follow = nearBottom() && !CS.ui.followLock;
         CS.render();
         if (follow) scrollToLatest();
@@ -736,7 +748,7 @@
       reply.error = { message: msg, detail: error?.stack ? (msg + '\n\n' + error.stack) : msg };
     }
     finishTimer();
-    reply.blocks = reply.blocks.filter(b => b.type === 'tool' || !!b.text);  // 丢弃中途产生的空段
+    reply.blocks = reply.blocks.filter(b => b.type === 'tool' || b.type === 'ask' || !!b.text);  // 丢弃中途产生的空段
     CS.save(); CS.render();
     if (!CS.ui.followLock) setTimeout(scrollToLatest, 20);  // 用户暂停跟随时完成后不拽到底部
     syncConversation(run);
@@ -965,6 +977,14 @@
     const freshRow = freshBlock ? freshBlock.querySelector(sel) : null;
     if (freshRow && freshConv) freshConv.scrollTop += freshRow.getBoundingClientRect().top - rowTop;
   };
+  // ask 问题卡定位: bkey 形如 runId|msgIdx|blockIdx, 与时间线块渲染用的键一致
+  const _askCtx = bkey => {
+    const [runId, mi, bi] = String(bkey || '').split('|');
+    const run = CS.state.runs.find(r => r.id === runId);
+    const block = run?.messages?.[Number(mi)]?.blocks?.[Number(bi)];
+    if (!block || block.type !== 'ask') return null;
+    return { run, block };
+  };
   const actions = {
     // 微信扫码登录: 服务端拿跳转地址并弹窗, 回跳页交换会话后发 message
     'wechat-login': async () => {
@@ -1019,6 +1039,44 @@
       CS.render();
     },
     'toggle-project-settings': id => { CS.ui.projectSettingsMenu = CS.ui.projectSettingsMenu === id ? null : id; CS.render(); },
+    'ask-pick-option': (id, el) => {
+      // id = 时间线块的 bkey; 点击选项切换选中, 单选互斥, 多选可叠加
+      const ctx = _askCtx(id); if (!ctx || ctx.block.answered) return;
+      const qi = Number(el?.dataset?.qi), oi = Number(el?.dataset?.oi);
+      if (!ctx.block.questions[qi] || !ctx.block.questions[qi].options?.[oi]) return;
+      CS.ui.askSel = CS.ui.askSel || {};
+      const per = CS.ui.askSel[id] = CS.ui.askSel[id] || {};
+      const set = per[qi] = per[qi] || new Set();
+      if (set.has(oi)) set.delete(oi);
+      else { if (!ctx.block.questions[qi].multi_select) set.clear(); set.add(oi); }
+      CS.render();
+    },
+    'ask-submit': id => {
+      const ctx = _askCtx(id); if (!ctx) return;
+      const block = ctx.block;
+      if (block.answered || block.submitting || block.stale) return;
+      const answers = (block.questions || []).map((q, qi) => {
+        const set = ((CS.ui.askSel || {})[id] || {})[qi] || new Set();
+        const selected = (q.options || []).filter((_, oi) => set.has(oi)).map(o => o.label);
+        const custom = (((CS.ui.askDraft || {})[`${id}|${qi}`]) || '').trim();
+        return { id: q.id || `q${qi + 1}`, selected, ...(custom ? { custom } : {}) };
+      });
+      if (answers.some(a => !a.selected.length && !a.custom)) { CS.toast('请先回答全部问题。', 'error'); return; }
+      block.submitting = true; CS.render();
+      (async () => {
+        try {
+          await CS.api.ws.send('ask.answer', { data: { id: block.id, answers } });
+          block.answered = true;
+          block.result = '已回答: ' + answers.map(a => a.selected.join('、') || a.custom).join(' | ');
+        } catch (error) {
+          CS.toast(CS.api.friendlyError(error), 'error');
+        }
+        block.submitting = false;
+        if (CS.ui.askSel) delete CS.ui.askSel[id];
+        CS.save(); CS.render();
+        syncConversation(ctx.run);
+      })();
+    },
     'copy-message': id => {
       const run = CS.currentRun(); const m = run?.messages[Number(id)];
       if (!m) return;
@@ -1560,6 +1618,14 @@
     };
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);
+  });
+  document.addEventListener('input', event => {
+    const el = event.target;
+    // ask 自由输入草稿: 只存到 UI 状态里不重渲染, 否则每次键入都会重建 DOM 丢失焦点
+    if (el?.classList?.contains('ask-custom-input')) {
+      CS.ui.askDraft = CS.ui.askDraft || {};
+      CS.ui.askDraft[el.dataset.key || ''] = el.value;
+    }
   });
   document.addEventListener('change', event => {
     if (event.target?.id === 'fs-upload-input') {

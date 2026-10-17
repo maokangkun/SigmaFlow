@@ -374,6 +374,56 @@ TOOLS = CHILD_TOOLS + [
                 "task_id": {"type": "string"}
             }
         }
+    },
+    {
+        "name": "ask",
+        "description": (
+            "Ask the user a concise question when you need confirmation, a choice, "
+            "or missing information before proceeding. This pauses the session until "
+            "the user replies. Use stable ids per question; every answer echoes them. "
+            "If you recommend an option, put it first and append \"(Recommended)\" to its label."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "questions": {
+                    "type": "array",
+                    "description": "Questions to ask the user before continuing. Usually one; each has a stable id.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "description": "Stable id for this question; echoed in the answer."
+                            },
+                            "question": {"type": "string"},
+                            "header": {
+                                "type": "string",
+                                "description": "Optional short heading, such as \"Confirm\" or \"Choose Mode\"."
+                            },
+                            "options": {
+                                "type": "array",
+                                "description": "Optional choices; put your recommended one first with \"(Recommended)\".",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "label": {"type": "string"},
+                                        "description": {"type": "string"}
+                                    },
+                                    "required": ["label"]
+                                }
+                            },
+                            "multi_select": {
+                                "type": "boolean",
+                                "description": "Whether more than one option may be selected. Defaults to false."
+                            }
+                        },
+                        "required": ["question"]
+                    }
+                }
+            },
+            "required": ["questions"]
+        }
     }
 ]
 

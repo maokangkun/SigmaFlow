@@ -205,7 +205,8 @@ CS.markdown = text => {
   // 清除刷新前残留的流式标记: 消息以 streaming:true 落盘后, 若中途刷新页面,
   // 没有对应的生成循环来清除它, 会让 favicon/绿点永远误判为"生成中";
   // 工具调用的 running 标记同样属于页面内存态, 刷新后一并清除。
-  CS.state.runs.forEach(run => (run.messages || []).forEach(m => { delete m.streaming; (m.tools || []).forEach(t => { delete t.running; }); }));
+  // 未回答的 ask 也一并标记失效: 服务端已随断开取消了等待者。
+  CS.state.runs.forEach(run => (run.messages || []).forEach(m => { delete m.streaming; (m.tools || []).forEach(t => { delete t.running; }); (m.blocks || []).forEach(b => { if (b.type === 'ask' && !b.answered) b.stale = true; }); }));
   CS.ui = {
     route: 'home', mobileSidebar: false, composer: '', attachments: [],
     filters: { data: '', dataTab: 'all', project: '', projectTab: 'active', literature: '', paperTab: 'all', tools: '', toolTab: 'all' },

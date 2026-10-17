@@ -559,6 +559,11 @@ class Agent:
                     handler = TOOL_HANDLERS.get(func)
                     if handler is None:
                         return f"Error: unknown tool {func}"
+                    # ask 类工具需要把问题卡片推给前端并阻塞等待回答,
+                    # 通过 _notify 注入本会话的 on_tool 回调(允许被用户重命名, 认 __ask_tool__ 标记)
+                    if getattr(handler, "__ask_tool__", False):
+                        inp.pop("_notify", None)
+                        return str(handler(_notify=self.on_tool, **inp))
                     return str(handler(**inp))
                 except Exception as tool_err:
                     return "Error: " + (f"{type(tool_err).__name__}: {tool_err}")[:400]

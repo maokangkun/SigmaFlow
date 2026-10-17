@@ -3191,6 +3191,8 @@ class ScienceAPI:
             chat_tasks: Set[asyncio.Task] = set()
             # 请求级停止标记: chat.stop 置 True, 流式循环轮询后自行收尾
             chat_stops: dict = {}
+            # 每个请求尚未回答的 ask id 集合: 停止/断开时统一取消
+            chat_asks: dict = {}
             # 交互终端: 本连接当前 attach 的 PTY(一个连接同一时刻只挂一个项目会话)
             pty_attached: Dict[str, asyncio.Queue] = {}
             pty_queue: asyncio.Queue = asyncio.Queue()
@@ -3524,10 +3526,29 @@ class ScienceAPI:
                         request_id,
                         {"conversations": self.project_store.list_conversations()},
                     )
+                elif action == "ask.answer":
+                    # ask 工具回答: 把 UI 的答复投递给阻塞中的 ask() 等待者
+                    ask_id = _clip(data.get("id"), 64).strip()
+                    try:
+                        ok = _agent_tools_module().ASK.answer(
+                            ask_id, data.get("answers")
+                        )
+                    except Exception:
+                        ok = False
+                    if ok:
+                        await reply("ask.answer.ack", request_id, {"id": ask_id})
+                    else:
+                        await fail(request_id, "问题已失效或已被回答")
                 elif action == "chat.stop":
                     # 置位停止标记, 流式循环会在收尾时补发 chat.done
                     if request_id in chat_stops:
                         chat_stops[request_id] = True
+                    # 未回答的 ask 一并取消, 让阻塞的工具线程立刻返回
+                    for ask_id in chat_asks.pop(request_id, ()) or ():
+                        try:
+                            _agent_tools_module().ASK.cancel(ask_id)
+                        except Exception:
+                            pass
                     await reply("chat.stop.ack", request_id, {"stopped": True})
                 elif action == "chat.send":
                     try:
@@ -3564,6 +3585,18 @@ class ScienceAPI:
 
                         # 事件元组 (kind, value): delta/think/tool/done/error
                         def work():
+                            def on_tool_wrap(ev):
+                                # ask 轮次: 记录 id 供停止/断开时取消;
+                                # isAsk 标记让前端在工具被改名时也能识别 ask 卡片
+                                if isinstance(ev, dict) and ev.get("kind") in ("call", "result"):
+                                    base = _TOOL_ALIASES.get(ev.get("name"), ev.get("name"))
+                                    if base == "ask":
+                                        ev["isAsk"] = True
+                                if isinstance(ev, dict) and ev.get("kind") == "ask" and ev.get("id"):
+                                    chat_asks.setdefault(request_id, set()).add(ev["id"])
+                                loop.call_soon_threadsafe(
+                                    chat_queue.put_nowait, ("tool", ev)
+                                )
                             try:
                                 _stream_agent_chat(
                                     base_url,
@@ -3576,9 +3609,7 @@ class ScienceAPI:
                                     lambda t: loop.call_soon_threadsafe(
                                         chat_queue.put_nowait, ("think", t)
                                     ),
-                                    lambda e: loop.call_soon_threadsafe(
-                                        chat_queue.put_nowait, ("tool", e)
-                                    ),
+                                    on_tool_wrap,
                                     lambda r: loop.call_soon_threadsafe(
                                         chat_queue.put_nowait, ("retry", r)
                                     ),
@@ -3692,6 +3723,12 @@ class ScienceAPI:
                                 break
                         await worker
                         chat_stops.pop(request_id, None)
+                        # 流结束(含停止后的收尾)时取消该请求残留的未答 ask
+                        for ask_id in chat_asks.pop(request_id, ()) or ():
+                            try:
+                                _agent_tools_module().ASK.cancel(ask_id)
+                            except Exception:
+                                pass
 
                     # 流式任务与请求解耦: handle 立即返回, 事件异步推送
                     # 停止通过 chat_stops 轮询生效, 不强杀工作线程
@@ -3828,6 +3865,14 @@ class ScienceAPI:
                 _pty_detach_all()
                 for task in chat_tasks:
                     task.cancel()
+                # 连接断开: 所有未回答的 ask 都失效, 让阻塞的工具线程返回
+                for ask_ids in chat_asks.values():
+                    for ask_id in ask_ids or ():
+                        try:
+                            _agent_tools_module().ASK.cancel(ask_id)
+                        except Exception:
+                            pass
+                chat_asks.clear()
                 for run_id in subscribed:
                     self.manager.unsubscribe(run_id, queue)
 
@@ -4096,6 +4141,30 @@ class ScienceProjectStore:
                         item["error"] = {"message": _clip(str(_err), 2000)}
                 if msg.get("elapsed") is not None:
                     item["elapsed"] = msg.get("elapsed")
+                asks = msg.get("asks")
+                if isinstance(asks, list):
+                    # ask 交互记录: 问题与用户答复一并回放
+                    saved_asks = []
+                    for a in asks:
+                        if not isinstance(a, dict):
+                            continue
+                        questions = (
+                            a.get("questions")
+                            if isinstance(a.get("questions"), list)
+                            else []
+                        )
+                        if not questions:
+                            continue
+                        saved_asks.append(
+                            {
+                                "id": _clip(str(a.get("id", "")), 64),
+                                "questions": questions[:20],
+                                "answered": bool(a.get("answered")),
+                                "result": _clip(str(a.get("result", "")), 5000),
+                            }
+                        )
+                    if saved_asks:
+                        item["asks"] = saved_asks
                 keep.append(item)
             conv["content"] = keep
         conv["updatedAt"] = now

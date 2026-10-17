@@ -238,8 +238,9 @@
               const seg = (b, bi) => {
                 // 已返回结果的工具块视为完成; 否则等多轮循环的下一批事件时,
                 // 尾部工具块会一直显示「运行中」
-                const live = m.streaming && bi === lastIdx && b.result == null;
+                const live = m.streaming && bi === lastIdx && b.result == null && b.type !== 'ask';
                 if (b.type === 'text') return `<div class="agent-intro md-body"${live ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(b.text)}</div>`;
+                if (b.type === 'ask') return renderAsk(b, bi);
                 if (b.type === 'think') {
                   const open = blockOpen(bi);
                   return `<div class="think-root${live ? ' think-live' : ''}" data-state="${live ? 'running' : 'ok'}"${live ? ' data-live="1"' : ''}${open ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-block" data-id="${e(bkey(bi))}" aria-expanded="${open}"><span class="think-leading">${i('spark', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${live ? '思考中' : '已深度思考'}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"${live ? ' data-follow-end=""' : ''}><span class="think-summary-text">${e(live ? b.text : ((b.text || '').split('\n').filter(Boolean)[0] || ''))}</span></span></button>${open ? `<div class="think-body"${live ? ' data-live-think="1"' : ''}>${e(b.text)}</div>` : ''}</div>`;
@@ -248,11 +249,28 @@
                 const open = blockOpen(bi);
                 return `<div class="think-root tool-root${live ? ' think-live' : ''}" data-state="${live ? 'running' : 'ok'}"${open ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-block" data-id="${e(bkey(bi))}" aria-expanded="${open}"><span class="think-leading">${i(meta.icon, '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${meta.label} ${e(b.name)}${live ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(JSON.stringify(b.args || {}).slice(0, 160))}</span></span></button>${open ? `<div class="tool-list"><div class="tool-item${live ? ' tool-running' : ''}"><div class="tool-head"><code>${e(b.name)}</code><span class="tool-args">${e(JSON.stringify(b.args || {}).slice(0, 160))}</span>${live ? '<span class="tool-status">运行中…</span>' : ''}</div>${b.result != null ? `<pre class="tool-result">${e(String(b.result).slice(0, 600))}${String(b.result).length > 600 ? '\n…' : ''}</pre>` : ''}</div></div>` : ''}</div>`;
               };
+              // ask 问题卡: 未回答时可选项+自由输入, 已回答/失效后回放用户答复
+              const renderAsk = (b, bi) => {
+                const key = bkey(bi);
+                const qs = b.questions || [];
+                const state = b.answered ? 'answered' : (b.stale ? 'stale' : 'pending');
+                const sel = (CS.ui.askSel || {})[key] || {};
+                const body = qs.map((q, qi) => {
+                  const picked = sel[qi] || new Set();
+                  const opts = (q.options || []).map((o, oi) => `<button type="button" class="ask-option${picked.has(oi) ? ' selected' : ''}" data-action="ask-pick-option" data-id="${e(key)}" data-qi="${qi}" data-oi="${oi}"${o.description ? ` title="${e(o.description)}"` : ''}><span class="ask-option-label">${e(o.label)}</span>${o.description ? `<span class="ask-option-desc">${e(o.description)}</span>` : ''}</button>`).join('');
+                  const draft = ((CS.ui.askDraft || {})[`${key}|${qi}`] || '');
+                  return `<div class="ask-q"><div class="ask-q-head">${q.header ? `<span class="ask-q-chip">${e(q.header)}</span>` : ''}<span class="ask-q-text">${e(q.question)}</span></div>${opts ? `<div class="ask-options">${opts}</div>` : ''}${state === 'pending' ? `<input class="ask-custom-input" data-key="${e(key + '|' + qi)}" placeholder="${e(q.multi_select ? '补充说明（可选）' : '自由输入答案（可选）')}" value="${e(draft)}" autocomplete="off">` : ''}</div>`;
+                }).join('');
+                const footer = state === 'pending' ? `<button type="button" class="btn primary small-btn ask-submit-btn" data-action="ask-submit" data-id="${e(key)}"${b.submitting ? ' disabled' : ''}>${b.submitting ? '发送中…' : '发送回答'}</button>` : state === 'stale' ? `<p class="hint">该问题因页面刷新或停止已失效，无法再回答。</p>` : `<pre class="tool-result">${e(String(b.result || '').slice(0, 600))}</pre>`;
+                return `<div class="ask-card" data-ask-state="${state}"><div class="ask-head">${i('help', '', 14)}<span class="ask-title">${qs.length > 1 ? `模型向你提出了 ${qs.length} 个问题` : '模型向你提问'}</span><span class="tool-status">${state === 'pending' ? '等待你的回答…' : state === 'answered' ? '已回答' : '已失效'}</span></div>${body}<div class="ask-foot">${footer}</div></div>`;
+              };
               const tailText = blocks.length && blocks[lastIdx].type === 'text';
+              // 未回答的 ask 挂在尾部时, 等待指示改为「等待你的回答」
+              const tailAskPending = m.streaming && blocks.length && blocks[lastIdx].type === 'ask' && !blocks[lastIdx].answered && !blocks[lastIdx].stale;
               // 等待模型响应: 流式中没有正在输出的正文; 典型场景是工具刚返回完,
               // 模型下一轮首字尚未到达, 给出一个轻量等待指示
-              const waitingModel = m.streaming && !tailText && (!blocks.length || (blocks[lastIdx].type === 'tool' && blocks[lastIdx].result != null));
-              const waitHint = waitingModel ? (() => { const rt = CS.ui.chatRetry; const active = rt && rt.runId === run.id; const label = active ? `第 ${Math.min(rt.attempt + 1, rt.total)}/${rt.total} 次尝试中` : '等待模型响应'; const tip = active && rt.error ? ` title="${e(rt.error)}"` : ''; return `<div class="model-wait" role="status"${tip}><span class="wait-dots" aria-hidden="true"><span class="wait-dot"></span><span class="wait-dot"></span><span class="wait-dot"></span></span><span>${label}${active ? ' · 上次失败' : ''}</span></div>`; })() : '';
+              const waitingModel = m.streaming && !tailText && !tailAskPending && (!blocks.length || (blocks[lastIdx].type === 'tool' && blocks[lastIdx].result != null) || (blocks[lastIdx].type === 'ask' && (blocks[lastIdx].answered || blocks[lastIdx].stale)));
+              const waitHint = (waitingModel || tailAskPending) ? (() => { const rt = CS.ui.chatRetry; const active = rt && rt.runId === run.id; const label = tailAskPending ? '等待你的回答' : active ? `第 ${Math.min(rt.attempt + 1, rt.total)}/${rt.total} 次尝试中` : '等待模型响应'; const tip = active && rt.error ? ` title="${e(rt.error)}"` : ''; return `<div class="model-wait" role="status"${tip}><span class="wait-dots" aria-hidden="true"><span class="wait-dot"></span><span class="wait-dot"></span><span class="wait-dot"></span></span><span>${label}${active && !tailAskPending ? ' · 上次失败' : ''}</span></div>`; })() : '';
               // 流式期间最后一块不是正文时补一个空正文占位, 供增量更新定位与底部跟随
               segments = `${blocks.map(seg).join('')}${m.streaming && !tailText ? `<div class="agent-intro md-body" data-stream-at="${e(m.at)}"></div>${waitHint}` : ''}`;
             }
