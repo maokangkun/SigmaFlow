@@ -251,6 +251,8 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
 .ctx-ring-svg{display:block;flex-shrink:0}
 .ctx-ring-svg .ctx-track{fill:none;stroke:var(--line);stroke-width:3.5}
 .ctx-ring-svg .ctx-fill{fill:none;stroke:var(--accent);stroke-width:3.5;stroke-linecap:round;transition:stroke-dashoffset .35s ease,stroke .35s ease}
+.ctx-ring-btn.compact{padding:7px;gap:0}
+.ctx-ring-btn.compact .ctx-pct{display:none}
 .ctx-ring-btn[data-level="warn"] .ctx-fill{stroke:var(--amber)}
 .ctx-ring-btn[data-level="danger"] .ctx-fill{stroke:var(--red)}
 .ctx-ring-btn[data-level="warn"] .ctx-pct{color:var(--amber)}
