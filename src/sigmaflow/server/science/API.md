@@ -333,6 +333,23 @@ Content-Type: application/json
 - 任务进入终态（`complete` / `cancelled` / `error`）后仍会推送最后一次快照，之后不再推送。
 - 模型配置操作同第 5 节，`data` 负载与 HTTP 接口一致。前端对模型操作优先走 WS，避免跨域 fetch 被 CORS 预检拦截（服务端在 WS 握手阶段校验 Origin，非同源连接以 1008 关闭，与 HTTP 写接口的同源策略一致）。
 
+### 8a. 交互终端（PTY）
+
+WebSocket `/api/ws` 还承载终端 actions（与聊天共用连接，前端通过二进制帧 / JSON 事件区分）：
+
+| action | data | 说明 |
+|---|---|---|
+| `pty.open` | `{projectId, cols, rows}` | 附着到项目级 PTY 会话（无则新建 bash），立即以 WS 二进制帧回放输出缓冲，随后应答 `pty.opened` |
+| `pty.input` | `{projectId, data}` | 写入终端输入（任意键序，含方向键/Ctrl 组合） |
+| `pty.resize` | `{projectId, cols, rows}` | 调整窗口大小并向前台进程发送 SIGWINCH |
+| `pty.kill` | `{projectId}` | 结束终端进程并销毁会话 |
+
+推送事件：二进制帧均为终端输出（原始字节，含 ANSI）；`{event: "pty.closed"}` 表示 bash 已退出，回车重新附着会自动新建。
+
+- 每个项目一个会话：面板关闭不杀进程；重开自动续接并回放最近 200 KB 输出。
+- 服务端最多同时保留 8 个项目会话，超限按创建时间回收最旧的。
+- 终端以 `TERM=xterm-256color`、`COLORTERM=truecolor` 启动，支持全屏交互程序（vim / top）、补全与命令历史。
+
 ## 前端状态机
 
 ```text
