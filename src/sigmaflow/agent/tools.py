@@ -689,9 +689,9 @@ class MCPClient:
 TOOL_HANDLERS = {
     "bash":       lambda **kw: run_bash(kw.get("command", "")),
     "grep":       lambda **kw: run_grep(kw.get("tool", ""), kw.get("args", "")),
-    "read_file":  lambda **kw: run_read(kw.get("path", ""), offset=kw.get("offset"), limit=kw.get("limit")),
-    "write_file": lambda **kw: run_write(kw.get("path", ""), kw.get("content", "")),
-    "edit_file":  lambda **kw: run_edit(kw.get("path", ""), kw.get("old_text", ""), kw.get("new_text", "")),
+    "read":  lambda **kw: run_read(kw.get("path", ""), offset=kw.get("offset"), limit=kw.get("limit")),
+    "write": lambda **kw: run_write(kw.get("path", ""), kw.get("content", "")),
+    "edit":  lambda **kw: run_edit(kw.get("path", ""), kw.get("old_text", ""), kw.get("new_text", "")),
     "load_skill": lambda **kw: skill_loader.get_content(kw.get("name", "")),
     "arxiv_search": lambda **kw: arxiv_search(kw.get("query", ""), kw.get("max_results", 5)),
     "read_arxiv":   lambda **kw: read_arxiv(kw.get("paper_id", "")),

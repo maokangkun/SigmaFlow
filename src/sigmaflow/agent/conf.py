@@ -138,7 +138,7 @@ CHILD_TOOLS = [
         }
     },
     {
-        "name": "read_file", 
+        "name": "read", 
         "description": "Reads a file from the local filesystem. If the file is too long, you can specify a line offset (0-indexed) and limit to read a portion of the file.",
         "input_schema": {
             "type": "object", 
@@ -151,7 +151,7 @@ CHILD_TOOLS = [
         }
     },
     {
-        "name": "write_file", 
+        "name": "write", 
         "description": "Write content to file.",
         "input_schema": {
             "type": "object", 
@@ -163,7 +163,7 @@ CHILD_TOOLS = [
         }
     },
     {
-        "name": "edit_file", 
+        "name": "edit", 
         "description": "Replace exact text in file.",
         "input_schema": {
             "type": "object", 

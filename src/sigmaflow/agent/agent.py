@@ -433,10 +433,10 @@ class Agent:
                                 print(f"{Prompt.Error}Failed to parse function arguments as JSON, using raw string. Function: {func}, Arguments: {inp}")
                                 results.append({"role": "tool", "tool_call_id": block.id, "content": "Error: Failed to parse function arguments as JSON."})
                                 continue
-                        if func == 'write_file' and (t := inp.get('content', '')) and len(t) > 1000:
+                        if func == 'write' and (t := inp.get('content', '')) and len(t) > 1000:
                             inp_prt = inp.copy()
                             inp_prt['content'] = t[:400] + '...' + t[-400:]
-                        elif func == 'edit_file':
+                        elif func == 'edit':
                             inp_prt = inp.copy()
                             if (t := inp.get('old_text', '')) and len(t) > 1000:
                                 inp_prt['old_text'] = t[:400] + '...' + t[-400:]
@@ -468,11 +468,11 @@ class Agent:
                         if len(output) > 1000: out_prt = output[:400]+'\n......\n'+output[-400:]
                     if func in MCP.tools:
                         print(f"{Prompt.MCP}[magenta]{func.upper()}[/]\n{out_prt}")
-                    elif func == "edit_file" and not output.startswith("Error:"):
+                    elif func == "edit" and not output.startswith("Error:"):
                         print(f"{Prompt.Tool}[magenta]{func.upper()}[/]")
                         self._print_syntax(output, "diff")
-                    elif func in {"read_file", "write_file"} and not output.startswith("Error:"):
-                        code = output if func == "read_file" else inp.get("content", "")
+                    elif func in {"read", "write"} and not output.startswith("Error:"):
+                        code = output if func == "read" else inp.get("content", "")
                         print(f"{Prompt.Tool}[magenta]{func.upper()}[/]")
                         offset = inp.get("offset")
                         start_line = offset if offset and code.startswith(f"[{offset} lines skipped]") else 1
@@ -481,7 +481,7 @@ class Agent:
                             Syntax.guess_lexer(inp.get("path", ""), code=code),
                             start_line=start_line,
                         )
-                        if func == "write_file": print(out_prt)
+                        if func == "write": print(out_prt)
                     else:
                         print(f"{Prompt.Tool}[magenta]{func.upper()}[/]\n{out_prt}")
 
