@@ -1561,6 +1561,8 @@
     else if(target.id==='workflow-organism') CS.ui.organism=target.value;
   });
   document.addEventListener('keydown',event=>{
+    // Ctrl+` 全局开关终端面板, 与 VSCode 惯例一致
+    if(event.ctrlKey && event.code==='Backquote'){event.preventDefault();CS.ui.terminal.open=!CS.ui.terminal.open;CS.render();if(CS.ui.terminal.open)setTimeout(()=>CS.agent.pty?.focus(),120);else setTimeout(()=>document.querySelector('.composer-input')?.focus(),80);return;}
     if(event.key==='Escape'){if(CS.ui.modal)CS.closeModal();else if(CS.ui.userMenu){CS.ui.userMenu=false;CS.render();}else if(CS.ui.modelMenu){CS.ui.modelMenu=false;CS.render();}else if(CS.ui.contextMenu){CS.ui.contextMenu=false;CS.render();}else if(CS.ui.mobileSidebar){CS.ui.mobileSidebar=false;CS.render();}return;}
     if(event.altKey && event.key.toLowerCase()==='n'){event.preventDefault();CS.state.currentRunId=null;CS.ui.composer='';CS.ui.attachments=[];CS.save();CS.navigate('home');return;}
     if(event.target.id==='composer-text' && event.key==='Enter' && !event.shiftKey && !event.isComposing){event.preventDefault();event.target.closest('form').requestSubmit();}
