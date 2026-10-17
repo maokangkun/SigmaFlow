@@ -1455,6 +1455,8 @@
       document.removeEventListener('pointermove', move);
       document.removeEventListener('pointerup', up);
       CS.persistTermWidth();
+      // 拖拽结束立即同步最终尺寸, 避免等去抖延时
+      if (CS.ui.terminal.open) CS.agent.pty?.flushResize();
     };
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);

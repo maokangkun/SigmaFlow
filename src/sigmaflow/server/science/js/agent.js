@@ -348,9 +348,21 @@ CS.agent.pty = {
     CS.api.ws.send('pty.input', { projectId: this.attached, data: text }).catch(() => {});
   },
 
+  // 连续拖拽会触发密集的 SIGWINCH, bash readline 每次都重绘提示符, 留下一串
+  // 重复 PS1 行; 这里做 200ms 去抖, 停稳后只发送一次最终尺寸。
   resize(cols, rows) {
     if (!this.attached) return;
-    CS.api.ws.send('pty.resize', { projectId: this.attached, cols, rows }).catch(() => {});
+    this.pending = { cols, rows };
+    if (this.resizeTimer) clearTimeout(this.resizeTimer);
+    this.resizeTimer = setTimeout(() => this.flushResize(), 200);
+  },
+
+  flushResize() {
+    if (this.resizeTimer) { clearTimeout(this.resizeTimer); this.resizeTimer = null; }
+    if (this.pending && this.attached) {
+      CS.api.ws.send('pty.resize', { projectId: this.attached, ...this.pending }).catch(() => {});
+      this.pending = null;
+    }
   },
 
   feed(bytes) {
