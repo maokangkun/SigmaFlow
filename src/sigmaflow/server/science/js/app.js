@@ -1595,16 +1595,16 @@
       if(id) dir = CS.ui.modal.pickedDir || CS.state.projects.find(p=>p.id===id)?.dir || dir;
       if(CS.state.projects.some(p=>p.name.toLowerCase()===name.toLowerCase() && p.id!==id)) {CS.toast('已有同名项目，请换一个名称。','error');return;}
       if(id) Object.assign(CS.state.projects.find(p=>p.id===id),{name,description,tags,dir,updated:CS.today()});
-      else { const project={id:CS.uid('pr'),name,description,tags,dir,icon:'folder',created:CS.today(),updated:CS.today(),archived:false};CS.state.projects.push(project);CS.state.projectId=project.id; }
+      else { const project={id:CS.uid('pr'),name,description,tags,dir,icon:'folder',created:CS.today(),updated:CS.today(),archived:false};CS.state.projects.unshift(project);CS.state.projectId=project.id; }
       CS.save();CS.closeModal();CS.navigate('projects');CS.toast('项目已保存。');
-      const saved=CS.state.projects.find(p=>p.id===id||CS.state.projects[CS.state.projects.length-1]===p);
+      const saved=CS.state.projects.find(p=>p.id===id) || (id ? null : CS.state.projects[0]);
       CS.api.modelCall('project.save','POST','/projects',{id:saved.id,name:saved.name,description:saved.description||'',tags:saved.tags||[],icon:saved.icon||'folder',dir:saved.dir||''}).catch(()=>{});
     } else if(type==='remote-project') {
       const name=document.getElementById('remote-project-name').value.trim(); const address=document.getElementById('remote-project-address').value.trim();
       if(!name) {CS.toast('项目名称不能为空。','error');return;}
       if(!address) {CS.toast('远程地址不能为空。','error');return;}
       const project={id:CS.uid('pr'),name,description:'远程项目 · '+address,tags:['远程'],icon:'folder',remote:address,created:CS.today(),updated:CS.today(),archived:false};
-      CS.state.projects.push(project);CS.state.projectId=project.id;
+      CS.state.projects.unshift(project);CS.state.projectId=project.id;
       CS.save();CS.closeModal();CS.render();CS.toast('已连接远程项目。');
       CS.api.modelCall('project.save','POST','/projects',{id:project.id,name,description:project.description,tags:['远程'],icon:'folder',remote:address}).catch(()=>{});
     } else if(type==='note') {
