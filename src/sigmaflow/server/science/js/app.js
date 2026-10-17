@@ -92,7 +92,7 @@
     document.documentElement.dataset.motion = CS.state.settings.reducedMotion ? 'reduced' : 'normal';
     const page = CS.views[CS.ui.route] || CS.views.home;
     const fullscreen = CS.ui.route === 'settings';
-    document.getElementById('app').innerHTML = `<div class="app-shell">${fullscreen ? '' : CS.views.sidebar()}<main id="main" class="main-shell ${fullscreen ? 'main-fullscreen' : ''}" tabindex="-1"><header class="topbar ${fullscreen ? 'topbar-fullscreen' : 'topbar-menu'}"${fullscreen ? ' style="height:auto;align-items:flex-start"' : ''}>${fullscreen ? `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:12px;"><button type="button" class="text-button" data-nav="home">${i('arrowleft','',14)}<span>返回工作空间</span></button></div><div class="topbar-status"></div>` : `<div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div>`}</header>${page()}</main></div>`;
+    document.getElementById('app').innerHTML = `<div class="app-shell">${fullscreen ? '' : CS.views.sidebar()}<main id="main" class="main-shell ${fullscreen ? 'main-fullscreen' : ''}" tabindex="-1"><header class="topbar ${fullscreen ? 'topbar-fullscreen' : 'topbar-menu'}"${fullscreen ? ' style="height:auto;align-items:flex-start"' : ''}>${fullscreen ? `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:12px;"><button type="button" class="text-button" data-nav="home">${i('arrowleft','',14)}<span>返回工作空间</span></button></div><div class="topbar-status"></div>` : `<div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div>`}</header>${page()}${typeof V !== 'undefined' && V.terminalDrawer ? V.terminalDrawer() : (CS.views.terminalDrawer ? CS.views.terminalDrawer() : '')}</main></div>`;
     const sidebar = document.querySelector('.sidebar-scroll'); if (sidebar) sidebar.scrollTop = sidebarScroll;
     const conversation = document.querySelector('.conversation'); if (conversation) conversation.scrollTop = conversationScroll;
     const inspector = document.querySelector('.inspector'); if (inspector) inspector.scrollTop = inspectorScroll;
@@ -153,6 +153,14 @@
     if (el && _sysStatsHtml) el.innerHTML = _sysStatsHtml;
     if (hadConv) { const fresh = document.querySelector('.conversation'); if (fresh) fresh.scrollTop = savedTop; }
     CS.syncAnchorRail();
+    // 终端抽屉: 恢复草稿并保持输入焦点, 滚动到最新输出
+    const termInput = document.querySelector('form[data-form=term] .term-input');
+    if (termInput && CS.ui.terminal?.open) {
+      if (termInput.value !== CS.ui.terminal.draft) termInput.value = CS.ui.terminal.draft || '';
+      if (!CS.ui.terminal.busy) termInput.focus({ preventScroll: true });
+      termInput.setSelectionRange(termInput.value.length, termInput.value.length);
+      const body = document.getElementById('term-body'); if (body) body.scrollTop = body.scrollHeight;
+    }
     // Token 用量热力图: 按容器宽度自适应列数(测量后才重排, 最多一次额外渲染)
     CS.fitUsageHeatmap();
   };
@@ -926,6 +934,10 @@
       CS.render();
     },
     'fs-open': (id, el) => { const path = el?.dataset?.path || id; if (path) CS.agent.previewFsFile(path); },
+    'fs-term': () => { CS.ui.terminal.open = !CS.ui.terminal.open; CS.render(); },
+    'term-close': () => { CS.ui.terminal.open = false; CS.render(); },
+    'term-clear': () => { CS.ui.terminal.lines = []; CS.ui.terminal.cwd = ''; CS.render(); },
+    'fs-upload': () => { document.getElementById('fs-upload-input')?.click(); },
     'fs-refresh': () => {
       const st = CS.ui.fs; if (!st) return;
       st.children = {}; st.git = {}; st.loading = true;
@@ -1433,8 +1445,19 @@
     const action=actions[target.dataset.action];
     if (action) { event.preventDefault(); try { await action(target.dataset.id,target); } catch(error) { console.error(error); CS.toast(error.message || '操作失败，请重试。','error'); } }
   });
+  document.addEventListener('change', event => {
+    if (event.target?.id === 'fs-upload-input') {
+      const picked = [...(event.target.files || [])];
+      event.target.value = '';
+      CS.uploadFsFiles(picked);
+    }
+  });
+  document.addEventListener('input', event => {
+    if (event.target?.classList?.contains('term-input')) CS.ui.terminal.draft = event.target.value;
+  });
   document.addEventListener('submit', event => {
     const form=event.target; const type=form.dataset.form; if(!type) return; event.preventDefault();
+    if(type==='term') { CS.runTermCmd(); return; }
     if(type==='composer') {
       const prompt=CS.ui.composer.trim(); if(!prompt) return;
       const active=CS.currentRun();
@@ -1600,6 +1623,53 @@
       if (CS.state.projects.length && !CS.state.projects.some(p => p.id === CS.state.projectId)) CS.state.projectId = CS.state.projects[0].id;
       CS.save(); CS.emit('render');
     } catch (error) { /* 服务器不可用时保持本地项目列表 */ }
+  };
+  CS.runTermCmd = async () => {
+    const t = CS.ui.terminal;
+    if (!t || !t.open || t.busy) return;
+    const input = document.querySelector('form[data-form=term] .term-input');
+    const cmd = ((input ? input.value : t.draft) || '').trim();
+    if (!cmd) return;
+    t.lines.push({ type: 'cmd', text: cmd, cwd: t.cwd });
+    if (t.lines.length > 600) t.lines.splice(0, t.lines.length - 600);
+    t.draft = '';
+    t.busy = true;
+    CS.render();
+    try {
+      const data = await CS.api.request('/fs/exec', { method: 'POST', body: JSON.stringify({ projectId: CS.state.projectId, cmd, cwd: t.cwd }) });
+      const tt = CS.ui.terminal;
+      tt.cwd = data.cwd || '';
+      if ((data.stdout || '').trim()) tt.lines.push({ type: 'out', text: data.stdout.replace(/\n+$/, '') });
+      if ((data.stderr || '').trim()) tt.lines.push({ type: 'err', text: data.stderr.replace(/\n+$/, '') });
+      if ((data.code ?? 0) !== 0) tt.lines.push({ type: 'code', text: String(data.code) });
+      if (tt.lines.length > 600) tt.lines.splice(0, tt.lines.length - 600);
+    } catch (error) {
+      CS.ui.terminal.lines.push({ type: 'err', text: (error && error.message) || '命令执行失败' });
+    }
+    CS.ui.terminal.busy = false;
+    CS.render();
+  };
+  CS.uploadFsFiles = async fileList => {
+    const files = [...(fileList || [])];
+    if (!files.length) return;
+    const project = CS.state.projects.find(p => p.id === CS.state.projectId);
+    if (!project) { CS.toast('请先选择项目再上传文件。', 'error'); return; }
+    for (const file of files) {
+      if (file.size > 32 * 1024 * 1024) { CS.toast(`${file.name} 超过 32 MB，已跳过。`, 'error'); continue; }
+      try {
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const out = await CS.api.request('/fs/upload', { method: 'POST', body: JSON.stringify({ projectId: CS.state.projectId, name: file.name, dataBase64: String(dataUrl).split(',')[1] || '' }) });
+        CS.toast(`已上传 ${out.name}（${CS.formatBytes(out.size)}）`);
+      } catch (error) { CS.toast(`上传 ${file.name} 失败：${(error && error.message) || '未知错误'}`, 'error'); }
+    }
+    const st = CS.ui.fs;
+    if (st) { st.children = {}; st.git = {}; st.root = null; st.loading = true; CS.agent.loadFsDir(''); }
+    CS.render();
   };
   CS.agent.loadConversations = async () => {
     try {

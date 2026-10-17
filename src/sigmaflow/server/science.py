@@ -13,6 +13,7 @@ THIS SERVER, using the model/provider configured in the settings.
 """
 
 import asyncio
+import base64
 import json
 import math
 import os
@@ -993,6 +994,92 @@ def _fs_resolve(project_dir: str, rel: str):
     return target, root
 
 
+_FS_UPLOAD_MAX = 32 * 1024 * 1024
+_FS_EXEC_TIMEOUT = 180.0
+_FS_CWD_SENTINEL = "SIGMAFLOW_CWD"
+_FS_EXEC_RE = None
+
+
+def _fs_exec_payload(project, cmd: str, cwd: str) -> dict:
+    """Run one shell command under the project dir; bash session cwd is kept by
+    the client passing the previously reported directory back each time."""
+    base = str((project or {}).get("dir") or "").strip()
+    if not base or not os.path.isdir(base):
+        raise HTTPException(status_code=404, detail="项目目录不存在，请编辑项目并填写本地路径")
+    start, root = _fs_resolve(base, cwd or "")
+    if start is None or not os.path.isdir(start):
+        raise HTTPException(status_code=400, detail="工作目录不可用，已重置到项目根")
+    script = (
+        cmd
+        + '\n__sf_code=$?\n'
+        + 'printf "\001' + _FS_CWD_SENTINEL + ':%s\001\n" "$PWD"\n'
+        + 'exit $__sf_code'
+    )
+
+    def _text(value) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, bytes):
+            return value.decode("utf-8", "replace")
+        return value
+
+    try:
+        proc = subprocess.run(["bash", "-c", script], cwd=start, capture_output=True, text=True, timeout=_FS_EXEC_TIMEOUT)
+        out, err, code = _text(proc.stdout), _text(proc.stderr), proc.returncode
+    except subprocess.TimeoutExpired as exc:
+        out, err, code = _text(exc.stdout), _text(exc.stderr) + "\n[命令执行超时，已终止]", 124
+    newcwd = start
+    marker = f"\x01{_FS_CWD_SENTINEL}:"
+    sbegin = out.find(marker)
+    if sbegin >= 0:
+        send = out.find("\x01", sbegin + len(marker))
+        if send > sbegin:
+            candidate = out[sbegin + len(marker):send]
+            resolved = None
+            if candidate:
+                resolved, _ = _fs_resolve(base, os.path.relpath(candidate, root) if os.path.isabs(candidate) else candidate)
+            if resolved and os.path.isdir(resolved):
+                newcwd = resolved
+            out = out[:sbegin] + out[send + 1:]
+    return {
+        "stdout": out,
+        "stderr": err,
+        "code": code,
+        "cwd": os.path.relpath(newcwd, root).replace(os.sep, "/") if newcwd != root else "",
+        "root": root.replace(os.sep, "/"),
+    }
+
+
+def _fs_upload_payload(project, name: str, data_base64: str) -> dict:
+    """Upload one file into the project directory (no overwrite)."""
+    base = str((project or {}).get("dir") or "").strip()
+    if not base or not os.path.isdir(base):
+        raise HTTPException(status_code=404, detail="项目目录不存在，请编辑项目并填写本地路径")
+    clean = os.path.basename(str(name or "").replace("\\", "/").replace("\x00", ""))[:200]
+    if not clean or clean in (".", ".."):
+        raise HTTPException(status_code=400, detail="文件名无效")
+    try:
+        raw = base64.b64decode(data_base64.split(",")[-1], validate=False)
+    except Exception:
+        raw = b""
+    if not raw:
+        raise HTTPException(status_code=400, detail="文件内容为空")
+    if len(raw) > _FS_UPLOAD_MAX:
+        raise HTTPException(status_code=400, detail="文件超过 32 MB 限制")
+    target, root = _fs_resolve(base, clean)
+    if target is None or os.path.isdir(target):
+        raise HTTPException(status_code=400, detail="目标路径无效")
+    if os.path.exists(target):
+        raise HTTPException(status_code=400, detail="同名文件已存在，请改名后再上传")
+    with open(target, "wb") as fh:
+        fh.write(raw)
+    try:
+        subprocess.run(["git", "-C", root, "add", "-A", "--", clean], capture_output=True, timeout=10)
+    except Exception:
+        pass
+    return {"name": clean, "size": len(raw), "path": clean.replace(os.sep, "/")}
+
+
 def _git_status_map(root: str) -> Dict[str, str]:
     """Repo-relative path -> one-letter git status (M/A/D/R/U for untracked).
 
@@ -1820,6 +1907,20 @@ class ScienceAPI:
             project = self.project_store.projects.get(projectId or "")
             return await asyncio.to_thread(_fs_file_payload, project, path or "")
 
+        @router.post("/fs/exec")
+        async def fs_exec(payload: _FsExecIn, request: Request):
+            """在项目目录执行一条 shell 命令(非交互, 逐条提交)。"""
+            _check_origin(request)
+            project = self.project_store.projects.get(payload.projectId or "")
+            return await asyncio.to_thread(_fs_exec_payload, project, payload.cmd, payload.cwd)
+
+        @router.post("/fs/upload")
+        async def fs_upload(payload: _FsUploadIn, request: Request):
+            """上传一个文件到项目目录(base64, 不覆盖已有文件)。"""
+            _check_origin(request)
+            project = self.project_store.projects.get(payload.projectId or "")
+            return await asyncio.to_thread(_fs_upload_payload, project, payload.name, payload.dataBase64)
+
         @router.get("/projects")
         async def list_projects():
             return {"projects": self.project_store.list_projects()}
@@ -2406,6 +2507,18 @@ def _push_loop(ws: WebSocket, queue: asyncio.Queue):
             pass
 
     return _loop()
+
+
+class _FsExecIn(BaseModel):
+    projectId: str = ""
+    cmd: str = Field(min_length=1, max_length=8000)
+    cwd: str = Field(default="", max_length=2000)
+
+
+class _FsUploadIn(BaseModel):
+    projectId: str = ""
+    name: str = Field(min_length=1, max_length=200)
+    dataBase64: str = Field(min_length=4, max_length=46_000_000)
 
 
 class ChatIn(BaseModel):

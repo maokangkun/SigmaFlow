@@ -109,7 +109,7 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
 .fullscreen-page .page-footer{margin-top:auto;padding-top:26px}.settings-layout{display:grid;grid-template-columns:210px minmax(0,1fr);gap:22px;align-items:start;max-width:1180px;margin:0 auto;width:100%}.settings-nav{padding:4px 8px;display:flex;flex-direction:column;gap:3px;position:sticky;top:20px}.settings-nav-item{display:flex;align-items:center;gap:11px;min-height:36px;padding:7px 12px;border-radius:9px;font-size:12px;color:#666e81;text-align:left;background:transparent}.settings-nav-item .icon{color:var(--muted)}.settings-nav-item:hover{background:var(--inset)}.settings-nav-item.active{background:var(--surface);color:var(--ink-strong);box-shadow:var(--shadow-small)}.settings-nav-item.active .icon{color:var(--accent-dark)}.settings-content .settings-section{margin-bottom:0}
 .settings-actions{margin:22px 0 0 0}.settings-section{padding:16px 29px;margin-bottom:24px}.settings-section h2{font-size:14px;margin-bottom:10px}.setting-row{display:flex;align-items:center;justify-content:space-between;gap:25px;padding:20px 0;border-bottom:1px solid var(--line-soft)}.setting-row:last-child{border-bottom:none;padding-bottom:3px}.setting-row h3{font-size:12px;font-weight:500}.setting-row p{font-size:10px;color:var(--muted);max-width:520px;margin-top:5px;line-height:1.8}.switch{position:relative;display:inline-flex;width:34px;height:20px;border-radius:20px;background:#d9dde6;padding:3px;flex-shrink:0}.switch[aria-checked=true]{background:var(--accent)}.switch::before{content:'';height:14px;width:14px;background:var(--surface);border-radius:50%;box-shadow:1px 1px 3px #0002;transition:transform .18s}.switch[aria-checked=true]::before{transform:translateX(14px)}.switch:disabled{opacity:.35;cursor:not-allowed}.help-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}.help-grid .panel{padding:25px}.help-grid h3{font-size:14px;margin-bottom:12px}.help-grid p,.help-grid li{font-size:12px;color:var(--muted);line-height:2}.help-grid ol{padding-left:20px}.shortcut-list{display:flex;flex-direction:column;gap:14px;font-size:12px;color:var(--muted)}.shortcut-list>div{display:flex;justify-content:space-between}
 /* Modal, notices, responsive */
-.modal-backdrop{position:fixed;inset:0;background:#22283835;backdrop-filter:blur(3px);z-index:90;display:flex;align-items:center;justify-content:center;padding:22px;animation:page-in .12s}.modal{width:580px;max-width:100%;max-height:88vh;background:var(--bg);box-shadow:0 20px 70px #2027352b;border:1px solid #ffffffd9;border-radius:19px;display:flex;flex-direction:column;overflow:hidden}.modal.wide{width:830px}.modal-head{padding:23px 26px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line-soft);gap:20px}.modal-head h2{font-size:16px}.modal-body{padding:24px 26px;overflow:auto;min-height:0}.modal-footer{padding:17px 26px;display:flex;align-items:center;justify-content:flex-end;gap:11px;border-top:1px solid var(--line)}.modal .dataset-picker-row{display:flex;align-items:center;gap:13px;padding:15px 13px;border-radius:10px;width:100%;background:none;text-align:left;border:1px solid var(--line);margin-bottom:11px}.modal .dataset-picker-row:hover{background:var(--accent-bg)}.modal .dataset-picker-row .grow strong{font-size:11px;font-weight:550}.modal .dataset-picker-row .grow p{font-size:10px;color:var(--muted);margin-top:3px}.file-preview{background:var(--surface);padding:16px;border-radius:9px;border:1px solid var(--line);max-height:370px;overflow:auto}.file-preview pre{white-space:pre;font-size:11px}.modal .table-wrap{max-height:370px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}.modal table th,.modal table td{font-size:10px;padding:10px 13px;max-width:230px;overflow:hidden;text-overflow:ellipsis}.session-list-group{display:flex;align-items:center;gap:10px;margin-top:18px;padding-bottom:8px;font-size:10px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--faint)}.session-list-group:first-child{margin-top:0}.session-list-group::after{content:'';flex:1;height:1px;background:var(--line-soft)}.session-list-group .count{font-weight:420;letter-spacing:.2px;text-transform:none}.session-list-item{padding:10px 2px;border-bottom:1px solid var(--line-soft);display:flex;flex-direction:column;gap:3px}.session-list-item:last-child{border-bottom:0}.session-list-item strong{font-size:12px;font-weight:550;color:var(--ink-strong)}.note-editor{min-height:190px;width:100%;font-size:12px}.confirm-text{font-size:12px;color:var(--muted);line-height:1.9}.toast{padding:12px 17px;display:flex;align-items:center;gap:9px;background:var(--surface);color:var(--ink);font-size:12px;border:1px solid var(--line);box-shadow:0 5px 25px #2228381f;border-radius:11px;animation:toast-in .2s}.toast>.icon{color:var(--green);height:16px;width:16px}.toast.error>.icon{color:var(--red)}#toast-root{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:150;display:flex;flex-direction:column;gap:9px;max-width:min(90vw,600px);pointer-events:none}.sidebar-scrim{display:none}.mobile-only{display:none}.rotate{transform:rotate(90deg)}.text-clip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.compact-preview{max-width:400px}.loading-shimmer{color:var(--faint)}@keyframes spin{to{transform:rotate(360deg)}}@keyframes page-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}@keyframes toast-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.modal-backdrop{position:fixed;inset:0;background:#22283835;backdrop-filter:blur(3px);z-index:90;display:flex;align-items:center;justify-content:center;padding:22px;animation:page-in .12s}.modal{width:580px;max-width:100%;max-height:88vh;background:var(--bg);box-shadow:0 20px 70px #2027352b;border:1px solid #ffffffd9;border-radius:19px;display:flex;flex-direction:column;overflow:hidden}.modal.wide{width:830px}.modal-head{padding:23px 26px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line-soft);gap:20px}.modal-head h2{font-size:16px}.modal-body{padding:24px 26px;overflow:auto;min-height:0}.modal-footer{padding:17px 26px;display:flex;align-items:center;justify-content:flex-end;gap:11px;border-top:1px solid var(--line)}.modal .dataset-picker-row{display:flex;align-items:center;gap:13px;padding:15px 13px;border-radius:10px;width:100%;background:none;text-align:left;border:1px solid var(--line);margin-bottom:11px}.modal .dataset-picker-row:hover{background:var(--accent-bg)}.modal .dataset-picker-row .grow strong{font-size:11px;font-weight:550}.modal .dataset-picker-row .grow p{font-size:10px;color:var(--muted);margin-top:3px}.file-preview{background:var(--surface);padding:16px;border-radius:9px;border:1px solid var(--line);max-height:370px;overflow:auto}.file-preview pre{white-space:pre;font-size:11px}.modal .table-wrap{max-height:370px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}.modal table th,.modal table td{font-size:10px;padding:10px 13px;max-width:230px;overflow:hidden;text-overflow:ellipsis}.session-list-group{display:flex;align-items:center;gap:10px;margin-top:18px;padding-bottom:8px;font-size:10px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--faint)}.session-list-group:first-child{margin-top:0}.session-list-group::after{content:'';flex:1;height:1px;background:var(--line-soft)}.session-list-group .count{font-weight:420;letter-spacing:.2px;text-transform:none}.session-list-item{padding:10px 2px;border-bottom:1px solid var(--line-soft);display:flex;flex-direction:column;gap:3px}.session-list-item:last-child{border-bottom:0}.session-list-item strong{font-size:12px;font-weight:550;color:var(--ink-strong)}.note-editor{min-height:190px;width:100%;font-size:12px}.confirm-text{font-size:12px;color:var(--muted);line-height:1.9}.toast{padding:12px 17px;display:flex;align-items:center;gap:9px;background:var(--surface);color:var(--ink);font-size:12px;border:1px solid var(--line);box-shadow:0 5px 25px #2228381f;border-radius:11px;animation:toast-in .2s}.toast>.icon{color:var(--green);height:16px;width:16px}.toast.error>.icon{color:var(--red)}#toast-root{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:150;display:flex;flex-direction:column;gap:9px;max-width:min(90vw,600px);pointer-events:none}.sidebar-scrim{display:none}.mobile-only{display:none}.rotate{transform:rotate(90deg)}.text-clip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.compact-preview{max-width:400px}.loading-shimmer{color:var(--faint)}@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}@keyframes page-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}@keyframes toast-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @media(min-width:1700px){.home-content{width:830px}.home-brand h1{font-size:48px}.home-shortcuts{gap:18px}.page{max-width:1380px}.chat-page{max-width:1410px}.chat-layout{grid-template-columns:minmax(0,1fr) 280px;gap:36px}}
 @media(max-width:1200px){:root{--sidebar-width:206px}.sidebar{padding-left:12px;padding-right:12px}.brand{font-size:13px;gap:8px}.page{padding:24px 30px 40px}.topbar{padding:0 30px}.home-page{padding-left:35px;padding-right:35px}.home-brand h1{font-size:39px}.home-shortcuts{gap:11px}.shortcut-card{padding:16px 12px;gap:9px}.shortcut-card p{font-size:8px}.chat-layout{grid-template-columns:minmax(0,1fr) 225px;gap:22px}.chat-page{padding:15px 25px 26px}.tools-grid{grid-template-columns:repeat(3,1fr)}.result-grid{grid-template-columns:minmax(0,1.7fr) minmax(230px,1fr)}.workflow-layout{grid-template-columns:minmax(0,1fr) 290px;gap:20px}.workflow-config{padding:21px}.project-grid{grid-template-columns:repeat(2,1fr)}.literature-layout{grid-template-columns:minmax(0,1fr) 255px;gap:20px}}
 @media(max-width:1050px){.chat-layout{grid-template-columns:1fr}.inspector{display:none}.chat-main{max-width:800px;margin:auto;width:100%}.home-shortcuts{grid-template-columns:repeat(2,1fr);gap:14px}.shortcut-card{padding:17px}.home-content{max-width:630px;padding-top:40px}.home-brand{margin-bottom:32px}.home-shortcuts{margin-top:28px}.shortcut-card p{font-size:10px}.result-grid{grid-template-columns:1fr}.result-side-stack{display:grid;grid-template-columns:1fr 1fr;align-items:start}.literature-layout{grid-template-columns:1fr}.reading-panel{position:static}.result-stats{gap:12px}.result-stat{padding:18px 17px}.workflow-layout{grid-template-columns:1fr}.workflow-config{position:static}.workflow-config .config-inputs{display:grid;grid-template-columns:1fr 1fr;gap:0 20px}.workflow-config .config-inputs .full-span{grid-column:1/-1}.tool-workspace{grid-template-columns:1fr}}
@@ -130,7 +130,24 @@ html{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--scrollba
 @media(max-width:800px){.chat-page{height:calc(100dvh - 65px)}}
 @media(max-width:560px){.chat-page{height:calc(100dvh - 60px)}.chat-title{margin-bottom:15px}.conversation{padding-right:3px}.chat-composer{margin-top:10px}.run-card[data-phase="awaiting"] .step{min-height:54px}.step-log{font-size:8px}}
 .dd-wrap{position:relative;display:inline-flex;align-items:center}.model-menu.dd-down{top:calc(100% + 8px);left:0;right:auto;bottom:auto;min-width:230px;max-height:260px;overflow:auto}.model-menu.dd-down .model-menu-item{white-space:normal;line-height:1.5}.setting-row.no-divider{border-bottom:none}.setting-row.compact{padding:5px 0}.setting-row.compact p{margin-top:2px}.dd-wrap .model-select-btn{max-width:none}.composer-home{position:relative}.composer-project{position:absolute;top:-38px;left:0;z-index:50}.composer-project .model-menu{min-width:200px}.project-select-btn{max-width:240px}.conversation-list{display:block;margin:2px 0 8px 22px}
-.conversation-link{width:100%;box-sizing:border-box}.conversation-link{display:flex;align-items:center;gap:8px;padding:6px 8px;font-size:11px;color:var(--muted);border-radius:8px;text-align:left;cursor:pointer;background:transparent;border:0}.conversation-link:hover{background:var(--inset)}.conversation-link.selected{color:var(--ink);font-weight:500}.conversation-link span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.conversation-link .icon{width:13px;height:13px;flex-shrink:0}.fs-tree{display:flex;flex-direction:column;padding-bottom:4px}
+.conversation-link{width:100%;box-sizing:border-box}.conversation-link{display:flex;align-items:center;gap:8px;padding:6px 8px;font-size:11px;color:var(--muted);border-radius:8px;text-align:left;cursor:pointer;background:transparent;border:0}.conversation-link:hover{background:var(--inset)}.conversation-link.selected{color:var(--ink);font-weight:500}.conversation-link span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.conversation-link .icon{width:13px;height:13px;flex-shrink:0}.term-drawer{position:fixed;right:0;top:0;bottom:0;width:min(560px,44vw);min-width:380px;background:var(--surface);border-left:1px solid var(--line);box-shadow:-10px 0 30px #22283818;z-index:80;display:flex;flex-direction:column}
+.term-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;border-bottom:1px solid var(--line);font-size:12px}
+.term-head strong{font-size:12px;white-space:nowrap}
+.term-body{flex:1;overflow-y:auto;padding:12px 14px;background:var(--bg)}
+.term-out-wrap{display:flex;flex-direction:column;gap:2px}
+.term-line{font-size:11.5px;line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere}
+.term-cmd{color:var(--ink-strong)}
+.term-ps1{color:var(--green);margin-right:6px}
+.term-out{color:var(--ink)}
+.term-err{color:var(--red)}
+.term-code{color:var(--muted);font-size:10.5px;margin:3px 0}
+.term-empty{padding:10px 0}
+.term-input-row{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--line);background:var(--surface)}
+.term-input-row .term-ps1{font-size:11px;white-space:nowrap;max-width:40%;overflow:hidden;text-overflow:ellipsis}
+.term-input{flex:1;min-width:0;background:transparent;border:0;box-shadow:none;outline:0;padding:4px 2px;font-size:12px;color:var(--ink)}
+.term-dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0}
+.term-dot.busy{background:var(--amber);animation:pulse 1.1s ease-in-out infinite}
+.fs-tree{display:flex;flex-direction:column;padding-bottom:4px}
 .fs-row{display:flex;align-items:center;gap:7px;min-height:27px;padding:3px 10px 3px 6px;border-radius:7px;font-size:11.5px;color:var(--muted);width:100%;background:none;text-align:left;overflow:hidden}
 .fs-row:hover{background:#e7e9f0;color:var(--ink)}
 .fs-row .icon{flex-shrink:0}
@@ -468,6 +485,7 @@ CS.icons = {
   pause: '<path d="M8 5v14M16 5v14"/>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
   refresh: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+  terminal: '<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>',
   terminal: '<rect x="2" y="3" width="20" height="18" rx="3"/><path d="m6 8 4 4-4 4M13 16h5"/>',
   code: '<path d="m7 6-5 6 5 6M17 6l5 6-5 6M14 3l-4 18"/>',
   external: '<path d="M14 3h7v7M21 3 11 13M11 4H4v16h16v-7"/>',
@@ -795,7 +813,7 @@ CS.markdown = text => {
     workflowId: 'singlecell', workflowCategory: 'all', datasetId: 'ds-pbmc', organism: 'Homo sapiens', advanced: false,
     minGenes: 200, maxMito: 20, activeTool: 'sequence', sequence: CS.data.sampleFASTA, sequenceResult: null,
     modal: null, expandedLogs: new Set(), selectedCell: null, note: '', apiHealth: null,
-    userMenu: false, modelMenu: false, projectMenu: false, projectSettingsMenu: null, expandedProjects: new Set(), conversations: [], settingsTab: 'appearance', models: [], providers: [], edit: null, providerModels: null, draftModelName: '', draftProviderId: null, dropdown: null, pendingDelete: null, modelsLoaded: false, thinkingOpen: false, thinkingText: '', toolsOpen: false, errorOpen: false, blockOpen: {}, canJumpLatest: false, contextInfo: null, contextMenu: false, agentTools: null, toolDraft: null, toolGroupsCollapsed: null, agentSkills: null, skillDraft: null, mcpServers: null, mcpDraft: null, systemPrompt: null, syspromptDraft: null, tokens: null, tokensDraft: null, fsCollapsed: false, fs: null
+    userMenu: false, modelMenu: false, projectMenu: false, projectSettingsMenu: null, expandedProjects: new Set(), conversations: [], settingsTab: 'appearance', models: [], providers: [], edit: null, providerModels: null, draftModelName: '', draftProviderId: null, dropdown: null, pendingDelete: null, modelsLoaded: false, thinkingOpen: false, thinkingText: '', toolsOpen: false, errorOpen: false, blockOpen: {}, canJumpLatest: false, contextInfo: null, contextMenu: false, agentTools: null, toolDraft: null, toolGroupsCollapsed: null, agentSkills: null, skillDraft: null, mcpServers: null, mcpDraft: null, systemPrompt: null, syspromptDraft: null, tokens: null, tokensDraft: null, fsCollapsed: false, fs: null, terminal: { open: false, cwd: '', draft: '', busy: false, lines: [] }
   };
   // 侧栏项目折叠状态持久化: 记录用户显式展开的项目, 刷新后保持一致。
   try { const fold = JSON.parse(localStorage.getItem(key + '.fold') || 'null'); if (Array.isArray(fold)) CS.ui.expandedProjects = new Set(fold.map(String)); } catch {}
@@ -3741,7 +3759,7 @@ CS.markdown = text => {
       <section class="sidebar-section"><div class="sidebar-section-label"><button type="button" class="text-button muted small ${CS.ui.unassignedCollapsed ? 'collapsed' : ''}" data-action="toggle-unassigned" aria-expanded="${!CS.ui.unassignedCollapsed}" title="${CS.ui.unassignedCollapsed ? '展开会话列表' : '折叠会话列表'}"><span>会话</span></button></div>
         ${CS.ui.unassignedCollapsed ? '' : (() => { const loose = CS.ui.conversations.filter(c => !c.projectId).slice(0, 8); return loose.length ? loose.filter(c => !c.archived).map(c => `<button type="button" class="conversation-link ${CS.state.currentRunId === c.id ? 'selected' : ''}" data-action="open-conversation" data-id="${e(c.id)}" title="${e(c.title)}">${i('message')}<span class="conversation-title">${e(c.title)}</span>${streaming.has(c.id) ? '<span class="conv-dot" title="生成中"></span>' : ''}<span class="conversation-actions${c.pinned ? ' has-pinned' : ''}"><span class="icon-btn" role="button" data-action="toggle-pin-conversation" data-id="${e(c.id)}" title="${c.pinned ? '取消置顶' : '置顶'}">${i(c.pinned ? 'x' : 'up','',12)}</span><span class="icon-btn" role="button" data-action="archive-conversation" data-id="${e(c.id)}" title="归档">${i('archive','',12)}</span></span></button>`).join('') : '<div class="conversation-empty small muted">暂无未归属项目的会话</div>'; })()}
       </section>
-      <section class="sidebar-section"><div class="sidebar-section-label"><button type="button" class="text-button muted small ${CS.ui.fsCollapsed ? 'collapsed' : ''}" data-action="toggle-fs-section" aria-expanded="${!CS.ui.fsCollapsed}" title="${CS.ui.fsCollapsed ? '展开文件' : '折叠文件'}"><span>文件</span></button>${iconBtn('fs-refresh','refresh','刷新文件')}</div>${CS.ui.fsCollapsed ? '' : V.fsTree()}</section></div>
+      <section class="sidebar-section"><div class="sidebar-section-label"><button type="button" class="text-button muted small ${CS.ui.fsCollapsed ? 'collapsed' : ''}" data-action="toggle-fs-section" aria-expanded="${!CS.ui.fsCollapsed}" title="${CS.ui.fsCollapsed ? '展开文件' : '折叠文件'}"><span>文件</span></button>${iconBtn('fs-upload','upload','上传文件到项目根目录')}${iconBtn('fs-term','terminal','打开终端')}${iconBtn('fs-refresh','refresh','刷新文件')}</div>${CS.ui.fsCollapsed ? '' : V.fsTree()}<input type="file" id="fs-upload-input" multiple hidden aria-hidden="true"></section></div>
       <div class="sidebar-bottom"><div class="workspace-chip" data-action="toggle-user-menu"><div class="workspace-monogram">${(CS.state.username || 'CS').slice(0,2).toUpperCase()}</div><div class="grow"><div class="name">${e(CS.state.username || '未登录用户')}</div><div class="sub">科研工作空间</div></div>${i('chevron','',12)}${CS.ui.userMenu ? `<div class="user-menu"><button class="menu-item" data-nav="settings">${i('settings','',15)}<span>设置</span><kbd>⌘,</kbd></button><button class="menu-item" data-nav="help">${i('help','',15)}<span>帮助与文档</span></button><div class="menu-divider"></div><button class="menu-item danger" data-action="logout">${i('logout','',15)}<span>退出登录</span></button></div>` : ''}</div></div>
     </aside>`;
   };
@@ -3783,6 +3801,18 @@ CS.markdown = text => {
     return st.error
       ? `<div class="fs-empty small muted">${e(st.error)}</div>`
       : '<div class="fs-empty small muted">目录为空，或项目尚未配置本地路径。</div>';
+  };
+  V.terminalDrawer = () => {
+    const t = CS.ui.terminal;
+    if (!t || !t.open) return '';
+    const project = CS.state.projects.find(p => p.id === CS.state.projectId);
+    const ps1 = t.cwd ? t.cwd : '/';
+    const lines = (t.lines || []).map(l => l.type === 'cmd'
+      ? `<div class="term-line term-cmd mono"><span class="term-ps1">${e((l.cwd || '') || '/')} $</span>${e(l.text)}</div>`
+      : l.type === 'out' ? `<div class="term-line term-out mono">${e(l.text)}</div>`
+        : l.type === 'err' ? `<div class="term-line term-err mono">${e(l.text)}</div>`
+          : (l.text !== '0' ? `<div class="term-code mono">[退出码 ${e(l.text)}]</div>` : ''));
+    return `<aside class="term-drawer" role="dialog" aria-label="项目终端"><header class="term-head"><div class="row grow" style="min-width:0">${i('terminal','',15)}<strong>${e(project ? `终端 · ${project.name}` : '终端')}</strong><span class="tiny muted mono" style="overflow:hidden;text-overflow:ellipsis">${e(ps1)}</span></div>${iconBtn('term-clear','trash','清空终端')}${iconBtn('term-close','x','关闭终端')}</header><div class="term-body" id="term-body"><div class="term-out-wrap">${lines.join('') || '<div class="term-empty small muted">输入命令并回车执行；常用如 pwd、ls、git status。连续会话保持 cwd。</div>'}</div>${!project ? '<div class="term-empty small muted">未关联项目，先在输入框选择项目。</div>' : ''}</div><form class="term-input-row" data-form="term"><span class="term-dot${t.busy ? ' busy' : ''}"></span><span class="mono term-ps1">${e(ps1)} $</span><input class="term-input mono" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${t.busy ? '执行中…' : '输入命令，Enter 执行'}"${t.busy ? ' disabled' : ''}></form></aside>`;
   };
   V.composer = (home = false) => `<div class="${home ? 'composer-home' : 'chat-composer'}">${!home ? `<button type="button" class="jump-latest" data-action="jump-latest" title="跳到最新消息"${CS.ui.canJumpLatest ? '' : ' hidden'}>${i('down', '', 14)}</button>` : ''}${home ? `<div class="composer-project"><button type="button" class="model-select-btn project-select-btn" data-action="toggle-project-menu" aria-haspopup="listbox" aria-expanded="${!!CS.ui.projectMenu}">${CS.state.projectId ? `<span class="project-icon" data-action="clear-project" title="取消项目关联">${i('folder','',13)}${i('x','',13)}</span>` : i('folder','',13)}<span>${e(CS.state.projects.find(p => p.id === CS.state.projectId)?.name || '选择项目')}</span>${i('down','',13)}</button>${CS.ui.projectMenu ? `<div class="model-menu dd-down" role="menu">${CS.state.projects.filter(p => !p.archived).map(p => `<button type="button" class="model-menu-item" role="menuitem" data-action="pick-project" data-id="${e(p.id)}"><span>${e(p.name)}</span>${CS.state.projectId === p.id ? i('check','',13) : ''}</button>`).join('')}<div class="menu-divider"></div><button type="button" class="model-menu-item" data-action="new-project">${i('plus','',14)}<span>新建项目</span></button><button type="button" class="model-menu-item" data-action="connect-project">${i('external','',14)}<span>连接远程项目</span></button></div>` : ''}</div>` : ''}<form class="composer" data-form="composer">
     ${CS.ui.attachments.length ? `<div class="attachment-list">${CS.ui.attachments.map(id => { const d = CS.state.datasets.find(x => x.id === id); return d ? `<span class="attachment">${i('file')}<span>${e(d.name)}</span>${iconBtn('remove-attachment','x','移除附件',`data-id="${e(id)}"`)}</span>` : ''; }).join('')}</div>` : ''}
@@ -4145,7 +4175,7 @@ CS.markdown = text => {
     document.documentElement.dataset.motion = CS.state.settings.reducedMotion ? 'reduced' : 'normal';
     const page = CS.views[CS.ui.route] || CS.views.home;
     const fullscreen = CS.ui.route === 'settings';
-    document.getElementById('app').innerHTML = `<div class="app-shell">${fullscreen ? '' : CS.views.sidebar()}<main id="main" class="main-shell ${fullscreen ? 'main-fullscreen' : ''}" tabindex="-1"><header class="topbar ${fullscreen ? 'topbar-fullscreen' : 'topbar-menu'}"${fullscreen ? ' style="height:auto;align-items:flex-start"' : ''}>${fullscreen ? `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:12px;"><button type="button" class="text-button" data-nav="home">${i('arrowleft','',14)}<span>返回工作空间</span></button></div><div class="topbar-status"></div>` : `<div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div>`}</header>${page()}</main></div>`;
+    document.getElementById('app').innerHTML = `<div class="app-shell">${fullscreen ? '' : CS.views.sidebar()}<main id="main" class="main-shell ${fullscreen ? 'main-fullscreen' : ''}" tabindex="-1"><header class="topbar ${fullscreen ? 'topbar-fullscreen' : 'topbar-menu'}"${fullscreen ? ' style="height:auto;align-items:flex-start"' : ''}>${fullscreen ? `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:12px;"><button type="button" class="text-button" data-nav="home">${i('arrowleft','',14)}<span>返回工作空间</span></button></div><div class="topbar-status"></div>` : `<div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div>`}</header>${page()}${typeof V !== 'undefined' && V.terminalDrawer ? V.terminalDrawer() : (CS.views.terminalDrawer ? CS.views.terminalDrawer() : '')}</main></div>`;
     const sidebar = document.querySelector('.sidebar-scroll'); if (sidebar) sidebar.scrollTop = sidebarScroll;
     const conversation = document.querySelector('.conversation'); if (conversation) conversation.scrollTop = conversationScroll;
     const inspector = document.querySelector('.inspector'); if (inspector) inspector.scrollTop = inspectorScroll;
@@ -4206,6 +4236,14 @@ CS.markdown = text => {
     if (el && _sysStatsHtml) el.innerHTML = _sysStatsHtml;
     if (hadConv) { const fresh = document.querySelector('.conversation'); if (fresh) fresh.scrollTop = savedTop; }
     CS.syncAnchorRail();
+    // 终端抽屉: 恢复草稿并保持输入焦点, 滚动到最新输出
+    const termInput = document.querySelector('form[data-form=term] .term-input');
+    if (termInput && CS.ui.terminal?.open) {
+      if (termInput.value !== CS.ui.terminal.draft) termInput.value = CS.ui.terminal.draft || '';
+      if (!CS.ui.terminal.busy) termInput.focus({ preventScroll: true });
+      termInput.setSelectionRange(termInput.value.length, termInput.value.length);
+      const body = document.getElementById('term-body'); if (body) body.scrollTop = body.scrollHeight;
+    }
     // Token 用量热力图: 按容器宽度自适应列数(测量后才重排, 最多一次额外渲染)
     CS.fitUsageHeatmap();
   };
@@ -4979,6 +5017,10 @@ CS.markdown = text => {
       CS.render();
     },
     'fs-open': (id, el) => { const path = el?.dataset?.path || id; if (path) CS.agent.previewFsFile(path); },
+    'fs-term': () => { CS.ui.terminal.open = !CS.ui.terminal.open; CS.render(); },
+    'term-close': () => { CS.ui.terminal.open = false; CS.render(); },
+    'term-clear': () => { CS.ui.terminal.lines = []; CS.ui.terminal.cwd = ''; CS.render(); },
+    'fs-upload': () => { document.getElementById('fs-upload-input')?.click(); },
     'fs-refresh': () => {
       const st = CS.ui.fs; if (!st) return;
       st.children = {}; st.git = {}; st.loading = true;
@@ -5486,8 +5528,19 @@ CS.markdown = text => {
     const action=actions[target.dataset.action];
     if (action) { event.preventDefault(); try { await action(target.dataset.id,target); } catch(error) { console.error(error); CS.toast(error.message || '操作失败，请重试。','error'); } }
   });
+  document.addEventListener('change', event => {
+    if (event.target?.id === 'fs-upload-input') {
+      const picked = [...(event.target.files || [])];
+      event.target.value = '';
+      CS.uploadFsFiles(picked);
+    }
+  });
+  document.addEventListener('input', event => {
+    if (event.target?.classList?.contains('term-input')) CS.ui.terminal.draft = event.target.value;
+  });
   document.addEventListener('submit', event => {
     const form=event.target; const type=form.dataset.form; if(!type) return; event.preventDefault();
+    if(type==='term') { CS.runTermCmd(); return; }
     if(type==='composer') {
       const prompt=CS.ui.composer.trim(); if(!prompt) return;
       const active=CS.currentRun();
@@ -5653,6 +5706,53 @@ CS.markdown = text => {
       if (CS.state.projects.length && !CS.state.projects.some(p => p.id === CS.state.projectId)) CS.state.projectId = CS.state.projects[0].id;
       CS.save(); CS.emit('render');
     } catch (error) { /* 服务器不可用时保持本地项目列表 */ }
+  };
+  CS.runTermCmd = async () => {
+    const t = CS.ui.terminal;
+    if (!t || !t.open || t.busy) return;
+    const input = document.querySelector('form[data-form=term] .term-input');
+    const cmd = ((input ? input.value : t.draft) || '').trim();
+    if (!cmd) return;
+    t.lines.push({ type: 'cmd', text: cmd, cwd: t.cwd });
+    if (t.lines.length > 600) t.lines.splice(0, t.lines.length - 600);
+    t.draft = '';
+    t.busy = true;
+    CS.render();
+    try {
+      const data = await CS.api.request('/fs/exec', { method: 'POST', body: JSON.stringify({ projectId: CS.state.projectId, cmd, cwd: t.cwd }) });
+      const tt = CS.ui.terminal;
+      tt.cwd = data.cwd || '';
+      if ((data.stdout || '').trim()) tt.lines.push({ type: 'out', text: data.stdout.replace(/\n+$/, '') });
+      if ((data.stderr || '').trim()) tt.lines.push({ type: 'err', text: data.stderr.replace(/\n+$/, '') });
+      if ((data.code ?? 0) !== 0) tt.lines.push({ type: 'code', text: String(data.code) });
+      if (tt.lines.length > 600) tt.lines.splice(0, tt.lines.length - 600);
+    } catch (error) {
+      CS.ui.terminal.lines.push({ type: 'err', text: (error && error.message) || '命令执行失败' });
+    }
+    CS.ui.terminal.busy = false;
+    CS.render();
+  };
+  CS.uploadFsFiles = async fileList => {
+    const files = [...(fileList || [])];
+    if (!files.length) return;
+    const project = CS.state.projects.find(p => p.id === CS.state.projectId);
+    if (!project) { CS.toast('请先选择项目再上传文件。', 'error'); return; }
+    for (const file of files) {
+      if (file.size > 32 * 1024 * 1024) { CS.toast(`${file.name} 超过 32 MB，已跳过。`, 'error'); continue; }
+      try {
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const out = await CS.api.request('/fs/upload', { method: 'POST', body: JSON.stringify({ projectId: CS.state.projectId, name: file.name, dataBase64: String(dataUrl).split(',')[1] || '' }) });
+        CS.toast(`已上传 ${out.name}（${CS.formatBytes(out.size)}）`);
+      } catch (error) { CS.toast(`上传 ${file.name} 失败：${(error && error.message) || '未知错误'}`, 'error'); }
+    }
+    const st = CS.ui.fs;
+    if (st) { st.children = {}; st.git = {}; st.root = null; st.loading = true; CS.agent.loadFsDir(''); }
+    CS.render();
   };
   CS.agent.loadConversations = async () => {
     try {
