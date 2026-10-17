@@ -90,8 +90,27 @@
     const inspectorScroll = document.querySelector('.inspector')?.scrollTop || 0;
     document.documentElement.dataset.contrast = CS.state.settings.contrast ? 'high' : 'normal';
     document.documentElement.dataset.motion = CS.state.settings.reducedMotion ? 'reduced' : 'normal';
+    const bootRes = CS.state.me;
+    // 多用户门禁: 未登录一律停留在登录页; 已登录访问登录页则回主页
+    if (CS.ui.route === 'auth') {
+      if (!(bootRes && bootRes.mode === 'multi' && !(bootRes.user && bootRes.user.name))) {
+        location.hash = '#/home';
+        return;
+      }
+    } else if (bootRes && bootRes.mode === 'multi' && !(bootRes.user && bootRes.user.name)) {
+      CS.ui.route = 'auth';
+      location.hash = '#/auth';
+    }
     const page = CS.views[CS.ui.route] || CS.views.home;
     const fullscreen = CS.ui.route === 'settings';
+    if (CS.ui.route === 'auth') {
+      // 登录/注册是独立的全屏页面, 不带侧栏与主布局
+      document.getElementById('app').innerHTML = page();
+      window.scrollTo(0, 0);
+      setTimeout(() => document.getElementById('auth-username')?.focus(), 40);
+      syncFavicon();
+      return;
+    }
     document.getElementById('app').innerHTML = `<div class="app-shell">${fullscreen ? '' : CS.views.sidebar()}<main id="main" class="main-shell ${fullscreen ? 'main-fullscreen' : ''}" tabindex="-1"><header class="topbar ${fullscreen ? 'topbar-fullscreen' : 'topbar-menu'}"${fullscreen ? ' style="height:auto;align-items:flex-start"' : ''}>${fullscreen ? `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:12px;"><button type="button" class="text-button" data-nav="home">${i('arrowleft','',14)}<span>返回工作空间</span></button></div><div class="topbar-status"></div>` : `<div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div>`}</header><div class="main-cols">${page()}${typeof CS.views.terminalDrawer === 'function' ? CS.views.terminalDrawer() : ''}</div></main></div>`;
     const sidebar = document.querySelector('.sidebar-scroll'); if (sidebar) sidebar.scrollTop = sidebarScroll;
     const conversation = document.querySelector('.conversation'); if (conversation) conversation.scrollTop = conversationScroll;
@@ -725,10 +744,13 @@
     CS.toast('已复制到剪贴板。');
   };
   const citation = p => `${p.authors} (${p.year}). ${p.title}. ${p.journal}. https://doi.org/${p.doi}`;
-  // 多用户模式: 登录浮层的统一入口; 未登录时业务请求一律 401。
-  CS.showAuthModal = () => {
+  // 多用户模式: 未登录时的统一入口, 跳转完整登录/注册页面 rather than 浮层。
+  CS.showAuthGate = () => {
     const me = CS.state.me;
-    if (me && me.mode === 'multi' && !(me.user && me.user.name) && !CS.ui.modal) CS.showModal('auth');
+    if (me && me.mode === 'multi' && !(me.user && me.user.name)) {
+      if (CS.ui.modal) CS.closeModal();
+      if (CS.ui.route !== 'auth') CS.navigate('auth');
+    }
   };
   CS.handleAuthLoss = () => {
     const me = CS.state.me;
@@ -736,7 +758,7 @@
       CS.state.me = { mode: 'multi', user: null };
       CS.toast('登录已过期，请重新登录。', 'error');
     }
-    CS.showAuthModal();
+    CS.showAuthGate();
   };
   CS.showModal = (type, payload = {}) => {
     modalReturnFocus = document.activeElement;
@@ -752,8 +774,6 @@
     document.getElementById('app').inert = false; document.getElementById('app').removeAttribute('aria-hidden');
     document.body.style.overflow = '';
     if (modalReturnFocus?.isConnected) modalReturnFocus.focus({ preventScroll: true });
-    // 多用户模式未登录时登录浮层不可永久关闭: 关闭即重开
-    setTimeout(() => { try { CS.showAuthModal(); } catch {} }, 0);
   };
   CS.renderModal = () => {
     const modal = CS.ui.modal; if (!modal) return;
@@ -813,12 +833,6 @@
       const p = CS.data.papers.find(p => p.id === modal.id);
       body = `<p class="small muted mb-20">${e(p.title)}</p><form id="note-form" data-form="note"><textarea id="paper-note-text" class="note-editor" maxlength="10000" placeholder="记录你的阅读思考、证据局限与待验证问题…">${e(CS.state.notes[modal.id] || '')}</textarea></form><p class="tiny faint mt-12">笔记仅在本机保存，不自动发送到模型。</p>`;
       footer = `<button class="btn primary" form="note-form" type="submit">${i('check','',15)} 保存笔记</button>`;
-    } else if (modal.type === 'auth') {
-      // 登录/注册浮层: 多用户模式未登录时强制展示, 不提供关闭按钮
-      const tab = CS.ui.authTab === 'register' ? 'register' : 'login';
-      title = tab === 'register' ? '注册 SigmaFlow 账号' : '登录 SigmaFlow';
-      body = `<div class="auth-tabs" role="tablist"><button type="button" class="auth-tab${tab === 'login' ? ' active' : ''}" data-action="auth-tab" data-tab="login" role="tab" aria-selected="${tab === 'login'}">登录</button><button type="button" class="auth-tab${tab === 'register' ? ' active' : ''}" data-action="auth-tab" data-tab="register" role="tab" aria-selected="${tab === 'register'}">注册</button></div><form id="auth-form" data-form="auth" autocomplete="on"><div class="field"><label for="auth-username">用户名</label><input id="auth-username" name="username" maxlength="32" required autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="字母、数字、- 或 _"></div><div class="field"><label for="auth-password">密码</label><input id="auth-password" name="password" type="password" minlength="6" maxlength="128" required autocomplete="${tab === 'register' ? 'new-password' : 'current-password'}" placeholder="至少 6 位"></div>${tab === 'register' ? '<div class="field"><label for="auth-confirm">确认密码</label><input id="auth-confirm" name="confirm" type="password" minlength="6" maxlength="128" required autocomplete="new-password" placeholder="再次输入密码"></div>' : ''}<p class="tiny muted">本服务运行在多用户模式下，注册后将按账号隔离会话与配置数据。</p></form>`;
-      footer = `<button class="btn primary" type="submit" form="auth-form">${i(tab === 'register' ? 'plus' : 'arrowright', '', 15)} ${tab === 'register' ? '创建并进入' : '登录'}</button>`;
     } else if (modal.type === 'confirm') {
       title = modal.title;
       body = `<p class="confirm-text">${e(modal.message)}</p>`;
@@ -828,7 +842,6 @@
       title = '合成细胞详情';
       body = `<div class="row mb-20">${H.tile('cells')}<div><h3>${e(p.id)}</h3><span class="small muted">${e(g.name)} · 合成数据点</span></div></div><div class="info-pairs"><span>分组</span><span>${e(g.name)}</span><span>显示坐标 X</span><span>${p.x.toFixed(2)}</span><span>显示坐标 Y</span><span>${p.y.toFixed(2)}</span><span>数据来源</span><span>synthetic-ui-fixture</span></div><div class="mt-20">${H.notice('坐标是用于界面展示的二维随机点，不是实际降维计算结果。')}</div>`;
     }
-    const authHead = modal.type === 'auth' ? '' : H.iconBtn('close-modal','x','关闭对话框');
     document.getElementById('modal-root').innerHTML = `<div class="modal-backdrop"><section class="modal ${wide ? 'wide' : ''}" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><h2 id="modal-title">${e(title)}</h2>${authHead}</header><div class="modal-body">${body}</div>${footer ? `<footer class="modal-footer">${footer}</footer>` : ''}</section></div>`;
   };
 
@@ -925,7 +938,7 @@
   const actions = {
     'toggle-sidebar': () => { CS.ui.mobileSidebar = !CS.ui.mobileSidebar; CS.render(); },
     'toggle-user-menu': () => { CS.ui.userMenu = !CS.ui.userMenu; CS.render(); },
-    'auth-tab': (id, target) => { CS.ui.authTab = target.dataset.tab === 'register' ? 'register' : 'login'; CS.renderModal(); setTimeout(() => document.getElementById('auth-username')?.focus(), 30); },
+    'auth-tab': (id, target) => { CS.ui.authTab = target.dataset.tab === 'register' ? 'register' : 'login'; CS.render(); setTimeout(() => document.getElementById('auth-username')?.focus(), 30); },
     'toggle-model-menu': () => { CS.ui.modelMenu = !CS.ui.modelMenu; CS.render(); },
     'toggle-context-menu': () => { CS.ui.contextMenu = !CS.ui.contextMenu; CS.ui.modelMenu = false; CS.render(); },
     'pick-model': async id => {
@@ -1528,7 +1541,8 @@
           CS.reset();
           CS.state.settings.endpoint = keepEndpoint;
           CS.state.me=out;
-          CS.closeModal();
+          CS.ui.composer=''; CS.ui.attachments=[]; CS.save();
+          CS.navigate('home');
           CS.toast(welcome ? `欢迎，${out.user.name}。` : `欢迎回来，${out.user.name}。`);
           CS.agent.loadModels();
           CS.agent.loadProjects().then(() => CS.agent.loadConversations());
@@ -1626,8 +1640,8 @@
     else if(target.id==='workflow-organism') CS.ui.organism=target.value;
   });
   document.addEventListener('keydown',event=>{
-    // Ctrl+` 全局开关终端面板, 与 VSCode 惯例一致
-    if(event.ctrlKey && event.code==='Backquote'){event.preventDefault();CS.ui.terminal.open=!CS.ui.terminal.open;CS.render();if(CS.ui.terminal.open)setTimeout(()=>CS.agent.pty?.focus(),120);else setTimeout(()=>document.querySelector('.composer-input')?.focus(),80);return;}
+    // Ctrl+` 全局开关终端面板, 与 VSCode 惯例一致; 未登录时无终端可用
+    if(event.ctrlKey && event.code==='Backquote'){if(CS.state.me?.mode==='multi'&&!(CS.state.me.user&&(CS.state.me.user.name)))return;event.preventDefault();CS.ui.terminal.open=!CS.ui.terminal.open;CS.render();if(CS.ui.terminal.open)setTimeout(()=>CS.agent.pty?.focus(),120);else setTimeout(()=>document.querySelector('.composer-input')?.focus(),80);return;}
     if(event.key==='Escape'){if(CS.ui.modal)CS.closeModal();else if(CS.ui.userMenu){CS.ui.userMenu=false;CS.render();}else if(CS.ui.modelMenu){CS.ui.modelMenu=false;CS.render();}else if(CS.ui.contextMenu){CS.ui.contextMenu=false;CS.render();}else if(CS.ui.mobileSidebar){CS.ui.mobileSidebar=false;CS.render();}return;}
     if(event.altKey && event.key.toLowerCase()==='n'){event.preventDefault();CS.state.currentRunId=null;CS.ui.composer='';CS.ui.attachments=[];CS.save();CS.navigate('home');return;}
     if(event.target.id==='composer-text' && event.key==='Enter' && !event.shiftKey && !event.isComposing){event.preventDefault();event.target.closest('form').requestSubmit();}
@@ -1768,7 +1782,7 @@
     try { CS.state.me = await CS.api.request('/auth/me', { method: 'GET' }); } catch { CS.state.me = null; }
     CS.emit('render');
     const me = CS.state.me;
-    if (me && me.mode === 'multi' && !(me.user && me.user.name)) { CS.showAuthModal(); return; }
+    if (me && me.mode === 'multi' && !(me.user && me.user.name)) { CS.ui.route = 'auth'; CS.showAuthGate(); return; }
     CS.agent.loadModels();
     CS.agent.loadProjects().then(() => CS.agent.loadConversations());
   });

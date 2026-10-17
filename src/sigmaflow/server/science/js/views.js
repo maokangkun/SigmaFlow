@@ -97,6 +97,38 @@
     if (a === b) return false;
     try { return JSON.stringify(JSON.parse(a)) !== JSON.stringify(JSON.parse(b)); } catch { return a !== b; }
   };
+  // 登录/注册页: 多用户模式未登录时展示完整页面(非浮层)
+  V.auth = () => {
+    const tab = CS.ui.authTab === 'register' ? 'register' : 'login';
+    return `<div class="auth-page">
+      <div class="auth-brand">
+        <div class="auth-logo">${i('dna')}</div>
+        <h1>SigmaFlow <em>Science</em></h1>
+        <p class="auth-lead">科研 Agent 工作台：项目管理、交互式终端、可追溯的分析过程。</p>
+        <ul class="auth-points">
+          <li>${i('checkcircle','',16)}<span>项目与会话数据按账号隔离保存</span></li>
+          <li>${i('terminal','',16)}<span>内置终端直接操作项目目录，支持 vim 等交互程序</span></li>
+          <li>${i('key','',16)}<span>模型与服务商配置存于服务端，密钥不出服务器</span></li>
+        </ul>
+      </div>
+      <div class="auth-main"><div class="auth-card">
+        <div class="auth-tabs" role="tablist">
+          <button type="button" class="auth-tab${tab === 'login' ? ' active' : ''}" data-action="auth-tab" data-tab="login" role="tab" aria-selected="${tab === 'login'}">登录</button>
+          <button type="button" class="auth-tab${tab === 'register' ? ' active' : ''}" data-action="auth-tab" data-tab="register" role="tab" aria-selected="${tab === 'register'}">注册</button>
+        </div>
+        <form id="auth-form" data-form="auth" autocomplete="on">
+          <div class="field"><label for="auth-username">用户名</label>
+            <input id="auth-username" name="username" maxlength="32" required autofocus autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="字母、数字、- 或 _"></div>
+          <div class="field"><label for="auth-password">密码</label>
+            <input id="auth-password" name="password" type="password" minlength="6" maxlength="128" required autocomplete="${tab === 'register' ? 'new-password' : 'current-password'}" placeholder="至少 6 位"></div>
+          ${tab === 'register' ? `<div class="field"><label for="auth-confirm">确认密码</label><input id="auth-confirm" name="confirm" type="password" minlength="6" maxlength="128" required autocomplete="new-password" placeholder="再次输入密码"></div>` : ''}
+        </form>
+        <button class="btn primary auth-submit" type="submit" form="auth-form">${i(tab === 'register' ? 'plus' : 'arrowright', '', 16)} ${tab === 'register' ? '创建账号并进入' : '登录工作空间'}</button>
+        <p class="tiny muted auth-note">${tab === 'register' ? '注册后按账号隔离保存会话与配置数据。' : '本服务运行在多用户模式下，如无账号请先切换到注册。'}</p>
+      </div></div>
+    </div>`;
+  };
+
   V.sidebar = () => {
     const active = CS.ui.route;
     const nav = [ ['home','message','新对话'], ['literature','book','文献'], ['data','database','数据集'], ['workflows','workflow','工作流'], ['results','chart','分析结果'], ['tools','grid','生物工具'], ['tasks','queue','任务队列'] ];
