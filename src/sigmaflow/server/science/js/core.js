@@ -226,6 +226,8 @@ CS.markdown = text => {
   CS.persistFoldSection = () => { try { localStorage.setItem(key + '.foldProj', CS.ui.projectsCollapsed ? '1' : '0'); } catch {} };
   CS.persistFoldLoose = () => { try { localStorage.setItem(key + '.foldLoose', CS.ui.unassignedCollapsed ? '1' : '0'); } catch {} };
   CS.ui.fsCollapsed = localStorage.getItem(key + '.foldFs') === '1';
+  CS.ui.terminal.width = Number(localStorage.getItem(key + '.termW')) || 480;
+  CS.persistTermWidth = () => { try { localStorage.setItem(key + '.termW', String(CS.ui.terminal.width)); } catch {} };
   CS.persistFoldFs = () => { try { localStorage.setItem(key + '.foldFs', CS.ui.fsCollapsed ? '1' : '0'); } catch {} };
   CS.files = new Map(); // File objects only live in memory; raw file bytes never enter localStorage.
   CS.save = () => {
