@@ -11,10 +11,16 @@ CS.audio = (function () {
     return audio;
   }
   // 回复完成时提示; 失败静默(拦截/无手势环境不出声即可, 不打扰)
-  function playDone() {
+  // force=true 时绕过开关(试听按钮: 点了就是要听, 只受音量控制)
+  function playDone(force) {
     try {
+      // 通用设置: notifySound=false 时不再出声; soundVolume(0~1) 控制音量
+      const s = (window.CS.state && window.CS.state.settings) || {};
+      if (s.notifySound === false && !force) return;
       const a = ensure();
       if (!a) return;
+      const vol = Number(s.soundVolume);
+      a.volume = Number.isFinite(vol) ? Math.min(1, Math.max(0, vol)) : 1;
       a.currentTime = 0;
       const p = a.play();
       if (p && p.catch) p.catch(function () { /* 自动播放被拦时静默 */ });

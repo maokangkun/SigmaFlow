@@ -1561,6 +1561,7 @@
     'compute-sequence': () => { CS.ui.sequence=document.getElementById('sequence-input').value; try { CS.ui.sequenceResult=CS.sequenceStats(CS.ui.sequence); CS.render(); CS.toast('已完成本地序列统计。'); } catch(error) { CS.ui.sequenceResult=null; CS.render(); CS.toast(error.message,'error'); } },
     'export-sequence': () => CS.download('sequence_statistics.json',JSON.stringify({source:'local-browser-calculation',gcDenominator:'A+C+G+T',results:CS.ui.sequenceResult},null,2),'application/json'),
     'setting-toggle': id => { CS.state.settings[id]=!CS.state.settings[id]; emitRender(); },
+    'sound-preview': () => CS.audio.playDone(true),
     'export-workspace': () => CS.download('sigmaflow_science_workspace.json',JSON.stringify({...CS.state,exportedAt:new Date().toISOString(),containsOriginalFiles:false},null,2),'application/json'),
     'reset-workspace': () => CS.showModal('confirm',{title:'清空并恢复示例？',message:'将清除本地的项目、对话、笔记、任务和文件记录，恢复初始示例。此操作不可撤销，不影响电脑上的原文件。',confirmAction:'confirm-reset',confirmLabel:'清空并恢复',danger:true}),
     'confirm-reset': () => { CS.state.runs.forEach(r=>{ if(['running','paused','connecting'].includes(r.status)) CS.agent.control(r,'cancel'); }); CS.reset(); CS.closeModal(); CS.navigate('home'); CS.toast('已恢复初始演示工作空间。'); },
@@ -1631,8 +1632,15 @@
       CS.ui.askDraft = CS.ui.askDraft || {};
       CS.ui.askDraft[el.dataset.key || ''] = el.value;
     }
+    // 通用设置的音量滑杆: 只更新状态与数字标签不重渲染, 松手后 change 再落盘
+    if (el?.classList?.contains('sound-volume-input')) {
+      CS.state.settings.soundVolume = Math.min(1, Math.max(0, Number(el.value) / 100));
+      const label = el.parentElement?.querySelector('.sound-volume-label');
+      if (label) label.textContent = `${el.value}%`;
+    }
   });
   document.addEventListener('change', event => {
+    if (event.target?.classList?.contains?.('sound-volume-input')) CS.save();
     if (event.target?.id === 'fs-upload-input') {
       const picked = [...(event.target.files || [])];
       event.target.value = '';

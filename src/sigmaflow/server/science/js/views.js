@@ -376,7 +376,7 @@
     const s = CS.state.settings;
     const toggle = (id, label, sub) => `<div class="setting-row"><div><h3>${e(label)}</h3><p>${e(sub)}</p></div><button type="button" role="switch" aria-checked="${!!s[id]}" aria-label="${e(label)}" class="switch" data-action="setting-toggle" data-id="${id}"></button></div>`;
     const tab = CS.ui.settingsTab;
-    const nav = [['appearance','sun','外观与交互'],['usage','chart','Token 用量'],['privacy','shield','数据与隐私'],['agent','bolt','模型配置'],['tools','grid','Agent 工具'],['skills','book','Agent 技能'],['mcp','network','MCP 服务'],['keys','lock','第三方 API Key'],['sysprompt','code','系统提示词']];
+    const nav = [['general','settings','通用'],['appearance','sun','外观与交互'],['usage','chart','Token 用量'],['privacy','shield','数据与隐私'],['agent','bolt','模型配置'],['tools','grid','Agent 工具'],['skills','book','Agent 技能'],['mcp','network','MCP 服务'],['keys','lock','第三方 API Key'],['sysprompt','code','系统提示词']];
     const edit = CS.ui.edit;
     const editProvider = edit?.type === 'provider' ? (CS.ui.providers.find(x => x.id === edit.id) || null) : null;
     const editModel = edit?.type === 'model' ? (CS.ui.models.find(x => x.id === edit.id) || null) : null;
@@ -489,6 +489,12 @@
         const builtinTokens = sp.builtinTokens || CS.ui.systemPrompt?.builtinTokens;
         const chars = (sp.prompt || '').length;
         return `<div class="panel settings-section"><div class="row-between"><h2>系统提示词</h2>${pill('服务端存储')}</div><p class="small muted mb-20">自定义提示词会替换 Agent 内置默认(会改变内置任务/团队等指令, 请谨慎); 技能清单自动附加在末尾, 工具调用说明由 Agent 自动追加。子代理仍使用内置提示词。</p><div class="tool-setting-row"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">开关</span><div class="row gap-6"><button type="button" role="switch" aria-checked="${on}" class="switch" data-action="sysprompt-toggle" aria-label="启用自定义系统提示词"></button><span class="small muted">${on ? '已启用自定义' : '使用内置默认'}</span></div></div><div class="tool-field tool-field-top"><span class="tool-field-label">内容</span><textarea id="sysprompt-textarea" class="sysprompt-textarea mono" rows="12" maxlength="32000" spellcheck="false" placeholder="留空并用内置默认; 触发后这里的内容将作为 Agent 的系统提示词…">${e(sp.prompt || '')}</textarea></div><span class="tiny muted">自定义 ${chars} 字符${builtinTokens ? ` · 内置默认约 ${builtinTokens} tokens` : ''} · 保存后上下文圆环自动重新测量</span></div></div>${builtin ? `<details class="sysprompt-builtin"><summary class="small muted">查看内置默认系统提示词</summary><pre class="sysprompt-builtin-pre mono">${e(builtin)}</pre></details>` : ''}<div class="settings-actions row wrap">${btn('save-sysprompt','保存','check','primary')}${btn('reset-sysprompt','恢复默认','refresh','flat')}</div></div>`;
+      })(),
+      general: (() => {
+        // 通用卡片: 与具体功能无关的整体偏好; 目前承载消息提示音开关与音量
+        const raw = Number(CS.state.settings.soundVolume);
+        const pct = Math.round((Number.isFinite(raw) ? raw : 1) * 100);
+        return `<div class="panel settings-section"><h2>通用</h2><p class="small muted mb-20">影响整体体验的通用偏好, 只保存在本机浏览器。</p>${toggle('notifySound','消息回复提示音','模型回复完成或被停止时播放一声短提示音。')}<div class="setting-row"><div><h3>提示音音量</h3><p>拖动后点「试听」确认效果；拖到 0 等效静音。</p></div><div class="row gap-6 sound-volume-row"><input type="range" class="sound-volume-input" min="0" max="100" step="5" value="${pct}" aria-label="提示音音量"><span class="small muted mono sound-volume-label">${pct}%</span>${btn('sound-preview','试听','play','small-btn flat')}</div></div></div>`;
       })(),
       appearance: `<div class="panel settings-section"><h2>外观与交互</h2>${toggle('contrast','增强文字与边界对比','保持浅灰色主题，提高说明文字与控件边界的可读性。')}${toggle('reducedMotion','减少动态效果','关闭过渡与旋转动画，不影响任务状态更新。')}${toggle('inspector','显示任务详情侧栏','在宽屏的 Agent 对话中显示输入上下文与执行边界。')}</div>`,
       privacy: `<div class="panel settings-section"><h2>数据与隐私</h2>${toggle('persist','在本机保存工作空间','保存项目、文件名、对话与任务记录；不保存原始文件。共享电脑建议关闭。关闭后删除已有本地保存，当前会话仍保留。')}<div class="setting-row"><div><h3>导出工作空间</h3><p>导出元信息与任务记录。包含对话内容，分享前请检查隐私。</p></div>${btn('export-workspace','导出 JSON','download','flat')}</div><div class="setting-row"><div><h3>清空并恢复示例</h3><p>移除本机保存的项目、导入记录与对话，恢复初始演示。</p></div>${btn('reset-workspace','重置','trash','flat danger')}</div></div>`,

@@ -413,3 +413,6 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .ask-answered-body .ask-option{cursor:default;pointer-events:none}
 .ask-your-answer{font-size:11px;color:var(--muted);line-height:1.7;padding:8px 11px;background:var(--bg);border-radius:9px;border:1px solid var(--line-soft)}
 .ask-your-answer span{color:var(--ink)}
+/* 通用设置: 提示音音量滑杆 */
+.sound-volume-row input[type="range"]{width:150px;accent-color:var(--accent);background:transparent;border:0;padding:0}
+.sound-volume-label{min-width:40px;text-align:right;font-variant-numeric:tabular-nums}
