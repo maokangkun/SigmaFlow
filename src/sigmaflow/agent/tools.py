@@ -749,6 +749,96 @@ class AskManager:
 ASK = AskManager()
 
 
+def _ask_loads_lenient(s: str):
+    """Parse a possibly JSON-encoded string; repair bracket truncation or salvage texts."""
+    if not isinstance(s, str) or s.strip()[:1] not in ("{", "["):
+        return None
+    try:
+        return json.loads(s)
+    except Exception:
+        pass
+    try:
+        # 截断容错: 按括号配平补齐后再试一次
+        stack, in_str, esc = [], False, False
+        for ch in s:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = not in_str
+            elif not in_str:
+                if ch in "[{":
+                    stack.append(ch)
+                elif ch in "]}":
+                    if stack and stack[-1] == {"}": "{", "]": "["}.get(ch):
+                        stack.pop()
+        if not in_str and stack:
+            return json.loads(s + "".join("]" if c == "[" else "}" for c in reversed(stack)))
+    except Exception:
+        pass
+    # 兜底: 正则抠出所有 question 文本, 至少不把整坨 JSON 当问题展示
+    salvaged = [q.strip() for q in re.findall(r'"question"\s*:\s*"((?:[^"\\]|\\.)*)"', s) if q.strip()]
+    return [{"question": q} for q in salvaged] if salvaged else None
+
+
+def _ask_flatten(item, out, depth=0):
+    """Flatten one model-supplied question entry into out; tolerates double-encoded
+    JSON strings, wrapper dicts without question text, and question dicts nested
+    inside the options array (deepseek occasionally emits all of these)."""
+    if depth > 4 or len(out) >= 20:
+        return
+    if isinstance(item, str):
+        parsed = _ask_loads_lenient(item)
+        if parsed is not None:
+            item = parsed
+        else:
+            s = item.strip()
+            if s:
+                out.append({"id": f"q{len(out) + 1}", "question": s})
+            return
+    if isinstance(item, list):
+        for sub in item:
+            _ask_flatten(sub, out, depth + 1)
+        return
+    if not isinstance(item, dict):
+        return
+    question = str(item.get("question") or "").strip()
+    opts_raw = item.get("options") if isinstance(item.get("options"), list) else []
+    if not question:
+        # 无正文的包装层: 嵌套项都藏在 options/questions 里
+        for key in ("questions", "options"):
+            if isinstance(item.get(key), list):
+                for sub in item[key]:
+                    _ask_flatten(sub, out, depth + 1)
+        return
+    nested = [o for o in opts_raw if isinstance(o, dict) and str(o.get("question") or "").strip()]
+    if opts_raw and len(nested) == len(opts_raw):
+        # 所有“选项”其实都是完整问题: 本体是包装层, 不重复出题
+        for sub in nested:
+            _ask_flatten(sub, out, depth + 1)
+        return
+    entry = {"id": str(item.get("id") or f"q{len(out) + 1}")[:64], "question": question}
+    header = str(item.get("header") or "").strip()
+    if header:
+        entry["header"] = header[:80]
+    options = []
+    for opt in opts_raw:
+        if isinstance(opt, dict) and str(opt.get("question") or "").strip():
+            _ask_flatten(opt, out, depth + 1)
+            continue
+        label = str((opt or {}).get("label") if isinstance(opt, dict) else opt or "").strip()
+        if not label:
+            continue
+        desc = str(opt.get("description") or "").strip() if isinstance(opt, dict) else ""
+        options.append({"label": label, **({"description": desc} if desc else {})})
+    if options:
+        entry["options"] = options[:12]
+        if item.get("multi_select") is True or item.get("multiSelect") is True:
+            entry["multi_select"] = True
+    out.append(entry)
+
+
 def run_ask(questions=None, _notify=None):
     """Handle the `ask` tool; normalize model input and wait for the user's reply."""
     if _notify is None:
@@ -756,33 +846,15 @@ def run_ask(questions=None, _notify=None):
             "Error: ask is unavailable in this session (no live UI channel). "
             "Finalize with what you already have."
         )
-    raw = questions if isinstance(questions, list) else [{"question": str(questions or "")}]
-    out = []
-    for idx, q in enumerate(raw):
-        if isinstance(q, str):
-            q = {"question": q}
-        if not isinstance(q, dict):
-            continue
-        question = str(q.get("question") or "").strip()
-        if not question:
-            continue
-        item = {"id": str(q.get("id") or f"q{idx + 1}")[:64], "question": question}
-        header = str(q.get("header") or "").strip()
-        if header:
-            item["header"] = header[:80]
-        options = []
-        if isinstance(q.get("options"), list):
-            for opt in q["options"]:
-                label = str((opt or {}).get("label") if isinstance(opt, dict) else opt or "").strip()
-                if not label:
-                    continue
-                desc = str((opt.get("description") or "").strip()) if isinstance(opt, dict) else ""
-                options.append({"label": label, **({"description": desc} if desc else {})})
-        if options:
-            item["options"] = options[:12]
-        if q.get("multi_select") is True and options:
-            item["multi_select"] = True
-        out.append(item)
+    out: list = []
+    if isinstance(questions, str):
+        parsed = _ask_loads_lenient(questions)
+        questions = parsed if parsed is not None else [{"question": questions.strip()}]
+    if isinstance(questions, dict):
+        questions = [questions]
+    if isinstance(questions, list):
+        for item in questions:
+            _ask_flatten(item, out)
     if not out:
         return "Error: ask received no valid question; do not call it with empty questions."
     return ASK.ask(out, notify=_notify)
