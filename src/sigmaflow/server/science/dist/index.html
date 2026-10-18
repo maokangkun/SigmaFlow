@@ -4399,7 +4399,7 @@ CS.audio = (function () {
                   return qs.map((q, qi) => {
                     const ans = ansById[String(q.id || '')] || ansById[`q${qi + 1}`] || {};
                     const selectedLabels = (ans.selected || []);
-                    const opts = (q.options || []).map(o => `<span class="ask-option${selectedLabels.includes(o.label) ? ' selected' : ''}">${o.description ? ` title="${e(o.description)}"` : ''}<span class="ask-option-label">${e(o.label)}</span>${o.description ? `<span class="ask-option-desc">${e(o.description)}</span>` : ''}</span>`).join('');
+                    const opts = (q.options || []).map(o => `<span class="ask-option${selectedLabels.includes(o.label) ? ' selected' : ''}"${o.description ? ` title="${e(o.description)}"` : ''}><span class="ask-option-label">${e(o.label)}</span>${o.description ? `<span class="ask-option-desc">${e(o.description)}</span>` : ''}</span>`).join('');
                     const custom = String(ans.custom || '').trim();
                     const yourText = selectedLabels.length ? `你的选择：${e(selectedLabels.join('、'))}` : '';
                     return `<div class="ask-q"><div class="ask-q-head">${q.header ? `<span class="ask-q-chip">${e(q.header)}</span>` : ''}<span class="ask-q-text">${e(q.question)}</span></div>${opts ? `<div class="ask-options">${opts}</div>` : ''}${yourText || custom ? `<div class="ask-your-answer">${yourText}${yourText && custom ? ' · ' : ''}${custom ? `补充：<span>${e(custom)}</span>` : ''}</div>` : ''}</div>`;
