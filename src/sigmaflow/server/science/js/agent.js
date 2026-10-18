@@ -65,7 +65,7 @@
     // 会话所属项目随请求下发: 服务端把项目工作目录绑定为本次对话的工具执行目录;
     // 优先取当前会话自身绑定的 projectId(全局 state 可能停留在无项目状态)
     const run = CS.state.runs.find(x => x.id === CS.state.currentRunId);
-    const payload = { modelId: CS.state.settings.modelId, projectId: run?.projectId ?? CS.state.projectId, runId: CS.state.currentRunId, messages };
+    const payload = { modelId: CS.state.settings.modelId, projectId: run?.projectId ?? CS.state.projectId, runId: CS.state.currentRunId, messages, planMode: !!CS.ui.planMode };
     if (await CS.api.ws.connect()) {
       const data = await CS.api.ws.chat(payload, onDelta, onThink, onTool, onRetry);
       return { content: data.content, tokens: data.tokens || 0, promptTokens: data.promptTokens || 0 };

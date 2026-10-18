@@ -388,6 +388,16 @@ TOOLS = CHILD_TOOLS + [
         }
     },
     {
+        "name": "kill_background",
+        "description": "Kill a running background task by task_id. Omit task_id to kill all running tasks. Only running tasks can be killed.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"}
+            }
+        }
+    },
+    {
         "name": "ask",
         "description": (
             "Ask the user a concise question when you need confirmation, a choice, "

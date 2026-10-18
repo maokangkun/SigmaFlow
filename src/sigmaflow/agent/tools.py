@@ -477,7 +477,7 @@ class BackgroundManager:
     def run(self, command: str) -> str:
         """Start a background thread, return task_id immediately."""
         task_id = str(uuid.uuid4())[:8]
-        self.tasks[task_id] = {"status": "running", "result": None, "command": command}
+        self.tasks[task_id] = {"status": "running", "result": None, "command": command, "proc": None}
         thread = threading.Thread(
             target=self._execute, args=(task_id, command, get_session_workdir()), daemon=True
         )
@@ -488,29 +488,72 @@ class BackgroundManager:
         """Thread target: run subprocess, capture output, push to queue.
 
         workdir is captured on the caller thread (thread-local does not cross
-        threads); background tasks run where the session was bound."""
+        threads); background tasks run where the session was bound.
+
+        Popen 而非 subprocess.run: 保留进程句柄供 kill_background 中止任务。
+        """
+        status, output = "completed", ""
+        proc = None
         try:
-            r = subprocess.run(
+            proc = subprocess.Popen(
                 command, shell=True, cwd=workdir or WORKDIR,
-                capture_output=True, text=True, timeout=300
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
             )
-            output = (r.stdout + r.stderr).strip()[:50000]
-            status = "completed"
+            self.tasks[task_id]["proc"] = proc
+            out, err = proc.communicate(timeout=300)
+            output = (out + err).strip()[:50000]
+            if proc.returncode != 0:
+                status = "error"
+            with self._lock:
+                if self.tasks[task_id].get("status") == "killed":
+                    status = "killed"
         except subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+                proc.communicate()
+            except Exception:
+                pass
             output = "Error: Timeout (300s)"
             status = "timeout"
         except Exception as e:
             output = f"Error: {e}"
             status = "error"
-        self.tasks[task_id]["status"] = status
-        self.tasks[task_id]["result"] = output or "(no output)"
+        # kill 竞态保护: 若执行期间被 kill_background 标记, 不覆盖 killed 状态;
+        # killed 的完成通知已由 kill() 入队, 这里不再重复
+        killed = self.tasks[task_id].get("status") == "killed"
+        if not killed:
+            self.tasks[task_id]["status"] = status
+            self.tasks[task_id]["result"] = output or "(no output)"
+            with self._lock:
+                self._notification_queue.append({
+                    "task_id": task_id,
+                    "status": status,
+                    "command": command[:80],
+                    "result": (output or "(no output)")[:500],
+                })
+
+    def kill(self, task_id: str = None) -> str:
+        """Kill a running background task (or all running when id omitted)."""
         with self._lock:
-            self._notification_queue.append({
-                "task_id": task_id,
-                "status": status,
-                "command": command[:80],
-                "result": (output or "(no output)")[:500],
-            })
+            targets = [tid for tid, t in self.tasks.items() if t["status"] == "running"] if task_id is None \
+                else ([task_id] if self.tasks.get(task_id, {}).get("status") == "running" else [])
+            if task_id and not targets:
+                return f"Error: no running background task {task_id}"
+            for tid in targets:
+                self.tasks[tid]["status"] = "killed"
+                self.tasks[tid]["result"] = "(killed by request)"
+                proc = self.tasks[tid].get("proc")
+                if proc is not None and proc.poll() is None:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                self._notification_queue.append({
+                    "task_id": tid, "status": "killed",
+                    "command": self.tasks[tid]["command"][:80],
+                    "result": "(killed by request)",
+                })
+        return f"Killed {len(targets)} background task(s): {', '.join(targets)}"
 
     def check(self, task_id: str = None) -> str:
         """Check status of one task or list all."""
@@ -923,6 +966,7 @@ TOOL_HANDLERS = {
     "task_get":    lambda **kw: TM.get(kw["task_id"]),
     "background_run":   lambda **kw: BG.run(kw["command"]),
     "check_background": lambda **kw: BG.check(kw.get("task_id")),
+    "kill_background":  lambda **kw: BG.kill(kw.get("task_id")),
     "send_message":    lambda **kw: BUS.send("lead", kw["to"], kw["content"], kw.get("msg_type", "message")),
     "read_inbox":      lambda **kw: json.dumps(BUS.read_inbox("lead"), indent=2),
     "broadcast":       lambda **kw: BUS.broadcast("lead", kw["content"], TEAM.member_names()),

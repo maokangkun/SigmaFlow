@@ -798,6 +798,30 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .deliverable-chip:hover{border-color:var(--accent);color:var(--accent-dark)}
 .deliverable-op{font-size:10px;color:var(--accent-dark);font-weight:600}
 
+/* 消息反馈: 弹窗类别 chips 与已评状态高亮(dsh message-feedback 思路) */
+.feedback-cats{display:flex;flex-wrap:wrap;gap:8px}
+.feedback-cat{padding:7px 14px;border:1px solid var(--line-soft);border-radius:999px;background:var(--surface);color:var(--ink);font-size:12px;cursor:pointer;transition:border-color .15s,background .15s}
+.feedback-cat:hover{border-color:var(--accent)}
+.feedback-cat.picked{border-color:var(--accent);background:var(--accent-bg);color:var(--accent-dark);font-weight:600}
+.feedback-note{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line-soft);border-radius:10px;background:var(--bg);color:var(--ink);font-size:13px;resize:vertical}
+.icon-btn.rated-up{color:#1a8f4e}
+.icon-btn.rated-down{color:#cf222e}
+
+/* @file 引用补全菜单: 独立浮层不参与 render 流, 避免输入丢焦 */
+.fileref-menu{position:fixed;z-index:60;background:var(--surface);border:1px solid var(--line-soft);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.18);overflow:hidden;display:flex;flex-direction:column}
+.fileref-head{padding:7px 12px;font-size:11px;color:var(--faint);background:var(--bg);border-bottom:1px solid var(--line-soft)}
+.fileref-item{display:flex;align-items:center;gap:8px;padding:8px 12px;border:0;background:none;color:var(--ink);font-size:13px;text-align:left;cursor:pointer}
+.fileref-item.active{background:var(--accent-bg);color:var(--accent-dark)}
+.fileref-name{font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* 计划卡(dsh plan-mode 思路): <plan> 渲染成审核卡, 带批准/继续按钮 */
+.plan-card{margin:10px 0;border:1px solid var(--accent);border-radius:12px;background:var(--surface);overflow:hidden}
+.plan-head{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--accent-bg);color:var(--accent-dark);font-weight:600;font-size:13px}
+.plan-tag{margin-left:auto;font-size:11px;font-weight:400;color:var(--faint)}
+.plan-body{padding:12px 16px;font-size:13px}
+.plan-body ol,.plan-body ul{padding-left:20px;margin:6px 0}
+.plan-actions{display:flex;gap:10px;padding:10px 14px;border-top:1px solid var(--line-soft)}
+
 </style>
 </head>
 <body>
@@ -853,6 +877,8 @@ CS.icons = {
   checkcircle: '<circle cx="12" cy="12" r="9"/><path d="m7 12 3 3 7-7"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',
   play: '<path d="m8 4 12 8-12 8V4Z"/>',
+  thumbup: '<path d="M7 10v10.2a.8.8 0 0 1-.8.8H3.8a.8.8 0 0 1-.8-.8V10a.8.8 0 0 1 .8-.8h2.4a.8.8 0 0 1 .8.8Zm2 10.2h9.4a2 2 0 0 0 2-1.7l1.2-7.4a1.5 1.5 0 0 0-1.5-1.75h-4.4l.9-4.2A2 2 0 0 0 14.3 2L9 8.3v11.9Z"/>',
+  thumbdown: '<path d="M7 14V3.8a.8.8 0 0 0-.8-.8H3.8a.8.8 0 0 0-.8.8V14a.8.8 0 0 0 .8.8h2.4a.8.8 0 0 0 .8-.8Zm2-10.2h9.4a2 2 0 0 1 2 1.7l1.2 7.4a1.5 1.5 0 0 1-1.5 1.75h-4.4l.9 4.2A2 2 0 0 1 14.3 22L9 15.7V3.8Z"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
   refresh: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
@@ -1188,7 +1214,7 @@ CS.markdown = text => {
     workflowId: 'singlecell', workflowCategory: 'all', datasetId: 'ds-pbmc', organism: 'Homo sapiens', advanced: false,
     minGenes: 200, maxMito: 20, activeTool: 'sequence', sequence: CS.data.sampleFASTA, sequenceResult: null,
     modal: null, expandedLogs: new Set(), selectedCell: null, note: '', apiHealth: null,
-    userMenu: false, authTab: 'login', modelMenu: false, projectMenu: false, projectSettingsMenu: null, expandedProjects: new Set(), conversations: [], settingsTab: 'general', models: [], providers: [], edit: null, providerModels: null, draftModelName: '', draftProviderId: null, dropdown: null, pendingDelete: null, modelsLoaded: false, thinkingOpen: false, thinkingText: '', toolsOpen: false, blockOpen: {}, askOpen: {}, canJumpLatest: false, contextInfo: null, contextMenu: false, agentTools: null, toolDraft: null, toolGroupsCollapsed: null, agentSkills: null, skillDraft: null, mcpServers: null, mcpDraft: null, systemPrompt: null, syspromptDraft: null, tokens: null, tokensDraft: null, fsCollapsed: false, fs: null, terminal: { open: false, cols: 0, rows: 0 }
+    userMenu: false, authTab: 'login', modelMenu: false, projectMenu: false, projectSettingsMenu: null, expandedProjects: new Set(), conversations: [], settingsTab: 'general', models: [], providers: [], edit: null, providerModels: null, draftModelName: '', draftProviderId: null, dropdown: null, pendingDelete: null, modelsLoaded: false, thinkingOpen: false, thinkingText: '', toolsOpen: false, blockOpen: {}, askOpen: {}, planMode: false, canJumpLatest: false, contextInfo: null, contextMenu: false, agentTools: null, toolDraft: null, toolGroupsCollapsed: null, agentSkills: null, skillDraft: null, mcpServers: null, mcpDraft: null, systemPrompt: null, syspromptDraft: null, tokens: null, tokensDraft: null, fsCollapsed: false, fs: null, terminal: { open: false, cols: 0, rows: 0 }
   };
   // 侧栏项目折叠状态持久化: 记录用户显式展开的项目, 刷新后保持一致。
   try { const fold = JSON.parse(localStorage.getItem(key + '.fold') || 'null'); if (Array.isArray(fold)) CS.ui.expandedProjects = new Set(fold.map(String)); } catch {}
@@ -1344,7 +1370,7 @@ CS.markdown = text => {
     // 会话所属项目随请求下发: 服务端把项目工作目录绑定为本次对话的工具执行目录;
     // 优先取当前会话自身绑定的 projectId(全局 state 可能停留在无项目状态)
     const run = CS.state.runs.find(x => x.id === CS.state.currentRunId);
-    const payload = { modelId: CS.state.settings.modelId, projectId: run?.projectId ?? CS.state.projectId, runId: CS.state.currentRunId, messages };
+    const payload = { modelId: CS.state.settings.modelId, projectId: run?.projectId ?? CS.state.projectId, runId: CS.state.currentRunId, messages, planMode: !!CS.ui.planMode };
     if (await CS.api.ws.connect()) {
       const data = await CS.api.ws.chat(payload, onDelta, onThink, onTool, onRetry);
       return { content: data.content, tokens: data.tokens || 0, promptTokens: data.promptTokens || 0 };
@@ -4411,7 +4437,7 @@ CS.audio = (function () {
   V.composer = (home = false) => `<div class="${home ? 'composer-home' : 'chat-composer'}">${!home ? `<button type="button" class="jump-latest" data-action="jump-latest" title="跳到最新消息"${CS.ui.canJumpLatest ? '' : ' hidden'}>${i('down', '', 14)}</button>` : ''}${home ? `<div class="composer-project"><button type="button" class="model-select-btn project-select-btn" data-action="toggle-project-menu" aria-haspopup="listbox" aria-expanded="${!!CS.ui.projectMenu}">${CS.state.projectId ? `<span class="project-icon" data-action="clear-project" title="取消项目关联">${i('folder','',13)}${i('x','',13)}</span>` : i('folder','',13)}<span>${e(CS.state.projects.find(p => p.id === CS.state.projectId)?.name || '选择项目')}</span>${i('down','',13)}</button>${CS.ui.projectMenu ? `<div class="model-menu dd-down" role="menu">${CS.state.projects.filter(p => !p.archived).map(p => `<button type="button" class="model-menu-item" role="menuitem" data-action="pick-project" data-id="${e(p.id)}"><span>${e(p.name)}</span>${CS.state.projectId === p.id ? i('check','',13) : ''}</button>`).join('')}<div class="menu-divider"></div><button type="button" class="model-menu-item" data-action="new-project">${i('plus','',14)}<span>新建项目</span></button><button type="button" class="model-menu-item" data-action="connect-project">${i('external','',14)}<span>连接远程项目</span></button></div>` : ''}</div>` : ''}<form class="composer" data-form="composer">
     ${CS.ui.attachments.length ? `<div class="attachment-list">${CS.ui.attachments.map(id => { const d = CS.state.datasets.find(x => x.id === id); return d ? `<span class="attachment">${i('file')}<span>${e(d.name)}</span>${iconBtn('remove-attachment','x','移除附件',`data-id="${e(id)}"`)}</span>` : ''; }).join('')}</div>` : ''}
     <textarea id="composer-text" aria-label="研究问题" placeholder="${home ? '描述你的科研问题…' : '继续提问，或调整分析计划…'}" rows="3" maxlength="6000">${e(CS.ui.composer)}</textarea>
-    <div class="composer-toolbar"><div class="composer-tools${CS.ui.terminal?.open ? ' term-open' : ' '}">${btn('add-attachment','','plus','', 'aria-label="添加附件" title="添加附件"')}${btn('add-attachment','文件','paperclip','', 'aria-label="添加文件附件" title="添加文件附件"')}${btn('choose-dataset','数据集','database','', 'aria-label="选择数据集" title="选择数据集"')}${btn('choose-tools','工具','grid','', 'aria-label="选择工具" title="选择工具"')}${btn('choose-skills','技能','book','', 'aria-label="选择技能" title="选择技能"')}</div><div class="composer-submit">${V.ctxRing()}<div class="model-select"><button type="button" class="model-select-btn" data-action="toggle-model-menu" aria-haspopup="listbox" aria-expanded="${!!CS.ui.modelMenu}">${e(CS.state.settings.model || 'openrouter/free')}${i('down','',13)}</button>${CS.ui.modelMenu ? `<div class="model-menu" role="listbox">${(CS.ui.models.length ? CS.ui.models : [{ id: '', model: CS.state.settings.model || 'openrouter/free' }]).map(m => `<button type="button" class="model-menu-item" role="option" aria-selected="${CS.state.settings.modelId === m.id}" data-action="pick-model" data-id="${e(m.id)}"><span>${e(m.model)}</span>${CS.state.settings.modelId === m.id ? i('check','',13) : ''}</button>`).join('')}<div class="menu-divider"></div><button type="button" class="model-menu-item" data-action="configure-model">${i('settings','',14)}<span>配置模型…</span></button></div>` : ''}</div>${(CS.currentRun()?.kind === 'chat' && CS.currentRun()?.messages?.some(m => m.streaming)) ? `<button type="button" class="send-button send-stop" data-action="stop-generation" aria-label="停止生成" title="停止生成">${i('stop', '', 15)}</button>` : `<button type="submit" class="send-button" aria-label="发送研究问题" title="发送 · Enter" ${!CS.ui.composer.trim() ? 'disabled' : ''}>${i('up', '', 19)}</button>`}</div></div>
+    <div class="composer-toolbar"><div class="composer-tools${CS.ui.terminal?.open ? ' term-open' : ' '}">${btn('add-attachment','','plus','', 'aria-label="添加附件" title="添加附件"')}${btn('add-attachment','文件','paperclip','', 'aria-label="添加文件附件" title="添加文件附件"')}${btn('choose-dataset','数据集','database','', 'aria-label="选择数据集" title="选择数据集"')}${btn('choose-tools','工具','grid','', 'aria-label="选择工具" title="选择工具"')}${btn('choose-skills','技能','book','', 'aria-label="选择技能" title="选择技能"')}${btn('toggle-plan','计划','workflow', CS.ui.planMode ? 'primary' : '', 'aria-label="计划模式" title="计划模式：开启后先出方案再动手"')}</div><div class="composer-submit">${V.ctxRing()}<div class="model-select"><button type="button" class="model-select-btn" data-action="toggle-model-menu" aria-haspopup="listbox" aria-expanded="${!!CS.ui.modelMenu}">${e(CS.state.settings.model || 'openrouter/free')}${i('down','',13)}</button>${CS.ui.modelMenu ? `<div class="model-menu" role="listbox">${(CS.ui.models.length ? CS.ui.models : [{ id: '', model: CS.state.settings.model || 'openrouter/free' }]).map(m => `<button type="button" class="model-menu-item" role="option" aria-selected="${CS.state.settings.modelId === m.id}" data-action="pick-model" data-id="${e(m.id)}"><span>${e(m.model)}</span>${CS.state.settings.modelId === m.id ? i('check','',13) : ''}</button>`).join('')}<div class="menu-divider"></div><button type="button" class="model-menu-item" data-action="configure-model">${i('settings','',14)}<span>配置模型…</span></button></div>` : ''}</div>${(CS.currentRun()?.kind === 'chat' && CS.currentRun()?.messages?.some(m => m.streaming)) ? `<button type="button" class="send-button send-stop" data-action="stop-generation" aria-label="停止生成" title="停止生成">${i('stop', '', 15)}</button>` : `<button type="submit" class="send-button" aria-label="发送研究问题" title="发送 · Enter" ${!CS.ui.composer.trim() ? 'disabled' : ''}>${i('up', '', 19)}</button>`}</div></div>
     </form>${home ? '' : `<div class="sys-stats" id="sys-stats"><span class="sys-line">&nbsp;</span><span class="sys-line">&nbsp;</span></div>`}</div>`;
   V.home = () => `<section class="home-page">${CS.dnaArt()}<div class="home-content"><div class="home-brand"><div class="kicker">${i('dna','',26)}</div><h1>SigmaFlow <span>Science</span></h1></div>${V.composer(true)}<div class="home-shortcuts">
     <button class="shortcut-card" data-action="demo-start">${i('cells')}<div><h3>单细胞分析</h3><p>体验一段科研工作流</p></div></button>
@@ -4455,7 +4481,18 @@ CS.audio = (function () {
                 // 已返回结果的工具块视为完成; 否则等多轮循环的下一批事件时,
                 // 尾部工具块会一直显示「运行中」
                 const live = m.streaming && bi === lastIdx && b.result == null && b.type !== 'ask';
-                if (b.type === 'text') return `<div class="agent-intro md-body"${live ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(b.text)}</div>`;
+                if (b.type === 'text') {
+                  // 计划卡: <plan>...</plan> 段渲染成可批准的审核卡(dsh plan-mode 思路);
+                  // 服务端 content 保留原始 <plan> 标记, 回放时同样渲染这里
+                  const t = b.text || '';
+                  const pm = t.match(/^([\s\S]*?)<plan>([\s\S]*?)<\/plan>([\s\S]*)$/);
+                  if (pm && pm[2].trim()) {
+                    // 只有最后一条消息上的计划卡显示操作按钮, 历史 plan 只读
+                    const canApprove = !m.streaming && idxOf === run.messages.length - 1;
+                    return `${pm[1].trim() ? `<div class="agent-intro md-body">${CS.markdown(pm[1])}</div>` : ''}<div class="plan-card"><div class="plan-head">${i('workflow', '', 15)}<span>计划方案</span><span class="plan-tag">等待你的确认</span></div><div class="plan-body md-body">${CS.markdown(pm[2])}</div>${canApprove ? `<div class="plan-actions"><button type="button" class="btn primary" data-action="approve-plan" data-id="${idxOf}">批准并执行</button><button type="button" class="btn flat" data-action="refine-plan">继续讨论</button></div>` : '<div class="small muted mt-8">该计划已生成，可继续对话调整或直接下指令。</div>'}</div>${pm[3].trim() ? `<div class="agent-intro md-body">${CS.markdown(pm[3])}</div>` : ''}`;
+                  }
+                  return `<div class="agent-intro md-body"${live ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(b.text)}</div>`;
+                }
                 if (b.type === 'ask') return renderAsk(b, bi);
                 if (b.type === 'deliverables') {
                   // 本轮修改文件行(dsh deliverables 思路): 来源只信 edit/write 参数
@@ -4516,7 +4553,7 @@ CS.audio = (function () {
               segments = `${blocks.map(seg).join('')}${m.streaming && !tailText ? `<div class="agent-intro md-body" data-stream-at="${e(m.at)}"></div>${waitHint}` : ''}`;
             }
             const err = m.error ? (typeof m.error === 'string' ? { message: m.error } : m.error || {}) : null;
-            return `<div class="msg-block agent-block"><div class="agent-message"><div class="agent-avatar${m.streaming ? ' avatar-pulsing' : ' '}">${i('dna','',21)}</div><div class="agent-body"${blocks ? ` data-block-sig="${e(blocks.map(b => b.type).join(','))}"` : ''}><div class="agent-name">SigmaFlow Science${m.streaming && m.tokens ? ` <span class="tok-down" data-start="${m.at}">↓ ${CS.num(m.tokens)}</span>` : (m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span>` : '')}${m.streaming ? ` <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${segments}${err ?(() => { const errKey = (run.id || ['']) + '|' + idxOf; const errOpen = (CS.ui.errorOpenSet || []).has ? CS.ui.errorOpenSet.has(errKey) : false; return `<div class="think-root error-root"${errOpen ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-error" data-errkey="${e(errKey)}" aria-expanded="${errOpen}"><span class="think-leading">${i('alert', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">请求出错</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(String(err.message || '未知错误').split('\n')[0])}</span></span></button>${errOpen ? `<div class="error-body"><pre class="error-detail">${e(err.detail || err.message || '')}</pre></div>` : ''}</div>`; })() : ''}${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.role === 'assistant' && m.tokens ? `<span class="message-meta">${CS.num(m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="branch-chat" data-id="${idxOf}" title="分支到新聊天">${i('workflow','',13)}</span></span></div>`}</div></div></div>`;
+            return `<div class="msg-block agent-block"><div class="agent-message"><div class="agent-avatar${m.streaming ? ' avatar-pulsing' : ' '}">${i('dna','',21)}</div><div class="agent-body"${blocks ? ` data-block-sig="${e(blocks.map(b => b.type).join(','))}"` : ''}><div class="agent-name">SigmaFlow Science${m.streaming && m.tokens ? ` <span class="tok-down" data-start="${m.at}">↓ ${CS.num(m.tokens)}</span>` : (m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span>` : '')}${m.streaming ? ` <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${segments}${err ?(() => { const errKey = (run.id || ['']) + '|' + idxOf; const errOpen = (CS.ui.errorOpenSet || []).has ? CS.ui.errorOpenSet.has(errKey) : false; return `<div class="think-root error-root"${errOpen ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-error" data-errkey="${e(errKey)}" aria-expanded="${errOpen}"><span class="think-leading">${i('alert', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">请求出错</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(String(err.message || '未知错误').split('\n')[0])}</span></span></button>${errOpen ? `<div class="error-body"><pre class="error-detail">${e(err.detail || err.message || '')}</pre></div>` : ''}</div>`; })() : ''}${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.role === 'assistant' && m.tokens ? `<span class="message-meta">${CS.num(m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn${m.feedback && m.feedback.rating === 'up' ? ' rated rated-up' : ''}" role="button" data-action="rate-message" data-id="${idxOf}" data-rating="up" title="点赞">${i('thumbup','',13)}</span><span class="icon-btn${m.feedback && m.feedback.rating === 'down' ? ' rated rated-down' : ''}" role="button" data-action="rate-message" data-id="${idxOf}" data-rating="down" title="点踩">${i('thumbdown','',13)}</span><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="branch-chat" data-id="${idxOf}" title="分支到新聊天">${i('workflow','',13)}</span></span></div>`}</div></div></div>`;
           })(); };
       return `<section class="page chat-page"><div class="chat-layout no-inspector"><div class="chat-main chat-main-chat"><header class="chat-title chat-title-compact"><div><h1>${e(run.title)}</h1><p class="small muted">${e(CS.state.projects.find(p => p.id === run.projectId)?.name || '未指定项目')} <span class="faint"> / </span> ${e(CS.state.settings.model || '默认模型')}</p></div></header>
       <div class="conversation">${run.messages.map(bubble).join('')}</div>
@@ -5355,8 +5392,95 @@ CS.audio = (function () {
     try { await CS.api.modelCall('conversation.save', 'POST', '/conversations', payload); }
     catch { if (retry) setTimeout(() => syncConversation(run, false), 3000); }
   };
+  // ---- @file 引用(dsh file-reference 思路的轻量版) ----
+  // 输入 @ 弹出项目目录补全菜单(独立 DOM, 不进 render 流, 避免重渲染丢焦点);
+  // 发送时把 @路径 解析成文件内容附加进当轮上下文, 仅发送侧注入不回显。
+  CS.fileRef = { open: false, items: [], active: 0, start: 0, token: '', query: '' };
+  const _fsTreeCache = {};
+  const _fsListDir = async path => {
+    const pid = CS.state.projectId;
+    if (!pid) return [];
+    const key = pid + '|' + (path || '');
+    const hit = _fsTreeCache[key];
+    if (hit && Date.now() - hit.ts < 60000) return hit.entries;
+    try {
+      const data = await CS.api.request('/fs/tree?projectId=' + encodeURIComponent(pid) + '&path=' + encodeURIComponent(path || ''), { method: 'GET' });
+      _fsTreeCache[key] = { ts: Date.now(), entries: data.entries || [] };
+      return data.entries || [];
+    } catch { return []; }
+  };
+  let _fileRefTimer = null;
+  const _fileRefPing = () => { if (_fileRefTimer) clearTimeout(_fileRefTimer); _fileRefTimer = setTimeout(_updateFileRefMenu, 140); };
+  const _closeFileRef = () => { CS.fileRef.open = false; const m = document.getElementById('fileref-menu'); if (m) m.remove(); };
+  const _updateFileRefMenu = async () => {
+    const ta = document.getElementById('composer-text');
+    if (!ta || !CS.state.projectId) { _closeFileRef(); return; }
+    const pos = ta.selectionStart ?? ta.value.length;
+    const before = ta.value.slice(0, pos);
+    const m = before.match(/@([\w./-]*)$/);
+    if (!m) { _closeFileRef(); return; }
+    const token = m[1] || '';
+    const start = pos - token.length - 1;
+    const slash = token.lastIndexOf('/');
+    const dir = slash >= 0 ? token.slice(0, slash) : '';
+    const frag = slash >= 0 ? token.slice(slash + 1) : token;
+    const entries = await _fsListDir(dir);
+    const items = entries.filter(x => x.name.toLowerCase().startsWith(frag.toLowerCase())).slice(0, 8);
+    Object.assign(CS.fileRef, { open: items.length > 0, items, active: 0, start, token: '@' + token, query: token, dir });
+    _renderFileRefMenu();
+  };
+  const _renderFileRefMenu = () => {
+    const fr = CS.fileRef;
+    const ta = document.getElementById('composer-text');
+    let el = document.getElementById('fileref-menu');
+    if (!fr.open || !ta) { if (el) el.remove(); return; }
+    if (!el) { el = document.createElement('div'); el.id = 'fileref-menu'; el.className = 'fileref-menu'; document.body.appendChild(el); }
+    const r = ta.getBoundingClientRect();
+    el.style.left = Math.max(8, r.left) + 'px';
+    el.style.top = Math.max(8, r.top - Math.min(320, 40 + fr.items.length * 36)) + 'px';
+    el.style.minWidth = Math.max(240, Math.min(430, r.width * 0.6)) + 'px';
+    el.innerHTML = '<div class="fileref-head">引用项目文件 · ↑↓ 选择 · Enter 确认</div>' + fr.items.map((it, idx) =>
+      `<button type="button" class="fileref-item${idx === fr.active ? ' active' : ''}" data-action="pick-fileref" data-path="${e(it.path)}" data-isdir="${it.type === 'dir' ? 1 : ''}">${i(it.type === 'dir' ? 'folder' : 'file', '', 14)}<span class="fileref-name">${e(it.name)}</span>${it.type === 'dir' ? '<span class="tiny muted">目录</span>' : ''}</button>`
+    ).join('');
+  };
+  const _applyFileRefPick = (path, isDir) => {
+    const ta = document.getElementById('composer-text'); const fr = CS.fileRef;
+    if (!ta) return;
+    const insert = isDir ? '@' + path + '/' : '@' + path + ' ';
+    ta.value = ta.value.slice(0, fr.start) + insert + ta.value.slice(fr.start + fr.token.length);
+    CS.ui.composer = ta.value;
+    const send = document.querySelector('.send-button');
+    if (send) send.disabled = !ta.value.trim();
+    const caret = fr.start + insert.length;
+    ta.focus();
+    try { ta.setSelectionRange(caret, caret); } catch {}
+    if (isDir) { Object.assign(fr, { query: path, token: '@' + path, start: fr.start }); _updateFileRefMenu(); }
+    else { fr.open = false; _renderFileRefMenu(); }
+  };
+
   const sendChatMessage = async (run, text, datasetIds) => {
     run.messages.push({ role: 'user', content: text, datasetIds: [...datasetIds], at: new Date().toISOString() });
+    // @file 引用注入: @路径 在项目目录下读出文件内容, 作为 refContext 附在发送侧
+    // (展示仍用原文; 刷新后 refContext 不持久, 模型可再用 read 工具读文件)
+    const _lastUser = run.messages[run.messages.length - 1];
+    if (_lastUser.role === 'user' && /@[\w][\w./-]*/.test(text)) {
+      try {
+        const pid = run.projectId || CS.state.projectId;
+        if (pid) {
+          const tokens = [...new Set((text.match(/@[\w][\w./-]*/g) || []).map(t => t.slice(1)))].slice(0, 5);
+          const parts = [];
+          for (const t of tokens) {
+            try {
+              const data = await CS.api.request('/fs/file?projectId=' + encodeURIComponent(pid) + '&path=' + encodeURIComponent(t), { method: 'GET' });
+              if (data && !data.binary && typeof data.content === 'string' && data.content.trim()) {
+                parts.push('<file path="' + t + '">\n' + data.content.slice(0, 16000) + (data.content.length > 16000 ? '\n…(内容过长已截断)' : '') + '\n</file>');
+              }
+            } catch {}
+          }
+          if (parts.length) _lastUser.refContext = '<referenced-files>\n用户在消息中引用了以下项目文件, 内容如下:\n' + parts.join('\n') + '\n</referenced-files>';
+        }
+      } catch {}
+    }
     // blocks: 按到达顺序的时间线段(think/tool/text), loop 会话里多轮交替不会互相覆盖;
     // content/reasoning/tools 是从 blocks 汇出的镜像, 兼容历史/持久化/复制等旧读方
     const mirror = () => {
@@ -5416,7 +5540,7 @@ CS.audio = (function () {
       CS.ui.thinkingText = '';
     };
     try {
-      const history = run.messages.filter(m => !m.streaming).map(m => ({ role: m.role, content: m.content }));
+      const history = run.messages.filter(m => !m.streaming).map(m => ({ role: m.role, content: m.role === 'user' && m.refContext ? m.content + '\n\n' + m.refContext : m.content }));
       timerInterval = setInterval(() => {
         if (!reply.streaming) { clearInterval(timerInterval); return; }
         // 流式期间上下文占用也在增长, 顺带同步圆环显示
@@ -5497,6 +5621,15 @@ CS.audio = (function () {
     CS.save(); CS.render();
     if (!CS.ui.followLock && CS.state.settings.autoScroll !== false) setTimeout(scrollToLatest, 20);  // 用户暂停跟随或关闭自动滚动时不拽到底部
     syncConversation(run);
+    // 首轮回复完成后用 LLM 生成会话标题(dsh session-title-llm 思路):
+    // 失败静默保留兜底标题, 不重试不阻塞
+    if (!run.titleGenerated) {
+      run.titleGenerated = true;
+      const firstUser = (run.messages.find(m => m.role === 'user') || {}).content || '';
+      CS.api.request('/conversations/' + encodeURIComponent(run.id) + '/title', { method: 'POST', timeout: 25000, body: JSON.stringify({ modelId: CS.state.settings.modelId, prompt: firstUser, reply: (reply.content || '').slice(0, 400) }) })
+        .then(t => { if (t && t.title) { run.title = t.title; const c = CS.ui.conversations.find(x => x.id === run.id); if (c) c.title = t.title; CS.save(); CS.render(); } })
+        .catch(() => {});
+    }
   };
   const openNewTask = (prompt, workflowId = 'singlecell', ids = []) => {
     const run = CS.agent.create(prompt, workflowId, ids, { organism: CS.ui.organism, minGenes: Number(CS.ui.minGenes), maxMito: Number(CS.ui.maxMito), synthetic: true });
@@ -5570,6 +5703,18 @@ CS.audio = (function () {
       body = modal.binary
         ? `<div class="modal-pad"><p class="small muted">二进制文件（${CS.formatBytes(modal.size)}），不支持预览。</p></div>`
         : `<div class="modal-pad"><div class="row-between mb-20"><span class="small muted mono">${e(modal.path || '')}</span><span class="small muted">${CS.formatBytes(modal.size)}</span></div><pre style="max-height:62vh;overflow:auto;margin:0">${e(modal.content || '')}</pre>${modal.truncated ? '<p class="small muted mt-12">内容过大，仅显示前 512 KB。</p>' : ''}</div>`;
+    } else if (modal.type === 'feedback') {
+      // 消息反馈弹窗: 点赞/点踩共用, 类别随 rating 切换(dsh message-feedback 思路)
+      const cats = modal.rating === 'up'
+        ? ['有用', '准确', '清晰', '高效']
+        : ['不准确', '不完整', '太慢', '格式混乱', '危险操作', '其他'];
+      title = modal.rating === 'up' ? '点赞 · 这条回复好在哪？' : '点踩 · 这条回复出了什么问题？';
+      body = `<div class="modal-pad stack">
+        <div class="feedback-cats">${cats.map(c => `<button type="button" class="feedback-cat${modal.picked === c ? ' picked' : ''}" data-action="pick-feedback-cat" data-cat="${e(c)}">${e(c)}</button>`).join('')}</div>
+        <textarea id="feedback-note" class="feedback-note" rows="3" maxlength="500" placeholder="补充说明（可选，不会发送给模型）">${e(modal.note || '')}</textarea>
+        <p class="small muted">反馈仅用于改进模型与产品，不会进入对话上下文。</p>
+      </div>`;
+      footer = H.btn('submit-feedback', '提交反馈', 'check', 'primary');
     } else if (modal.type === 'import') {
       title = '添加研究数据';
       body = `<div class="dropzone" id="dropzone" data-dropzone><div class="upload-mark">${i('upload','',24)}</div><p>拖拽文件到这里，或${H.btn('pick-files','选择本地文件','','small-btn flat')}</p><span class="sub">CSV / TSV / FASTA / H5AD / FASTQ / MTX / JSON</span></div><div class="mt-20">${H.notice('导入仅在本地登记。文本预览最多读取 64 KB；不解压、不执行文件。二进制数据仅查看元信息。')}</div>${modal.imported?.length ? `<div class="mt-20 stack">${modal.imported.map(d => `<div class="row">${H.tile('file','green')}<div class="grow"><h3>${e(d.name)}</h3><span class="small muted">${CS.formatBytes(d.size)} · 已在本地登记</span></div>${i('checkcircle','',17)}</div>`).join('')}</div>` : ''}`;
@@ -5838,6 +5983,54 @@ CS.audio = (function () {
         const data = await CS.api.request('/fs/file?projectId=' + encodeURIComponent(run.projectId) + '&path=' + encodeURIComponent(path), { method: 'GET' });
         CS.showModal('fs-preview', { name: String(path).split('/').pop(), ...data });
       } catch (err) { CS.toast((err?.message || '请检查文件是否在项目目录内'), 'error'); }
+    },
+    'toggle-plan': () => {
+      // 计划模式(dsh plan-mode 思路): 开启后模型只探查出 <plan> 方案, 批准后才动手
+      CS.ui.planMode = !CS.ui.planMode;
+      CS.save(); CS.render();
+      CS.toast(CS.ui.planMode ? '规划模式已开启：模型将先给出方案，确认后执行。' : '规划模式已关闭。');
+    },
+    'approve-plan': id => {
+      // 批准计划: 关闭计划模式并自动发出执行指令
+      const run = CS.currentRun(); const m = run?.messages[Number(id)];
+      if (!run || !m) return;
+      CS.ui.planMode = false;
+      CS.ui.composer = ''; CS.save();
+      sendChatMessage(run, '已批准该计划。请直接按上述计划开始执行，无需再次规划。', []);
+    },
+    'refine-plan': () => { document.getElementById('composer-text')?.focus(); },
+    'pick-fileref': (id, el) => {
+      _applyFileRefPick(el.dataset.path || '', el.dataset.isdir === '1');
+    },
+    'rate-message': (id, el) => {
+      // 消息反馈(dsh message-feedback 思路): 只落日志永不进模型上下文
+      const run = CS.currentRun(); const m = run?.messages[Number(id)];
+      if (!m) return;
+      CS.showModal('feedback', { messageId: String(id), rating: el?.dataset?.rating || 'up', picked: '', note: '' });
+    },
+    'pick-feedback-cat': (id, el) => {
+      if (!CS.ui.modal || CS.ui.modal.type !== 'feedback') return;
+      CS.ui.modal.picked = el.dataset.cat || '';
+      CS.renderModal();
+    },
+    'submit-feedback': () => {
+      const md = CS.ui.modal;
+      if (!md || md.type !== 'feedback') return;
+      const run = CS.currentRun();
+      const m = run?.messages[Number(md.messageId)];
+      const note = document.getElementById('feedback-note')?.value || '';
+      const payload = {
+        conversationId: run?.id || '', messageId: md.messageId, rating: md.rating,
+        category: md.picked || (md.rating === 'up' ? '有用' : '其他'),
+        note, snippet: (m?.content || '').slice(0, 200),
+      };
+      CS.api.request('/feedback', { method: 'POST', body: JSON.stringify(payload) })
+        .then(() => {
+          if (m) m.feedback = { rating: md.rating, category: payload.category };
+          CS.closeModal(); CS.save(); CS.render();
+          CS.toast('感谢反馈，已记录。');
+        })
+        .catch(err => CS.toast('反馈提交失败：' + (err?.message || ''), 'error'));
     },
     'copy-message': id => {
       const run = CS.currentRun(); const m = run?.messages[Number(id)];
@@ -6356,6 +6549,7 @@ CS.audio = (function () {
       CS.navigate(nav.dataset.nav); return;
     }
     if (event.target.classList.contains('modal-backdrop')) { CS.closeModal(); return; }
+    if (CS.fileRef.open && !event.target.closest?.('#fileref-menu') && event.target.id !== 'composer-text') _closeFileRef();
     const target=event.target.closest('[data-action]'); if (!target || target.disabled) return;
     const action=actions[target.dataset.action];
     if (action) { event.preventDefault(); try { await action(target.dataset.id,target); } catch(error) { console.error(error); CS.toast(error.message || '操作失败，请重试。','error'); } }
@@ -6388,6 +6582,10 @@ CS.audio = (function () {
     if (el?.classList?.contains('ask-custom-input')) {
       CS.ui.askDraft = CS.ui.askDraft || {};
       CS.ui.askDraft[el.dataset.key || ''] = el.value;
+    }
+    // 反馈弹窗备注草稿: 存到 modal 对象不重渲染, 选类别重渲染时带回
+    if (el?.id === 'feedback-note' && CS.ui.modal?.type === 'feedback') {
+      CS.ui.modal.note = el.value;
     }
     // 通用设置的音量滑杆: 只更新状态与数字标签不重渲染, 松手后 change 再落盘
     if (el?.classList?.contains('sound-volume-input')) {
@@ -6495,7 +6693,7 @@ CS.audio = (function () {
   const searchBindings={ 'data-search':'data','project-search':'project','paper-search':'literature','tool-search':'tools' };
   document.addEventListener('input',event=>{
     const target=event.target,id=target.id;
-    if(id==='composer-text') {CS.ui.composer=target.value; const send=document.querySelector('.send-button');if(send)send.disabled=!target.value.trim();CS.updateContextRing();}
+    if(id==='composer-text') {CS.ui.composer=target.value; const send=document.querySelector('.send-button');if(send)send.disabled=!target.value.trim();CS.updateContextRing();_fileRefPing();}
     else if(searchBindings[id]) {CS.ui.filters[searchBindings[id]]=target.value;CS.render();}
     else if(id==='marker-search') {CS.ui.markerSearch=target.value;CS.render();}
     else if(id==='sequence-input') CS.ui.sequence=target.value;
@@ -6525,6 +6723,14 @@ CS.audio = (function () {
     if(event.ctrlKey && event.code==='Backquote'){if(CS.state.me?.mode==='multi'&&!(CS.state.me.user&&(CS.state.me.user.name)))return;event.preventDefault();CS.ui.terminal.open=!CS.ui.terminal.open;CS.render();if(CS.ui.terminal.open)setTimeout(()=>CS.agent.pty?.focus(),120);else setTimeout(()=>document.querySelector('.composer-input')?.focus(),80);return;}
     if(event.key==='Escape'){if(CS.ui.modal)CS.closeModal();else if(CS.ui.userMenu){CS.ui.userMenu=false;CS.render();}else if(CS.ui.modelMenu){CS.ui.modelMenu=false;CS.render();}else if(CS.ui.contextMenu){CS.ui.contextMenu=false;CS.render();}else if(CS.ui.mobileSidebar){CS.ui.mobileSidebar=false;CS.render();}return;}
     if(event.altKey && event.key.toLowerCase()==='n'){event.preventDefault();CS.state.currentRunId=null;CS.ui.composer='';CS.ui.attachments=[];CS.save();CS.navigate('home');return;}
+    // @file 补全菜单: 打开时接管方向键/Enter/Tab/Esc, 不触发发送
+    if(CS.fileRef.open && (event.target.id==='composer-text')) {
+      const fr = CS.fileRef;
+      if(event.key==='ArrowDown'){event.preventDefault();fr.active=Math.min(fr.items.length-1,fr.active+1);_renderFileRefMenu();return;}
+      if(event.key==='ArrowUp'){event.preventDefault();fr.active=Math.max(0,fr.active-1);_renderFileRefMenu();return;}
+      if(event.key==='Escape'){event.preventDefault();_closeFileRef();return;}
+      if((event.key==='Enter'||event.key==='Tab') && !event.isComposing){event.preventDefault();const it=fr.items[fr.active];if(it)_applyFileRefPick(it.path, it.type==='dir');return;}
+    }
     // 发送键位: enterSend=true 时 Enter 直接发送(Shift+Enter 换行); false 时 Enter 换行, Ctrl/Cmd+Enter 发送
     if(event.target.id==='composer-text' && event.key==='Enter' && !event.isComposing){
       const wantSend = CS.state.settings.enterSend !== false ? !event.shiftKey : !!(event.ctrlKey || event.metaKey);

@@ -621,8 +621,95 @@
     try { await CS.api.modelCall('conversation.save', 'POST', '/conversations', payload); }
     catch { if (retry) setTimeout(() => syncConversation(run, false), 3000); }
   };
+  // ---- @file 引用(dsh file-reference 思路的轻量版) ----
+  // 输入 @ 弹出项目目录补全菜单(独立 DOM, 不进 render 流, 避免重渲染丢焦点);
+  // 发送时把 @路径 解析成文件内容附加进当轮上下文, 仅发送侧注入不回显。
+  CS.fileRef = { open: false, items: [], active: 0, start: 0, token: '', query: '' };
+  const _fsTreeCache = {};
+  const _fsListDir = async path => {
+    const pid = CS.state.projectId;
+    if (!pid) return [];
+    const key = pid + '|' + (path || '');
+    const hit = _fsTreeCache[key];
+    if (hit && Date.now() - hit.ts < 60000) return hit.entries;
+    try {
+      const data = await CS.api.request('/fs/tree?projectId=' + encodeURIComponent(pid) + '&path=' + encodeURIComponent(path || ''), { method: 'GET' });
+      _fsTreeCache[key] = { ts: Date.now(), entries: data.entries || [] };
+      return data.entries || [];
+    } catch { return []; }
+  };
+  let _fileRefTimer = null;
+  const _fileRefPing = () => { if (_fileRefTimer) clearTimeout(_fileRefTimer); _fileRefTimer = setTimeout(_updateFileRefMenu, 140); };
+  const _closeFileRef = () => { CS.fileRef.open = false; const m = document.getElementById('fileref-menu'); if (m) m.remove(); };
+  const _updateFileRefMenu = async () => {
+    const ta = document.getElementById('composer-text');
+    if (!ta || !CS.state.projectId) { _closeFileRef(); return; }
+    const pos = ta.selectionStart ?? ta.value.length;
+    const before = ta.value.slice(0, pos);
+    const m = before.match(/@([\w./-]*)$/);
+    if (!m) { _closeFileRef(); return; }
+    const token = m[1] || '';
+    const start = pos - token.length - 1;
+    const slash = token.lastIndexOf('/');
+    const dir = slash >= 0 ? token.slice(0, slash) : '';
+    const frag = slash >= 0 ? token.slice(slash + 1) : token;
+    const entries = await _fsListDir(dir);
+    const items = entries.filter(x => x.name.toLowerCase().startsWith(frag.toLowerCase())).slice(0, 8);
+    Object.assign(CS.fileRef, { open: items.length > 0, items, active: 0, start, token: '@' + token, query: token, dir });
+    _renderFileRefMenu();
+  };
+  const _renderFileRefMenu = () => {
+    const fr = CS.fileRef;
+    const ta = document.getElementById('composer-text');
+    let el = document.getElementById('fileref-menu');
+    if (!fr.open || !ta) { if (el) el.remove(); return; }
+    if (!el) { el = document.createElement('div'); el.id = 'fileref-menu'; el.className = 'fileref-menu'; document.body.appendChild(el); }
+    const r = ta.getBoundingClientRect();
+    el.style.left = Math.max(8, r.left) + 'px';
+    el.style.top = Math.max(8, r.top - Math.min(320, 40 + fr.items.length * 36)) + 'px';
+    el.style.minWidth = Math.max(240, Math.min(430, r.width * 0.6)) + 'px';
+    el.innerHTML = '<div class="fileref-head">引用项目文件 · ↑↓ 选择 · Enter 确认</div>' + fr.items.map((it, idx) =>
+      `<button type="button" class="fileref-item${idx === fr.active ? ' active' : ''}" data-action="pick-fileref" data-path="${e(it.path)}" data-isdir="${it.type === 'dir' ? 1 : ''}">${i(it.type === 'dir' ? 'folder' : 'file', '', 14)}<span class="fileref-name">${e(it.name)}</span>${it.type === 'dir' ? '<span class="tiny muted">目录</span>' : ''}</button>`
+    ).join('');
+  };
+  const _applyFileRefPick = (path, isDir) => {
+    const ta = document.getElementById('composer-text'); const fr = CS.fileRef;
+    if (!ta) return;
+    const insert = isDir ? '@' + path + '/' : '@' + path + ' ';
+    ta.value = ta.value.slice(0, fr.start) + insert + ta.value.slice(fr.start + fr.token.length);
+    CS.ui.composer = ta.value;
+    const send = document.querySelector('.send-button');
+    if (send) send.disabled = !ta.value.trim();
+    const caret = fr.start + insert.length;
+    ta.focus();
+    try { ta.setSelectionRange(caret, caret); } catch {}
+    if (isDir) { Object.assign(fr, { query: path, token: '@' + path, start: fr.start }); _updateFileRefMenu(); }
+    else { fr.open = false; _renderFileRefMenu(); }
+  };
+
   const sendChatMessage = async (run, text, datasetIds) => {
     run.messages.push({ role: 'user', content: text, datasetIds: [...datasetIds], at: new Date().toISOString() });
+    // @file 引用注入: @路径 在项目目录下读出文件内容, 作为 refContext 附在发送侧
+    // (展示仍用原文; 刷新后 refContext 不持久, 模型可再用 read 工具读文件)
+    const _lastUser = run.messages[run.messages.length - 1];
+    if (_lastUser.role === 'user' && /@[\w][\w./-]*/.test(text)) {
+      try {
+        const pid = run.projectId || CS.state.projectId;
+        if (pid) {
+          const tokens = [...new Set((text.match(/@[\w][\w./-]*/g) || []).map(t => t.slice(1)))].slice(0, 5);
+          const parts = [];
+          for (const t of tokens) {
+            try {
+              const data = await CS.api.request('/fs/file?projectId=' + encodeURIComponent(pid) + '&path=' + encodeURIComponent(t), { method: 'GET' });
+              if (data && !data.binary && typeof data.content === 'string' && data.content.trim()) {
+                parts.push('<file path="' + t + '">\n' + data.content.slice(0, 16000) + (data.content.length > 16000 ? '\n…(内容过长已截断)' : '') + '\n</file>');
+              }
+            } catch {}
+          }
+          if (parts.length) _lastUser.refContext = '<referenced-files>\n用户在消息中引用了以下项目文件, 内容如下:\n' + parts.join('\n') + '\n</referenced-files>';
+        }
+      } catch {}
+    }
     // blocks: 按到达顺序的时间线段(think/tool/text), loop 会话里多轮交替不会互相覆盖;
     // content/reasoning/tools 是从 blocks 汇出的镜像, 兼容历史/持久化/复制等旧读方
     const mirror = () => {
@@ -682,7 +769,7 @@
       CS.ui.thinkingText = '';
     };
     try {
-      const history = run.messages.filter(m => !m.streaming).map(m => ({ role: m.role, content: m.content }));
+      const history = run.messages.filter(m => !m.streaming).map(m => ({ role: m.role, content: m.role === 'user' && m.refContext ? m.content + '\n\n' + m.refContext : m.content }));
       timerInterval = setInterval(() => {
         if (!reply.streaming) { clearInterval(timerInterval); return; }
         // 流式期间上下文占用也在增长, 顺带同步圆环显示
@@ -763,6 +850,15 @@
     CS.save(); CS.render();
     if (!CS.ui.followLock && CS.state.settings.autoScroll !== false) setTimeout(scrollToLatest, 20);  // 用户暂停跟随或关闭自动滚动时不拽到底部
     syncConversation(run);
+    // 首轮回复完成后用 LLM 生成会话标题(dsh session-title-llm 思路):
+    // 失败静默保留兜底标题, 不重试不阻塞
+    if (!run.titleGenerated) {
+      run.titleGenerated = true;
+      const firstUser = (run.messages.find(m => m.role === 'user') || {}).content || '';
+      CS.api.request('/conversations/' + encodeURIComponent(run.id) + '/title', { method: 'POST', timeout: 25000, body: JSON.stringify({ modelId: CS.state.settings.modelId, prompt: firstUser, reply: (reply.content || '').slice(0, 400) }) })
+        .then(t => { if (t && t.title) { run.title = t.title; const c = CS.ui.conversations.find(x => x.id === run.id); if (c) c.title = t.title; CS.save(); CS.render(); } })
+        .catch(() => {});
+    }
   };
   const openNewTask = (prompt, workflowId = 'singlecell', ids = []) => {
     const run = CS.agent.create(prompt, workflowId, ids, { organism: CS.ui.organism, minGenes: Number(CS.ui.minGenes), maxMito: Number(CS.ui.maxMito), synthetic: true });
@@ -836,6 +932,18 @@
       body = modal.binary
         ? `<div class="modal-pad"><p class="small muted">二进制文件（${CS.formatBytes(modal.size)}），不支持预览。</p></div>`
         : `<div class="modal-pad"><div class="row-between mb-20"><span class="small muted mono">${e(modal.path || '')}</span><span class="small muted">${CS.formatBytes(modal.size)}</span></div><pre style="max-height:62vh;overflow:auto;margin:0">${e(modal.content || '')}</pre>${modal.truncated ? '<p class="small muted mt-12">内容过大，仅显示前 512 KB。</p>' : ''}</div>`;
+    } else if (modal.type === 'feedback') {
+      // 消息反馈弹窗: 点赞/点踩共用, 类别随 rating 切换(dsh message-feedback 思路)
+      const cats = modal.rating === 'up'
+        ? ['有用', '准确', '清晰', '高效']
+        : ['不准确', '不完整', '太慢', '格式混乱', '危险操作', '其他'];
+      title = modal.rating === 'up' ? '点赞 · 这条回复好在哪？' : '点踩 · 这条回复出了什么问题？';
+      body = `<div class="modal-pad stack">
+        <div class="feedback-cats">${cats.map(c => `<button type="button" class="feedback-cat${modal.picked === c ? ' picked' : ''}" data-action="pick-feedback-cat" data-cat="${e(c)}">${e(c)}</button>`).join('')}</div>
+        <textarea id="feedback-note" class="feedback-note" rows="3" maxlength="500" placeholder="补充说明（可选，不会发送给模型）">${e(modal.note || '')}</textarea>
+        <p class="small muted">反馈仅用于改进模型与产品，不会进入对话上下文。</p>
+      </div>`;
+      footer = H.btn('submit-feedback', '提交反馈', 'check', 'primary');
     } else if (modal.type === 'import') {
       title = '添加研究数据';
       body = `<div class="dropzone" id="dropzone" data-dropzone><div class="upload-mark">${i('upload','',24)}</div><p>拖拽文件到这里，或${H.btn('pick-files','选择本地文件','','small-btn flat')}</p><span class="sub">CSV / TSV / FASTA / H5AD / FASTQ / MTX / JSON</span></div><div class="mt-20">${H.notice('导入仅在本地登记。文本预览最多读取 64 KB；不解压、不执行文件。二进制数据仅查看元信息。')}</div>${modal.imported?.length ? `<div class="mt-20 stack">${modal.imported.map(d => `<div class="row">${H.tile('file','green')}<div class="grow"><h3>${e(d.name)}</h3><span class="small muted">${CS.formatBytes(d.size)} · 已在本地登记</span></div>${i('checkcircle','',17)}</div>`).join('')}</div>` : ''}`;
@@ -1104,6 +1212,54 @@
         const data = await CS.api.request('/fs/file?projectId=' + encodeURIComponent(run.projectId) + '&path=' + encodeURIComponent(path), { method: 'GET' });
         CS.showModal('fs-preview', { name: String(path).split('/').pop(), ...data });
       } catch (err) { CS.toast((err?.message || '请检查文件是否在项目目录内'), 'error'); }
+    },
+    'toggle-plan': () => {
+      // 计划模式(dsh plan-mode 思路): 开启后模型只探查出 <plan> 方案, 批准后才动手
+      CS.ui.planMode = !CS.ui.planMode;
+      CS.save(); CS.render();
+      CS.toast(CS.ui.planMode ? '规划模式已开启：模型将先给出方案，确认后执行。' : '规划模式已关闭。');
+    },
+    'approve-plan': id => {
+      // 批准计划: 关闭计划模式并自动发出执行指令
+      const run = CS.currentRun(); const m = run?.messages[Number(id)];
+      if (!run || !m) return;
+      CS.ui.planMode = false;
+      CS.ui.composer = ''; CS.save();
+      sendChatMessage(run, '已批准该计划。请直接按上述计划开始执行，无需再次规划。', []);
+    },
+    'refine-plan': () => { document.getElementById('composer-text')?.focus(); },
+    'pick-fileref': (id, el) => {
+      _applyFileRefPick(el.dataset.path || '', el.dataset.isdir === '1');
+    },
+    'rate-message': (id, el) => {
+      // 消息反馈(dsh message-feedback 思路): 只落日志永不进模型上下文
+      const run = CS.currentRun(); const m = run?.messages[Number(id)];
+      if (!m) return;
+      CS.showModal('feedback', { messageId: String(id), rating: el?.dataset?.rating || 'up', picked: '', note: '' });
+    },
+    'pick-feedback-cat': (id, el) => {
+      if (!CS.ui.modal || CS.ui.modal.type !== 'feedback') return;
+      CS.ui.modal.picked = el.dataset.cat || '';
+      CS.renderModal();
+    },
+    'submit-feedback': () => {
+      const md = CS.ui.modal;
+      if (!md || md.type !== 'feedback') return;
+      const run = CS.currentRun();
+      const m = run?.messages[Number(md.messageId)];
+      const note = document.getElementById('feedback-note')?.value || '';
+      const payload = {
+        conversationId: run?.id || '', messageId: md.messageId, rating: md.rating,
+        category: md.picked || (md.rating === 'up' ? '有用' : '其他'),
+        note, snippet: (m?.content || '').slice(0, 200),
+      };
+      CS.api.request('/feedback', { method: 'POST', body: JSON.stringify(payload) })
+        .then(() => {
+          if (m) m.feedback = { rating: md.rating, category: payload.category };
+          CS.closeModal(); CS.save(); CS.render();
+          CS.toast('感谢反馈，已记录。');
+        })
+        .catch(err => CS.toast('反馈提交失败：' + (err?.message || ''), 'error'));
     },
     'copy-message': id => {
       const run = CS.currentRun(); const m = run?.messages[Number(id)];
@@ -1622,6 +1778,7 @@
       CS.navigate(nav.dataset.nav); return;
     }
     if (event.target.classList.contains('modal-backdrop')) { CS.closeModal(); return; }
+    if (CS.fileRef.open && !event.target.closest?.('#fileref-menu') && event.target.id !== 'composer-text') _closeFileRef();
     const target=event.target.closest('[data-action]'); if (!target || target.disabled) return;
     const action=actions[target.dataset.action];
     if (action) { event.preventDefault(); try { await action(target.dataset.id,target); } catch(error) { console.error(error); CS.toast(error.message || '操作失败，请重试。','error'); } }
@@ -1654,6 +1811,10 @@
     if (el?.classList?.contains('ask-custom-input')) {
       CS.ui.askDraft = CS.ui.askDraft || {};
       CS.ui.askDraft[el.dataset.key || ''] = el.value;
+    }
+    // 反馈弹窗备注草稿: 存到 modal 对象不重渲染, 选类别重渲染时带回
+    if (el?.id === 'feedback-note' && CS.ui.modal?.type === 'feedback') {
+      CS.ui.modal.note = el.value;
     }
     // 通用设置的音量滑杆: 只更新状态与数字标签不重渲染, 松手后 change 再落盘
     if (el?.classList?.contains('sound-volume-input')) {
@@ -1761,7 +1922,7 @@
   const searchBindings={ 'data-search':'data','project-search':'project','paper-search':'literature','tool-search':'tools' };
   document.addEventListener('input',event=>{
     const target=event.target,id=target.id;
-    if(id==='composer-text') {CS.ui.composer=target.value; const send=document.querySelector('.send-button');if(send)send.disabled=!target.value.trim();CS.updateContextRing();}
+    if(id==='composer-text') {CS.ui.composer=target.value; const send=document.querySelector('.send-button');if(send)send.disabled=!target.value.trim();CS.updateContextRing();_fileRefPing();}
     else if(searchBindings[id]) {CS.ui.filters[searchBindings[id]]=target.value;CS.render();}
     else if(id==='marker-search') {CS.ui.markerSearch=target.value;CS.render();}
     else if(id==='sequence-input') CS.ui.sequence=target.value;
@@ -1791,6 +1952,14 @@
     if(event.ctrlKey && event.code==='Backquote'){if(CS.state.me?.mode==='multi'&&!(CS.state.me.user&&(CS.state.me.user.name)))return;event.preventDefault();CS.ui.terminal.open=!CS.ui.terminal.open;CS.render();if(CS.ui.terminal.open)setTimeout(()=>CS.agent.pty?.focus(),120);else setTimeout(()=>document.querySelector('.composer-input')?.focus(),80);return;}
     if(event.key==='Escape'){if(CS.ui.modal)CS.closeModal();else if(CS.ui.userMenu){CS.ui.userMenu=false;CS.render();}else if(CS.ui.modelMenu){CS.ui.modelMenu=false;CS.render();}else if(CS.ui.contextMenu){CS.ui.contextMenu=false;CS.render();}else if(CS.ui.mobileSidebar){CS.ui.mobileSidebar=false;CS.render();}return;}
     if(event.altKey && event.key.toLowerCase()==='n'){event.preventDefault();CS.state.currentRunId=null;CS.ui.composer='';CS.ui.attachments=[];CS.save();CS.navigate('home');return;}
+    // @file 补全菜单: 打开时接管方向键/Enter/Tab/Esc, 不触发发送
+    if(CS.fileRef.open && (event.target.id==='composer-text')) {
+      const fr = CS.fileRef;
+      if(event.key==='ArrowDown'){event.preventDefault();fr.active=Math.min(fr.items.length-1,fr.active+1);_renderFileRefMenu();return;}
+      if(event.key==='ArrowUp'){event.preventDefault();fr.active=Math.max(0,fr.active-1);_renderFileRefMenu();return;}
+      if(event.key==='Escape'){event.preventDefault();_closeFileRef();return;}
+      if((event.key==='Enter'||event.key==='Tab') && !event.isComposing){event.preventDefault();const it=fr.items[fr.active];if(it)_applyFileRefPick(it.path, it.type==='dir');return;}
+    }
     // 发送键位: enterSend=true 时 Enter 直接发送(Shift+Enter 换行); false 时 Enter 换行, Ctrl/Cmd+Enter 发送
     if(event.target.id==='composer-text' && event.key==='Enter' && !event.isComposing){
       const wantSend = CS.state.settings.enterSend !== false ? !event.shiftKey : !!(event.ctrlKey || event.metaKey);

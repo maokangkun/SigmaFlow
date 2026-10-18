@@ -111,6 +111,21 @@ class ProjectIn(BaseModel):
     dir: Optional[str] = None
 
 
+class TitleIn(BaseModel):
+    modelId: Optional[str] = None
+    prompt: str = ""
+    reply: str = ""
+
+
+class FeedbackIn(BaseModel):
+    conversationId: str = ""
+    messageId: str = ""
+    rating: str = ""
+    category: str = ""
+    note: str = ""
+    snippet: str = ""
+
+
 class ConversationIn(BaseModel):
     id: Optional[str] = None
     title: str = ""
@@ -2923,8 +2938,10 @@ class ScienceAPI:
                     None,
                     None,
                     None,
+                    None,
                     stats,
                     workdir,
+                    bool(payload.planMode),
                 )
             except RuntimeError as err:
                 raise HTTPException(status_code=400, detail=str(err))
@@ -3056,6 +3073,120 @@ class ScienceAPI:
                 "conversation": conversation,
                 "conversations": self.project_store.list_conversations(),
             }
+
+        @router.post("/conversations/{conversation_id}/title")
+        async def generate_conversation_title(
+            conversation_id: str, payload: TitleIn, request: Request
+        ):
+            """用当前配置的模型为会话生成短标题(dsh session-title-llm 思路)。
+
+            每个会话只应调用一次: 由前端在首轮回复完成后触发, 失败静默保留兜底标题,
+            不重试不阻塞主流程。标题落在服务端, 会话列表与回放都以它为准。
+            """
+            _check_origin(request)
+
+            def _gen():
+                base_url, api_key, model_name = _resolve_chat(
+                    self.model_store, payload.modelId
+                )
+                prompt_text = (payload.prompt or "")[:1200]
+                reply_text = (payload.reply or "")[:800]
+                sys_text = (
+                    "为一轮对话生成一个简洁的中文会话标题。必须只输出中文汉字标题本身: "
+                    "6-16 个汉字, 概括用户意图; 禁止英文单词、拼音、引号、句号、"
+                    "冒号、表情、思维过程和任何解释; 不要复述原文句子。"
+                )
+                user_text = f"用户: {prompt_text}" + (
+                    f"\n助手: {reply_text}" if reply_text else ""
+                )
+                resp = requests.post(
+                    base_url.rstrip("/") + "/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json={
+                        "model": model_name,
+                        "messages": [
+                            {"role": "system", "content": sys_text},
+                            {"role": "user", "content": user_text},
+                        ],
+                        "max_tokens": 500,
+                        "temperature": 0.3,
+                        "stream": False,
+                        # glm/qwen 走思考模式的模型会先烧 reasoning 再出 content,
+                        # 常见关思考开关(不支持该参数的网关会忽略, 无害)
+                        "enable_thinking": False,
+                        "thinking": {"type": "disabled"},
+                    },
+                    timeout=20,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                _raw_msg = ((data.get("choices") or [{}])[0].get("message") or {})
+                title = _raw_msg.get("content")
+                reasoning_only = ""
+                if not title:
+                    reasoning_only = (
+                        _raw_msg.get("reasoning_content")
+                        or _raw_msg.get("reasoning")
+                        or ""
+                    )
+                title = (title or '').strip()  # 去包裹引号
+                for _q in ('"', chr(39)):
+                    title = title.strip(_q)
+                title = title.strip(chr(0x201C) + chr(0x201D))
+                title = re.sub(r'[\n\u3002.!\uff01\uff1f?]', '', title).strip()
+                if not title and reasoning_only:
+                    # 思考型模型 content 为空时, 从 reasoning 兜底提炼中文短语作标题
+                    zh = re.findall(r"[\u4e00-\u9fff]{2,24}", reasoning_only)
+                    title = zh[-1] if zh else ""
+                # 模型爱在标题前塞英文说明(如 "The user wants..."); 优先提取开头的连续中文段
+                zh_lead = re.findall(r"[\u4e00-\u9fff][\u4e00-\u9fff\u3000-\u303fA-Za-z0-9A-Za-z0-9]{0,23}", title)
+                if zh_lead:
+                    title = zh_lead[0].strip()
+                # 最终校验必须在收敛后的结果上做: 不含汉字一律视为失败, 保留兜底标题
+                if not title or not re.search(r"[\u4e00-\u9fff]", title):
+                    raise ValueError("title must contain Chinese")
+                if len(title) > 24:
+                    title = title[:24].strip()
+                return self.project_store.set_title(conversation_id, title)
+
+            try:
+                conv = await asyncio.to_thread(_gen)
+            except Exception as err:
+                logging.getLogger("uvicorn.error").info(
+                    "title generation failed for %s: %s", conversation_id, err
+                )
+                return {"ok": False, "title": None}
+            return {"ok": True, "title": conv.get("title") if conv else None}
+
+        @router.post("/feedback")
+        async def submit_feedback(payload: FeedbackIn, request: Request):
+            """消息反馈落 append-only 日志(dsh message-feedback 思路): 只进日志,
+            永不进入模型上下文; 不回读、不改会话内容。"""
+            _check_origin(request)
+            rating = payload.rating if payload.rating in ("up", "down") else ""
+            if not rating:
+                raise HTTPException(status_code=400, detail="rating 必须是 up/down")
+            record = {
+                "ts": int(time.time() * 1000),
+                "user": _current_user(),
+                "conversationId": _clip(payload.conversationId, 64),
+                "messageId": _clip(payload.messageId, 64),
+                "rating": rating,
+                "category": _clip(payload.category, 60),
+                "note": _clip(payload.note, 2000),
+                "snippet": _clip(payload.snippet, 500),
+            }
+            feedback_path = self.project_store.storage_dir / "feedback.jsonl"
+            try:
+                await asyncio.to_thread(
+                    _append_jsonl, feedback_path, record
+                )
+            except Exception as err:
+                logging.getLogger("uvicorn.error").info(
+                    "feedback append failed: %s", err
+                )
+                raise HTTPException(status_code=500, detail="反馈写入失败")
+            return {"ok": True}
 
         @router.get("/conversations/{conversation_id}/content")
         async def get_conversation_content(conversation_id: str):
@@ -3615,6 +3746,7 @@ class ScienceAPI:
                                     ),
                                     stats,
                                     chat_workdir,
+                                    bool(data.get("planMode")),
                                 )
                                 loop.call_soon_threadsafe(
                                     chat_queue.put_nowait, ("done", None)
@@ -3920,6 +4052,7 @@ class ChatIn(BaseModel):
     projectId: Optional[str] = None
     runId: Optional[str] = None
     messages: list = []
+    planMode: Optional[bool] = None
 
 
 class _AuthCredentials(BaseModel):
@@ -4212,6 +4345,22 @@ class ScienceProjectStore:
         self._save()
         return True
 
+    def set_title(self, conversation_id: str, title: str) -> dict | None:
+        """LLM 生成的会话标题落地(dsh session-title-llm 思路: 失败保留兜底)。"""
+        conv = self.conversations.get(conversation_id)
+        if conv is None:
+            return None
+        conv["title"] = _clip(title, 300)
+        conv["updatedAt"] = int(time.time() * 1000)
+        self._save()
+        return self._public_conversation(conv)
+
+
+def _append_jsonl(path: Path, record: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+
 
 def _resolve_chat(model_store, model_id: Optional[str]):
     """modelId -> (baseUrl, apiKey, model_name). Raises HTTPException."""
@@ -4251,6 +4400,20 @@ def _make_chat_delta_callback(on_delta, on_reasoning):
     return _cb
 
 
+# 计划模式提示词(dsh plan-mode 思路): 只探查不落盘, 末尾产 <plan> 块供前端渲染审核卡
+_PLAN_MODE_PROMPT = (
+    "\n\n# Plan mode\n"
+    "You are in plan mode: the user wants you to explore and design first.\n"
+    "- Use read-only actions only (read/grep/ls, non-mutating bash); do NOT call "
+    "write/edit or run commands that modify files.\n"
+    "- If information is missing, ask the user concise questions before planning.\n"
+    "- At the END of your reply, output the final plan inside a single "
+    "<plan>...</plan> block: goal, numbered concrete steps, files to touch, and risks. "
+    "Keep the plan in the user's language.\n"
+    "- Do NOT start executing the plan. Wait for the user's explicit approval.\n"
+)
+
+
 def _run_agent_chat(
     base_url: str,
     api_key: str,
@@ -4262,6 +4425,7 @@ def _run_agent_chat(
     on_retry=None,
     stats: dict = None,
     workdir: Optional[str] = None,
+    plan_mode: bool = False,
 ) -> str:
     """Run a chat through the SigmaFlow agent/agent.Agent stack.
 
@@ -4308,6 +4472,8 @@ def _run_agent_chat(
             "bash 命令、文件读写与数据处理的相对路径都相对该目录执行；"
             "向用户答复时必须以该目录为当前工作目录。"
         )
+    if plan_mode:
+        bound_system = bound_system + _PLAN_MODE_PROMPT
     agent = Agent(
         method="openai",
         model=model_name,
@@ -4599,6 +4765,7 @@ def _stream_agent_chat(
     on_retry=None,
     stats: dict = None,
     workdir: Optional[str] = None,
+    plan_mode: bool = False,
 ):
     """Streaming chat. Runs synchronously on the caller's worker thread
     (the WS handler invokes it via asyncio.to_thread); on_delta is called
@@ -4615,6 +4782,7 @@ def _stream_agent_chat(
         on_retry=on_retry,
         stats=stats,
         workdir=workdir,
+        plan_mode=plan_mode,
     )
 
 
