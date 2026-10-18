@@ -64,6 +64,18 @@ COMPACT_TOKENS = int(os.getenv("COMPACT_TOKENS", 2048))
 COMPACT_THRESHOLD = int(os.getenv("COMPACT_THRESHOLD", 1e20))
 COMPACT_RATIO = float(os.getenv("COMPACT_RATIO", 0.95))
 KEEP_RECENT_TOOL = int(os.getenv("KEEP_RECENT_TOOL", 1e8))
+# 工具结果裁剪(dsh pruner 思路): 上下文逼近阈值时, 把较早的大结果保头截尾,
+# 缓解 token 压力以推迟全量 summary 压缩; 原文转存到 transcripts 目录留档
+PRUNE_TOOL_RESULTS = bool(int(os.getenv("PRUNE_TOOL_RESULTS", "1")))
+PRUNE_SOFT_RATIO = float(os.getenv("PRUNE_SOFT_RATIO", "0.6"))
+PRUNE_KEEP_RECENT = int(os.getenv("PRUNE_KEEP_RECENT", "6"))
+PRUNE_MIN_CHARS = int(os.getenv("PRUNE_MIN_CHARS", "2000"))
+PRUNE_HEAD_CHARS = int(os.getenv("PRUNE_HEAD_CHARS", "1200"))
+PRUNE_TAIL_CHARS = int(os.getenv("PRUNE_TAIL_CHARS", "400"))
+# 统一工具调用超时(秒): 外层兜底, 工具内部的超时(bash 300s 等)仍在里层生效;
+# 特定工具可用 TOOL_TIMEOUTS 覆盖, 设 0 表示不限时(ask 由用户回答节奏决定, 默认不限时)
+TOOL_TIMEOUT_DEFAULT = int(os.getenv("TOOL_TIMEOUT_DEFAULT", "180"))
+TOOL_TIMEOUTS = json.loads(os.getenv("TOOL_TIMEOUTS", '{"ask":0,"bash":360,"rag":330,"arxiv_search":330,"read_arxiv":330,"background_run":60}'))
 RAG_ENDPOINT = os.getenv("RAG_ENDPOINT")
 Sciverse_API_KEY = os.getenv("Sciverse_API_KEY")
 

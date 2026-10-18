@@ -241,7 +241,7 @@ class Compactor:
         self.max_model_len = max_model_len
 
     # -- Layer 1: tool_compact - replace old tool results with placeholders --
-    def tool_compact(self, messages: list) -> list:
+    def tool_compact(self, messages: list, context_ratio: float = 0) -> list:
         # Collect tool results while tracking the tool names already seen.
         tool_results = []
         tool_name_map = {}
@@ -278,14 +278,59 @@ class Compactor:
                 case _:
                     continue
         if len(tool_results) <= KEEP_RECENT_TOOL:
-            return messages
-        # Clear old results (keep last KEEP_RECENT_TOOL).
-        to_clear = tool_results[:-KEEP_RECENT_TOOL]
-        for result, tool_name in to_clear:
-            if isinstance(result.get("content"), str) and len(result["content"]) < 100:
-                continue
-            result["content"] = f"[Previous: used {tool_name}]"
+            pass
+        else:
+            # Clear old results (keep last KEEP_RECENT_TOOL). 默认禁用, 旧逻辑仅作开关保留
+            to_clear = tool_results[:-KEEP_RECENT_TOOL] if KEEP_RECENT_TOOL > 0 else tool_results
+            for result, tool_name in to_clear:
+                if isinstance(result.get("content"), str) and len(result["content"]) < 100:
+                    continue
+                result["content"] = f"[Previous: used {tool_name}]"
+        # 软压力裁剪(dsh pruner 思路): 估算 token 或真实占用占比超过阈值时,
+        # 把较早的大结果保头截尾 — 零模型调用即可缓解压力, 推迟全量 summary;
+        # 原文转存入 transcripts 目录, 可事后审计
+        if PRUNE_TOOL_RESULTS:
+            token_ratio = (
+                self.estimate_tokens(messages) / self.max_model_len
+                if self.max_model_len
+                else 0
+            )
+            if max(token_ratio, context_ratio) >= PRUNE_SOFT_RATIO:
+                self._prune_tool_results(tool_results)
         return messages
+
+    def _prune_tool_results(self, tool_results: list) -> None:
+        """Trim old oversized tool results to head+tail, dumping originals first."""
+        if len(tool_results) <= PRUNE_KEEP_RECENT:
+            return
+        to_prune = tool_results[:-PRUNE_KEEP_RECENT]
+        marker = "[middle pruned:"
+        dumped = []
+        for result, tool_name in to_prune:
+            content = result.get("content")
+            if not isinstance(content, str) or len(content) < PRUNE_MIN_CHARS:
+                continue
+            if marker in content:
+                continue  # 已经裁剪过, 不重复处理
+            dumped.append({"tool": tool_name, "content": content})
+            result["content"] = (
+                content[:PRUNE_HEAD_CHARS]
+                + f"\n[middle pruned: {len(content) - PRUNE_HEAD_CHARS - PRUNE_TAIL_CHARS} chars omitted, "
+                  f"full result saved to transcript]\n"
+                + content[-PRUNE_TAIL_CHARS:]
+            )
+        if not dumped:
+            return
+        try:
+            Path(self.transript_dir).mkdir(exist_ok=True, parents=True)
+            dump_path = Path(self.transript_dir) / f"pruned_results_{time.time_ns() // 1000000}.jsonl"
+            with open(dump_path, "a", encoding="utf-8") as f:
+                for d in dumped:
+                    f.write(json.dumps(d, ensure_ascii=False, default=str) + "\n")
+            print(f"{' '*12}pruned {len(dumped)} tool result(s), originals saved: {dump_path}")
+        except Exception as e:
+            # 转存失败不阻断裁剪本体, 只提示
+            print(f"{' '*12}prune dump failed (trim still applied): {e}")
 
     # -- Layer 2: summary_compact - save transcript, summarize, replace messages --
     def summary_compact(self, messages: list) -> list:
@@ -337,7 +382,7 @@ class Compactor:
             print(info)
             messages = self.summary_compact(messages)
         else:
-            messages = self.tool_compact(messages)
+            messages = self.tool_compact(messages, context_ratio=context_ratio)
         return messages
 
 # -- TaskManager: CRUD with dependency graph, persisted as JSON files --

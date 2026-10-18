@@ -435,3 +435,11 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .diff-row.hunk .diff-ln{background:var(--accent-bg)}
 .diff-row.hunk .diff-code{background:var(--accent-bg);color:var(--accent-dark)}
 .diff-row.meta .diff-code{color:var(--faint);font-style:italic}
+
+/* 本轮修改文件行(dsh deliverables 思路): 消息尾部可点击的产出文件 chips */
+.deliverables-row{display:flex;align-items:flex-start;gap:8px;margin:10px 0 2px;padding:8px 10px;background:var(--accent-bg);border:1px solid var(--line-soft);border-radius:10px;flex-wrap:wrap}
+.deliverables-title{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);white-space:nowrap;padding-top:4px}
+.deliverables-chips{display:flex;flex-wrap:wrap;gap:6px}
+.deliverable-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--line-soft);border-radius:999px;background:var(--surface);color:var(--ink);font-family:var(--mono);font-size:11px;cursor:pointer;transition:border-color .15s,color .15s}
+.deliverable-chip:hover{border-color:var(--accent);color:var(--accent-dark)}
+.deliverable-op{font-size:10px;color:var(--accent-dark);font-weight:600}

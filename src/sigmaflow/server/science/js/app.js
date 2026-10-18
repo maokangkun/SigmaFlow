@@ -398,14 +398,15 @@
       const meta = CS.ui.conversations.find(c => c.id === id) || {};
       const run = { id, kind: 'chat', title: meta.title || data.title || '会话', projectId: data.projectId, prompt: '', datasetIds: [], config: {},
               messages: data.content.map(m => {
-                const msg = { role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) };
+                const msg = { role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) };
                 // 旧格式记录压平了时间线, 加载时重建为 think/tool/text 块以便按时间线展示
-                if (msg.role === 'assistant' && (msg.reasoning || msg.tools?.length || msg.asks?.length)) {
+                if (msg.role === 'assistant' && (msg.reasoning || msg.tools?.length || msg.asks?.length || msg.deliverables?.length)) {
                   const blocks = [];
                   if (msg.reasoning) blocks.push({ type: 'think', text: msg.reasoning });
                   for (const t of msg.tools || []) blocks.push({ type: 'tool', name: t.name, args: t.args, result: t.result });
                   for (const a of msg.asks || []) blocks.push({ type: 'ask', id: a.id, questions: a.questions, answered: !!a.answered, result: a.result, answers: Array.isArray(a.answers) ? a.answers : null, stale: !a.answered });
                   if (msg.content) blocks.push({ type: 'text', text: msg.content });
+                  if (msg.deliverables?.length) blocks.push({ type: 'deliverables', files: msg.deliverables });
                   msg.blocks = blocks;
                 }
                 return msg;
@@ -615,7 +616,7 @@
       id: run.id, title: run.title, projectId: run.projectId,
       pinned: !!conv?.pinned, archived: !!conv?.archived,
       content: run.messages.filter(m => m.role === 'user' || m.role === 'assistant')
-        .map(m => ({ role: m.role, content: m.content, at: m.at, ...(m.model ? { model: m.model } : {}), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) })),
+        .map(m => ({ role: m.role, content: m.content, at: m.at, ...(m.model ? { model: m.model } : {}), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) })),
     };
     try { await CS.api.modelCall('conversation.save', 'POST', '/conversations', payload); }
     catch { if (retry) setTimeout(() => syncConversation(run, false), 3000); }
@@ -629,6 +630,7 @@
       reply.reasoning = reply.blocks.filter(b => b.type === 'think').map(b => b.text).join('');
       reply.tools = reply.blocks.filter(b => b.type === 'tool').map(b => ({ name: b.name, args: b.args, result: b.result }));
       reply.asks = reply.blocks.filter(b => b.type === 'ask').map(b => ({ id: b.id, questions: b.questions, answered: !!b.answered, result: b.result || '', ...(b.answers ? { answers: b.answers } : {}) }));
+      reply.deliverables = reply.blocks.filter(b => b.type === 'deliverables').flatMap(b => b.files || []);
     };
     const lastBlock = () => reply.blocks[reply.blocks.length - 1];
     const pushThink = think => {
@@ -642,6 +644,12 @@
       else reply.blocks.push({ type: 'text', text: delta });
     };
     const pushTool = (t, reqId) => {
+      // 产出文件行(dsh deliverables 思路): 后到的事件携带全量清单, 移除旧块重挂尾部
+      if (t.kind === 'deliverables' && Array.isArray(t.files)) {
+        reply.blocks = reply.blocks.filter(b => b.type !== 'deliverables');
+        if (t.files.length) reply.blocks.push({ type: 'deliverables', files: t.files });
+        return;
+      }
       // 每次工具调用独立成块, 不再合并进之前的工具列表
       if (t.kind === 'call') {
         // ask 的通用工具卡跳过: 问题卡片由专门的 ask 事件负责
@@ -751,7 +759,7 @@
       reply.error = { message: msg, detail: error?.stack ? (msg + '\n\n' + error.stack) : msg };
     }
     finishTimer();
-    reply.blocks = reply.blocks.filter(b => b.type === 'tool' || b.type === 'ask' || !!b.text);  // 丢弃中途产生的空段
+    reply.blocks = reply.blocks.filter(b => b.type === 'tool' || b.type === 'ask' || b.type === 'deliverables' || !!b.text);  // 丢弃中途产生的空段
     CS.save(); CS.render();
     if (!CS.ui.followLock && CS.state.settings.autoScroll !== false) setTimeout(scrollToLatest, 20);  // 用户暂停跟随或关闭自动滚动时不拽到底部
     syncConversation(run);
@@ -1085,6 +1093,18 @@
       CS.ui.askOpen = CS.ui.askOpen || {};
       CS.ui.askOpen[id] = !CS.ui.askOpen[id];
     }),
+    'open-deliverable': async (id, el) => {
+      // 产出文件 chip: 点击用文件预览弹窗打开(项目目录内路径)
+      // 分发器把 dataset.id 作为首参传入, chip 用的是 data-path → 从元素上取
+      const path = el?.dataset?.path;
+      const run = CS.currentRun();
+      if (!path || !run) return;
+      if (!run.projectId) { CS.toast('该会话未关联项目目录，无法打开文件。', 'error'); return; }
+      try {
+        const data = await CS.api.request('/fs/file?projectId=' + encodeURIComponent(run.projectId) + '&path=' + encodeURIComponent(path), { method: 'GET' });
+        CS.showModal('fs-preview', { name: String(path).split('/').pop(), ...data });
+      } catch (err) { CS.toast((err?.message || '请检查文件是否在项目目录内'), 'error'); }
+    },
     'copy-message': id => {
       const run = CS.currentRun(); const m = run?.messages[Number(id)];
       if (!m) return;

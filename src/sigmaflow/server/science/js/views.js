@@ -274,6 +274,12 @@
                 const live = m.streaming && bi === lastIdx && b.result == null && b.type !== 'ask';
                 if (b.type === 'text') return `<div class="agent-intro md-body"${live ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(b.text)}</div>`;
                 if (b.type === 'ask') return renderAsk(b, bi);
+                if (b.type === 'deliverables') {
+                  // 本轮修改文件行(dsh deliverables 思路): 来源只信 edit/write 参数
+                  const files = Array.isArray(b.files) ? b.files : [];
+                  if (!files.length) return '';
+                  return `<div class="deliverables-row"><span class="deliverables-title">${i('file', '', 13)}本轮修改文件</span><div class="deliverables-chips">${files.map(f => `<button type="button" class="deliverable-chip" data-action="open-deliverable" data-path="${e(f.path)}" title="${e(f.path)}"><span class="deliverable-op">${e(f.op === 'write' ? '新建' : '修改')}</span>${e(String(f.path).split('/').pop())}</button>`).join('')}</div></div>`;
+                }
                 if (b.type === 'think') {
                   const open = blockOpen(bi);
                   return `<div class="think-root${live ? ' think-live' : ''}" data-state="${live ? 'running' : 'ok'}"${live ? ' data-live="1"' : ''}${open ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-block" data-id="${e(bkey(bi))}" aria-expanded="${open}"><span class="think-leading">${i('spark', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${live ? '思考中' : '已深度思考'}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"${live ? ' data-follow-end=""' : ''}><span class="think-summary-text">${e(live ? b.text : ((b.text || '').split('\n').filter(Boolean)[0] || ''))}</span></span></button>${open ? `<div class="think-body"${live ? ' data-live-think="1"' : ''}>${e(b.text)}</div>` : ''}</div>`;

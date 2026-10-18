@@ -4122,6 +4122,21 @@ class ScienceProjectStore:
                         )
                     if saved_tools:
                         item["tools"] = saved_tools
+                deliverables = msg.get("deliverables")
+                if isinstance(deliverables, list):
+                    # 本轮产出文件(dsh deliverables 思路): edit/write 的参数位置记录
+                    saved_files = []
+                    for d in deliverables[:40]:
+                        if not isinstance(d, dict):
+                            continue
+                        _path = _clip(str(d.get("path", "")), 500)
+                        if not _path:
+                            continue
+                        saved_files.append(
+                            {"path": _path, "op": _clip(str(d.get("op", "")), 16)}
+                        )
+                    if saved_files:
+                        item["deliverables"] = saved_files
                 if msg.get("tokens") is not None:
                     item["tokens"] = msg.get("tokens")
                 if msg.get("promptTokens") is not None:

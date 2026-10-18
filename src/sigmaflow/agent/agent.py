@@ -6,6 +6,7 @@ import copy
 import base64
 import random
 import traceback
+import threading
 import concurrent.futures
 from rich import print
 from openai import OpenAI
@@ -18,6 +19,36 @@ from functools import singledispatchmethod
 from .tools import TOOL_HANDLERS, skill_loader, Compactor, BG, MCP, get_session_workdir, set_session_workdir
 from .utils import KnightRiderStatus, extract_json
 from .conf import *
+
+# 超时命中标记: 与合法的 None/空串返回区分开
+_TIMEOUT_HIT = object()
+
+
+def _call_with_timeout(fn, seconds, label):
+    """Run fn under a cooperative wall-clock limit (dsh tool-call-timeout-policy style).
+
+    超时后工作线程仍在后台跑(协作式, 无法硬杀), 但调用方立即拿到 _TIMEOUT_HIT,
+    由调用方转成模型可读的结构化错误, 避免单个工具挂死整轮对话。
+    """
+    if not seconds or seconds <= 0:
+        return fn()
+    box = {}
+
+    def _run():
+        try:
+            box["out"] = fn()
+        except BaseException as e:  # noqa: BLE001
+            box["err"] = e
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(seconds)
+    if "out" in box:
+        return box["out"]
+    if "err" in box:
+        raise box["err"]
+    return _TIMEOUT_HIT
+
 
 SYSTEM += skill_loader.get_descriptions()
 SUBAGENT_SYSTEM += skill_loader.get_descriptions()
@@ -60,6 +91,9 @@ class Agent:
         if self.support_tool:
             self.system += '\n\nNote: The agent is allowed to use tools. If the agent needs to use a tool, it should respond with a tool call in the format of <tool_call><function=tool_name><parameter=param_name>param_value</parameter></function></tool_call>. The agent should not provide any other text in its response when using a tool.'
 
+        # 时间块每个用户轮次都要刷新, 基线单独存一份避免累积拼接
+        self._system_base = self.system
+
         match method:
             case "anthropic":
                 self.client = Anthropic(base_url=base_url or ANTHROPIC_BASE_URL, api_key=api_key or API_KEY)
@@ -82,6 +116,21 @@ class Agent:
             "max_model_len": max_model_len,
             "tools": self.tools,
         }
+
+    def _time_block(self) -> str:
+        """Return the per-turn clock context appended after the system prompt."""
+        try:
+            weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            now = time.localtime()
+            return (
+                "\n\n# Current time\n"
+                f"- Now: {time.strftime('%Y-%m-%d %H:%M:%S', now)} ({weekdays[now.tm_wday]})\n"
+                f"- Timezone: {time.strftime('%Z', now)} (UTC{time.strftime('%z', now)})\n"
+                "- Use this as the current time when interpreting relative dates or "
+                "durations from the user. Ask when time zone provenance is unclear."
+            )
+        except Exception:
+            return ""
 
     def print_info(self, subagent=False):
         k = self.client.api_key or '*****'
@@ -116,6 +165,9 @@ class Agent:
     ):
         if on_delta is not None:
             self.on_delta = on_delta
+        if not subagent:
+            # 每个用户轮次重取当前时间(dsh time-context 思路): 模型需要知道"现在"
+            self.system = self._system_base + self._time_block()
         if self.method == "openai" and messages[0]["role"] != "system":
             messages.insert(0, {"role": "system", "content": self.system if not subagent else self.sub_system})
         elif self.method == "anthropic" and messages[0]["role"] == "system":
@@ -549,11 +601,17 @@ class Agent:
                         console.rule("Subagent Started", style="bold red")
                         self.print_info(subagent=True)
                         sub_messages = [{"role": "user", "content": inp['prompt']}]
+                        sub_info = {}
                         try:
-                            self(sub_messages, subagent=True)
+                            sub_info = self(sub_messages, subagent=True) or {}
                             sub_out = sub_messages[-1]['content'][0].text if sub_messages else "(no summary)"
                         except Exception as sub_err:
                             sub_out = f"Error: subagent failed: {type(sub_err).__name__}: {str(sub_err)[:300]}"
+                        # 子代理改过的文件并入父会话的产出清单(dsh deliverables 思路)
+                        _dl = info.setdefault('deliverables', [])
+                        for d in (sub_info.get('deliverables') or []):
+                            if not any(x.get('path') == d.get('path') for x in _dl):
+                                _dl.append(d)
                         console.rule("Subagent End", style="bold red")
                         return sub_out
                     handler = TOOL_HANDLERS.get(func)
@@ -562,29 +620,67 @@ class Agent:
                     # ask 类工具需要把问题卡片推给前端并阻塞等待回答,
                     # 通过 _notify 注入本会话的 on_tool 回调(允许被用户重命名, 认 __ask_tool__ 标记)
                     if getattr(handler, "__ask_tool__", False):
+                        # ask 由用户回答节奏决定, 不设外层超时
                         inp.pop("_notify", None)
                         return str(handler(_notify=self.on_tool, **inp))
-                    return str(handler(**inp))
+                    timeout = TOOL_TIMEOUTS.get(func, TOOL_TIMEOUT_DEFAULT)
+                    # 会话工作目录是 thread-local: 超时包装可能把 handler 挪到新线程,
+                    # 必须在执行前把当前会话的目录绑到那个线程, 否则相对路径会
+                    # 回退到进程根目录, 破坏项目隔离
+                    _wd = get_session_workdir()
+
+                    def _run_handler():
+                        set_session_workdir(_wd)
+                        return handler(**inp)
+
+                    out = _call_with_timeout(_run_handler, int(timeout), func)
+                    if out is _TIMEOUT_HIT:
+                        # 结构化超时错误: 让模型知道该换路, 而不是拿到裸异常
+                        return (f"Error: Tool {func} did not finish within {int(timeout)}s "
+                                "(timeout). The call was abandoned and may still be running "
+                                "in the background. Try a different approach or split the work; "
+                                "do not repeat this exact call.")
+                    return str(out)
                 except Exception as tool_err:
                     return "Error: " + (f"{type(tool_err).__name__}: {tool_err}")[:400]
 
-            # 重复调用拦截: deepseek 等模型拿到结果后偶尔坚持"再跑一遍同样命令",
-            # 造成空回复+重复工具的死循环。发现同一工具+相同参数在最近历史中已执行过时,
-            # 不再实际执行, 直接把上次结果返回并在后面附上提示, 引导模型总结作答。
+            # 渐进式重复守卫(dsh repeat-tool-reminder 思路): 同一工具+完全相同参数
+            # 第 2/3 次仍放行(合法场景: 改完代码重跑同一条测试), 但在结果后附提醒;
+            # 第 4 次起判定为死循环, 不再执行, 直接回上次结果并强制要求作答。
+            # 计数在 info['used_tools'] 上, 其生命周期=一个用户轮次, 天然随新消息清零。
+            def _call_key(inp):
+                try:
+                    return json.dumps(inp, sort_keys=True, ensure_ascii=False)
+                except Exception:
+                    return repr(inp)
+
+            def _count_repeats(c):
+                k = _call_key(c['inp'])
+                n = 0
+                for u in info['used_tools']:
+                    try:
+                        if u[0] == c['func'] and (u[1] == c['inp'] or _call_key(u[1]) == k):
+                            n += 1
+                    except Exception:
+                        continue
+                return n
+
             for c in calls:
                 if c["output"] is not None:
                     continue
-                try:
-                    key = (c['func'], json.dumps(c['inp'], sort_keys=True, ensure_ascii=False))
-                except Exception:
-                    key = (c['func'], repr(c['inp']))
-                prev = next((u for u in reversed(info['used_tools'])
-                             if u[0] == c['func'] and (u[1] == c['inp'] or json.dumps(u[1], sort_keys=True, ensure_ascii=False) == key[1])), None)
-                if prev is not None:
-                    c["output"] = (str(prev[2])[:4000]
-                                   + "\n[System] This exact tool call was already executed with the result above. "
-                                   "Do NOT call it again; answer the user now based on the results you already have.")
-                    continue
+                repeats = _count_repeats(c)
+                if repeats >= 3:
+                    k = _call_key(c['inp'])
+                    prev = next((u for u in reversed(info['used_tools'])
+                                 if u[0] == c['func'] and (u[1] == c['inp'] or _call_key(u[1]) == k)), None)
+                    if prev is not None:
+                        c["output"] = (str(prev[2])[:4000]
+                                       + "\n[System] This exact tool call was already executed "
+                                       f"{repeats} time(s) with the result above. This is a repeated-loop pattern. "
+                                       "Do NOT call it again; answer the user now based on the results you already have.")
+                        continue
+                elif repeats >= 1:
+                    c["repeat_note"] = repeats
 
             needs_wd = {"bash", "grep", "read", "write", "edit"}
             def _tool_exec_cwd(c):
@@ -597,14 +693,25 @@ class Agent:
                 return _tool_exec(c)
 
             runnable = [c for c in calls if c["output"] is None]
+
+            def _note(c, o):
+                # 第 n 次重复执行的软提醒: 只附在成功结果后面, 不影响错误回传
+                n = c.pop('repeat_note', None)
+                if n and isinstance(o, str) and not o.startswith('Error:'):
+                    o += ("\n[System] Reminder: this exact call has now been executed "
+                          f"{n + 1} time(s) with identical arguments. If nothing changed "
+                          "since the previous run the result will be the same — review it "
+                          "and continue, or change your approach.")
+                return o
+
             if len(runnable) > 1 and not any(c["task"] for c in runnable):
                 with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(runnable))) as pool:
                     outs = list(pool.map(_tool_exec_cwd, runnable))
                 for c, o in zip(runnable, outs):
-                    c["output"] = o
+                    c["output"] = _note(c, o)
             else:
                 for c in runnable:
-                    c["output"] = _tool_exec(c) if c["task"] else _tool_exec_cwd(c)
+                    c["output"] = _note(c, _tool_exec(c) if c["task"] else _tool_exec_cwd(c))
 
             results = []
             for c in calls:
@@ -646,6 +753,15 @@ class Agent:
                         # 工具结果必须进入 messages, 否则下一轮模型看不到结果 (deepseek 等会反复空回)
                         messages.append({"role": "tool", "tool_call_id": c["block"].id, "content": str(output)})
 
+                # 产出文件收集(dsh deliverables 思路): 只信 edit/write 的参数位置,
+                # 不依赖模型正文提名, 前端在回合结束渲染「本轮修改文件」
+                if func in ('write', 'edit') and isinstance(inp, dict):
+                    _p = str(inp.get('path') or '').strip()
+                    if _p and not str(output).startswith('Error:'):
+                        _dl = info.setdefault('deliverables', [])
+                        if not any(d['path'] == _p for d in _dl):
+                            _dl.append({'path': _p, 'op': func})
+
                 if func == 'load_skill':
                     info['used_skills'].append((inp.get('name'), output))
                 else:
@@ -663,6 +779,13 @@ class Agent:
                 print(f"{Prompt.User}{m[0]['content']}")
                 messages.extend(m)
                 info["messages"].extend(m)
+
+        if not subagent and self.on_tool is not None and info.get('deliverables'):
+            # 放在最末尾: 前端块按事件到达顺序排列, 产出文件行要落在最终文本之后
+            try:
+                self.on_tool({"kind": "deliverables", "files": info["deliverables"]})
+            except Exception:
+                pass
 
         info["cost_time"] = time.time() - begin_time
         print(f"{Prompt.Ended}total tokens: {info['cost_tokens']}, time: {info['cost_time']:.2f}s, tools: {len(info['used_tools'])}, skills: {len(info['used_skills'])}, rounds: {cur_turn}")
