@@ -249,20 +249,39 @@
                 const open = blockOpen(bi);
                 return `<div class="think-root tool-root${live ? ' think-live' : ''}" data-state="${live ? 'running' : 'ok'}"${open ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-block" data-id="${e(bkey(bi))}" aria-expanded="${open}"><span class="think-leading">${i(meta.icon, '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${meta.label} ${e(b.name)}${live ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(JSON.stringify(b.args || {}).slice(0, 160))}</span></span></button>${open ? `<div class="tool-list"><div class="tool-item${live ? ' tool-running' : ''}"><div class="tool-head"><code>${e(b.name)}</code><span class="tool-args">${e(JSON.stringify(b.args || {}).slice(0, 160))}</span>${live ? '<span class="tool-status">运行中…</span>' : ''}</div>${b.result != null ? `<pre class="tool-result">${e(String(b.result).slice(0, 600))}${String(b.result).length > 600 ? '\n…' : ''}</pre>` : ''}</div></div>` : ''}</div>`;
               };
-              // ask 问题卡: 未回答时可选项+自由输入, 已回答/失效后回放用户答复
+              // ask 问题卡: 未回答时可选项+自由输入; 已回答后默认折叠成一行摘要,
+              // 点标题行可重新展开查看原问题与所选答案; 失效后回放提示
               const renderAsk = (b, bi) => {
                 const key = bkey(bi);
                 const qs = b.questions || [];
                 const state = b.answered ? 'answered' : (b.stale ? 'stale' : 'pending');
+                const title = qs.length > 1 ? `模型向你提出了 ${qs.length} 个问题` : '模型向你提问';
                 const sel = (CS.ui.askSel || {})[key] || {};
+                // 用户答复按问题 id 索引, 供展开态回放选中项/自定义文本
+                const answeredBody = (() => {
+                  const ansById = {};
+                  for (const a of (b.answers || [])) ansById[String(a.id || '')] = a;
+                  return qs.map((q, qi) => {
+                    const ans = ansById[String(q.id || '')] || ansById[`q${qi + 1}`] || {};
+                    const selectedLabels = (ans.selected || []);
+                    const opts = (q.options || []).map(o => `<span class="ask-option${selectedLabels.includes(o.label) ? ' selected' : ''}">${o.description ? ` title="${e(o.description)}"` : ''}<span class="ask-option-label">${e(o.label)}</span>${o.description ? `<span class="ask-option-desc">${e(o.description)}</span>` : ''}</span>`).join('');
+                    const custom = String(ans.custom || '').trim();
+                    const yourText = selectedLabels.length ? `你的选择：${e(selectedLabels.join('、'))}` : '';
+                    return `<div class="ask-q"><div class="ask-q-head">${q.header ? `<span class="ask-q-chip">${e(q.header)}</span>` : ''}<span class="ask-q-text">${e(q.question)}</span></div>${opts ? `<div class="ask-options">${opts}</div>` : ''}${yourText || custom ? `<div class="ask-your-answer">${yourText}${yourText && custom ? ' · ' : ''}${custom ? `补充：<span>${e(custom)}</span>` : ''}</div>` : ''}</div>`;
+                  }).join('');
+                })();
+                if (state === 'answered') {
+                  const open = !!(CS.ui.askOpen || {})[key];
+                  return `<div class="ask-card ask-answered" data-ask-state="answered"${open ? ' data-expanded="1"' : ''}><button type="button" class="ask-answered-row" data-action="toggle-ask" data-id="${e(key)}" aria-expanded="${open}"><span class="ask-head-icon">${i('help', '', 14)}</span><span class="ask-chevron">${i('chevron', '', 12)}</span><span class="ask-title">${e(title)}</span><span class="ask-answered-text">${e(String(b.result || '').slice(0, 300))}</span></button>${open ? `<div class="ask-answered-body">${answeredBody}</div>` : ''}</div>`;
+                }
                 const body = qs.map((q, qi) => {
                   const picked = sel[qi] || new Set();
                   const opts = (q.options || []).map((o, oi) => `<button type="button" class="ask-option${picked.has(oi) ? ' selected' : ''}" data-action="ask-pick-option" data-id="${e(key)}" data-qi="${qi}" data-oi="${oi}"${o.description ? ` title="${e(o.description)}"` : ''}><span class="ask-option-label">${e(o.label)}</span>${o.description ? `<span class="ask-option-desc">${e(o.description)}</span>` : ''}</button>`).join('');
                   const draft = ((CS.ui.askDraft || {})[`${key}|${qi}`] || '');
                   return `<div class="ask-q"><div class="ask-q-head">${q.header ? `<span class="ask-q-chip">${e(q.header)}</span>` : ''}<span class="ask-q-text">${e(q.question)}</span></div>${opts ? `<div class="ask-options">${opts}</div>` : ''}${state === 'pending' ? `<input class="ask-custom-input" data-key="${e(key + '|' + qi)}" placeholder="${e(q.multi_select ? '补充说明（可选）' : '自由输入答案（可选）')}" value="${e(draft)}" autocomplete="off">` : ''}</div>`;
                 }).join('');
-                const footer = state === 'pending' ? `<button type="button" class="btn primary small-btn ask-submit-btn" data-action="ask-submit" data-id="${e(key)}"${b.submitting ? ' disabled' : ''}>${b.submitting ? '发送中…' : '发送回答'}</button>` : state === 'stale' ? `<p class="hint">该问题因页面刷新或停止已失效，无法再回答。</p>` : `<pre class="tool-result">${e(String(b.result || '').slice(0, 600))}</pre>`;
-                return `<div class="ask-card" data-ask-state="${state}"><div class="ask-head">${i('help', '', 14)}<span class="ask-title">${qs.length > 1 ? `模型向你提出了 ${qs.length} 个问题` : '模型向你提问'}</span><span class="tool-status">${state === 'pending' ? '等待你的回答…' : state === 'answered' ? '已回答' : '已失效'}</span></div>${body}<div class="ask-foot">${footer}</div></div>`;
+                const footer = state === 'pending' ? `<button type="button" class="btn primary small-btn ask-submit-btn" data-action="ask-submit" data-id="${e(key)}"${b.submitting ? ' disabled' : ''}>${b.submitting ? '发送中…' : '发送回答'}</button>` : `<p class="hint">该问题因页面刷新或停止已失效，无法再回答。</p>`;
+                return `<div class="ask-card" data-ask-state="${state}"><div class="ask-head">${i('help', '', 14)}<span class="ask-title">${e(title)}</span><span class="tool-status">${state === 'pending' ? '等待你的回答…' : '已失效'}</span></div>${body}<div class="ask-foot">${footer}</div></div>`;
               };
               const tailText = blocks.length && blocks[lastIdx].type === 'text';
               // 未回答的 ask 挂在尾部时, 等待指示改为「等待你的回答」

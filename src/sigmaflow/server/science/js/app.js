@@ -401,7 +401,7 @@
                   const blocks = [];
                   if (msg.reasoning) blocks.push({ type: 'think', text: msg.reasoning });
                   for (const t of msg.tools || []) blocks.push({ type: 'tool', name: t.name, args: t.args, result: t.result });
-                  for (const a of msg.asks || []) blocks.push({ type: 'ask', id: a.id, questions: a.questions, answered: !!a.answered, result: a.result, stale: !a.answered });
+                  for (const a of msg.asks || []) blocks.push({ type: 'ask', id: a.id, questions: a.questions, answered: !!a.answered, result: a.result, answers: Array.isArray(a.answers) ? a.answers : null, stale: !a.answered });
                   if (msg.content) blocks.push({ type: 'text', text: msg.content });
                   msg.blocks = blocks;
                 }
@@ -625,7 +625,7 @@
       reply.content = reply.blocks.filter(b => b.type === 'text').map(b => b.text).join('');
       reply.reasoning = reply.blocks.filter(b => b.type === 'think').map(b => b.text).join('');
       reply.tools = reply.blocks.filter(b => b.type === 'tool').map(b => ({ name: b.name, args: b.args, result: b.result }));
-      reply.asks = reply.blocks.filter(b => b.type === 'ask').map(b => ({ id: b.id, questions: b.questions, answered: !!b.answered, result: b.result || '' }));
+      reply.asks = reply.blocks.filter(b => b.type === 'ask').map(b => ({ id: b.id, questions: b.questions, answered: !!b.answered, result: b.result || '', ...(b.answers ? { answers: b.answers } : {}) }));
     };
     const lastBlock = () => reply.blocks[reply.blocks.length - 1];
     const pushThink = think => {
@@ -649,7 +649,7 @@
       } else {
         if (t.isAsk) {
           const ab = [...reply.blocks].reverse().find(b => b.type === 'ask' && !b.answered);
-          if (ab) { ab.answered = true; ab.result = t.result; return; }
+          if (ab) { ab.answered = true; if (!ab.result) ab.result = t.result; return; }
         }
         const ent = [...reply.blocks].reverse().find(b => b.type === 'tool' && b.name === t.name && b.result == null);
         if (ent) ent.result = t.result;
@@ -1067,6 +1067,7 @@
         try {
           await CS.api.ws.send('ask.answer', { data: { id: block.id, answers } });
           block.answered = true;
+          block.answers = answers;  // 保留结构化答复, 供折叠卡展开态回放
           block.result = '已回答: ' + answers.map(a => a.selected.join('、') || a.custom).join(' | ');
         } catch (error) {
           CS.toast(CS.api.friendlyError(error), 'error');
@@ -1077,6 +1078,10 @@
         syncConversation(ctx.run);
       })();
     },
+    'toggle-ask': (id, el) => _toggleAnchored(el, () => {
+      CS.ui.askOpen = CS.ui.askOpen || {};
+      CS.ui.askOpen[id] = !CS.ui.askOpen[id];
+    }),
     'copy-message': id => {
       const run = CS.currentRun(); const m = run?.messages[Number(id)];
       if (!m) return;

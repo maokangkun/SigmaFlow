@@ -401,3 +401,15 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .ask-foot{display:flex;justify-content:flex-end}
 .ask-foot .hint{margin:0;font-size:10.5px;color:var(--faint);line-height:1.7;text-align:left;flex:1}
 .ask-card .tool-result{margin:0;background:var(--bg);border:1px solid var(--line-soft);border-radius:9px;padding:10px 12px;font-size:11px;white-space:pre-wrap;word-break:break-word;color:var(--ink);flex:1;max-height:220px;overflow:auto}
+/* ask 已回答折叠卡: 默认只留一行摘要, 点标题行展开回放 */
+.ask-answered{padding:0;overflow:hidden}
+.ask-answered-row{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:11px 15px;background:var(--surface);border:0;font-size:12px;font-weight:600;color:var(--ink-strong)}
+.ask-answered-row:hover{background:#f3f2f8}
+.ask-answered-row .ask-head-icon{color:var(--accent);flex-shrink:0;display:inline-flex}
+.ask-answered-row .ask-chevron{display:inline-flex;color:var(--faint);transition:transform .15s;flex-shrink:0}
+.ask-answered[data-expanded="1"] .ask-answered-row .ask-chevron{transform:rotate(90deg)}
+.ask-answered-text{flex:1;min-width:0;font-size:11.5px;font-weight:450;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ask-answered-body{padding:0 15px 14px;border-top:1px solid var(--line-soft);display:flex;flex-direction:column;gap:12px;margin-top:0}
+.ask-answered-body .ask-option{cursor:default;pointer-events:none}
+.ask-your-answer{font-size:11px;color:var(--muted);line-height:1.7;padding:8px 11px;background:var(--bg);border-radius:9px;border:1px solid var(--line-soft)}
+.ask-your-answer span{color:var(--ink)}

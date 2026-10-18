@@ -4155,12 +4155,31 @@ class ScienceProjectStore:
                         )
                         if not questions:
                             continue
+                        answers = []
+                        if isinstance(a.get("answers"), list):
+                            # 结构化用户答复: 供折叠卡展开态回放选中项与自定义文本
+                            for ans in a["answers"][:20]:
+                                if not isinstance(ans, dict):
+                                    continue
+                                answers.append(
+                                    {
+                                        "id": _clip(str(ans.get("id", "")), 64),
+                                        "selected": [
+                                            _clip(str(s), 300)
+                                            for s in (ans.get("selected") or [])[:12]
+                                        ],
+                                        "custom": _clip(
+                                            str(ans.get("custom") or ""), 2000
+                                        ),
+                                    }
+                                )
                         saved_asks.append(
                             {
                                 "id": _clip(str(a.get("id", "")), 64),
                                 "questions": questions[:20],
                                 "answered": bool(a.get("answered")),
                                 "result": _clip(str(a.get("result", "")), 5000),
+                                **({"answers": answers} if answers else {}),
                             }
                         )
                     if saved_asks:
