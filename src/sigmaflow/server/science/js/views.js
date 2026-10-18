@@ -93,6 +93,38 @@
   // 仅转义 &<>(保留引号字面量供正则匹配), 结果只用于 pre 文本与无属性 span
   V.prettyJSON = text => { try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text || ''; } };
   V.hlJSON = text => text.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])).replace(/("(?:\\.|[^"\\])*")(\s*:)|("(?:\\.|[^"\\])*")|\b(true|false|null)\b|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g, (m, key, colon, str, kw, num) => key ? `<span class="j-key">${key}</span>${colon}` : str ? `<span class="j-str">${str}</span>` : kw ? `<span class="j-kw">${kw}</span>` : num ? `<span class="j-num">${num}</span>` : m);
+  // unified diff → GitHub 风格双行号 HTML; 仅在结果长得像 diff 时由工具卡调用
+  V.isUnifiedDiff = text => /^--- .+$/m.test(text) && /^\+\+\+ .+$/m.test(text) && /@@ -\d+/.test(text);
+  V.renderUnifiedDiff = text => {
+    const esc = CS.escape;
+    const lines = text.split('\n');
+    const rows = [];
+    let oldNo = 0, newNo = 0, inHunk = false;
+    let oldFile = '', newFile = '';
+    for (const raw of lines) {
+      const line = raw.replace(/\r$/, '');
+      const hm = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (hm) {
+        inHunk = true; oldNo = Number(hm[1]); newNo = Number(hm[2]);
+        rows.push({ kind: 'hunk', code: line });
+      } else if (!inHunk && /^--- /.test(line)) {
+        oldFile = line.slice(4);
+      } else if (!inHunk && /^\+\+\+ /.test(line)) {
+        newFile = line.slice(4);
+      } else if (inHunk) {
+        const sign = (line[0] === ' ' || line === '') ? ' ' : line[0];
+        if (sign === '-') { rows.push({ kind: 'del', o: oldNo++, code: line.slice(1) }); }
+        else if (sign === '+') { rows.push({ kind: 'add', n: newNo++, code: line.slice(1) }); }
+        else if (line === '\\ No newline at end of file') { rows.push({ kind: 'meta', code: '「此文件末尾没有换行符」' }); }
+        else { rows.push({ kind: 'ctx', o: oldNo++, n: newNo++, code: line[0] === ' ' ? line.slice(1) : line }); }
+      }
+    }
+    const row = r => `<div class="diff-row ${r.kind === 'hunk' ? 'hunk' : r.kind}"><span class="diff-ln">${r.o != null ? r.o : ''}</span><span class="diff-ln">${r.n != null ? r.n : ''}</span><span class="diff-code">${esc(r.code)}</span></div>`;
+    const baseOld = oldFile.replace(/^old: /, '');
+    const baseNew = newFile.replace(/^new: /, '');
+    const file = baseOld && baseNew && baseOld === baseNew ? baseNew : `${oldFile} → ${newFile}`;
+    return '<div class="diff-view">' + (file.trim() ? `<div class="diff-file">${esc(file)}</div>` : '') + `<div class="diff-body">${rows.map(row).join('')}</div></div>`;
+  };
   const schemaDirty = (a, b) => {
     if (a === b) return false;
     try { return JSON.stringify(JSON.parse(a)) !== JSON.stringify(JSON.parse(b)); } catch { return a !== b; }
@@ -247,7 +279,7 @@
                 }
                 const meta = blockMeta(b);
                 const open = blockOpen(bi);
-                return `<div class="think-root tool-root${live ? ' think-live' : ''}" data-state="${live ? 'running' : 'ok'}"${open ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-block" data-id="${e(bkey(bi))}" aria-expanded="${open}"><span class="think-leading">${i(meta.icon, '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${meta.label} ${e(b.name)}${live ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(JSON.stringify(b.args || {}).slice(0, 160))}</span></span></button>${open ? `<div class="tool-list"><div class="tool-item${live ? ' tool-running' : ''}"><div class="tool-head"><code>${e(b.name)}</code><span class="tool-args">${e(JSON.stringify(b.args || {}).slice(0, 160))}</span>${live ? '<span class="tool-status">运行中…</span>' : ''}</div>${b.result != null ? `<pre class="tool-result">${e(String(b.result).slice(0, 600))}${String(b.result).length > 600 ? '\n…' : ''}</pre>` : ''}</div></div>` : ''}</div>`;
+                return `<div class="think-root tool-root${live ? ' think-live' : ''}" data-state="${live ? 'running' : 'ok'}"${open ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-block" data-id="${e(bkey(bi))}" aria-expanded="${open}"><span class="think-leading">${i(meta.icon, '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${meta.label} ${e(b.name)}${live ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(JSON.stringify(b.args || {}).slice(0, 160))}</span></span></button>${open ? `<div class="tool-list"><div class="tool-item${live ? ' tool-running' : ''}"><div class="tool-head"><code>${e(b.name)}</code><span class="tool-args">${e(JSON.stringify(b.args || {}).slice(0, 160))}</span>${live ? '<span class="tool-status">运行中…</span>' : ''}</div>${b.result != null ? (V.isUnifiedDiff(String(b.result)) ? V.renderUnifiedDiff(String(b.result).slice(0, 20000)) : `<pre class="tool-result">${e(String(b.result).slice(0, 600))}${String(b.result).length > 600 ? '\n…' : ''}</pre>`) : ''}</div></div>` : ''}</div>`;
               };
               // ask 问题卡: 未回答时可选项+自由输入; 已回答后默认折叠成一行摘要,
               // 点标题行可重新展开查看原问题与所选答案; 失效后回放提示
@@ -306,7 +338,7 @@
     const cancel = ['awaiting','running','paused','error'].includes(run.status) ? btn('cancel-run','取消任务','stop','flat') : '';
     return `<section class="page chat-page"><div class="chat-layout ${!CS.state.settings.inspector ? 'no-inspector' : ''}"><div class="chat-main"><header class="chat-title"><div><h1>${e(run.title)}</h1><p class="small muted">${e(CS.state.projects.find(p => p.id === run.projectId)?.name || '未指定项目')} <span class="faint"> / </span> 演示任务</p></div><div class="row">${status(run.status)}${iconBtn('toggle-inspector','panel','显示 / 隐藏任务详情')}</div></header>
       <div class="conversation"><div class="user-message">${e(run.prompt)}${run.datasetIds.length ? `<div class="attachment-list mt-12">${run.datasetIds.map(id => `<span class="attachment">${i('file')}${e(CS.state.datasets.find(d => d.id === id)?.name || '已删除的输入记录')}</span>`).join('')}</div>` : ''}<div class="message-meta">${CS.time(run.createdAt)}</div></div>
-      <div class="agent-message"><div class="agent-avatar${m.streaming ? ' avatar-pulsing' : ' '}">${i('dna','',21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science <span class="pill small">演示 Agent</span></div><p class="agent-intro">${completed ? '演示流程已完成。下面保留了每一步的状态、输入记录与可导出的结果。' : waiting ? '我已将你的问题整理为以下演示计划。请先检查输入与步骤，确认后再执行。' : '正在按已确认的计划展示任务进度。你可以随时暂停、查看日志，或取消任务。'}所有分析图表均使用预设合成数据，不对上传文件进行生物学分析。</p>
+      <div class="agent-message"><div class="agent-avatar${run.streaming ? ' avatar-pulsing' : ' '}">${i('dna','',21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science <span class="pill small">演示 Agent</span></div><p class="agent-intro">${completed ? '演示流程已完成。下面保留了每一步的状态、输入记录与可导出的结果。' : waiting ? '我已将你的问题整理为以下演示计划。请先检查输入与步骤，确认后再执行。' : '正在按已确认的计划展示任务进度。你可以随时暂停、查看日志，或取消任务。'}所有分析图表均使用预设合成数据，不对上传文件进行生物学分析。</p>
       <div class="run-card" data-phase="${run.status}"><div class="run-card-title"><div class="row">${run.status === 'running' ? '<span class="spinner"></span>' : i(completed ? 'checkcircle' : 'workflow','',17)}<strong>${waiting ? '执行前，确认你的分析计划' : completed ? '演示分析已完成' : 'Agent 任务进度'}</strong></div><span class="small muted">${run.progress}%</span></div><div class="run-progress"><span style="width:${run.progress}%"></span></div><ol class="step-list">
       ${run.steps.map((s, index) => `<li class="step ${s.status}"><span class="step-bullet">${s.status === 'complete' ? i('check') : index + 1}</span><div class="step-title"><span>${e(s.title)}</span>${!waiting ? `<span class="step-progress-mini"><span class="track"><span style="width:${s.progress}%"></span></span>${s.progress}%</span>` : ''}</div><p class="step-description">${e(s.description)}</p>${!waiting ? `<button class="step-log-toggle" data-action="toggle-log" data-id="${index}">${i('chevron', CS.ui.expandedLogs.has(index) ? 'rotate' : '')} ${e(s.tool)} · ${s.status === 'complete' ? '查看日志' : s.status === 'running' ? '运行中' : '等待执行'}</button>${CS.ui.expandedLogs.has(index) ? `<pre class="step-log">${e(`[${s.tool}] ${s.status === 'complete' ? s.output : s.status === 'running' ? 'Simulating… 仅演示进度' : 'Waiting…'}\nSource: synthetic fixture · no uploaded file execution`)}</pre>` : ''}` : ''}</li>`).join('')}
       </ol><div class="run-actions"><span class="run-note">${run.reloaded ? run.transport === 'remote' ? '页面已重载，请重连同步服务端状态。' : '页面曾重新加载，执行已暂停。' : completed ? '执行记录已保存在当前工作空间。' : '仅在确认后执行。演示模式不会产生模型费用。'}</span><div class="row gap-6">${controls}${cancel}${completed ? btn('open-results','查看结果','arrow','primary') : ''}${run.status === 'cancelled' ? btn('restart-run','重新规划','refresh','flat') : ''}</div></div></div>
