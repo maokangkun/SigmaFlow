@@ -773,21 +773,21 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 /* 通用设置: 界面缩放滑杆(与音量滑杆同款) */
 .ui-scale-row input[type="range"]{width:150px;accent-color:var(--accent);background:transparent;border:0;padding:0}
 .ui-scale-label{min-width:40px;text-align:right;font-variant-numeric:tabular-nums}
-/* 工具结果: unified diff 的 GitHub 风格渲染(双行号 + 行级着色) */
-.diff-view{margin:10px 0 0;border:1px solid var(--line-soft);border-radius:10px;overflow:hidden;background:var(--surface);font-family:var(--mono);font-size:11px;line-height:1.75}
-.diff-file{padding:6px 12px;background:var(--bg);color:var(--muted);border-bottom:1px solid var(--line-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.diff-body{max-height:420px;overflow:auto}
-.diff-row{display:grid;grid-template-columns:40px 40px 1fr;width:max-content;min-width:100%}
-.diff-row .diff-ln{text-align:right;padding:0 8px;color:var(--faint);user-select:none;border-right:1px solid var(--line-soft);font-variant-numeric:tabular-nums;background:var(--bg)}
-.diff-row .diff-code{white-space:pre;padding:0 10px;color:var(--ink);overflow-wrap:normal}
-.diff-row.add{background:#e9f7ee}
-.diff-row.add .diff-code{color:#1a7f37}
+/* 工具结果: unified diff 的 GitHub 风格渲染(单行号列 + 行级着色)。
+   整个 diff 体是同一个 grid: 所有行共享列宽, 短行的行底色能铺满最宽行,
+   横向滚动时不会出现颜色被截断的竖缝。 */
+.diff-view{margin:10px 0 0;border:1px solid var(--line-soft);border-radius:10px;overflow-x:auto;background:var(--surface);font-family:var(--mono);font-size:11px;line-height:1.75}
+.diff-file{position:sticky;left:0;width:max-content;min-width:100%;box-sizing:border-box;padding:6px 12px;background:var(--bg);color:var(--muted);border-bottom:1px solid var(--line-soft);white-space:nowrap}
+.diff-body{display:grid;grid-template-columns:44px 1fr;width:max-content;min-width:100%;max-height:420px;overflow-y:auto}
+.diff-row{display:contents}
+.diff-row .diff-ln{box-sizing:border-box;text-align:right;padding:0 10px 0 8px;color:var(--faint);user-select:none;border-right:1px solid var(--line-soft);font-variant-numeric:tabular-nums;background:var(--bg)}
+.diff-row .diff-code{white-space:pre;padding:0 10px;color:var(--ink);background:var(--surface)}
 .diff-row.add .diff-ln{background:#d9f2e3;color:#5cb382}
-.diff-row.del{background:#fdeef0}
-.diff-row.del .diff-code{color:#cf222e}
+.diff-row.add .diff-code{background:#e9f7ee;color:#1a7f37}
 .diff-row.del .diff-ln{background:#fadfdf;color:#d98a8a}
-.diff-row.hunk{background:var(--accent-bg)}
-.diff-row.hunk .diff-code{color:var(--accent-dark)}
+.diff-row.del .diff-code{background:#fdeef0;color:#cf222e}
+.diff-row.hunk .diff-ln{background:var(--accent-bg)}
+.diff-row.hunk .diff-code{background:var(--accent-bg);color:var(--accent-dark)}
 .diff-row.meta .diff-code{color:var(--faint);font-style:italic}
 
 </style>
@@ -4285,7 +4285,8 @@ CS.audio = (function () {
         else { rows.push({ kind: 'ctx', o: oldNo++, n: newNo++, code: line[0] === ' ' ? line.slice(1) : line }); }
       }
     }
-    const row = r => `<div class="diff-row ${r.kind === 'hunk' ? 'hunk' : r.kind}"><span class="diff-ln">${r.o != null ? r.o : ''}</span><span class="diff-ln">${r.n != null ? r.n : ''}</span><span class="diff-code">${esc(r.code)}</span></div>`;
+    // 单列行号: - 行取旧号, + 行取新号, 上下文两者相同任取其一
+    const row = r => `<div class="diff-row ${r.kind === 'hunk' ? 'hunk' : r.kind}"><span class="diff-ln">${r.o != null ? r.o : (r.n != null ? r.n : '')}</span><span class="diff-code">${esc(r.code)}</span></div>`;
     const baseOld = oldFile.replace(/^old: /, '');
     const baseNew = newFile.replace(/^new: /, '');
     const file = baseOld && baseNew && baseOld === baseNew ? baseNew : `${oldFile} → ${newFile}`;

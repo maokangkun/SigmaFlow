@@ -119,7 +119,8 @@
         else { rows.push({ kind: 'ctx', o: oldNo++, n: newNo++, code: line[0] === ' ' ? line.slice(1) : line }); }
       }
     }
-    const row = r => `<div class="diff-row ${r.kind === 'hunk' ? 'hunk' : r.kind}"><span class="diff-ln">${r.o != null ? r.o : ''}</span><span class="diff-ln">${r.n != null ? r.n : ''}</span><span class="diff-code">${esc(r.code)}</span></div>`;
+    // 单列行号: - 行取旧号, + 行取新号, 上下文两者相同任取其一
+    const row = r => `<div class="diff-row ${r.kind === 'hunk' ? 'hunk' : r.kind}"><span class="diff-ln">${r.o != null ? r.o : (r.n != null ? r.n : '')}</span><span class="diff-code">${esc(r.code)}</span></div>`;
     const baseOld = oldFile.replace(/^old: /, '');
     const baseNew = newFile.replace(/^new: /, '');
     const file = baseOld && baseNew && baseOld === baseNew ? baseNew : `${oldFile} → ${newFile}`;
