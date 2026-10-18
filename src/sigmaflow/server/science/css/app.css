@@ -416,3 +416,6 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 /* 通用设置: 提示音音量滑杆 */
 .sound-volume-row input[type="range"]{width:150px;accent-color:var(--accent);background:transparent;border:0;padding:0}
 .sound-volume-label{min-width:40px;text-align:right;font-variant-numeric:tabular-nums}
+/* 通用设置: 界面缩放滑杆(与音量滑杆同款) */
+.ui-scale-row input[type="range"]{width:150px;accent-color:var(--accent);background:transparent;border:0;padding:0}
+.ui-scale-label{min-width:40px;text-align:right;font-variant-numeric:tabular-nums}

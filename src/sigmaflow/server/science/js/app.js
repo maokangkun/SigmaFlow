@@ -162,6 +162,9 @@
   // 全量重渲染会重建 .conversation 容器导致滚动位置丢失(如展开思考/工具块时页面跳走)。
   // 渲染前记录 scrollTop, 渲染后恢复; 显式的 scrollToLatest() 在渲染返回后仍会覆盖为新位置。
   CS.render = function() {
+    // 界面缩放: 每次渲染幂等同步 body zoom, 启动加载设置后无需额外初始化
+    const _zs = Number(CS.state.settings.uiScale);
+    document.body.style.zoom = (Number.isFinite(_zs) && _zs >= 85 && _zs <= 125 && _zs !== 100) ? String(_zs / 100) : '';
     const conv = document.querySelector('.conversation');
     const savedTop = conv ? conv.scrollTop : 0;
     const hadConv = !!conv;
@@ -705,7 +708,7 @@
         pushTool(t, reqId);
         mirror();
         CS.save();  // 流式中途刷新会丢失工具/ask 块, 每个工具事件落盘一次
-        const follow = nearBottom() && !CS.ui.followLock;
+        const follow = nearBottom() && !CS.ui.followLock && CS.state.settings.autoScroll !== false;
         CS.render();
         if (follow) scrollToLatest();
       };
@@ -721,7 +724,7 @@
         mirror();
         reply.tokens = (reply.tokens || 0) + estTokens(delta);
         const now = Date.now();
-        if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
+        if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock && CS.state.settings.autoScroll !== false; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       }, think => {
         if (CS.ui.chatRetry) CS.ui.chatRetry = null;
         pushThink(think);
@@ -729,7 +732,7 @@
         reply.tokens = (reply.tokens || 0) + estTokens(think);
         CS.ui.thinkingText = reply.reasoning;
         const now = Date.now();
-        if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
+        if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock && CS.state.settings.autoScroll !== false; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       }, toolEvent, retryEvent);
       // 正文以流式时间线为准(保留各轮文本); 服务端最终内容仅在本地没收到任何文本时兑底
       if (!reply.content && typeof done.content === 'string' && done.content) {
@@ -750,7 +753,7 @@
     finishTimer();
     reply.blocks = reply.blocks.filter(b => b.type === 'tool' || b.type === 'ask' || !!b.text);  // 丢弃中途产生的空段
     CS.save(); CS.render();
-    if (!CS.ui.followLock) setTimeout(scrollToLatest, 20);  // 用户暂停跟随时完成后不拽到底部
+    if (!CS.ui.followLock && CS.state.settings.autoScroll !== false) setTimeout(scrollToLatest, 20);  // 用户暂停跟随或关闭自动滚动时不拽到底部
     syncConversation(run);
   };
   const openNewTask = (prompt, workflowId = 'singlecell', ids = []) => {
@@ -1638,9 +1641,16 @@
       const label = el.parentElement?.querySelector('.sound-volume-label');
       if (label) label.textContent = `${el.value}%`;
     }
+    // 界面缩放滑杆: 拖动即时生效(直接改 body zoom), 不重渲染
+    if (el?.classList?.contains('ui-scale-input')) {
+      CS.state.settings.uiScale = Math.min(125, Math.max(85, Number(el.value) || 100));
+      document.body.style.zoom = String(CS.state.settings.uiScale / 100);
+      const label = el.parentElement?.querySelector('.ui-scale-label');
+      if (label) label.textContent = `${CS.state.settings.uiScale}%`;
+    }
   });
   document.addEventListener('change', event => {
-    if (event.target?.classList?.contains?.('sound-volume-input')) CS.save();
+    if (event.target?.classList?.contains?.('sound-volume-input') || event.target?.classList?.contains?.('ui-scale-input')) CS.save();
     if (event.target?.id === 'fs-upload-input') {
       const picked = [...(event.target.files || [])];
       event.target.value = '';
@@ -1761,7 +1771,11 @@
     if(event.ctrlKey && event.code==='Backquote'){if(CS.state.me?.mode==='multi'&&!(CS.state.me.user&&(CS.state.me.user.name)))return;event.preventDefault();CS.ui.terminal.open=!CS.ui.terminal.open;CS.render();if(CS.ui.terminal.open)setTimeout(()=>CS.agent.pty?.focus(),120);else setTimeout(()=>document.querySelector('.composer-input')?.focus(),80);return;}
     if(event.key==='Escape'){if(CS.ui.modal)CS.closeModal();else if(CS.ui.userMenu){CS.ui.userMenu=false;CS.render();}else if(CS.ui.modelMenu){CS.ui.modelMenu=false;CS.render();}else if(CS.ui.contextMenu){CS.ui.contextMenu=false;CS.render();}else if(CS.ui.mobileSidebar){CS.ui.mobileSidebar=false;CS.render();}return;}
     if(event.altKey && event.key.toLowerCase()==='n'){event.preventDefault();CS.state.currentRunId=null;CS.ui.composer='';CS.ui.attachments=[];CS.save();CS.navigate('home');return;}
-    if(event.target.id==='composer-text' && event.key==='Enter' && !event.shiftKey && !event.isComposing){event.preventDefault();event.target.closest('form').requestSubmit();}
+    // 发送键位: enterSend=true 时 Enter 直接发送(Shift+Enter 换行); false 时 Enter 换行, Ctrl/Cmd+Enter 发送
+    if(event.target.id==='composer-text' && event.key==='Enter' && !event.isComposing){
+      const wantSend = CS.state.settings.enterSend !== false ? !event.shiftKey : !!(event.ctrlKey || event.metaKey);
+      if (wantSend) { event.preventDefault(); event.target.closest('form').requestSubmit(); }
+    }
     // 项目表单内回车不自动提交, 只能点击保存按钮保存项目
     if(event.key==='Enter' && !event.isComposing && event.target.closest?.('#project-form') && event.target.tagName!=='TEXTAREA'){event.preventDefault();}
     if(event.key==='Tab' && CS.ui.modal){

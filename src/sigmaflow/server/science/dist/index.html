@@ -770,6 +770,9 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 /* 通用设置: 提示音音量滑杆 */
 .sound-volume-row input[type="range"]{width:150px;accent-color:var(--accent);background:transparent;border:0;padding:0}
 .sound-volume-label{min-width:40px;text-align:right;font-variant-numeric:tabular-nums}
+/* 通用设置: 界面缩放滑杆(与音量滑杆同款) */
+.ui-scale-row input[type="range"]{width:150px;accent-color:var(--accent);background:transparent;border:0;padding:0}
+.ui-scale-label{min-width:40px;text-align:right;font-variant-numeric:tabular-nums}
 
 </style>
 </head>
@@ -1130,7 +1133,7 @@ CS.markdown = text => {
   CS.defaults = () => ({
     version: 1, projects: clone(CS.data.projects), datasets: clone(CS.data.datasets), runs: [],
     bookmarks: [], notes: {}, projectId: 'pr-pbmc', currentRunId: null,
-    settings: { persist: true, contrast: false, reducedMotion: false, mode: 'local', endpoint: '/sigmaflow/api', inspector: true, model: 'openrouter/free', modelId: null, apiKey: '', lastTest: null, notifySound: true, soundVolume: 1 },
+    settings: { persist: true, contrast: false, reducedMotion: false, mode: 'local', endpoint: '/sigmaflow/api', inspector: true, model: 'openrouter/free', modelId: null, apiKey: '', lastTest: null, notifySound: true, soundVolume: 1, enterSend: true, autoScroll: true, uiScale: 100 },
     username: '',
     me: null
   });
@@ -4635,10 +4638,12 @@ CS.audio = (function () {
         return `<div class="panel settings-section"><div class="row-between"><h2>系统提示词</h2>${pill('服务端存储')}</div><p class="small muted mb-20">自定义提示词会替换 Agent 内置默认(会改变内置任务/团队等指令, 请谨慎); 技能清单自动附加在末尾, 工具调用说明由 Agent 自动追加。子代理仍使用内置提示词。</p><div class="tool-setting-row"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">开关</span><div class="row gap-6"><button type="button" role="switch" aria-checked="${on}" class="switch" data-action="sysprompt-toggle" aria-label="启用自定义系统提示词"></button><span class="small muted">${on ? '已启用自定义' : '使用内置默认'}</span></div></div><div class="tool-field tool-field-top"><span class="tool-field-label">内容</span><textarea id="sysprompt-textarea" class="sysprompt-textarea mono" rows="12" maxlength="32000" spellcheck="false" placeholder="留空并用内置默认; 触发后这里的内容将作为 Agent 的系统提示词…">${e(sp.prompt || '')}</textarea></div><span class="tiny muted">自定义 ${chars} 字符${builtinTokens ? ` · 内置默认约 ${builtinTokens} tokens` : ''} · 保存后上下文圆环自动重新测量</span></div></div>${builtin ? `<details class="sysprompt-builtin"><summary class="small muted">查看内置默认系统提示词</summary><pre class="sysprompt-builtin-pre mono">${e(builtin)}</pre></details>` : ''}<div class="settings-actions row wrap">${btn('save-sysprompt','保存','check','primary')}${btn('reset-sysprompt','恢复默认','refresh','flat')}</div></div>`;
       })(),
       general: (() => {
-        // 通用卡片: 与具体功能无关的整体偏好; 目前承载消息提示音开关与音量
+        // 通用卡片: 与具体功能无关的整体偏好; 提示音 / 键位 / 滚动 / 缩放
         const raw = Number(CS.state.settings.soundVolume);
         const pct = Math.round((Number.isFinite(raw) ? raw : 1) * 100);
-        return `<div class="panel settings-section"><h2>通用</h2><p class="small muted mb-20">影响整体体验的通用偏好, 只保存在本机浏览器。</p>${toggle('notifySound','消息回复提示音','模型回复完成或被停止时播放一声短提示音。')}<div class="setting-row"><div><h3>提示音音量</h3><p>拖动后点「试听」确认效果；拖到 0 等效静音。</p></div><div class="row gap-6 sound-volume-row"><input type="range" class="sound-volume-input" min="0" max="100" step="5" value="${pct}" aria-label="提示音音量"><span class="small muted mono sound-volume-label">${pct}%</span>${btn('sound-preview','试听','play','small-btn flat')}</div></div></div>`;
+        const scaleRaw = Number(CS.state.settings.uiScale);
+        const scale = Number.isFinite(scaleRaw) ? Math.min(125, Math.max(85, Math.round(scaleRaw))) : 100;
+        return `<div class="panel settings-section"><h2>通用</h2><p class="small muted mb-20">影响整体体验的通用偏好, 只保存在本机浏览器。</p>${toggle('notifySound','消息回复提示音','模型回复完成或被停止时播放一声短提示音。')}<div class="setting-row"><div><h3>提示音音量</h3><p>拖动后点「试听」确认效果；拖到 0 等效静音。</p></div><div class="row gap-6 sound-volume-row"><input type="range" class="sound-volume-input" min="0" max="100" step="5" value="${pct}" aria-label="提示音音量"><span class="small muted mono sound-volume-label">${pct}%</span>${btn('sound-preview','试听','play','small-btn flat')}</div></div>${toggle('enterSend','按 Enter 直接发送','开启时 Enter 发送、Shift+Enter 换行；关闭后 Enter 换行，需按 Ctrl/Cmd+Enter 发送。')}${toggle('autoScroll','回复时自动滚动','流式输出与回复完成时自动滚到最新内容；关闭后不再自动拽动滚动位置，可点「回到底部」一键跳转。')}<div class="setting-row"><div><h3>界面缩放</h3><p>整体放大或缩小界面（85%–125%），拖动即时生效。</p></div><div class="row gap-6 ui-scale-row"><input type="range" class="ui-scale-input" min="85" max="125" step="5" value="${scale}" aria-label="界面缩放"><span class="small muted mono ui-scale-label">${scale}%</span></div></div></div>`;
       })(),
       appearance: `<div class="panel settings-section"><h2>外观与交互</h2>${toggle('contrast','增强文字与边界对比','保持浅灰色主题，提高说明文字与控件边界的可读性。')}${toggle('reducedMotion','减少动态效果','关闭过渡与旋转动画，不影响任务状态更新。')}${toggle('inspector','显示任务详情侧栏','在宽屏的 Agent 对话中显示输入上下文与执行边界。')}</div>`,
       privacy: `<div class="panel settings-section"><h2>数据与隐私</h2>${toggle('persist','在本机保存工作空间','保存项目、文件名、对话与任务记录；不保存原始文件。共享电脑建议关闭。关闭后删除已有本地保存，当前会话仍保留。')}<div class="setting-row"><div><h3>导出工作空间</h3><p>导出元信息与任务记录。包含对话内容，分享前请检查隐私。</p></div>${btn('export-workspace','导出 JSON','download','flat')}</div><div class="setting-row"><div><h3>清空并恢复示例</h3><p>移除本机保存的项目、导入记录与对话，恢复初始演示。</p></div>${btn('reset-workspace','重置','trash','flat danger')}</div></div>`,
@@ -4816,6 +4821,9 @@ CS.audio = (function () {
   // 全量重渲染会重建 .conversation 容器导致滚动位置丢失(如展开思考/工具块时页面跳走)。
   // 渲染前记录 scrollTop, 渲染后恢复; 显式的 scrollToLatest() 在渲染返回后仍会覆盖为新位置。
   CS.render = function() {
+    // 界面缩放: 每次渲染幂等同步 body zoom, 启动加载设置后无需额外初始化
+    const _zs = Number(CS.state.settings.uiScale);
+    document.body.style.zoom = (Number.isFinite(_zs) && _zs >= 85 && _zs <= 125 && _zs !== 100) ? String(_zs / 100) : '';
     const conv = document.querySelector('.conversation');
     const savedTop = conv ? conv.scrollTop : 0;
     const hadConv = !!conv;
@@ -5359,7 +5367,7 @@ CS.audio = (function () {
         pushTool(t, reqId);
         mirror();
         CS.save();  // 流式中途刷新会丢失工具/ask 块, 每个工具事件落盘一次
-        const follow = nearBottom() && !CS.ui.followLock;
+        const follow = nearBottom() && !CS.ui.followLock && CS.state.settings.autoScroll !== false;
         CS.render();
         if (follow) scrollToLatest();
       };
@@ -5375,7 +5383,7 @@ CS.audio = (function () {
         mirror();
         reply.tokens = (reply.tokens || 0) + estTokens(delta);
         const now = Date.now();
-        if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
+        if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock && CS.state.settings.autoScroll !== false; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       }, think => {
         if (CS.ui.chatRetry) CS.ui.chatRetry = null;
         pushThink(think);
@@ -5383,7 +5391,7 @@ CS.audio = (function () {
         reply.tokens = (reply.tokens || 0) + estTokens(think);
         CS.ui.thinkingText = reply.reasoning;
         const now = Date.now();
-        if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
+        if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock && CS.state.settings.autoScroll !== false; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       }, toolEvent, retryEvent);
       // 正文以流式时间线为准(保留各轮文本); 服务端最终内容仅在本地没收到任何文本时兑底
       if (!reply.content && typeof done.content === 'string' && done.content) {
@@ -5404,7 +5412,7 @@ CS.audio = (function () {
     finishTimer();
     reply.blocks = reply.blocks.filter(b => b.type === 'tool' || b.type === 'ask' || !!b.text);  // 丢弃中途产生的空段
     CS.save(); CS.render();
-    if (!CS.ui.followLock) setTimeout(scrollToLatest, 20);  // 用户暂停跟随时完成后不拽到底部
+    if (!CS.ui.followLock && CS.state.settings.autoScroll !== false) setTimeout(scrollToLatest, 20);  // 用户暂停跟随或关闭自动滚动时不拽到底部
     syncConversation(run);
   };
   const openNewTask = (prompt, workflowId = 'singlecell', ids = []) => {
@@ -6292,9 +6300,16 @@ CS.audio = (function () {
       const label = el.parentElement?.querySelector('.sound-volume-label');
       if (label) label.textContent = `${el.value}%`;
     }
+    // 界面缩放滑杆: 拖动即时生效(直接改 body zoom), 不重渲染
+    if (el?.classList?.contains('ui-scale-input')) {
+      CS.state.settings.uiScale = Math.min(125, Math.max(85, Number(el.value) || 100));
+      document.body.style.zoom = String(CS.state.settings.uiScale / 100);
+      const label = el.parentElement?.querySelector('.ui-scale-label');
+      if (label) label.textContent = `${CS.state.settings.uiScale}%`;
+    }
   });
   document.addEventListener('change', event => {
-    if (event.target?.classList?.contains?.('sound-volume-input')) CS.save();
+    if (event.target?.classList?.contains?.('sound-volume-input') || event.target?.classList?.contains?.('ui-scale-input')) CS.save();
     if (event.target?.id === 'fs-upload-input') {
       const picked = [...(event.target.files || [])];
       event.target.value = '';
@@ -6415,7 +6430,11 @@ CS.audio = (function () {
     if(event.ctrlKey && event.code==='Backquote'){if(CS.state.me?.mode==='multi'&&!(CS.state.me.user&&(CS.state.me.user.name)))return;event.preventDefault();CS.ui.terminal.open=!CS.ui.terminal.open;CS.render();if(CS.ui.terminal.open)setTimeout(()=>CS.agent.pty?.focus(),120);else setTimeout(()=>document.querySelector('.composer-input')?.focus(),80);return;}
     if(event.key==='Escape'){if(CS.ui.modal)CS.closeModal();else if(CS.ui.userMenu){CS.ui.userMenu=false;CS.render();}else if(CS.ui.modelMenu){CS.ui.modelMenu=false;CS.render();}else if(CS.ui.contextMenu){CS.ui.contextMenu=false;CS.render();}else if(CS.ui.mobileSidebar){CS.ui.mobileSidebar=false;CS.render();}return;}
     if(event.altKey && event.key.toLowerCase()==='n'){event.preventDefault();CS.state.currentRunId=null;CS.ui.composer='';CS.ui.attachments=[];CS.save();CS.navigate('home');return;}
-    if(event.target.id==='composer-text' && event.key==='Enter' && !event.shiftKey && !event.isComposing){event.preventDefault();event.target.closest('form').requestSubmit();}
+    // 发送键位: enterSend=true 时 Enter 直接发送(Shift+Enter 换行); false 时 Enter 换行, Ctrl/Cmd+Enter 发送
+    if(event.target.id==='composer-text' && event.key==='Enter' && !event.isComposing){
+      const wantSend = CS.state.settings.enterSend !== false ? !event.shiftKey : !!(event.ctrlKey || event.metaKey);
+      if (wantSend) { event.preventDefault(); event.target.closest('form').requestSubmit(); }
+    }
     // 项目表单内回车不自动提交, 只能点击保存按钮保存项目
     if(event.key==='Enter' && !event.isComposing && event.target.closest?.('#project-form') && event.target.tagName!=='TEXTAREA'){event.preventDefault();}
     if(event.key==='Tab' && CS.ui.modal){
