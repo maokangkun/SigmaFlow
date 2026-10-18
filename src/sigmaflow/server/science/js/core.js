@@ -32,6 +32,9 @@ CS.tokRateText = m => {
 };
 CS.num = tokens => Math.round(tokens || 0).toLocaleString();
 // 中文数量级缩写(Token 用量统计卡): 1.2亿 / 45.6万 / 123
+// Agent 工具分组键: 内置工具中高频六件套另立"基础"组, 其余内置进"高级"; MCP/Sciverse/arXiv 按各自 origin
+CS.BASIC_TOOL_IDS = ['bash', 'edit', 'read', 'write', 'grep', 'ask'];
+CS.toolGroupKey = t => ((t && (t.origin || 'builtin')) === 'builtin' && CS.BASIC_TOOL_IDS.includes(t && t.id)) ? 'builtin_basic' : (t && t.origin) || 'builtin';
 CS.usageNum = n => {
   n = Math.round(n || 0);
   if (n >= 1e8) return (n / 1e8).toFixed(1) + '亿';

@@ -399,14 +399,14 @@
         const list = CS.ui.toolDraft || CS.ui.agentTools;
         if (!list) return `<div class="panel settings-section"><h2>Agent 工具</h2><p class="small muted mb-20">正在加载工具列表…</p></div>`;
         if (!list.length) return `<div class="panel settings-section"><h2>Agent 工具</h2><p class="small muted mb-20">当前环境没有可配置的内置工具。</p></div>`;
-        // origin 分组: builtin(基础) / sciverse / arxiv / MCP 服务器; 内置三类固定顺序, MCP 按配置顺序
-        const GROUP_LABELS = { builtin: '内置工具 · 基础', sciverse: '内置工具 · Sciverse', arxiv: '内置工具 · arXiv' };
-        const GROUP_ORDER = { builtin: 0, sciverse: 1, arxiv: 2 };
+        // origin 分组: builtin_basic(基础)/builtin(高级) / sciverse / arxiv / MCP 服务器; 内置固定顺序, MCP 按配置顺序
+        const GROUP_LABELS = { builtin_basic: '内置工具 · 基础', builtin: '内置工具 · 高级', sciverse: '内置工具 · Sciverse', arxiv: '内置工具 · arXiv' };
+        const GROUP_ORDER = { builtin_basic: 0, builtin: 1, sciverse: 2, arxiv: 3 };
         const groups = [];
         for (const t of list) {
-          const origin = t.origin || 'builtin';
-          let g = groups.find(x => x.origin === origin);
-          if (!g) groups.push(g = { origin, label: GROUP_LABELS[origin] || `MCP · ${origin}`, rank: GROUP_ORDER[origin] ?? 3, tools: [] });
+          const key = CS.toolGroupKey(t);
+          let g = groups.find(x => x.origin === key);
+          if (!g) groups.push(g = { origin: key, label: GROUP_LABELS[key] || `MCP · ${key}`, rank: GROUP_ORDER[key] ?? 4, tools: [] });
           g.tools.push(t);
         }
         groups.sort((a, b) => a.rank - b.rank);  // 同 rank 时保持插入顺序(稳定排序)
@@ -423,7 +423,7 @@
           const allOn = g.tools.every(t => !!t.enabled);
           return `<div class="tool-group"><div class="tool-group-header"><button type="button" class="tool-group-toggle" data-action="tool-group-toggle" data-id="${e(g.origin)}" aria-expanded="${!collapsed}" aria-label="展开或折叠 ${e(g.label)}"><span class="tool-group-title">${e(g.label)}</span><span class="row gap-6"><span class="tiny muted">${g.tools.length} 个工具</span>${g.origin === 'sciverse' && sciLocked ? pill('未配置 API Key') : ''}${i('down','tool-group-chevron',15)}</span></button><button type="button" role="switch" aria-checked="${allOn}" class="switch tool-group-switch" data-action="tool-group-switch" data-id="${e(g.origin)}" aria-label="整组启用或禁用 ${e(g.label)}" ${g.origin === 'sciverse' && sciLocked ? 'disabled title="需先在第三方 API Key 中配置 Sciverse API"' : 'title="整组启用/禁用"'}></button></div><div class="tool-group-rows ${collapsed ? 'collapsed' : ''}">${g.tools.map(row).join('')}</div></div>`;
         }).join('');
-        return `<div class="panel settings-section"><div class="row-between"><h2>Agent 工具</h2>${pill('服务端存储')}</div><p class="small muted mb-20">按来源分组展示 Agent 会话可用的工具(基础/Sciverse/arXiv 与各 MCP 服务器, 点击组标题可折叠): 同一行内两列卡片等高; 启用开关、名称、描述与参数 schema 随下一次请求生效; 禁用的工具不再发给模型, 也不再占用上下文。参数 schema 需为合法 JSON 对象。Sciverse 分组需先在第三方 API Key 中配置密钥, 未配置时整组保持关闭。</p><div class="tool-groups">${groupBlocks}</div><div class="settings-actions row wrap">${btn('save-tools','保存','check','primary')}${btn('reset-tools','恢复默认','refresh','flat')}</div></div>`;
+        return `<div class="panel settings-section"><div class="row-between"><h2>Agent 工具</h2>${pill('服务端存储')}</div><p class="small muted mb-20">按来源分组展示 Agent 会话可用的工具(基础/高级/Sciverse/arXiv 与各 MCP 服务器, 点击组标题可折叠): 同一行内两列卡片等高; 启用开关、名称、描述与参数 schema 随下一次请求生效; 禁用的工具不再发给模型, 也不再占用上下文。参数 schema 需为合法 JSON 对象。Sciverse 分组需先在第三方 API Key 中配置密钥, 未配置时整组保持关闭。</p><div class="tool-groups">${groupBlocks}</div><div class="settings-actions row wrap">${btn('save-tools','保存','check','primary')}${btn('reset-tools','恢复默认','refresh','flat')}</div></div>`;
       })(),
       skills: (() => {
         // Agent 技能设置: 与工具设定同构, 未保存的修改存 skillDraft, 重渲染不丢
