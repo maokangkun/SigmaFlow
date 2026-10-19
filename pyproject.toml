@@ -99,3 +99,15 @@ version = {attr = "sigmaflow.version.__version__"}
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-q"
+
+[tool.mypy]
+python_version = "3.10"
+
+[[tool.mypy.overrides]]
+# 这些库缺类型 stub(types-PyYAML/types-requests)或自身无 py.typed(arxiv), 环境装齐后可摘掉
+module = ["yaml", "requests", "arxiv"]
+ignore_missing_imports = true
+
+[tool.ruff.lint.per-file-ignores]
+# agent 包沿用 from .conf import * 的常量导入模式; 名字正确性已由 mypy 全量检查覆盖
+"src/sigmaflow/agent/**" = ["F403", "F405"]

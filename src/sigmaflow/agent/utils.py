@@ -4,6 +4,7 @@ Knight Rider style scanner animation as a context manager.
 Similar to rich.status.Status but with Knight Rider animation.
 Fixed at bottom of terminal while other output appears above.
 """
+
 import re
 import ast
 import sys
@@ -11,20 +12,21 @@ import json
 import time
 import select
 import threading
-from enum import Enum
 from rich import print as rprint
 from dataclasses import dataclass
 from typing import Optional, List, Tuple
 from .conf import Prompt
 
 # For keyboard input detection
+# 终端能力探测: import 本身即探测目的, HAS_UNIX_TERMIOS 是标记
 try:
-    import termios
-    import tty
+    import termios  # noqa: F401
+    import tty  # noqa: F401
 
     HAS_UNIX_TERMIOS = True
 except ImportError:
     HAS_UNIX_TERMIOS = False
+
 
 def extract_json(text):
     text = text.strip()

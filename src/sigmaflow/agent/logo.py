@@ -16,8 +16,9 @@ try:
     import termios
     import tty
 except ImportError:
-    termios = None
-    tty = None
+    # 终端能力缺失时降级运行(Windows 等无 termios 环境)
+    termios = None  # type: ignore[assignment]
+    tty = None  # type: ignore[assignment]
 
 LOGO_FULL = {
     "left": [
@@ -111,7 +112,8 @@ def _mix(
     a: tuple[int, int, int], b: tuple[int, int, int], amount: float
 ) -> tuple[int, int, int]:
     amount = max(0.0, min(1.0, amount))
-    return tuple(round(x + (y - x) * amount) for x, y in zip(a, b))
+    mixed = tuple(round(x + (y - x) * amount) for x, y in zip(a, b))
+    return (mixed[0], mixed[1], mixed[2])
 
 
 def _tint(base: tuple[int, int, int], glow: float) -> tuple[int, int, int]:
@@ -338,8 +340,9 @@ class Logo:
         if not end_cursor:
             return
         self.print_row, self.print_column = end_cursor[0] - len(lines), 1
-        self.logo_row, self.logo_column = self.print_row + self.margin, 1 + len(
-            self.pad
+        self.logo_row, self.logo_column = (
+            self.print_row + self.margin,
+            1 + len(self.pad),
         )
         self.active = True
 
@@ -435,6 +438,7 @@ class Logo:
             "mouse_support": True,
             "key_bindings": self.key_bindings(),
         }
+
 
 if __name__ == "__main__":
     Logo.print()

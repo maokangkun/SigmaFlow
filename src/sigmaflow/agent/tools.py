@@ -1,6 +1,6 @@
 import re
 import shlex
-from typing import Any
+from typing import Any, Optional, cast
 import yaml
 import time
 import json
@@ -14,7 +14,6 @@ import shutil
 from rich import print
 from pathlib import Path
 from collections import defaultdict
-from .utils import KnightRiderStatus
 from .conf import *
 from .sciverse_api import SCIVERSE_TOOL_HANDLERS, SCIVERSE_TOOLS
 
@@ -43,6 +42,7 @@ def safe_path(p: str) -> Path:
         raise ValueError(f"Path escapes workspace: {p}")
     return path
 
+
 def run_bash(command: str) -> str:
     if command == "":
         return "Error: command cannot be empty"
@@ -50,14 +50,21 @@ def run_bash(command: str) -> str:
     if any(d in command for d in dangerous):
         return "Error: Dangerous command blocked"
     try:
-        r = subprocess.run(command, shell=True, cwd=get_session_workdir(),
-                           capture_output=True, text=True, timeout=CMD_TIMEOUT)
+        r = subprocess.run(
+            command,
+            shell=True,
+            cwd=get_session_workdir(),
+            capture_output=True,
+            text=True,
+            timeout=CMD_TIMEOUT,
+        )
         out = (r.stdout + r.stderr).strip()
         return out or "(no output)"
     except subprocess.TimeoutExpired:
         return f"Error: Timeout ({CMD_TIMEOUT}s)"
     except Exception as e:
         return f"Error: {e}"
+
 
 def run_grep(tool: str, args: str) -> str:
     if not tool:
@@ -68,7 +75,8 @@ def run_grep(tool: str, args: str) -> str:
         return f"Error: unavailable grep tool '{tool}'. Available: {', '.join(AVAILABLE_GREP_TOOLS) or '(none)'}"
     try:
         argv = shlex.split(args)
-        if argv[0] == tool: argv = argv[1:]
+        if argv[0] == tool:
+            argv = argv[1:]
     except ValueError as e:
         return f"Error: failed to parse args: {e}"
     if not argv:
@@ -89,17 +97,22 @@ def run_grep(tool: str, args: str) -> str:
     except Exception as e:
         return f"Error: {e}"
 
-def run_read(path: str, offset: int = None, limit: int = None) -> str:
+
+def run_read(
+    path: str, offset: Optional[int] = None, limit: Optional[int] = None
+) -> str:
     if path == "":
         return "Error: path cannot be empty"
     try:
-        path = (get_session_workdir() / path).resolve()
-        text = path.read_text()
+        # 路径参数与解析后的文件对象分别保存, 避免 mypy 对重赋值的类型冲突
+        file = (get_session_workdir() / path).resolve()
+        text = file.read_text()
         lines = text.splitlines()
 
         if offset and 0 < offset < len(lines):
             lines = [f"[{offset} lines skipped] ..."] + lines[offset:]
-            if limit: limit += 1
+            if limit:
+                limit += 1
 
         if limit and limit < len(lines):
             lines = lines[:limit] + [f"... [{len(lines) - limit} more lines]"]
@@ -107,6 +120,7 @@ def run_read(path: str, offset: int = None, limit: int = None) -> str:
         return "\n".join(lines)[:50000]
     except Exception as e:
         return f"Error: {e}"
+
 
 def run_write(path: str, content: str) -> str:
     if path == "":
@@ -120,6 +134,7 @@ def run_write(path: str, content: str) -> str:
         return f"Wrote {len(content)} bytes to {path}"
     except Exception as e:
         return f"Error: {e}"
+
 
 def run_edit(path: str, old_text: str, new_text: str) -> str:
     if path == "":
@@ -144,15 +159,18 @@ def run_edit(path: str, old_text: str, new_text: str) -> str:
     except Exception as e:
         return f"Error: {e}"
 
-def arxiv_search(query: str, max_results: int = 5) -> str:
+
+def arxiv_search(query: str, max_results: int = 5) -> "str | list[dict[str, Any]]":
     if query == "":
         return "Error: query cannot be empty"
     client = arxiv.Client()
-    search = arxiv.Search(query=query, max_results=max_results, sort_by=arxiv.SortCriterion.SubmittedDate)
+    search = arxiv.Search(
+        query=query, max_results=max_results, sort_by=arxiv.SortCriterion.SubmittedDate
+    )
     results = []
     for result in client.results(search):
         paper = {
-            "id": result.entry_id.split('/abs/')[-1],
+            "id": result.entry_id.split("/abs/")[-1],
             "title": result.title,
             "authors": [a.name for a in result.authors],
             "abstract": result.summary,
@@ -160,36 +178,42 @@ def arxiv_search(query: str, max_results: int = 5) -> str:
             "url": result.entry_id,
         }
         results.append(paper)
-    return results[::-1] # oldest first
+    return results[::-1]  # oldest first
+
 
 def read_arxiv(paper_id: str) -> str:
-    if not paper_id: return "Error: paper_id is required"
+    if not paper_id:
+        return "Error: paper_id is required"
     command = f"arxiv2md {paper_id} --remove-refs --remove-toc -o -"
     try:
-        r = subprocess.run(command, shell=True, cwd=get_session_workdir(),
-                           capture_output=True, text=True, timeout=120)
+        r = subprocess.run(
+            command,
+            shell=True,
+            cwd=get_session_workdir(),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
         out = (r.stdout + r.stderr).strip()
         return out[:50000] if out else "(no output)"
     except subprocess.TimeoutExpired:
         return "Error: Timeout (120s)"
 
+
 def rag(query: str):
-    if not query: return "Error: query cannot be empty"
-    d = {
-        "query": query,
-        "mode": "naive",
-        "chunk_top_k": 5,
-        "enable_rerank": False
-    }
+    if not query:
+        return "Error: query cannot be empty"
+    d = {"query": query, "mode": "naive", "chunk_top_k": 5, "enable_rerank": False}
     r = requests.post(RAG_ENDPOINT, json=d, timeout=300)
     j = r.json()
-    return j['data'].get('chunks', [])
+    return j["data"].get("chunks", [])
+
 
 # -- SkillLoader: scan skills/<name>/SKILL.md with YAML frontmatter --
 class SkillLoader:
     def __init__(self, skills_dir: Path):
         self.skills_dir = skills_dir
-        self.skills = {}
+        self.skills: dict[str, Any] = {}
         self._load_all()
 
     def _load_all(self):
@@ -230,7 +254,10 @@ class SkillLoader:
         skill = self.skills.get(name)
         if not skill:
             return f"Error: Unknown skill '{name}'. Available: {', '.join(self.skills.keys())}"
-        return f"<skill name=\"{name}\" path=\"{skill['path']}\">\n{skill['body']}\n</skill>"
+        return (
+            f'<skill name="{name}" path="{skill["path"]}">\n{skill["body"]}\n</skill>'
+        )
+
 
 skill_loader = SkillLoader(SKILLS_DIR)
 
@@ -248,8 +275,15 @@ _COMPACT_WRITE_TOOLS = {"write", "edit"}
 
 
 class Compactor:
-    def __init__(self, transript_dir: Path, client=None, max_model_len=None, model=None, overrides=None):
-        self.transript_dir = transript_dir
+    def __init__(
+        self,
+        transcript_dir: Path,
+        client=None,
+        max_model_len=None,
+        model=None,
+        overrides=None,
+    ):
+        self.transcript_dir = transcript_dir
         self.client = client
         self.max_model_len = max_model_len
         self.model = model
@@ -278,7 +312,9 @@ class Compactor:
         return max(1, int(cjk + (len(text) - cjk) / 3.5))
 
     def estimate_tokens(self, messages: list) -> int:
-        return sum(self._tokens_of(self._msg_text(m)) for m in messages) + 8 * len(messages)
+        return sum(self._tokens_of(self._msg_text(m)) for m in messages) + 8 * len(
+            messages
+        )
 
     @staticmethod
     def _msg_text(m: dict) -> str:
@@ -400,7 +436,11 @@ class Compactor:
                                 + self._clip(body.strip(), result_chars)
                             )
                         else:
-                            text = str(part.get("text") or "") if isinstance(part, dict) else str(part)
+                            text = (
+                                str(part.get("text") or "")
+                                if isinstance(part, dict)
+                                else str(part)
+                            )
                             if text:
                                 lines.append(f"[User]: {self._clip(str(text), 8000)}")
                 else:
@@ -430,7 +470,11 @@ class Compactor:
                 except Exception:
                     args = {}
                 path = next(
-                    (args[k] for k in ("path", "file_path", "filepath", "file") if isinstance(args.get(k), str)),
+                    (
+                        args[k]
+                        for k in ("path", "file_path", "filepath", "file")
+                        if isinstance(args.get(k), str)
+                    ),
                     "",
                 )
                 if not path:
@@ -455,9 +499,17 @@ class Compactor:
     # -- Layer 2: summary_compact - 摘要较早部分 + 摘要卡追加到会话末尾 --
     # 摘要卡按时间顺序作为最新消息放在保留轮次之后(pi 的 compaction entry 语义);
     # 旧摘要卡(任意位置)移除, 其内容经 previousSummary 并入新摘要
-    def summary_compact(self, messages: list, force: bool = False, keep_tokens_override: int = 0, on_delta=None) -> list:
+    def summary_compact(
+        self,
+        messages: list,
+        force: bool = False,
+        keep_tokens_override: int = 0,
+        on_delta=None,
+    ) -> list:
         self.last_meta = None
-        keep_tokens = int(keep_tokens_override or 0) or self._cfg("COMPACT_KEEP_RECENT_TOKENS", int, 16000)
+        keep_tokens = int(keep_tokens_override or 0) or self._cfg(
+            "COMPACT_KEEP_RECENT_TOKENS", int, 16000
+        )
         # 旧摘要卡可在列表任意位置(首次在头部, 之后始终是上轮追加的尾部)
         marker_idx = -1
         for i, m in enumerate(messages):
@@ -472,14 +524,16 @@ class Compactor:
         span = [m for i, m in enumerate(messages[:cut]) if i != marker_idx]
         old_card_in_kept = marker_idx >= cut
         dropped = len(span) + (1 if marker_idx >= 0 else 0)
-        if dropped <= 0 or (not force and dropped < self._cfg("COMPACT_MIN_DROPS", int, 4)):
+        if dropped <= 0 or (
+            not force and dropped < self._cfg("COMPACT_MIN_DROPS", int, 4)
+        ):
             return messages
         kept = [m for i, m in enumerate(messages[cut:]) if i + cut != marker_idx]
         names = self._tool_name_map(messages)
         # 全文转存 transcripts, 供事后审计
         transcript_path = None
         try:
-            tdir = Path(self.transript_dir)
+            tdir = Path(self.transcript_dir)
             tdir.mkdir(parents=True, exist_ok=True)
             transcript_path = tdir / f"transcript_{int(time.time())}.jsonl"
             with open(transcript_path, "w", encoding="utf-8") as f:
@@ -487,7 +541,9 @@ class Compactor:
                     f.write(json.dumps(msg, default=str, ensure_ascii=False) + "\n")
             print(f"{' ' * 12}transcript saved: {transcript_path}")
         except Exception as e:
-            print(f"{' ' * 12}compact transcript dump failed (compaction still applies): {e}")
+            print(
+                f"{' ' * 12}compact transcript dump failed (compaction still applies): {e}"
+            )
         # 文件清单 = 本段 tool_calls 采集 + 旧摘要清单(跨压缩累计)
         sec_read, sec_mod = self._collect_files(span)
         for p2 in self._file_section(prev_summary, "read-files"):
@@ -501,7 +557,11 @@ class Compactor:
             # 摘要失败不阻塞会话: 机械兜底说明, 保尾照常生效
             summary = (
                 "(本次压缩的摘要生成失败（模型请求未返回内容）, 早期消息已按原文保留在上方, 上下文占位不变; "
-                + (f"原始会话已转存 {transcript_path.name}。 " if transcript_path else "")
+                + (
+                    f"原始会话已转存 {transcript_path.name}。 "
+                    if transcript_path
+                    else ""
+                )
                 + "可稍后在圆环弹卡再次点击「压缩」重试生成摘要。）"
             )
         marker_text = _COMPACT_MARKER
@@ -509,9 +569,15 @@ class Compactor:
             marker_text += f" · transcript {transcript_path.name}"
         marker_text += f"]\n\n{summary}"
         if sec_read:
-            marker_text += "\n\n<read-files>\n" + "\n".join(sec_read[:200]) + "\n</read-files>"
+            marker_text += (
+                "\n\n<read-files>\n" + "\n".join(sec_read[:200]) + "\n</read-files>"
+            )
         if sec_mod:
-            marker_text += "\n\n<modified-files>\n" + "\n".join(sec_mod[:200]) + "\n</modified-files>"
+            marker_text += (
+                "\n\n<modified-files>\n"
+                + "\n".join(sec_mod[:200])
+                + "\n</modified-files>"
+            )
         # 新摘要卡按时间顺序追加到末尾(用户视角: 压缩那一刻的最新一条消息)
         new_messages = [*kept, {"role": "user", "content": marker_text}]
         drop_old_idx = (marker_idx - cut) if old_card_in_kept else -1
@@ -519,7 +585,7 @@ class Compactor:
             "summaryTokens": int(getattr(self, "last_usage_tokens", 0) or 0),
             "summaryInputTokens": int(getattr(self, "last_input_tokens", 0) or 0),
             "applied": True,
-            "removed": cut,          # 前端需从头部删除的条数(含落在其中的旧卡)
+            "removed": cut,  # 前端需从头部删除的条数(含落在其中的旧卡)
             "dropOldIdx": drop_old_idx,  # 旧卡若在保留区, 删头后的相对索引(-1=已随头部删除)
             "kept": len(kept),
             "droppedTotal": dropped,
@@ -527,7 +593,9 @@ class Compactor:
             "transcript": transcript_path.name if transcript_path else "",
             "text": marker_text,
         }
-        print(f"{' ' * 12}compacted: dropped {dropped}, kept {len(kept)}, tokens before ~{self.estimate_tokens(messages)}")
+        print(
+            f"{' ' * 12}compacted: dropped {dropped}, kept {len(kept)}, tokens before ~{self.estimate_tokens(messages)}"
+        )
         return new_messages
 
     # -- 摘要请求: 结构化 pi 摘要 + 迭代 previousSummary; 失败返回空 --
@@ -539,7 +607,9 @@ class Compactor:
         prompt += f"\n\n### Conversation:\n{conversation}"
         return prompt
 
-    def _summarize(self, span: list, names: dict, prev_summary=None, on_delta=None) -> str:
+    def _summarize(
+        self, span: list, names: dict, prev_summary=None, on_delta=None
+    ) -> str:
         if self.client is None:
             return ""
         prompt = self._summary_prompt(span, names, prev_summary)
@@ -555,19 +625,34 @@ class Compactor:
         try:
             if self.client.__class__.__name__ == "Anthropic":
                 response = self.client.messages.create(
-                    model=model, messages=[{"role": "user", "content": prompt}], max_tokens=self._cfg("COMPACT_TOKENS", int, 4096),
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=self._cfg("COMPACT_TOKENS", int, 4096),
                 )
                 summary = response.content[0].text
-                self.last_usage_tokens = getattr(getattr(response, "usage", None), "output_tokens", 0) or 0
-                self.last_input_tokens = getattr(getattr(response, "usage", None), "input_tokens", 0) or 0
+                self.last_usage_tokens = (
+                    getattr(getattr(response, "usage", None), "output_tokens", 0) or 0
+                )
+                self.last_input_tokens = (
+                    getattr(getattr(response, "usage", None), "input_tokens", 0) or 0
+                )
             else:
                 response = self.client.chat.completions.create(
-                    model=model, messages=[{"role": "user", "content": prompt}], max_tokens=self._cfg("COMPACT_TOKENS", int, 4096),
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=self._cfg("COMPACT_TOKENS", int, 4096),
                 )
                 summary = (response.choices[0].message.content or "").strip()
-                self.last_usage_tokens = getattr(getattr(response, "usage", None), "completion_tokens", 0) or 0
-                self.last_input_tokens = getattr(getattr(response, "usage", None), "prompt_tokens", 0) or 0
-            print(f"{' ' * 12}summary({len(summary)} chars, {self.last_usage_tokens} tokens) via {model}")
+                self.last_usage_tokens = (
+                    getattr(getattr(response, "usage", None), "completion_tokens", 0)
+                    or 0
+                )
+                self.last_input_tokens = (
+                    getattr(getattr(response, "usage", None), "prompt_tokens", 0) or 0
+                )
+            print(
+                f"{' ' * 12}summary({len(summary)} chars, {self.last_usage_tokens} tokens) via {model}"
+            )
             return summary
         except Exception as e:
             # 摘要失败: 上层走机械兜底, 会话不中断
@@ -637,14 +722,21 @@ class Compactor:
                     choices = getattr(chunk, "choices", None) or []
                     delta = ""
                     if choices:
-                        delta = getattr(getattr(choices[0], "delta", None), "content", None) or ""
+                        delta = (
+                            getattr(getattr(choices[0], "delta", None), "content", None)
+                            or ""
+                        )
                     if delta:
                         buf.append(delta)
                         _flush()
                 _flush(final=True)
                 if usage_seen is not None:
-                    self.last_usage_tokens = getattr(usage_seen, "completion_tokens", 0) or 0
-                    self.last_input_tokens = getattr(usage_seen, "prompt_tokens", 0) or 0
+                    self.last_usage_tokens = (
+                        getattr(usage_seen, "completion_tokens", 0) or 0
+                    )
+                    self.last_input_tokens = (
+                        getattr(usage_seen, "prompt_tokens", 0) or 0
+                    )
             text = "".join(parts).strip()
             if not text:
                 raise RuntimeError("empty stream")
@@ -653,24 +745,38 @@ class Compactor:
                 self.last_usage_tokens = self._tokens_of(text)
             if not self.last_input_tokens:
                 self.last_input_tokens = self._tokens_of(prompt)
-            print(f"{' ' * 12}summary({len(text)} chars, ~{self.last_usage_tokens} tokens) via {model} [stream]")
+            print(
+                f"{' ' * 12}summary({len(text)} chars, ~{self.last_usage_tokens} tokens) via {model} [stream]"
+            )
             return text
         except Exception as e:
-            print(f"{' ' * 12}compact summary stream failed, falling back to non-stream: {e}")
+            print(
+                f"{' ' * 12}compact summary stream failed, falling back to non-stream: {e}"
+            )
             return None
 
     # -- 触发器: 实际用量与估算取大者决定是否走摘要压缩(pi: tokens > window-reserve) --
     def auto_compact(self, messages: list, force=False, context_ratio=0) -> list:
-        est_ratio = self.estimate_tokens(messages) / self.max_model_len if self.max_model_len else 0
+        est_ratio = (
+            self.estimate_tokens(messages) / self.max_model_len
+            if self.max_model_len
+            else 0
+        )
         ratio = max(est_ratio, context_ratio or 0)
         threshold = self._cfg("COMPACT_RATIO", float, 0.85)
         hard_limit = self._cfg("COMPACT_THRESHOLD", int, 10**20)
         enabled = self._cfg("COMPACT_ENABLED", bool, True)
         # pi 语义: enabled=False 只关自动触发, 手动 /compact 仍然可用
         window = self.max_model_len or 0
-        auto = enabled and (ratio >= threshold or (ratio * window if window else 0) > hard_limit)
+        auto = enabled and (
+            ratio >= threshold or (ratio * window if window else 0) > hard_limit
+        )
         if force or auto:
-            print(f"{Prompt.Compact}manual compact" if force else f"{Prompt.Compact}auto compact triggered")
+            print(
+                f"{Prompt.Compact}manual compact"
+                if force
+                else f"{Prompt.Compact}auto compact triggered"
+            )
             return self.summary_compact(messages, force=force)
         # 未触发: 只做轻量裁剪; 未发生压缩时清掉上次的事件残留
         messages = self.tool_compact(messages, context_ratio=context_ratio)
@@ -718,9 +824,16 @@ class Compactor:
             pass
         else:
             # Clear old results (keep last KEEP_RECENT_TOOL). 默认禁用, 旧逻辑仅作开关保留
-            to_clear = tool_results[:-KEEP_RECENT_TOOL] if KEEP_RECENT_TOOL > 0 else tool_results
+            to_clear = (
+                tool_results[:-KEEP_RECENT_TOOL]
+                if KEEP_RECENT_TOOL > 0
+                else tool_results
+            )
             for result, tool_name in to_clear:
-                if isinstance(result.get("content"), str) and len(result["content"]) < 100:
+                if (
+                    isinstance(result.get("content"), str)
+                    and len(result["content"]) < 100
+                ):
                     continue
                 result["content"] = f"[Previous: used {tool_name}]"
         # 软压力裁剪(dsh pruner 思路): 估算 token 或真实占用占比超过阈值时,
@@ -753,21 +866,26 @@ class Compactor:
             result["content"] = (
                 content[:PRUNE_HEAD_CHARS]
                 + f"\n[middle pruned: {len(content) - PRUNE_HEAD_CHARS - PRUNE_TAIL_CHARS} chars omitted, "
-                  f"full result saved to transcript]\n"
-                + content[-PRUNE_TAIL_CHARS:]
+                f"full result saved to transcript]\n" + content[-PRUNE_TAIL_CHARS:]
             )
         if not dumped:
             return
         try:
-            Path(self.transript_dir).mkdir(exist_ok=True, parents=True)
-            dump_path = Path(self.transript_dir) / f"pruned_results_{time.time_ns() // 1000000}.jsonl"
+            Path(self.transcript_dir).mkdir(exist_ok=True, parents=True)
+            dump_path = (
+                Path(self.transcript_dir)
+                / f"pruned_results_{time.time_ns() // 1000000}.jsonl"
+            )
             with open(dump_path, "a", encoding="utf-8") as f:
                 for d in dumped:
                     f.write(json.dumps(d, ensure_ascii=False, default=str) + "\n")
-            print(f"{' '*12}pruned {len(dumped)} tool result(s), originals saved: {dump_path}")
+            print(
+                f"{' ' * 12}pruned {len(dumped)} tool result(s), originals saved: {dump_path}"
+            )
         except Exception as e:
             # 转存失败不阻断裁剪本体, 只提示
-            print(f"{' '*12}prune dump failed (trim still applied): {e}")
+            print(f"{' ' * 12}prune dump failed (trim still applied): {e}")
+
 
 # -- TaskManager: CRUD with dependency graph, persisted as JSON files --
 class TaskManager:
@@ -792,8 +910,13 @@ class TaskManager:
 
     def create(self, subject: str, description: str = "") -> str:
         task = {
-            "id": self._next_id, "subject": subject, "description": description,
-            "status": "pending", "blockedBy": [], "blocks": [], "owner": "",
+            "id": self._next_id,
+            "subject": subject,
+            "description": description,
+            "status": "pending",
+            "blockedBy": [],
+            "blocks": [],
+            "owner": "",
         }
         self._save(task)
         self._next_id += 1
@@ -802,8 +925,13 @@ class TaskManager:
     def get(self, task_id: int) -> str:
         return json.dumps(self._load(task_id), indent=2, ensure_ascii=False)
 
-    def update(self, task_id: int, status: str = None,
-               add_blocked_by: list = None, add_blocks: list = None) -> str:
+    def update(
+        self,
+        task_id: int,
+        status: Optional[str] = None,
+        add_blocked_by: Optional[list] = None,
+        add_blocks: Optional[list] = None,
+    ) -> str:
         task = self._load(task_id)
         if status:
             if status not in ("pending", "in_progress", "completed"):
@@ -844,12 +972,16 @@ class TaskManager:
             return "No tasks."
         lines = []
         for t in tasks:
-            marker = {"pending": "[ ]", "in_progress": "[>]", "completed": "[x]"}.get(t["status"], "[?]")
+            marker = {"pending": "[ ]", "in_progress": "[>]", "completed": "[x]"}.get(
+                t["status"], "[?]"
+            )
             blocked = f" (blocked by: {t['blockedBy']})" if t.get("blockedBy") else ""
             lines.append(f"{marker} #{t['id']}: {t['subject']}{blocked}")
         return "\n".join(lines)
 
+
 TM = TaskManager(TASKS_DIR)
+
 
 # -- BackgroundManager: threaded execution + notification queue --
 class BackgroundManager:
@@ -861,9 +993,16 @@ class BackgroundManager:
     def run(self, command: str) -> str:
         """Start a background thread, return task_id immediately."""
         task_id = str(uuid.uuid4())[:8]
-        self.tasks[task_id] = {"status": "running", "result": None, "command": command, "proc": None}
+        self.tasks[task_id] = {
+            "status": "running",
+            "result": None,
+            "command": command,
+            "proc": None,
+        }
         thread = threading.Thread(
-            target=self._execute, args=(task_id, command, get_session_workdir()), daemon=True
+            target=self._execute,
+            args=(task_id, command, get_session_workdir()),
+            daemon=True,
         )
         thread.start()
         return f"Background job {task_id} started: {command[:80]}"
@@ -880,8 +1019,12 @@ class BackgroundManager:
         proc = None
         try:
             proc = subprocess.Popen(
-                command, shell=True, cwd=workdir or WORKDIR,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+                command,
+                shell=True,
+                cwd=workdir or WORKDIR,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
             )
             self.tasks[task_id]["proc"] = proc
             out, err = proc.communicate(timeout=300)
@@ -893,8 +1036,9 @@ class BackgroundManager:
                     status = "killed"
         except subprocess.TimeoutExpired:
             try:
-                proc.kill()
-                proc.communicate()
+                if proc is not None:
+                    proc.kill()
+                    proc.communicate()
             except Exception:
                 pass
             output = "Error: Timeout (300s)"
@@ -909,18 +1053,27 @@ class BackgroundManager:
             self.tasks[task_id]["status"] = status
             self.tasks[task_id]["result"] = output or "(no output)"
             with self._lock:
-                self._notification_queue.append({
-                    "task_id": task_id,
-                    "status": status,
-                    "command": command[:80],
-                    "result": (output or "(no output)")[:500],
-                })
+                self._notification_queue.append(
+                    {
+                        "task_id": task_id,
+                        "status": status,
+                        "command": command[:80],
+                        "result": (output or "(no output)")[:500],
+                    }
+                )
 
-    def kill(self, task_id: str = None) -> str:
+    def kill(self, task_id: Optional[str] = None) -> str:
         """Kill a running background task (or all running when id omitted)."""
         with self._lock:
-            targets = [tid for tid, t in self.tasks.items() if t["status"] == "running"] if task_id is None \
-                else ([task_id] if self.tasks.get(task_id, {}).get("status") == "running" else [])
+            targets = (
+                [tid for tid, t in self.tasks.items() if t["status"] == "running"]
+                if task_id is None
+                else (
+                    [task_id]
+                    if self.tasks.get(task_id, {}).get("status") == "running"
+                    else []
+                )
+            )
             if task_id and not targets:
                 return f"Error: no running background job {task_id}"
             for tid in targets:
@@ -932,20 +1085,25 @@ class BackgroundManager:
                         proc.kill()
                     except Exception:
                         pass
-                self._notification_queue.append({
-                    "task_id": tid, "status": "killed",
-                    "command": self.tasks[tid]["command"][:80],
-                    "result": "(killed by request)",
-                })
+                self._notification_queue.append(
+                    {
+                        "task_id": tid,
+                        "status": "killed",
+                        "command": self.tasks[tid]["command"][:80],
+                        "result": "(killed by request)",
+                    }
+                )
         return f"Killed {len(targets)} background job(s): {', '.join(targets)}"
 
-    def check(self, task_id: str = None) -> str:
+    def check(self, task_id: Optional[str] = None) -> str:
         """Check status of one task or list all."""
         if task_id:
             t = self.tasks.get(task_id)
             if not t:
                 return f"Error: unknown job {task_id}"
-            return f"[{t['status']}] {t['command'][:60]}\n{t.get('result') or '(running)'}"
+            return (
+                f"[{t['status']}] {t['command'][:60]}\n{t.get('result') or '(running)'}"
+            )
         lines = []
         for tid, t in self.tasks.items():
             lines.append(f"{tid}: ({t['status']}) {t['command'][:60]}")
@@ -962,7 +1120,9 @@ class BackgroundManager:
     def is_finished(self):
         return all(t["status"] != "running" for t in self.tasks.values())
 
+
 BG = BackgroundManager()
+
 
 # -- MessageBus: JSONL inbox per teammate --
 class MessageBus:
@@ -970,8 +1130,14 @@ class MessageBus:
         self.dir = inbox_dir
         self.dir.mkdir(parents=True, exist_ok=True)
 
-    def send(self, sender: str, to: str, content: str,
-             msg_type: str = "message", extra: dict = None) -> str:
+    def send(
+        self,
+        sender: str,
+        to: str,
+        content: str,
+        msg_type: str = "message",
+        extra: Optional[dict] = None,
+    ) -> str:
         if msg_type not in VALID_MSG_TYPES:
             return f"Error: Invalid type '{msg_type}'. Valid: {VALID_MSG_TYPES}"
         msg = {
@@ -998,6 +1164,12 @@ class MessageBus:
         inbox_path.write_text("")
         return messages
 
+    def active_members(self) -> list:
+        # 广播收件人名单: 取收件箱目录里既有的收件人文件(曾有交互的对象)
+        if not self.dir.exists():
+            return []
+        return sorted(p.stem for p in self.dir.glob("*.jsonl"))
+
     def broadcast(self, sender: str, content: str, teammates: list) -> str:
         count = 0
         for name in teammates:
@@ -1005,6 +1177,7 @@ class MessageBus:
                 self.send(sender, name, content, "broadcast")
                 count += 1
         return f"Broadcast to {count} teammates"
+
 
 BUS = MessageBus(INBOX_DIR)
 
@@ -1063,6 +1236,7 @@ BUS = MessageBus(INBOX_DIR)
 #                 for t in data.get("result", {}).get("tools", [])
 #             ]
 
+
 #     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
 #         tool = self.tools[tool_name]
 #         payload = {
@@ -1106,15 +1280,10 @@ class MCPClient:
                 self.tools[tool.name] = tool
                 self.meta[tool.server_name] += 1
 
-    def list_tools(self, server_name: str) -> List['MCPTool']:
+    def list_tools(self, server_name: str) -> list["MCPTool"]:
         server_cfg = self.config["mcpServers"][server_name]
         url = server_cfg["url"]
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/list",
-            "params": {}
-        }
+        payload = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
         try:
             resp = self.session.post(url, json=payload, timeout=30)
             resp.raise_for_status()
@@ -1126,7 +1295,7 @@ class MCPClient:
                     input_schema=t.get("inputSchema", {}),
                     server_name=server_name,
                     server_url=url,
-                    server_headers=server_cfg.get("headers", {})
+                    server_headers=server_cfg.get("headers", {}),
                 )
                 for t in data.get("result", {}).get("tools", [])
             ]
@@ -1140,18 +1309,17 @@ class MCPClient:
             "jsonrpc": "2.0",
             "id": 1,
             "method": "tools/call",
-            "params": {
-                "name": tool.name,
-                "arguments": arguments
-            }
+            "params": {"name": tool.name, "arguments": arguments},
         }
         try:
-            resp = self.session.post(tool.server_url, json=payload, headers=tool.server_headers, timeout=60)
+            resp = self.session.post(
+                tool.server_url, json=payload, headers=tool.server_headers, timeout=60
+            )
             resp.raise_for_status()
             data = resp.json()
             return data.get("result", {}).get("content", "")
         except Exception as e:
-            return f'Error: {str(e)}'
+            return f"Error: {str(e)}"
 
     def close(self):
         self.session.close()
@@ -1181,7 +1349,7 @@ class AskManager:
                 notify({"kind": "ask", "id": ask_id, "questions": questions})
             except Exception:
                 pass
-        entry["event"].wait(self.timeout)
+        cast(Any, entry["event"]).wait(self.timeout)
         with self._lock:
             self._waiters.pop(ask_id, None)
             answers, cancelled = entry["answers"], entry["cancelled"]
@@ -1246,11 +1414,17 @@ def _ask_loads_lenient(s: str):
                     if stack and stack[-1] == {"}": "{", "]": "["}.get(ch):
                         stack.pop()
         if not in_str and stack:
-            return json.loads(s + "".join("]" if c == "[" else "}" for c in reversed(stack)))
+            return json.loads(
+                s + "".join("]" if c == "[" else "}" for c in reversed(stack))
+            )
     except Exception:
         pass
     # 兜底: 正则抠出所有 question 文本, 至少不把整坨 JSON 当问题展示
-    salvaged = [q.strip() for q in re.findall(r'"question"\s*:\s*"((?:[^"\\]|\\.)*)"', s) if q.strip()]
+    salvaged = [
+        q.strip()
+        for q in re.findall(r'"question"\s*:\s*"((?:[^"\\]|\\.)*)"', s)
+        if q.strip()
+    ]
     return [{"question": q} for q in salvaged] if salvaged else None
 
 
@@ -1284,7 +1458,11 @@ def _ask_flatten(item, out, depth=0):
                 for sub in item[key]:
                     _ask_flatten(sub, out, depth + 1)
         return
-    nested = [o for o in opts_raw if isinstance(o, dict) and str(o.get("question") or "").strip()]
+    nested = [
+        o
+        for o in opts_raw
+        if isinstance(o, dict) and str(o.get("question") or "").strip()
+    ]
     if opts_raw and len(nested) == len(opts_raw):
         # 所有“选项”其实都是完整问题: 本体是包装层, 不重复出题
         for sub in nested:
@@ -1299,10 +1477,14 @@ def _ask_flatten(item, out, depth=0):
         if isinstance(opt, dict) and str(opt.get("question") or "").strip():
             _ask_flatten(opt, out, depth + 1)
             continue
-        label = str((opt or {}).get("label") if isinstance(opt, dict) else opt or "").strip()
+        label = str(
+            (opt or {}).get("label") if isinstance(opt, dict) else opt or ""
+        ).strip()
         if not label:
             continue
-        desc = str(opt.get("description") or "").strip() if isinstance(opt, dict) else ""
+        desc = (
+            str(opt.get("description") or "").strip() if isinstance(opt, dict) else ""
+        )
         options.append({"label": label, **({"description": desc} if desc else {})})
     if options:
         entry["options"] = options[:12]
@@ -1332,30 +1514,42 @@ def run_ask(questions=None, _notify=None):
     return ASK.ask(out, notify=_notify)
 
 
-run_ask.__ask_tool__ = True
+setattr(run_ask, "__ask_tool__", True)  # 标记 ask 工具, 供 agent 侧识别
 
 TOOL_HANDLERS = {
-    "bash":       lambda **kw: run_bash(kw.get("command", "")),
-    "grep":       lambda **kw: run_grep(kw.get("tool", ""), kw.get("args", "")),
-    "read":  lambda **kw: run_read(kw.get("path", ""), offset=kw.get("offset"), limit=kw.get("limit")),
+    "bash": lambda **kw: run_bash(kw.get("command", "")),
+    "grep": lambda **kw: run_grep(kw.get("tool", ""), kw.get("args", "")),
+    "read": lambda **kw: run_read(
+        kw.get("path", ""), offset=kw.get("offset"), limit=kw.get("limit")
+    ),
     "write": lambda **kw: run_write(kw.get("path", ""), kw.get("content", "")),
-    "edit":  lambda **kw: run_edit(kw.get("path", ""), kw.get("old_text", ""), kw.get("new_text", "")),
+    "edit": lambda **kw: run_edit(
+        kw.get("path", ""), kw.get("old_text", ""), kw.get("new_text", "")
+    ),
     "load_skill": lambda **kw: skill_loader.get_content(kw.get("name", "")),
-    "arxiv_search": lambda **kw: arxiv_search(kw.get("query", ""), kw.get("max_results", 5)),
-    "read_arxiv":   lambda **kw: read_arxiv(kw.get("paper_id", "")),
-    "compact":    lambda **kw: "Manual compression requested.",
+    "arxiv_search": lambda **kw: arxiv_search(
+        kw.get("query", ""), kw.get("max_results", 5)
+    ),
+    "read_arxiv": lambda **kw: read_arxiv(kw.get("paper_id", "")),
+    "compact": lambda **kw: "Manual compression requested.",
     "task_create": lambda **kw: TM.create(kw["subject"], kw.get("description", "")),
-    "task_update": lambda **kw: TM.update(kw["task_id"], kw.get("status"), kw.get("addBlockedBy"), kw.get("addBlocks")),
-    "task_list":   lambda **kw: TM.list_all(),
-    "task_get":    lambda **kw: TM.get(kw["task_id"]),
-    "run_job":   lambda **kw: BG.run(kw["command"]),
+    "task_update": lambda **kw: TM.update(
+        kw["task_id"], kw.get("status"), kw.get("addBlockedBy"), kw.get("addBlocks")
+    ),
+    "task_list": lambda **kw: TM.list_all(),
+    "task_get": lambda **kw: TM.get(kw["task_id"]),
+    "run_job": lambda **kw: BG.run(kw["command"]),
     "check_job": lambda **kw: BG.check(kw.get("job_id")),
-    "kill_job":  lambda **kw: BG.kill(kw.get("job_id")),
-    "send_message":    lambda **kw: BUS.send("lead", kw["to"], kw["content"], kw.get("msg_type", "message")),
-    "read_inbox":      lambda **kw: json.dumps(BUS.read_inbox("lead"), indent=2),
-    "broadcast":       lambda **kw: BUS.broadcast("lead", kw["content"], TEAM.member_names()),
-    "rag":             lambda **kw: rag(kw.get("query", "")),
-    "ask":             run_ask,
+    "kill_job": lambda **kw: BG.kill(kw.get("job_id")),
+    "send_message": lambda **kw: BUS.send(
+        "lead", kw["to"], kw["content"], kw.get("msg_type", "message")
+    ),
+    "read_inbox": lambda **kw: json.dumps(BUS.read_inbox("lead"), indent=2),
+    "broadcast": lambda **kw: BUS.broadcast(
+        "lead", kw["content"], BUS.active_members()
+    ),
+    "rag": lambda **kw: rag(kw.get("query", "")),
+    "ask": run_ask,
 }
 
 TOOL_HANDLERS.update(SCIVERSE_TOOL_HANDLERS)
@@ -1367,7 +1561,7 @@ for mcp_tool in MCP.tools.values():
     t = {
         "name": mcp_tool.name,
         "description": mcp_tool.description,
-        "input_schema": mcp_tool.input_schema
+        "input_schema": mcp_tool.input_schema,
     }
     CHILD_TOOLS.append(t)
     TOOLS.append(t)
@@ -1376,6 +1570,7 @@ for mcp_tool in MCP.tools.values():
         def _handler(**kwargs):
             # return asyncio.run(MCP.call_tool(name, kwargs))
             return MCP.call_tool(name, kwargs)
+
         return _handler
 
     TOOL_HANDLERS[mcp_tool.name] = make_handler(mcp_tool.name)
