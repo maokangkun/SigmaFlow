@@ -901,6 +901,9 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .compact-dots span:nth-child(3){animation-delay:.4s}
 @keyframes compact-dot{0%,60%,100%{opacity:0}30%{opacity:1}}
 .compact-reply-block .compact-card{margin-top:10px}
+/* 输入框工具行内的 primary 态(如计划模式开启): .composer-tools .btn 的背景声明在主链之后会把 .btn.primary 吞掉, 这里恢复 */
+.composer-tools .btn.primary{background:var(--accent);color:#fff;box-shadow:3px 3px 8px #7775b62a}
+.composer-tools .btn.primary:hover{background:var(--accent-dark)}
 
 </style>
 </head>
