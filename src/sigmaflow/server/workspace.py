@@ -1,6 +1,5 @@
 import os
 import json
-import time
 import uuid
 import shutil
 import asyncio
@@ -10,13 +9,14 @@ import threading
 import glob
 from pathlib import Path
 from urllib import parse
-from typing import Optional, TypedDict
+from typing import Any, Optional, TypedDict
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import FileResponse
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 from ..log import log
 from .task import WSConnectionManager, TaskQueue, TaskWorker
 from .constant import Events, Types, Message, WorkspacePromptData, InterruptData
+
 
 class FileInfo(TypedDict):
     path: str
@@ -35,7 +35,7 @@ def get_userdata_dir() -> str:
 
 def get_file_info(path: str, relative_to: str) -> dict:
     return {
-        "path": os.path.relpath(path, relative_to).replace(os.sep, '/'),
+        "path": os.path.relpath(path, relative_to).replace(os.sep, "/"),
         "name": os.path.basename(path),
         "size": os.path.getsize(path),
         "modified": os.path.getmtime(path),
@@ -101,25 +101,29 @@ class WorkspaceTaskWorker(TaskWorker):
         loop_nodes = {}
 
         def start_msg_func(data):
-            runing_nodes.add(data["node"].split('-')[0])
+            runing_nodes.add(data["node"].split("-")[0])
             if data["node_type"] == "LoopNode":
-                loop_nodes[data["node"].split('-')[0]] = {
+                loop_nodes[data["node"].split("-")[0]] = {
                     "value": 0,
                     "max": data["info"].get("loop_count", 0),
-                    "completed_nodes": {n:0 for n in pconf[data["node"]]["pipe_in_loop"]},
+                    "completed_nodes": {
+                        n: 0 for n in pconf[data["node"]]["pipe_in_loop"]
+                    },
                 }
 
             d = {
                 "prompt_id": task_id,
                 "nodes": {
-                    node_id: {"display_node_id": node_id, "state": "running"} | (loop_nodes[node_id] if node_id in loop_nodes else {}) for node_id in runing_nodes
+                    node_id: {"display_node_id": node_id, "state": "running"}
+                    | (loop_nodes[node_id] if node_id in loop_nodes else {})
+                    for node_id in runing_nodes
                 },
                 "from": data["node"],
             }
             self.send_msg(Types.PROG_STATE, d, sid)
 
         def finish_msg_func(data):
-            node_id = data["node"].split('-')[0]
+            node_id = data["node"].split("-")[0]
             out = data["out"]
             if type(out) is dict:
                 out = json.dumps(out, indent=4, ensure_ascii=False)
@@ -133,7 +137,8 @@ class WorkspaceTaskWorker(TaskWorker):
                 },
             }
             self.send_msg(Types.EXECUTED, d, sid)
-            if node_id in runing_nodes: runing_nodes.remove(node_id)
+            if node_id in runing_nodes:
+                runing_nodes.remove(node_id)
             for n in loop_nodes:
                 if data["node"] in loop_nodes[n]["completed_nodes"]:
                     loop_nodes[n]["completed_nodes"][data["node"]] += 1
@@ -143,7 +148,12 @@ class WorkspaceTaskWorker(TaskWorker):
                         d = {
                             "prompt_id": task_id,
                             "nodes": {
-                                node_id: {"display_node_id": node_id, "state": "running"} | (loop_nodes[node_id] if node_id in loop_nodes else {}) for node_id in runing_nodes
+                                node_id: {
+                                    "display_node_id": node_id,
+                                    "state": "running",
+                                }
+                                | (loop_nodes[node_id] if node_id in loop_nodes else {})
+                                for node_id in runing_nodes
                             },
                             "from": data["node"],
                         }
@@ -154,7 +164,9 @@ class WorkspaceTaskWorker(TaskWorker):
                 self.queue.set_flag(task_id, {})
                 raise Exception(f"Task {task_id} cancelled during execution.")
 
-        pipeline.add_node_callback(start_cb=[start_msg_func], finish_cb=[finish_msg_func, cancel_func])
+        pipeline.add_node_callback(
+            start_cb=[start_msg_func], finish_cb=[finish_msg_func, cancel_func]
+        )
 
         inp_data = {}
         for _, d in task_data.items():
@@ -164,7 +176,9 @@ class WorkspaceTaskWorker(TaskWorker):
                 case _:
                     pass
 
-        for node_id in set(task_data.keys()) - set(k.split("-")[0] for k in pconf.keys()):
+        for node_id in set(task_data.keys()) - set(
+            k.split("-")[0] for k in pconf.keys()
+        ):
             d = {
                 "prompt_id": task_id,
                 "display_node": node_id,
@@ -304,11 +318,16 @@ class WorkspaceAPI:
                     try:
                         path = parse.unquote(path)
                     except Exception as e:
-                        logging.warning(f"Failed to decode path parameter: {path}, Error: {e}")
-                        raise HTTPException(status_code=400, detail="Invalid characters in path parameter")
+                        logging.warning(
+                            f"Failed to decode path parameter: {path}, Error: {e}"
+                        )
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Invalid characters in path parameter",
+                        )
 
                 userdata_root = get_userdata_dir()
-                
+
                 # Build the target absolute path
                 if path:
                     target_abs_path = os.path.abspath(os.path.join(userdata_root, path))
@@ -316,8 +335,13 @@ class WorkspaceAPI:
                     target_abs_path = userdata_root
 
                 # Prevent path traversal attacks
-                if os.path.commonpath((userdata_root, target_abs_path)) != userdata_root:
-                    raise HTTPException(status_code=400, detail="Invalid path requested")
+                if (
+                    os.path.commonpath((userdata_root, target_abs_path))
+                    != userdata_root
+                ):
+                    raise HTTPException(
+                        status_code=400, detail="Invalid path requested"
+                    )
 
                 # Handle cases where the path doesn't exist
                 if not os.path.exists(target_abs_path):
@@ -325,46 +349,55 @@ class WorkspaceAPI:
                     if target_abs_path == userdata_root:
                         return []
                     else:
-                        raise HTTPException(status_code=404, detail="Requested path not found")
+                        raise HTTPException(
+                            status_code=404, detail="Requested path not found"
+                        )
 
                 if not os.path.isdir(target_abs_path):
-                    raise HTTPException(status_code=400, detail="Requested path is not a directory")
+                    raise HTTPException(
+                        status_code=400, detail="Requested path is not a directory"
+                    )
 
-                results = []
+                # 内字段混型(name/path/text 为 str, size/modified 为数值), 前端按需取用
+                results: list[dict[str, Any]] = []
                 try:
                     for item in os.listdir(target_abs_path):
                         item_path = os.path.join(target_abs_path, item)
-                        rel_path = os.path.relpath(item_path, userdata_root).replace(os.sep, '/')
-                        
+                        rel_path = os.path.relpath(item_path, userdata_root).replace(
+                            os.sep, "/"
+                        )
+
                         if os.path.isdir(item_path):
-                            results.append({
-                                "name": item,
-                                "path": rel_path,
-                                "type": "directory"
-                            })
+                            results.append(
+                                {"name": item, "path": rel_path, "type": "directory"}
+                            )
                         else:
                             try:
                                 stats = os.stat(item_path)
-                                results.append({
-                                    "name": item,
-                                    "path": rel_path,
-                                    "type": "file",
-                                    "size": stats.st_size,
-                                    "modified": stats.st_mtime
-                                })
+                                results.append(
+                                    {
+                                        "name": item,
+                                        "path": rel_path,
+                                        "type": "file",
+                                        "size": stats.st_size,
+                                        "modified": stats.st_mtime,
+                                    }
+                                )
                             except OSError as e:
                                 logging.warning(f"Could not stat file {item_path}: {e}")
-                                results.append({
-                                    "name": item,
-                                    "path": rel_path,
-                                    "type": "file"
-                                })
+                                results.append(
+                                    {"name": item, "path": rel_path, "type": "file"}
+                                )
                 except OSError as e:
                     logging.error(f"Error listing directory {target_abs_path}: {e}")
-                    raise HTTPException(status_code=500, detail="Error reading directory contents")
+                    raise HTTPException(
+                        status_code=500, detail="Error reading directory contents"
+                    )
 
                 # Sort results alphabetically, directories first then files
-                results.sort(key=lambda x: (x['type'] != 'directory', x['name'].lower()))
+                results.sort(
+                    key=lambda x: (x["type"] != "directory", x["name"].lower())
+                )
 
                 return results
             except HTTPException:
@@ -377,25 +410,32 @@ class WorkspaceAPI:
             """Validate and return absolute path for userdata file operations."""
             if not file_path:
                 raise HTTPException(status_code=400, detail="File path is required")
-            
+
             # URL-decode the path
             try:
                 file_path = parse.unquote(file_path)
             except Exception as e:
                 logging.warning(f"Failed to decode file path: {file_path}, Error: {e}")
-                raise HTTPException(status_code=400, detail="Invalid characters in file path")
-            
+                raise HTTPException(
+                    status_code=400, detail="Invalid characters in file path"
+                )
+
             userdata_root = get_userdata_dir()
             abs_path = os.path.abspath(os.path.join(userdata_root, file_path))
-            
+
             # Prevent path traversal attacks
             if os.path.commonpath((userdata_root, abs_path)) != userdata_root:
                 raise HTTPException(status_code=403, detail="Invalid file path")
-            
+
             return abs_path
 
         @router.get("/api/userdata")
-        async def list_userdata(dir: str = "", recurse: str = "false", full_info: str = "false", split: str = "false"):
+        async def list_userdata(
+            dir: str = "",
+            recurse: str = "false",
+            full_info: str = "false",
+            split: str = "false",
+        ):
             """List files in the userdata directory.
 
             Query parameters mimic the UserManager implementation:
@@ -406,13 +446,17 @@ class WorkspaceAPI:
             """
             try:
                 if not dir:
-                    raise HTTPException(status_code=400, detail="Directory not provided")
+                    raise HTTPException(
+                        status_code=400, detail="Directory not provided"
+                    )
 
                 abs_dir = validate_userdata_path(dir)
                 if not os.path.exists(abs_dir):
                     raise HTTPException(status_code=404, detail="Directory not found")
                 if not os.path.isdir(abs_dir):
-                    raise HTTPException(status_code=400, detail="Path is not a directory")
+                    raise HTTPException(
+                        status_code=400, detail="Path is not a directory"
+                    )
 
                 recurse_bool = recurse.lower() == "true"
                 full_info_bool = full_info.lower() == "true"
@@ -426,9 +470,9 @@ class WorkspaceAPI:
                 def process_full_path(full_path: str):
                     if full_info_bool:
                         return get_file_info(full_path, abs_dir)
-                    rel_path = os.path.relpath(full_path, abs_dir).replace(os.sep, '/')
+                    rel_path = os.path.relpath(full_path, abs_dir).replace(os.sep, "/")
                     if split_bool:
-                        return [rel_path] + rel_path.split('/')
+                        return [rel_path] + rel_path.split("/")
                     return rel_path
 
                 results = [
@@ -476,7 +520,12 @@ class WorkspaceAPI:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.post("/api/userdata/{file_path:path}")
-        async def post_userdata_file(file_path: str, request: Request, overwrite: str = "true", full_info: str = "false"):
+        async def post_userdata_file(
+            file_path: str,
+            request: Request,
+            overwrite: str = "true",
+            full_info: str = "false",
+        ):
             """
             Upload or update a userdata file.
 
@@ -486,18 +535,18 @@ class WorkspaceAPI:
             """
             try:
                 abs_path = validate_userdata_path(file_path)
-                
+
                 # Parse query parameters
                 should_overwrite = overwrite.lower() != "false"
                 return_full_info = full_info.lower() == "true"
-                
+
                 # Check if file already exists and overwrite is false
                 if not should_overwrite and os.path.exists(abs_path):
                     raise HTTPException(status_code=409, detail="File already exists")
-                
+
                 # Create parent directories if they don't exist
                 os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-                
+
                 # Read and write file
                 try:
                     body = await request.body()
@@ -507,15 +556,19 @@ class WorkspaceAPI:
                     logging.warning(f"Error saving file '{abs_path}': {e}")
                     raise HTTPException(
                         status_code=400,
-                        detail="Invalid filename. Please avoid special characters like :\\/*?\"<>|"
+                        detail='Invalid filename. Please avoid special characters like :\\/*?"<>|',
                     )
-                
+
                 # Return response
                 userdata_root = get_userdata_dir()
                 if return_full_info:
                     return get_file_info(abs_path, userdata_root)
                 else:
-                    return {"path": os.path.relpath(abs_path, userdata_root).replace(os.sep, '/')}
+                    return {
+                        "path": os.path.relpath(abs_path, userdata_root).replace(
+                            os.sep, "/"
+                        )
+                    }
             except HTTPException:
                 raise
             except Exception as e:
@@ -530,13 +583,13 @@ class WorkspaceAPI:
             """
             try:
                 abs_path = validate_userdata_path(file_path)
-                
+
                 if not os.path.exists(abs_path):
                     raise HTTPException(status_code=404, detail="File not found")
-                
+
                 if not os.path.isfile(abs_path):
                     raise HTTPException(status_code=400, detail="Path is not a file")
-                
+
                 os.remove(abs_path)
                 # respond with 204 and no body
                 return Response(status_code=204)
@@ -547,7 +600,13 @@ class WorkspaceAPI:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
 
         @router.post("/api/userdata/{file_path:path}/move/{dest_path:path}")
-        async def move_userdata_file(file_path: str, dest_path: str, request: Request, overwrite: str = "true", full_info: str = "false"):
+        async def move_userdata_file(
+            file_path: str,
+            dest_path: str,
+            request: Request,
+            overwrite: str = "true",
+            full_info: str = "false",
+        ):
             """
             Move or rename a userdata file.
 
@@ -558,34 +617,42 @@ class WorkspaceAPI:
             try:
                 source = validate_userdata_path(file_path)
                 dest = validate_userdata_path(dest_path)
-                
+
                 if not os.path.exists(source):
                     raise HTTPException(status_code=404, detail="Source file not found")
-                
+
                 if not os.path.isfile(source):
-                    raise HTTPException(status_code=400, detail="Source path is not a file")
-                
+                    raise HTTPException(
+                        status_code=400, detail="Source path is not a file"
+                    )
+
                 # Parse query parameters
                 should_overwrite = overwrite.lower() != "false"
                 return_full_info = full_info.lower() == "true"
-                
+
                 # Check if destination exists and overwrite is false
                 if not should_overwrite and os.path.exists(dest):
-                    raise HTTPException(status_code=409, detail="Destination file already exists")
-                
+                    raise HTTPException(
+                        status_code=409, detail="Destination file already exists"
+                    )
+
                 # Create destination parent directories if they don't exist
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
-                
+
                 # Move the file
                 logging.info(f"Moving '{source}' -> '{dest}'")
                 shutil.move(source, dest)
-                
+
                 # Return response
                 userdata_root = get_userdata_dir()
                 if return_full_info:
                     return get_file_info(dest, userdata_root)
                 else:
-                    return {"path": os.path.relpath(dest, userdata_root).replace(os.sep, '/')}
+                    return {
+                        "path": os.path.relpath(dest, userdata_root).replace(
+                            os.sep, "/"
+                        )
+                    }
             except HTTPException:
                 raise
             except Exception as e:
@@ -639,9 +706,7 @@ class WorkspaceAPI:
         async def view(filename: str, subfolder: str):
             print(filename, subfolder)
             try:
-                image_path = (
-                    "/home/kk/code/SigmaFlow/examples/demo/legend.png"
-                )
+                image_path = "/home/kk/code/SigmaFlow/examples/demo/legend.png"
                 return FileResponse(image_path)
             except Exception:
                 raise HTTPException(status_code=500, detail=traceback.format_exc())
@@ -651,7 +716,9 @@ class WorkspaceAPI:
             try:
                 log.debug(f"prompt: {data.prompt}")
                 prompt_id = str(data.prompt_id or uuid.uuid4())
-                task_queue.put((prompt_id, data.prompt, data.extra_data, data.client_id))
+                task_queue.put(
+                    (prompt_id, data.prompt, data.extra_data, data.client_id)
+                )
                 response = {"prompt_id": prompt_id, "number": 1, "node_errors": {}}
                 return response
             except Exception:
@@ -664,7 +731,10 @@ class WorkspaceAPI:
                 if status == "queued":
                     return {"status": "removed_from_queue", "prompt_id": data.prompt_id}
                 elif status == "running":
-                    return {"status": "cancelling_running_task", "prompt_id": data.prompt_id}
+                    return {
+                        "status": "cancelling_running_task",
+                        "prompt_id": data.prompt_id,
+                    }
                 else:
                     raise HTTPException(status_code=404, detail="Task not found")
             except Exception:

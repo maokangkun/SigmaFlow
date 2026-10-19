@@ -167,9 +167,10 @@ def check_env():
 
     try:
         import torch
+
         try:
-            nccl_version = '.'.join(map(str, torch.cuda.nccl.version()))
-        except:
+            nccl_version = ".".join(map(str, torch.cuda.nccl.version()))
+        except Exception:
             nccl_version = None
 
         table.add_row(

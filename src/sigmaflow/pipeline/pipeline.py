@@ -40,7 +40,9 @@ class Pipeline:
             if self.pipegraph.name:
                 self.name = self.pipegraph.name
             else:
-                self.pipegraph.name = self.name = f"pipeline-{datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}"
+                self.pipegraph.name = self.name = (
+                    f"pipeline-{datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}"
+                )
 
             if pipefile:
                 self.hash = calc_hash(file=pipefile)

@@ -1,36 +1,12 @@
-"""SigmaFlow Science backend.
-
-Implements the Science Agent protocol (see science/API.md) on the main
-FastAPI server, with a single run manager serving two transports:
-
-* WebSocket  -- preferred transport (`/api/ws`);
-* HTTP + SSE -- the original protocol, kept for compatibility.
-
-Runs are still a DEMO executor (synthetic progress ticks). The chat
-path, however, runs the real SigmaFlow agent: with tool support
-enabled it may execute bash, file IO, MCP servers and load_skill ON
-THIS SERVER, using the model/provider configured in the settings.
-"""
-
 import asyncio
-import base64
 import atexit
-import contextvars
-import fcntl
-import getpass
-import hashlib
 import hmac
 import json
 import math
 import os
-import pty as _pty_mod
 import re
 import secrets
-import select
-import signal
 import logging
-import struct
-import subprocess
 import threading
 import time
 import urllib.parse
@@ -52,6 +28,80 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from .science_common import (
+    _CURRENT_USER,
+    _SESSION_COOKIE,
+    _SESSION_TTL,
+    _clip,
+    _current_user,
+    _multi_user,
+    _os_user,
+)
+
+from .science_auth import (
+    _USER_REGISTRY_LOCK,
+    _cookie_user,
+    _hash_password,
+    _load_users,
+    _load_wechat_config,
+    _save_users,
+    _session_token,
+    _user_data_dir,
+    _wechat_account_name,
+    _wechat_appid,
+    _wechat_consume_state,
+    _wechat_enabled,
+    _wechat_fetch_json,
+    _wechat_qrconnect_url,
+)
+
+from .science_admin import (
+    _ScienceSkillView,
+    _TOOL_ALIASES,
+    _agent_agent_module,
+    _agent_tools_module,
+    _apply_compaction_to,
+    _apply_token_updates,
+    _build_mcp_servers,
+    _build_skill_overrides,
+    _build_tool_overrides,
+    _builtin_mcp_servers,
+    _compaction_config_path,
+    _compaction_defaults,
+    _default_system_prompts,
+    _discover_skills,
+    _effective_agent_tools,
+    _effective_compaction,
+    _effective_system_prompts,
+    _load_compaction_config,
+    _load_skill_overrides,
+    _load_system_prompt_config,
+    _load_tool_overrides,
+    _mcp_listing,
+    _rebuild_agent_mcp,
+    _save_compaction_config,
+    _save_mcp_servers,
+    _save_skill_overrides,
+    _save_system_prompt_config,
+    _save_tool_overrides,
+    _seed_builtin_skills,
+    _seed_mcp_config,
+    _skill_listing,
+    _token_listing,
+    _tool_defaults,
+    _tool_listing,
+)
+
+from .science_fs import (
+    _PTY_SESSIONS_MAX,
+    _PtySession,
+    _fs_exec_payload,
+    _fs_file_payload,
+    _fs_tree_payload,
+    _fs_upload_payload,
+    _pty_key_of,
+)
+
 
 MAX_RUNS = 100
 MAX_PROMPT_CHARS = 6000
@@ -471,34 +521,6 @@ def _model_context_window(model_name: str, override: Optional[int] = None) -> in
 # 设置页可对内置工具做启用开关、改名与描述覆盖, 落盘到 <science_dir>/tools.json;
 # 请求时组合出实际生效的工具清单, 并在 TOOL_HANDLERS 中同步别名, 保证改名不影响执行
 
-_TOOLS_LOCK = threading.Lock()
-_TOOL_ALIASES: Dict[str, str] = {}
-
-
-def _agent_tools_module():
-    """Load sigmaflow.agent.tools with the same sys.path fallback as _run_agent_chat;
-    publish the current MCP server config first so import-time wiring sees it."""
-    _sync_mcp_env()
-    try:
-        from sigmaflow.agent import tools
-    except ModuleNotFoundError:
-        import sys as _sys
-
-        _src_root = os.path.dirname(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        )
-        if _src_root not in _sys.path:
-            _sys.path.insert(0, _src_root)
-        from sigmaflow.agent import tools
-    _apply_sciverse_key()
-    return tools
-
-
-def _science_data_root() -> str:
-    return os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
-        os.path.expanduser("~"), ".sigmaflow", "science"
-    )
-
 
 # ==================== 单用户 / 多用户模式 ====================
 # 通过环境变量 SIGMAFLOW_MULTI_USER=1 在服务启动时启用多用户模式。
@@ -507,130 +529,9 @@ def _science_data_root() -> str:
 # 配置与会话数据(projects/models/tools/tokens/skills/system_prompt),
 # 运行任务的归属也按用户过滤。
 
-_LOGGER_WS = logging.getLogger("uvicorn.error")  # 复用 uvicorn 已配置的输出通道访问 web.log
-
-_MULTI_USER_ENV = "SIGMAFLOW_MULTI_USER"
-_SESSION_COOKIE = "sigmaflow_session"
-_SESSION_TTL = 7 * 24 * 3600
-
-
-def _multi_user() -> bool:
-    """Multi-user mode is opt-in via environment at server start."""
-    return os.environ.get(_MULTI_USER_ENV, "").strip() in ("1", "true", "yes")
-
-
-def _os_user() -> str:
-    """Name of the OS account running this service (single-user identity)."""
-    try:
-        return getpass.getuser() or "default"
-    except Exception:
-        return "default"
-
-
-_CURRENT_USER: "contextvars.ContextVar[str]" = contextvars.ContextVar(
-    "sigmaflow_user", default=""
-)
-
-
-def _current_user() -> str:
-    """Requested user for this task: logged-in account or service user name."""
-    user = _CURRENT_USER.get()
-    return user if user else _os_user()
-
-
-_USER_REGISTRY_LOCK = threading.Lock()
-
-
-def _users_registry_path() -> str:
-    return os.path.join(_science_data_root(), "users.json")
-
-
-def _load_users() -> dict:
-    try:
-        with open(_users_registry_path(), encoding="utf-8") as fh:
-            data = json.load(fh)
-    except Exception:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _save_users(users: dict) -> None:
-    path = _users_registry_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(users, fh, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
-
-
-def _hash_password(password: str, salt: bytes) -> str:
-    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 200_000).hex()
-
-
-def _session_secret() -> bytes:
-    """Stable HMAC secret persisted in the shared data root."""
-    path = os.path.join(_science_data_root(), "session_secret")
-    try:
-        with open(path, encoding="utf-8") as fh:
-            value = fh.read().strip()
-    except OSError:
-        value = ""
-    if not value:
-        value = secrets.token_hex(32)
-        try:
-            os.makedirs(_science_data_root(), exist_ok=True)
-            tmp = path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as fh:
-                fh.write(value)
-            os.replace(tmp, path)
-        except Exception:
-            pass
-    return value.encode("utf-8")
-
-
-def _session_token(user: str) -> str:
-    """Signed and expiring session token, given out as an HttpOnly cookie."""
-    payload = f"{user}.{int(time.time()) + _SESSION_TTL}"
-    sig = hmac.new(
-        _session_secret(), payload.encode("utf-8"), hashlib.sha256
-    ).hexdigest()
-    return f"{payload}.{sig}"
-
-
-def _user_from_token(token: str) -> str:
-    try:
-        user, exp, sig = str(token).rsplit(".", 2)
-        payload = f"{user}.{exp}"
-        expected = hmac.new(
-            _session_secret(), payload.encode("utf-8"), hashlib.sha256
-        ).hexdigest()
-    except Exception:
-        return ""
-    if not hmac.compare_digest(sig, expected):
-        return ""
-    if not exp.isdigit() or int(exp) < time.time():
-        return ""
-    return user or ""
-
-
-def _cookie_user(request: Any) -> str:
-    try:
-        raw = request.cookies.get(_SESSION_COOKIE)
-    except Exception:
-        raw = ""
-    return _user_from_token(raw) if raw else ""
-
-
-def _user_data_dir(user: str) -> str:
-    """Storage root for the given user's configs; common layout when single."""
-    if not _multi_user():
-        return _science_data_root()
-    return os.path.join(_science_data_root(), "users", str(user)[:64])
-
-
-def _user_science_root() -> str:
-    """Per-request storage root for user-scoped config files."""
-    return _user_data_dir(_current_user())
+_LOGGER_WS = logging.getLogger(
+    "uvicorn.error"
+)  # 复用 uvicorn 已配置的输出通道访问 web.log
 
 
 def _ensure_user_data(user: str) -> None:
@@ -654,769 +555,11 @@ def _ensure_user_data(user: str) -> None:
 
 # ------------------------------------------------------------- 微信扫码登录
 
-_WECHAT_STATE_TTL = 300.0
-_WECHAT_STATE_LOCK = threading.Lock()
-_WECHAT_STATES: Dict[str, float] = {}
-
-
-def _wechat_config_path() -> str:
-    return os.path.join(_science_data_root(), "wechat.json")
-
-
-def _load_wechat_config() -> dict:
-    """WeChat OAuth app credentials kept server-side; absent file disables it."""
-    try:
-        with open(_wechat_config_path(), encoding="utf-8") as fh:
-            data = json.load(fh)
-    except Exception:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _wechat_appid() -> str:
-    cfg = _load_wechat_config()
-    return str(cfg.get("app_id") or "").strip()
-
-
-def _wechat_enabled() -> bool:
-    """Toggle is on when credentials exist; users without them see no button."""
-    if not _multi_user():
-        return False
-    cfg = _load_wechat_config()
-    if cfg.get("enabled") is False:
-        return False
-    return bool(_wechat_appid() and str(cfg.get("app_secret") or "").strip())
-
-
-def _wechat_redirect_uri(request: Any) -> str:
-    """OAuth return address; redirect_base in wechat.json wins over heuristics."""
-    cfg = _load_wechat_config()
-    base = str(cfg.get("redirect_base") or "").strip()
-    if base:
-        return base.rstrip("/") + "/"
-    proto = request.url.scheme
-    forwarded = str(request.headers.get("x-forwarded-proto") or "").split(",")[0]
-    forwarded = forwarded.strip().lower()
-    if forwarded:
-        proto = forwarded
-    host = request.headers.get("host") or "localhost"
-    prefix = str(request.headers.get("x-forwarded-prefix") or "").strip()
-    if not prefix:
-        prefix = "/sigmaflow"  # 网关约定路径; 例外场景用 redirect_base 覆盖
-    return f"{proto}://{host}{prefix}/science/"
-
-
-def _wechat_qrconnect_url(request: Any) -> str:
-    """Build the WeChat QR page URL; issues a one-shot state for CSRF checks."""
-    state = secrets.token_urlsafe(16)
-    now = time.time()
-    with _WECHAT_STATE_LOCK:
-        for key in [k for k, exp in _WECHAT_STATES.items() if exp < now]:
-            _WECHAT_STATES.pop(key, None)
-        _WECHAT_STATES[state] = now + _WECHAT_STATE_TTL
-    redirect = _wechat_redirect_uri(request)
-    query = urllib.parse.urlencode(
-        {
-            "appid": _wechat_appid(),
-            "redirect_uri": redirect,
-            "response_type": "code",
-            "scope": "snsapi_login",
-            "state": state,
-        }
-    )
-    return "https://open.weixin.qq.com/connect/qrconnect?" + query + "#wechat_redirect"
-
-
-def _wechat_consume_state(state: str) -> bool:
-    """Accept a pending state exactly once within its TTL."""
-    with _WECHAT_STATE_LOCK:
-        expiry = _WECHAT_STATES.pop(state or "", None)
-    return bool(expiry and expiry >= time.time())
-
-
-def _wechat_fetch_json(url: str) -> dict:
-    """Minimal timed GET returning parsed JSON; failures become empty dicts."""
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "SigmaFlow-Science"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read().decode("utf-8", "replace"))
-    except Exception:
-        return {}
-
-
-def _wechat_account_name(users: dict, key_union: str) -> str:
-    """Unique account name derived from the stable WeChat identity key."""
-    base = "wx_" + hashlib.sha256(key_union.encode("utf-8")).hexdigest()[:8]
-    name = base
-    n = 2
-    while name in users:
-        name = f"{base}_{n}"
-        n += 1
-    return name
-
-
-def _tool_config_path() -> str:
-    return os.path.join(_user_science_root(), "tools.json")
-
-
-def _tokens_config_path() -> str:
-    return os.path.join(_user_science_root(), "tokens.json")
-
-
-def _sciverse_key_file() -> str:
-    """Sciverse API key saved through the settings page, if any."""
-    try:
-        with open(_tokens_config_path(), encoding="utf-8") as fh:
-            data = json.load(fh)
-    except Exception:
-        return ""
-    tokens = data.get("tokens") if isinstance(data, dict) else None
-    return str((tokens or {}).get("sciverse") or "") if isinstance(tokens, dict) else ""
-
-
-def _sciverse_key() -> str:
-    """Effective Sciverse API key: the settings-page token first, then the agent config default."""
-    saved = _sciverse_key_file().strip()
-    if saved:
-        return saved
-    # 回退只查已加载的 tools 模块绑定, 不经过 _agent_tools_module(): 该函数每次调用都会
-    # 再走 _apply_sciverse_key(), 与这里构成无基准情形的相互递归——未保存密钥时每次
-    # 请求都烧穿递归栈, 靠内层吞 RecursionError 才得到正确结果。
-    import sys as _sys
-
-    tools_mod = _sys.modules.get("sigmaflow.agent.tools")
-    try:
-        return (
-            str(getattr(tools_mod, "Sciverse_API_KEY", "") or "")
-            if tools_mod is not None
-            else ""
-        )
-    except Exception:
-        return ""
-
-
-def _anysearch_key() -> str:
-    """Effective Anysearch API key: the settings-page token first, then the environment."""
-    try:
-        with open(_tokens_config_path(), encoding="utf-8") as fh:
-            data = json.load(fh)
-        tokens = data.get("tokens") if isinstance(data, dict) else None
-    except Exception:
-        tokens = {}
-    saved = str((tokens or {}).get("anysearch") or "").strip()
-    if saved:
-        return saved
-    return os.getenv("ANYSEARCH_API_KEY", "").strip()
-
-
-def _apply_sciverse_key() -> None:
-    """Push the effective key into the sciverse client module;
-    SciverseAPI reads the module global at request time, so cached clients pick it up."""
-    try:
-        from sigmaflow.agent import sciverse_api
-
-        if hasattr(sciverse_api, "Sciverse_API_KEY"):
-            sciverse_api.Sciverse_API_KEY = _sciverse_key()
-    except Exception:
-        pass
-
-
-def _load_tool_overrides() -> Dict[str, dict]:
-    try:
-        with open(_tool_config_path(), encoding="utf-8") as fh:
-            data = json.load(fh)
-    except Exception:
-        return {}
-    overrides = data.get("overrides") if isinstance(data, dict) else None
-    if not isinstance(overrides, dict):
-        return {}
-    return {str(k): dict(v) for k, v in overrides.items() if isinstance(v, dict)}
-
-
-def _save_tool_overrides(overrides: Dict[str, dict]) -> None:
-    path = _tool_config_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump({"overrides": overrides}, fh, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
-
-
-def _token_listing() -> list:
-    """Settings-page view of configured third-party API tokens; secrets only appear masked."""
-    try:
-        with open(_tokens_config_path(), encoding="utf-8") as fh:
-            data = json.load(fh)
-        tokens = (
-            data.get("tokens")
-            if isinstance(data, dict) and isinstance(data.get("tokens"), dict)
-            else {}
-        )
-    except Exception:
-        tokens = {}
-    tokens = tokens if isinstance(tokens, dict) else {}
-
-    def _row(token_id: str, label: str, saved: str, env: str) -> dict:
-        saved = str(saved or "").strip()
-        env = str(env or "").strip()
-        effective = saved or env
-        return {
-            "id": token_id,
-            "label": label,
-            "configured": bool(effective),
-            "saved": bool(saved),
-            "fromEnv": not saved and bool(env),
-            "keyHint": (
-                effective
-                if len(effective) <= 8
-                else f"{effective[:4]}****{effective[-4:]}"
-            )
-            if effective
-            else "",
-        }
-
-    try:
-        env_sciverse = str(getattr(_agent_tools_module(), "Sciverse_API_KEY", "") or "")
-    except Exception:
-        env_sciverse = ""
-    return [
-        _row(
-            "sciverse", "Sciverse API", str(tokens.get("sciverse") or ""), env_sciverse
-        ),
-        _row(
-            "anysearch",
-            "Anysearch API",
-            str(tokens.get("anysearch") or ""),
-            os.getenv("ANYSEARCH_API_KEY", ""),
-        ),
-    ]
-
-
-_TOKEN_IDS = ("sciverse", "anysearch")
-
-
-def _apply_token_updates(updates: dict) -> None:
-    """Persist submitted tokens, refresh the Sciverse client, and auto-sync
-    dependent enablement: sciverse tools in tools.json and the anysearch MCP
-    server (joins/leaves the active set through its token template)."""
-    path = _tokens_config_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
-        tokens = (
-            data.get("tokens")
-            if isinstance(data, dict) and isinstance(data.get("tokens"), dict)
-            else {}
-        )
-    except Exception:
-        tokens = {}
-    tokens = dict(tokens) if isinstance(tokens, dict) else {}
-    for key, value in (updates or {}).items():
-        if key not in _TOKEN_IDS:
-            raise HTTPException(status_code=400, detail=f"Unknown token: {key}")
-        text = str(value or "").strip()
-        if text:
-            tokens[key] = text
-        else:
-            tokens.pop(key, None)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump({"tokens": tokens}, fh, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
-    _apply_sciverse_key()
-    # 同步 Sciverse 工具: 无密钥 → 覆盖里显式 enabled=False; 有密钥 → 移除 enabled 覆盖恢复默认开启
-    overrides = _load_tool_overrides()
-    on = bool(_sciverse_key())
-    changed = False
-    for t in _tool_defaults():
-        name = str(t.get("name") or "")
-        if not name.startswith("sciverse_"):
-            continue
-        entry = dict(overrides.get(name) or {})
-        if on:
-            entry.pop("enabled", None)
-        else:
-            entry["enabled"] = False
-        if entry != (overrides.get(name) or {}):
-            if entry:
-                overrides[name] = entry
-            else:
-                overrides.pop(name, None)
-            changed = True
-    if changed:
-        _save_tool_overrides(overrides)
-    # anysearch 密钥变化后重建 MCP 客户端: 模板解析后的 header 生效, 服务随密钥有无进入/退出活动集
-    if "anysearch" in (updates or {}):
-        try:
-            _rebuild_agent_mcp()
-        except Exception:
-            pass
-
-
-def _tool_defaults() -> list:
-    """Copy of sigmaflow.agent.tools.TOOLS; empty list when the agent package is unavailable."""
-    try:
-        return [dict(t) for t in _agent_tools_module().TOOLS]
-    except Exception:
-        return []
-
-
-def _effective_agent_tools() -> list:
-    """Compose the active tool list: drop disabled tools, apply name/description
-    overrides, and register TOOL_HANDLERS aliases so renamed tools still execute."""
-    defaults = _tool_defaults()
-    if not defaults:
-        return []
-    handlers = _agent_tools_module().TOOL_HANDLERS
-    overrides = _load_tool_overrides()
-    with _TOOLS_LOCK:
-        original = {t["name"] for t in defaults}
-        for alias in list(_TOOL_ALIASES):
-            if alias not in original:
-                handlers.pop(alias, None)
-            del _TOOL_ALIASES[alias]
-        tools = []
-        for t in defaults:
-            override = overrides.get(t["name"]) or {}
-            if override.get("enabled") is False:
-                continue
-            # 未配置 Sciverse API 时 Sciverse 工具不进入会话 payload, 也不注册别名
-            if t["name"].startswith("sciverse_") and not _sciverse_key():
-                continue
-            entry = dict(t)
-            display = str(override.get("name") or "").strip()
-            if display and display != t["name"]:
-                entry["name"] = display
-                handlers[display] = handlers.get(t["name"])
-                _TOOL_ALIASES[display] = t["name"]
-            description = str(override.get("description") or "").strip()
-            if description:
-                entry["description"] = description
-            schema = override.get("schema")
-            if isinstance(schema, dict) and schema:
-                entry["input_schema"] = schema
-            tools.append(entry)
-    return tools
-
-
-_ARXIV_TOOLS = ("arxiv_search", "read_arxiv")
-
-
-def _tool_origin(name: str) -> str:
-    """Origin of a tool for the settings grouping: MCP server name for tools exposed
-    by the active MCP client, otherwise one of the builtin taxonomy buckets
-    (sciverse / arxiv / generic builtin)."""
-    try:
-        tool = _agent_tools_module().MCP.tools.get(name)
-        if tool:
-            return tool.server_name
-    except Exception:
-        pass
-    if name.startswith("sciverse_"):
-        return "sciverse"
-    if name in _ARXIV_TOOLS:
-        return "arxiv"
-    return "builtin"
-
-
-def _tool_listing(defaults: list, overrides: Dict[str, dict]) -> list:
-    """Settings-page view of the tool set: original id plus effective name/description/schema/enabled."""
-    sciverse_locked = not _sciverse_key()
-    out = []
-    for t in defaults:
-        override = overrides.get(t["name"]) or {}
-        schema = (
-            override.get("schema")
-            if isinstance(override.get("schema"), dict)
-            else (t.get("input_schema") or {})
-        )
-        enabled = override.get("enabled") is not False
-        # 未配置 Sciverse API 时 Sciverse 工具固定关闭, 忽略历史覆盖
-        if t["name"].startswith("sciverse_") and sciverse_locked:
-            enabled = False
-        out.append(
-            {
-                "id": t["name"],
-                "name": str(override.get("name") or "").strip() or t["name"],
-                "description": str(override.get("description") or "").strip()
-                or t.get("description")
-                or "",
-                "enabled": enabled,
-                "schema": json.dumps(schema, ensure_ascii=False, separators=(",", ":")),
-                "modified": bool(override),
-                "origin": _tool_origin(t["name"]),
-            }
-        )
-    return out
-
-
-def _build_tool_overrides(items: list, known: Dict[str, dict]) -> Dict[str, dict]:
-    """Validate the submitted tool settings and compress them into overrides;
-    unchanged tools are not persisted."""
-    overrides: Dict[str, dict] = {}
-    seen: Dict[str, str] = {}
-    for item in items or []:
-        if not isinstance(item, dict):
-            raise HTTPException(status_code=400, detail="Invalid tools payload")
-        tool_id = str(item.get("id") or "")
-        if tool_id not in known:
-            raise HTTPException(status_code=400, detail=f"Unknown tool: {tool_id}")
-        display = str(item.get("name") or "").strip()[:64]
-        if not display:
-            display = tool_id
-        if display in seen:
-            raise HTTPException(status_code=400, detail=f"工具名称重复: {display}")
-        seen[display] = tool_id
-        description = str(item.get("description") or "").strip()[:2000]
-        entry: Dict[str, Any] = {}
-        if display != tool_id:
-            entry["name"] = display
-        if description and description != (known[tool_id].get("description") or ""):
-            entry["description"] = description
-        if item.get("enabled") is False:
-            entry["enabled"] = False
-        schema_text = str(item.get("schema") or "").strip()
-        if schema_text:
-            try:
-                schema = json.loads(schema_text)
-            except Exception:
-                raise HTTPException(
-                    status_code=400, detail=f"工具 {tool_id} 参数 schema 不是合法 JSON"
-                )
-            if not isinstance(schema, dict):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"工具 {tool_id} 参数 schema 必须是 JSON 对象",
-                )
-            # 长度按解析结果的紧凑形式计算, 允许前端提交带缩进的格式化文本
-            if (
-                len(json.dumps(schema, ensure_ascii=False, separators=(",", ":")))
-                > 8000
-            ):
-                raise HTTPException(
-                    status_code=400, detail=f"工具 {tool_id} 参数 schema 过长"
-                )
-            if schema != (known[tool_id].get("input_schema") or {}):
-                entry["schema"] = schema
-        if entry:
-            overrides[tool_id] = entry
-    return overrides
-
 
 # ==================== Agent 技能配置 ====================
 # 设置页可对技能做启用开关、名称与描述覆盖, 落盘到 <science_dir>/skills.json;
 # 技能正文来自 <science_dir>/skills/<id>/SKILL.md, 内置技能在启动时从包资源种子化;
 # 技能清单随系统提示词发给模型, 因此覆盖生效需要同时替换 skill_loader 并换出清单文本
-
-_SKILLS_INSTALL_LOCK = threading.Lock()
-_SKILL_BLOCK_BASE: Optional[Dict[str, str]] = None
-
-
-def _skills_data_dir() -> str:
-    return os.path.join(_user_science_root(), "skills")
-
-
-def _skill_config_path() -> str:
-    return os.path.join(_user_science_root(), "skills.json")
-
-
-def _builtin_skills_src() -> str:
-    """Packaged built-in skill assets live under the science web app directory."""
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "science", "skills")
-
-
-def _seed_builtin_skills() -> None:
-    """Copy packaged built-in skills into the science skills dir; never overwrite user edits."""
-    src_root = _builtin_skills_src()
-    try:
-        entries = sorted(os.listdir(src_root))
-    except OSError:
-        return
-    for name in entries:
-        src = os.path.join(src_root, name, "SKILL.md")
-        if not os.path.isfile(src):
-            continue
-        dst = os.path.join(_skills_data_dir(), name, "SKILL.md")
-        if os.path.exists(dst):
-            continue
-        try:
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            with open(src, encoding="utf-8") as fh:
-                text = fh.read()
-            with open(dst, "w", encoding="utf-8") as fh:
-                fh.write(text)
-        except OSError:
-            pass
-
-
-def _load_skill_overrides() -> Dict[str, dict]:
-    try:
-        with open(_skill_config_path(), encoding="utf-8") as fh:
-            data = json.load(fh)
-    except Exception:
-        return {}
-    overrides = data.get("overrides") if isinstance(data, dict) else None
-    if not isinstance(overrides, dict):
-        return {}
-    return {str(k): dict(v) for k, v in overrides.items() if isinstance(v, dict)}
-
-
-def _save_skill_overrides(overrides: Dict[str, dict]) -> None:
-    path = _skill_config_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump({"overrides": overrides}, fh, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
-
-
-def _parse_skill_frontmatter(text: str) -> tuple:
-    """Split YAML frontmatter from a SKILL.md body without extra dependencies."""
-    if not text.startswith("---\n"):
-        return {}, text
-    end = text.find("\n---\n", 4)
-    if end == -1:
-        return {}, text
-    try:
-        import yaml
-
-        meta = yaml.safe_load(text[4:end].strip())
-    except Exception:
-        meta = {}
-    if not isinstance(meta, dict):
-        meta = {}
-    return meta, text[end + 5 :].strip()
-
-
-def _discover_skills() -> list:
-    """Scan skill dirs; frontmatter name wins over dir name as the stable id."""
-    _seed_builtin_skills()
-    root = _skills_data_dir()
-    out = []
-    seen = set()
-    for dirpath, _dirnames, filenames in os.walk(root):
-        if "SKILL.md" not in filenames:
-            continue
-        path = os.path.join(dirpath, "SKILL.md")
-        try:
-            with open(path, encoding="utf-8") as fh:
-                text = fh.read()
-        except OSError:
-            continue
-        meta, body = _parse_skill_frontmatter(text)
-        skill_id = str(meta.get("name") or "").strip() or os.path.basename(
-            dirpath.rstrip("/\\")
-        )
-        if skill_id in seen:
-            continue
-        seen.add(skill_id)
-        out.append({"id": skill_id, "meta": meta, "body": body, "path": path})
-    return out
-
-
-def _builtin_skill_ids() -> set:
-    """Ids of packaged built-in skills (frontmatter names, falling back to dir names)."""
-    ids = set()
-    src_root = _builtin_skills_src()
-    try:
-        names = os.listdir(src_root)
-    except OSError:
-        return ids
-    for name in names:
-        path = os.path.join(src_root, name, "SKILL.md")
-        if not os.path.isfile(path):
-            continue
-        try:
-            with open(path, encoding="utf-8") as fh:
-                text = fh.read()
-        except OSError:
-            continue
-        meta, _body = _parse_skill_frontmatter(text)
-        ids.add(str(meta.get("name") or "").strip() or name)
-    return ids
-
-
-class _ScienceSkillView:
-    """Override-aware replacement for tools.skill_loader (same duck-type interface);
-    get_descriptions feeds the system prompt, get_content serves load_skill calls."""
-
-    def __init__(self):
-        self.skills_dir = _skills_data_dir()
-        self.user = _current_user()
-        self.skills = {}
-        self.rebuild()
-
-    def rebuild(self):
-        # 多用户模式下不同用户的技能目录与开关不同, 按 current user 切换缓存
-        self.user = _current_user()
-        self.skills_dir = _user_science_root()
-        overrides = _load_skill_overrides()
-        skills = {}
-        for skill in _discover_skills():
-            override = overrides.get(skill["id"]) or {}
-            if override.get("enabled") is False:
-                continue
-            meta = dict(skill["meta"])
-            name = str(override.get("name") or "").strip() or skill["id"]
-            meta["name"] = name
-            description = str(override.get("description") or "").strip()
-            if description:
-                meta["description"] = description
-            skills[name] = {"meta": meta, "body": skill["body"], "path": skill["path"]}
-        self.skills = skills
-
-    def get_descriptions(self) -> str:
-        skill_prompt = f"Use `load_skill` to access specialized knowledge before tackling unfamiliar topics.\nSkills dir: {self.skills_dir}\nSkills available:\n"
-        if not self.skills:
-            return skill_prompt + "(no skills available)"
-        lines = []
-        for name, skill in self.skills.items():
-            desc = skill["meta"].get("description", "No description")
-            tags = skill["meta"].get("tags", "")
-            line = f"  - {name}: {desc}"
-            if tags:
-                line += f" [{tags}]"
-            lines.append(line.strip())
-        return skill_prompt + "\n".join(lines)
-
-    def get_content(self, name: str) -> str:
-        skill = self.skills.get(name)
-        if not skill:
-            return f"Error: Unknown skill '{name}'. Available: {', '.join(self.skills.keys())}"
-        return (
-            f'<skill name="{name}" path="{skill["path"]}">\n{skill["body"]}\n</skill>'
-        )
-
-
-def _ensure_skills_installed() -> None:
-    """Install the override-aware skill loader into the agent tools module (idempotent).
-    Importing sigmaflow.agent.tools runs the package __init__, which builds the agent
-    module's default system prompts from the original loader, so the original listing
-    text is recorded here and swapped out later by _effective_system_prompts."""
-    global _SKILL_BLOCK_BASE
-    with _SKILLS_INSTALL_LOCK:
-        tools_mod = _agent_tools_module()
-        if isinstance(tools_mod.skill_loader, _ScienceSkillView):
-            return
-        try:
-            original_block = tools_mod.skill_loader.get_descriptions()
-        except Exception:
-            original_block = ""
-        tools_mod.skill_loader = _ScienceSkillView()
-        import sigmaflow.agent.agent as agent_module
-
-        if original_block and original_block in agent_module.SYSTEM:
-            _SKILL_BLOCK_BASE = {"system": original_block, "sub": original_block}
-        else:
-            _SKILL_BLOCK_BASE = {"system": "", "sub": ""}
-
-
-def _agent_agent_module():
-    """Import sigmaflow.agent.agent with the same sys.path fallback as _run_agent_chat."""
-    _ensure_skills_installed()
-    try:
-        import sigmaflow.agent.agent as agent_module
-    except ModuleNotFoundError:
-        import sys as _sys
-
-        _src_root = os.path.dirname(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        )
-        if _src_root not in _sys.path:
-            _sys.path.insert(0, _src_root)
-        import sigmaflow.agent.agent as agent_module
-    return agent_module
-
-
-def _default_system_prompts() -> tuple:
-    """(system, sub_system) with the current skill listing swapped into the agent
-    module's default prompts; Agent captures those defaults at import, so the swap is
-    done textually against the original block recorded by _ensure_skills_installed."""
-    agent_module = _agent_agent_module()
-    global _SKILL_BLOCK_BASE
-    if _SKILL_BLOCK_BASE is None:
-        _SKILL_BLOCK_BASE = {"system": "", "sub": ""}
-    listing = _agent_tools_module().skill_loader.get_descriptions()
-    system = (
-        agent_module.SYSTEM.replace(_SKILL_BLOCK_BASE["system"], listing)
-        if _SKILL_BLOCK_BASE["system"]
-        else agent_module.SYSTEM
-    )
-    sub_system = (
-        agent_module.SUBAGENT_SYSTEM.replace(_SKILL_BLOCK_BASE["sub"], listing)
-        if _SKILL_BLOCK_BASE["sub"]
-        else agent_module.SUBAGENT_SYSTEM
-    )
-    return system, sub_system
-
-
-def _effective_system_prompts() -> tuple:
-    """Effective main-agent system prompt: default with skills swap, optionally
-    overridden by the settings-page custom prompt (skills listing re-appended);
-    the subagent prompt keeps the built-in text."""
-    system, sub_system = _default_system_prompts()
-    cfg = _load_system_prompt_config()
-    if cfg.get("enabled"):
-        custom = str(cfg.get("prompt") or "").strip()
-        if custom:
-            listing = _agent_tools_module().skill_loader.get_descriptions()
-            system = f"{custom}\n\n{listing}"
-    return system, sub_system
-
-
-def _skill_listing(defaults: list, overrides: Dict[str, dict]) -> list:
-    """Settings-page view of the skills: original id plus effective name/description/enabled."""
-    builtin = _builtin_skill_ids()
-    out = []
-    for s in defaults:
-        override = overrides.get(s["id"]) or {}
-        out.append(
-            {
-                "id": s["id"],
-                "name": str(override.get("name") or "").strip() or s["id"],
-                "description": str(override.get("description") or "").strip()
-                or str(s["meta"].get("description") or ""),
-                "enabled": override.get("enabled") is not False,
-                "builtin": s["id"] in builtin,
-                "modified": bool(override),
-            }
-        )
-    return out
-
-
-def _build_skill_overrides(items: list, known: Dict[str, dict]) -> Dict[str, dict]:
-    """Validate the submitted skill settings and compress them into overrides;
-    unchanged skills are not persisted."""
-    overrides: Dict[str, dict] = {}
-    seen: Dict[str, str] = {}
-    for item in items or []:
-        if not isinstance(item, dict):
-            raise HTTPException(status_code=400, detail="Invalid skills payload")
-        skill_id = str(item.get("id") or "")
-        if skill_id not in known:
-            raise HTTPException(status_code=400, detail=f"Unknown skill: {skill_id}")
-        display = str(item.get("name") or "").strip()[:64]
-        if not display:
-            display = skill_id
-        if display in seen:
-            raise HTTPException(status_code=400, detail=f"技能名称重复: {display}")
-        seen[display] = skill_id
-        description = str(item.get("description") or "").strip()[:2000]
-        entry: Dict[str, Any] = {}
-        if display != skill_id:
-            entry["name"] = display
-        if (
-            description
-            and description
-            != str(known[skill_id]["meta"].get("description") or "").strip()[:2000]
-        ):
-            entry["description"] = description
-        if item.get("enabled") is False:
-            entry["enabled"] = False
-        if entry:
-            overrides[skill_id] = entry
-    return overrides
 
 
 # ==================== MCP 服务配置 ====================
@@ -1424,627 +567,10 @@ def _build_skill_overrides(items: list, known: Dict[str, dict]) -> Dict[str, dic
 # 内置服务器 (medical-apis) 在首次运行时种子化; 生效路径: 导入 agent 工具模块前通过
 # MCP_ENDPOINT 环境变量注入, 已导入时在保存后重建 MCPClient 并重挂其工具
 
-_FS_HIDDEN_NAMES = {".git", "__pycache__", "node_modules", ".DS_Store"}
-_GIT_STATUS_TTL = 3.0
-_GIT_STATUS_CACHE: Dict[str, tuple] = {}
-_FS_TEXT_MAX = 512 * 1024
-
-
-def _fs_resolve(project_dir: str, rel: str):
-    """Resolve `rel` inside the project dir, refusing escapes (returns abs path)."""
-    root = os.path.realpath(project_dir)
-    target = os.path.realpath(os.path.join(root, rel)) if rel else root
-    if target != root and not target.startswith(root + os.sep):
-        return None, root
-    return target, root
-
-
-_FS_UPLOAD_MAX = 32 * 1024 * 1024
-_FS_EXEC_TIMEOUT = 180.0
-_FS_CWD_SENTINEL = "SIGMAFLOW_CWD"
-_FS_EXEC_RE = None
-
 
 # Interactive terminal: one real PTY per project, shared across websocket
 # connections. The reader thread copies master output into a ring buffer and
 # fans it out to every attached websocket; a reconnect replays the buffer.
-_PTY_BUFFER_MAX = 200 * 1024
-_PTY_SESSIONS_MAX = 8
-
-
-class _PtySession:
-    """One bash running on a PTY, with a bounded replay buffer and fan-out."""
-
-    def __init__(self, key: str, cwd: str, cols: int = 90, rows: int = 28):
-        self.key = key
-        self.cwd = cwd
-        self.created = time.time()
-        self.lock = threading.Lock()
-        self.buffer = bytearray()
-        self.seq = 0
-        self.subs: list = []
-        self.alive = True
-        self.cols, self.rows = cols, rows
-        self.master, slave = _pty_mod.openpty()
-        try:
-            fcntl.ioctl(slave, 0x5414, struct.pack("HHHH", rows, cols, 0, 0))
-        except Exception:
-            pass  # struct.error/OSError 都视为回退默认窗口尺寸
-        env = dict(os.environ)
-        env.update(
-            {
-                "TERM": "xterm-256color",
-                "COLORTERM": "truecolor",
-                "PS1": r"\u@\h \w $ ",
-                "PAGER": "cat",
-            }
-        )
-        self.proc = subprocess.Popen(
-            ["/bin/bash", "--login", "-i"],
-            stdin=slave,
-            stdout=slave,
-            stderr=slave,
-            cwd=cwd,
-            env=env,
-            start_new_session=True,
-            close_fds=True,
-        )
-        os.close(slave)
-        self.thread = threading.Thread(target=self._pump, daemon=True)
-        self.thread.start()
-
-    def _dispatch(self, kind: str, payload: bytes = None):
-        """Deliver a frame to every attached websocket queue (thread safe)."""
-        with self.lock:
-            subs = [(sub["queue"], sub["loop"], sub["seq"]) for sub in self.subs]
-        for queue, loop, sub_seq in subs:
-            try:
-                loop.call_soon_threadsafe(queue.put_nowait, (kind, payload))
-            except RuntimeError:
-                pass
-
-    def _pump(self):
-        try:
-            while True:
-                try:
-                    ready, _, _ = select.select([self.master], [], [], 0.5)
-                except (OSError, ValueError):
-                    break
-                if not ready:
-                    if self.proc.poll() is not None:
-                        break
-                    continue
-                try:
-                    data = os.read(self.master, 65536)
-                except OSError:
-                    break
-                if not data:
-                    break
-                with self.lock:
-                    self.buffer.extend(data)
-                    overflow = len(self.buffer) - _PTY_BUFFER_MAX
-                    if overflow > 0:
-                        del self.buffer[:overflow]
-                    self.seq += 1
-                    current = self.seq
-                    for sub in self.subs:
-                        if current > sub["seq"]:
-                            sub["seq"] = current
-                            try:
-                                sub["loop"].call_soon_threadsafe(
-                                    sub["queue"].put_nowait, ("out", data)
-                                )
-                            except RuntimeError:
-                                pass
-            self.proc.wait(timeout=2)
-        except Exception:
-            pass
-        finally:
-            self.alive = False
-            self._dispatch("closed")
-            with self.lock:
-                subs = self.subs
-                self.subs = []
-            for sub in subs:
-                try:
-                    sub["loop"].call_soon_threadsafe(
-                        sub["queue"].put_nowait, ("closed", None)
-                    )
-                except RuntimeError:
-                    pass
-
-    def subscribe(self, loop, queue):
-        """Register a websocket; returns (snapshot bytes, seq start)."""
-        with self.lock:
-            sub = {"loop": loop, "queue": queue, "seq": self.seq}
-            self.subs.append(sub)
-            return bytes(self.buffer), self.seq
-
-    def unsubscribe(self, queue):
-        with self.lock:
-            self.subs = [s for s in self.subs if s["queue"] is not queue]
-
-    def write(self, data: bytes):
-        try:
-            os.write(self.master, data)
-        except OSError:
-            pass
-
-    def resize(self, cols: int, rows: int):
-        if cols < 2 or rows < 1 or cols > 500 or rows > 300:
-            return
-        self.cols, self.rows = cols, rows
-        try:
-            fcntl.ioctl(self.master, 0x5414, struct.pack("HHHH", rows, cols, 0, 0))
-            os.killpg(self.proc.pid, signal.SIGWINCH)
-        except OSError:
-            pass
-
-    def kill(self):
-        self.alive = False
-        try:
-            os.killpg(self.proc.pid, signal.SIGKILL)
-        except OSError:
-            pass
-        for fd in (self.master,):
-            try:
-                os.close(fd)
-            except OSError:
-                pass
-
-
-def _pty_key_of(project_id: str) -> str:
-    return f"pty:{(project_id or '').strip()[:64]}"
-
-
-def _fs_exec_payload(project, cmd: str, cwd: str) -> dict:
-    """Run one shell command under the project dir; bash session cwd is kept by
-    the client passing the previously reported directory back each time."""
-    base = str((project or {}).get("dir") or "").strip()
-    if not base or not os.path.isdir(base):
-        raise HTTPException(
-            status_code=404, detail="项目目录不存在，请编辑项目并填写本地路径"
-        )
-    start, root = _fs_resolve(base, cwd or "")
-    if start is None or not os.path.isdir(start):
-        raise HTTPException(status_code=400, detail="工作目录不可用，已重置到项目根")
-    script = (
-        cmd
-        + "\n__sf_code=$?\n"
-        + 'printf "\001'
-        + _FS_CWD_SENTINEL
-        + ':%s\001\n" "$PWD"\n'
-        + "exit $__sf_code"
-    )
-
-    def _text(value) -> str:
-        if value is None:
-            return ""
-        if isinstance(value, bytes):
-            return value.decode("utf-8", "replace")
-        return value
-
-    try:
-        proc = subprocess.run(
-            ["bash", "-c", script],
-            cwd=start,
-            capture_output=True,
-            text=True,
-            timeout=_FS_EXEC_TIMEOUT,
-        )
-        out, err, code = _text(proc.stdout), _text(proc.stderr), proc.returncode
-    except subprocess.TimeoutExpired as exc:
-        out, err, code = (
-            _text(exc.stdout),
-            _text(exc.stderr) + "\n[命令执行超时，已终止]",
-            124,
-        )
-    newcwd = start
-    marker = f"\x01{_FS_CWD_SENTINEL}:"
-    sbegin = out.find(marker)
-    if sbegin >= 0:
-        send = out.find("\x01", sbegin + len(marker))
-        if send > sbegin:
-            candidate = out[sbegin + len(marker) : send]
-            resolved = None
-            if candidate:
-                resolved, _ = _fs_resolve(
-                    base,
-                    os.path.relpath(candidate, root)
-                    if os.path.isabs(candidate)
-                    else candidate,
-                )
-            if resolved and os.path.isdir(resolved):
-                newcwd = resolved
-            out = out[:sbegin] + out[send + 1 :]
-    return {
-        "stdout": out,
-        "stderr": err,
-        "code": code,
-        "cwd": os.path.relpath(newcwd, root).replace(os.sep, "/")
-        if newcwd != root
-        else "",
-        "root": root.replace(os.sep, "/"),
-    }
-
-
-def _fs_upload_payload(project, name: str, data_base64: str) -> dict:
-    """Upload one file into the project directory (no overwrite)."""
-    base = str((project or {}).get("dir") or "").strip()
-    if not base or not os.path.isdir(base):
-        raise HTTPException(
-            status_code=404, detail="项目目录不存在，请编辑项目并填写本地路径"
-        )
-    clean = os.path.basename(str(name or "").replace("\\", "/").replace("\x00", ""))[
-        :200
-    ]
-    if not clean or clean in (".", ".."):
-        raise HTTPException(status_code=400, detail="文件名无效")
-    try:
-        raw = base64.b64decode(data_base64.split(",")[-1], validate=False)
-    except Exception:
-        raw = b""
-    if not raw:
-        raise HTTPException(status_code=400, detail="文件内容为空")
-    if len(raw) > _FS_UPLOAD_MAX:
-        raise HTTPException(status_code=400, detail="文件超过 32 MB 限制")
-    target, root = _fs_resolve(base, clean)
-    if target is None or os.path.isdir(target):
-        raise HTTPException(status_code=400, detail="目标路径无效")
-    if os.path.exists(target):
-        raise HTTPException(status_code=400, detail="同名文件已存在，请改名后再上传")
-    with open(target, "wb") as fh:
-        fh.write(raw)
-    try:
-        subprocess.run(
-            ["git", "-C", root, "add", "-A", "--", clean],
-            capture_output=True,
-            timeout=10,
-        )
-    except Exception:
-        pass
-    return {"name": clean, "size": len(raw), "path": clean.replace(os.sep, "/")}
-
-
-def _git_status_map(root: str) -> Dict[str, str]:
-    """Repo-relative path -> one-letter git status (M/A/D/R/U for untracked).
-
-    Cached briefly per project so expanding a few directories does not re-run
-    `git status` each time.
-    """
-    cached = _GIT_STATUS_CACHE.get(root)
-    now = time.time()
-    if cached and now - cached[0] < _GIT_STATUS_TTL:
-        return cached[1]
-    result: Dict[str, str] = {}
-    try:
-        proc = subprocess.run(
-            [
-                "git",
-                "-C",
-                root,
-                "status",
-                "--porcelain=v1",
-                "-z",
-                "--untracked-files=all",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=8,
-        )
-        if proc.returncode == 0:
-            items = proc.stdout.split("\0")
-            i = 0
-            while i < len(items):
-                item = items[i]
-                i += 1
-                if len(item) < 4:
-                    continue
-                xy = item[:2]
-                path = item[3:]
-                if xy == "??":
-                    status = "U"
-                else:
-                    status = xy[1].strip() or xy[0].strip() or "M"
-                if status == "R" and i < len(items) - 1:
-                    i += 1  # rename records carry the old path in the next field
-                if path:
-                    result[path] = status
-    except Exception:
-        return {}
-    _GIT_STATUS_CACHE[root] = (now, result)
-    return result
-
-
-def _fs_tree_payload(project, rel: str) -> dict:
-    """Directory listing + git status for the project file browser."""
-    base = str((project or {}).get("dir") or "").strip()
-    if not base or not os.path.isdir(base):
-        raise HTTPException(
-            status_code=404, detail="项目目录不存在，请编辑项目并填写本地路径"
-        )
-    target, root = _fs_resolve(base, rel)
-    if target is None or not os.path.isdir(target):
-        raise HTTPException(status_code=404, detail="目录不存在")
-    entries = []
-    try:
-        names = os.listdir(target)
-    except PermissionError:
-        names = []
-    for name in sorted(names, key=str.lower):
-        if name in _FS_HIDDEN_NAMES or name.startswith("."):
-            continue
-        full = os.path.join(target, name)
-        is_dir = os.path.isdir(full)
-        if not is_dir and not os.path.isfile(full):
-            continue  # sockets / broken symlinks 等
-        entries.append(
-            {
-                "name": name,
-                "type": "dir" if is_dir else "file",
-                "path": os.path.relpath(full, root).replace(os.sep, "/"),
-            }
-        )
-        if len(entries) >= 500:
-            break
-    return {
-        "root": root.replace(os.sep, "/"),
-        "path": rel,
-        "entries": entries,
-        "git": _git_status_map(root),
-    }
-
-
-def _fs_file_payload(project, rel: str) -> dict:
-    """Read one file for the read-only preview modal."""
-    base = str((project or {}).get("dir") or "").strip()
-    if not base or not os.path.isdir(base):
-        raise HTTPException(status_code=404, detail="项目目录不存在")
-    target, root = _fs_resolve(base, rel)
-    if target is None:
-        raise HTTPException(status_code=403, detail="越界路径")
-    if not os.path.isfile(target):
-        raise HTTPException(status_code=404, detail="文件不存在")
-    size = os.path.getsize(target)
-    with open(target, "rb") as fh:
-        head = fh.read(min(size, _FS_TEXT_MAX + 64 * 1024))
-    if b"\x00" in head[:8192]:
-        return {"path": rel, "size": size, "binary": True, "content": ""}
-    truncated = size > _FS_TEXT_MAX
-    text = head[:_FS_TEXT_MAX].decode("utf-8", "replace")
-    return {
-        "path": rel,
-        "size": size,
-        "binary": False,
-        "content": text,
-        "truncated": truncated,
-    }
-
-
-_MCP_REBUILD_LOCK = threading.Lock()
-
-
-def _mcp_config_path() -> str:
-    return os.path.join(_science_data_root(), "mcp.json")
-
-
-def _builtin_mcp_servers() -> Dict[str, dict]:
-    """Built-in MCP servers shipped as a package asset next to the science app."""
-    try:
-        with open(
-            os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                "science",
-                "mcp_servers.json",
-            ),
-            encoding="utf-8",
-        ) as fh:
-            data = json.load(fh)
-    except Exception:
-        return {}
-    servers = data.get("servers") if isinstance(data, dict) else None
-    if not isinstance(servers, dict):
-        return {}
-    return {
-        str(k): dict(v)
-        for k, v in servers.items()
-        if isinstance(v, dict) and v.get("url")
-    }
-
-
-def _load_mcp_servers() -> Dict[str, dict]:
-    try:
-        with open(_mcp_config_path(), encoding="utf-8") as fh:
-            data = json.load(fh)
-    except Exception:
-        return _builtin_mcp_servers()
-    servers = data.get("servers") if isinstance(data, dict) else None
-    if not isinstance(servers, dict):
-        return _builtin_mcp_servers()
-    return {str(k): dict(v) for k, v in servers.items() if isinstance(v, dict)}
-
-
-def _save_mcp_servers(servers: Dict[str, dict], removed: Optional[list] = None) -> None:
-    path = _mcp_config_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    if removed is None:
-        # 未显式传入时保留文件中已有的移除记录, 避免内置服务器被回填复活
-        try:
-            with open(path, encoding="utf-8") as fh:
-                old = json.load(fh)
-            removed = old.get("removedBuiltins") if isinstance(old, dict) else None
-        except Exception:
-            removed = None
-    payload = {"servers": servers}
-    if removed:
-        payload["removedBuiltins"] = sorted(str(x) for x in removed)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
-
-
-def _removed_builtins() -> set:
-    """Builtin server names the user explicitly deleted from the MCP settings."""
-    try:
-        with open(_mcp_config_path(), encoding="utf-8") as fh:
-            data = json.load(fh)
-        removed = data.get("removedBuiltins") if isinstance(data, dict) else None
-    except Exception:
-        return set()
-    return {str(x) for x in removed} if isinstance(removed, list) else set()
-
-
-def _seed_mcp_config() -> None:
-    """Create the config with builtin servers on first run; later runs backfill
-    newly shipped builtin servers unless the user removed them on purpose."""
-    servers = _load_mcp_servers()
-    skip = _removed_builtins()
-    missing = {
-        k: v
-        for k, v in _builtin_mcp_servers().items()
-        if k not in servers and k not in skip
-    }
-    if missing or not os.path.exists(_mcp_config_path()):
-        servers.update(missing)
-        _save_mcp_servers(servers)
-
-
-def _active_mcp_servers() -> Dict[str, dict]:
-    """Enabled servers in the wire format MCP_CONF expects (enabled flag stripped);
-    ${ANYSEARCH_API_KEY} placeholders in headers are replaced with the saved token,
-    and gated servers whose token is missing are dropped entirely."""
-    servers = _load_mcp_servers()
-    active = {}
-    for name, cfg in servers.items():
-        if cfg.get("enabled") is False or not str(cfg.get("url") or "").strip():
-            continue
-        if name == "anysearch" and not _anysearch_key():
-            continue  # 未配置 Anysearch API key 时该服务器等同禁用
-        entry = {}
-        for k, v in cfg.items():
-            if k != "enabled":
-                entry[k] = v
-        headers = entry.get("headers")
-        if isinstance(headers, dict):
-            key = _anysearch_key()
-            resolved = {}
-            for hk, hv in headers.items():
-                if isinstance(hv, str) and "${ANYSEARCH_API_KEY}" in hv:
-                    if not key:
-                        continue  # 双保险: 无 key 时不发送哨兵头
-                    hv = hv.replace("${ANYSEARCH_API_KEY}", key)
-                resolved[hk] = hv
-            if resolved:
-                entry["headers"] = resolved
-            else:
-                entry.pop("headers", None)
-        active[name] = entry
-    return active
-
-
-def _sync_mcp_env() -> None:
-    """Publish enabled MCP servers via MCP_ENDPOINT so the agent tools module picks
-    them up at import; also refresh the in-memory conf if already imported."""
-    active = _active_mcp_servers()
-    os.environ["MCP_ENDPOINT"] = json.dumps(active, ensure_ascii=False)
-    try:
-        import sigmaflow.agent.conf as agent_conf
-
-        agent_conf.MCP_CONF = {"mcpServers": active}
-    except Exception:
-        pass
-
-
-def _rebuild_agent_mcp() -> dict:
-    """Re-apply MCP config to an already-imported agent tools module: re-list tools
-    over the network, rewire TOOLS/CHILD_TOOLS/TOOL_HANDLERS and return the new client."""
-    _sync_mcp_env()
-    try:
-        import sigmaflow.agent.tools as tools_mod
-    except Exception:
-        return {}
-    with _MCP_REBUILD_LOCK:
-        active = _active_mcp_servers()
-        # MCP_CONF 在 tools 模块里是独立绑定(from .conf import *), 必须在重建前刷新, 否则新客户端仍用旧配置
-        tools_mod.MCP_CONF = {"mcpServers": active}
-        old = tools_mod.MCP
-        old_names = set(old.tools.keys())
-        for name in old_names:
-            tools_mod.TOOL_HANDLERS.pop(name, None)
-        tools_mod.TOOLS[:] = [
-            t for t in tools_mod.TOOLS if t.get("name") not in old_names
-        ]
-        tools_mod.CHILD_TOOLS[:] = [
-            t for t in tools_mod.CHILD_TOOLS if t.get("name") not in old_names
-        ]
-        client = tools_mod.MCPClient()
-        tools_mod.MCP = client
-        for mcp_tool in client.tools.values():
-            t = {
-                "name": mcp_tool.name,
-                "description": mcp_tool.description,
-                "input_schema": mcp_tool.input_schema,
-            }
-            tools_mod.CHILD_TOOLS.append(dict(t))
-            tools_mod.TOOLS.append(dict(t))
-            tools_mod.TOOL_HANDLERS[mcp_tool.name] = (
-                lambda n: lambda **kw: client.call_tool(n, kw)
-            )(mcp_tool.name)
-    return client.tools
-
-
-def _mcp_listing() -> list:
-    builtin = _builtin_mcp_servers()
-    servers = _load_mcp_servers()
-    out = []
-    for name, cfg in servers.items():
-        enabled = cfg.get("enabled") is not False
-        locked = name == "anysearch" and not _anysearch_key()
-        out.append(
-            {
-                "id": name,
-                "name": name,
-                "url": str(cfg.get("url") or ""),
-                "enabled": enabled and not locked,
-                "builtin": name in builtin,
-                "locked": locked,  # 需先在第三方 API Key 中配置密钥, 服务端强制关闭
-                "modified": builtin.get(name) != cfg,
-            }
-        )
-    return out
-
-
-def _build_mcp_servers(items: list, reset: bool) -> Dict[str, dict]:
-    """Validate the submitted MCP server list and convert it into the stored config;
-    builtin servers keep their packaged headers (e.g. the anysearch token template)."""
-    builtin = _builtin_mcp_servers()
-    if reset:
-        return {k: dict(v) for k, v in builtin.items()}
-    servers: Dict[str, dict] = {}
-    for item in items or []:
-        if not isinstance(item, dict):
-            raise HTTPException(status_code=400, detail="Invalid mcp payload")
-        name = str(item.get("name") or "").strip()[:64]
-        if not name:
-            raise HTTPException(status_code=400, detail="MCP 服务器名称不能为空")
-        url = str(item.get("url") or "").strip()[:500]
-        if not url.startswith(("http://", "https://")):
-            raise HTTPException(
-                status_code=400, detail=f"MCP 地址需要以 http(s):// 开头: {name}"
-            )
-        if name in servers:
-            raise HTTPException(status_code=400, detail=f"MCP 服务器名称重复: {name}")
-        entry = {"url": url}
-        if name in builtin:
-            # 认证头等非页面字段以内置资产为准, 不随设置页保存丢失
-            for k, v in builtin[name].items():
-                if k != "url":
-                    entry[k] = v
-        if item.get("enabled") is False:
-            entry["enabled"] = False
-        servers[name] = entry
-    return servers
 
 
 # ==================== 系统提示词配置 ====================
@@ -2052,101 +578,7 @@ def _build_mcp_servers(items: list, reset: bool) -> Dict[str, dict]:
 # 子代理提示词保持内置不随覆盖变化; 配置落盘 <science_dir>/system_prompt.json
 
 
-def _system_prompt_config_path() -> str:
-    return os.path.join(_science_data_root(), "system_prompt.json")
-
-
-def _load_system_prompt_config() -> dict:
-    try:
-        with open(_system_prompt_config_path(), encoding="utf-8") as fh:
-            data = json.load(fh)
-    except Exception:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _save_system_prompt_config(cfg: dict) -> None:
-    path = _system_prompt_config_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(cfg, fh, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
-
-
-def _compaction_config_path() -> str:
-    return os.path.join(_science_data_root(), "compaction.json")
-
-
-def _load_compaction_config() -> dict:
-    try:
-        with open(_compaction_config_path(), encoding="utf-8") as fh:
-            data = json.load(fh)
-    except Exception:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _save_compaction_config(cfg: dict) -> None:
-    path = _compaction_config_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(cfg, fh, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
-
-
 # 压缩参数的定义域: (类型, 默认值, 最小, 最大), 默认值取 agent conf 的环境变量基线
-def _compaction_defaults() -> dict:
-    from sigmaflow.agent import conf as agent_conf
-
-    return {
-        "enabled": (bool, True, None, None),
-        "ratio": (float, float(getattr(agent_conf, "COMPACT_RATIO", 0.85)), 0.3, 0.98),
-        "keepRecentTokens": (int, int(getattr(agent_conf, "COMPACT_KEEP_RECENT_TOKENS", 16000)), 2000, 200000),
-        "minDrops": (int, int(getattr(agent_conf, "COMPACT_MIN_DROPS", 4)), 2, 50),
-        "summaryTokens": (int, int(getattr(agent_conf, "COMPACT_TOKENS", 4096)), 512, 16384),
-        "resultChars": (int, int(getattr(agent_conf, "COMPACT_SERIAL_RESULT_CHARS", 2000)), 200, 20000),
-        "argChars": (int, int(getattr(agent_conf, "COMPACT_SERIAL_ARG_CHARS", 200)), 40, 4000),
-    }
-
-
-def _effective_compaction() -> dict:
-    # 合并环境默认与设置面板存储的覆盖值, 逐字段做类型与范围钳制
-    stored = _load_compaction_config()
-    out = {}
-    for key, (kind, default_v, lo, hi) in _compaction_defaults().items():
-        val = stored.get(key, default_v)
-        try:
-            val = kind(val) if val is not None else default_v
-        except (TypeError, ValueError):
-            val = default_v
-        if lo is not None and val < lo:
-            val = lo
-        if hi is not None and val > hi:
-            val = hi
-        out[key] = val
-    out["enabled"] = bool(out["enabled"])
-    return out
-
-
-def _apply_compaction_to(agent) -> None:
-    # 把设置面板的压缩参数注入 Agent 内的 Compactor(按 conf 常量名映射)
-    try:
-        cfg = _effective_compaction()
-        compactor = getattr(agent, "compactor", None)
-        if compactor is not None:
-            compactor.overrides = {
-                "COMPACT_ENABLED": bool(cfg["enabled"]),
-                "COMPACT_RATIO": float(cfg["ratio"]),
-                "COMPACT_KEEP_RECENT_TOKENS": int(cfg["keepRecentTokens"]),
-                "COMPACT_MIN_DROPS": int(cfg["minDrops"]),
-                "COMPACT_TOKENS": int(cfg["summaryTokens"]),
-                "COMPACT_SERIAL_RESULT_CHARS": int(cfg["resultChars"]),
-                "COMPACT_SERIAL_ARG_CHARS": int(cfg["argChars"]),
-            }
-    except Exception as exc:  # 设置注入失败回落 env 默认, 不拦截会话
-        logging.getLogger("uvicorn.error").warning("compaction settings apply failed: %s", exc)
 
 
 class ScienceModelStore:
@@ -2370,10 +802,6 @@ class ScienceModelStore:
         base_url = (payload.baseUrl or stored.get("baseUrl") or "").strip()
         api_key = payload.apiKey or stored.get("apiKey") or ""
         return base_url, api_key
-
-
-def _clip(value: Any, limit: int) -> str:
-    return str(value if value is not None else "")[:limit]
 
 
 class ScienceRunManager:
@@ -2681,7 +1109,9 @@ class ScienceAPI:
             code = str(body.get("code") or "").strip()
             state = str(body.get("state") or "").strip()
             if not (code and _wechat_consume_state(state)):
-                raise HTTPException(status_code=400, detail="登录会话已失效，请重新扫码")
+                raise HTTPException(
+                    status_code=400, detail="登录会话已失效，请重新扫码"
+                )
             cfg = _load_wechat_config()
             appid = _wechat_appid()
             token = _wechat_fetch_json(
@@ -3145,17 +1575,24 @@ class ScienceAPI:
             _check_origin(request)
             if payload.reset:
                 # 恢复默认: 删除存储文件, 下次读取回落环境基线
-                await asyncio.to_thread(lambda: os.path.exists(_compaction_config_path()) and os.remove(_compaction_config_path()))
+                await asyncio.to_thread(
+                    lambda: os.path.exists(_compaction_config_path())
+                    and os.remove(_compaction_config_path())
+                )
                 return {"compaction": await asyncio.to_thread(_effective_compaction)}
-            stored = {k: v for k, v in {
-                "enabled": payload.enabled,
-                "ratio": payload.ratio,
-                "keepRecentTokens": payload.keepRecentTokens,
-                "minDrops": payload.minDrops,
-                "summaryTokens": payload.summaryTokens,
-                "resultChars": payload.resultChars,
-                "argChars": payload.argChars,
-            }.items() if v is not None}
+            stored = {
+                k: v
+                for k, v in {
+                    "enabled": payload.enabled,
+                    "ratio": payload.ratio,
+                    "keepRecentTokens": payload.keepRecentTokens,
+                    "minDrops": payload.minDrops,
+                    "summaryTokens": payload.summaryTokens,
+                    "resultChars": payload.resultChars,
+                    "argChars": payload.argChars,
+                }.items()
+                if v is not None
+            }
             merged = dict(await asyncio.to_thread(_load_compaction_config))
             merged.update(stored)
             # 写入前按同样规则钳制, 非法输入不能保存生效
@@ -3163,7 +1600,9 @@ class ScienceAPI:
             for key, (kind, default_v, lo, hi) in _compaction_defaults().items():
                 if key in merged:
                     try:
-                        val = kind(merged[key]) if merged[key] is not None else default_v
+                        val = (
+                            kind(merged[key]) if merged[key] is not None else default_v
+                        )
                         if lo is not None and val < lo:
                             val = lo
                         if hi is not None and val > hi:
@@ -3245,7 +1684,7 @@ class ScienceAPI:
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                _raw_msg = ((data.get("choices") or [{}])[0].get("message") or {})
+                _raw_msg = (data.get("choices") or [{}])[0].get("message") or {}
                 title = _raw_msg.get("content")
                 reasoning_only = ""
                 if not title:
@@ -3254,17 +1693,20 @@ class ScienceAPI:
                         or _raw_msg.get("reasoning")
                         or ""
                     )
-                title = (title or '').strip()  # 去包裹引号
+                title = (title or "").strip()  # 去包裹引号
                 for _q in ('"', chr(39)):
                     title = title.strip(_q)
                 title = title.strip(chr(0x201C) + chr(0x201D))
-                title = re.sub(r'[\n\u3002.!\uff01\uff1f?]', '', title).strip()
+                title = re.sub(r"[\n\u3002.!\uff01\uff1f?]", "", title).strip()
                 if not title and reasoning_only:
                     # 思考型模型 content 为空时, 从 reasoning 兜底提炼中文短语作标题
                     zh = re.findall(r"[\u4e00-\u9fff]{2,24}", reasoning_only)
                     title = zh[-1] if zh else ""
                 # 模型爱在标题前塞英文说明(如 "The user wants..."); 优先提取开头的连续中文段
-                zh_lead = re.findall(r"[\u4e00-\u9fff][\u4e00-\u9fff\u3000-\u303fA-Za-z0-9A-Za-z0-9]{0,23}", title)
+                zh_lead = re.findall(
+                    r"[\u4e00-\u9fff][\u4e00-\u9fff\u3000-\u303fA-Za-z0-9A-Za-z0-9]{0,23}",
+                    title,
+                )
                 if zh_lead:
                     title = zh_lead[0].strip()
                 # 最终校验必须在收敛后的结果上做: 不含汉字一律视为失败, 保留兜底标题
@@ -3303,9 +1745,7 @@ class ScienceAPI:
             }
             feedback_path = self.project_store.storage_dir / "feedback.jsonl"
             try:
-                await asyncio.to_thread(
-                    _append_jsonl, feedback_path, record
-                )
+                await asyncio.to_thread(_append_jsonl, feedback_path, record)
             except Exception as err:
                 logging.getLogger("uvicorn.error").info(
                     "feedback append failed: %s", err
@@ -3316,10 +1756,14 @@ class ScienceAPI:
         @router.post("/conversations/{conversation_id}/compact")
         async def compact_conversation(conversation_id: str, request: Request):
             # 手动压缩: 圆环弹卡触发, 独立于会话请求, 复用 Compactor 全量逻辑
-            conv, base_url, api_key, model_name, msgs, compactor, manual_keep = _compact_utils(conversation_id, request)
+            conv, base_url, api_key, model_name, msgs, compactor, manual_keep = (
+                _compact_utils(conversation_id, request)
+            )
 
             def _run_compact():
-                compactor.summary_compact(msgs, force=True, keep_tokens_override=manual_keep)
+                compactor.summary_compact(
+                    msgs, force=True, keep_tokens_override=manual_keep
+                )
                 return _compact_result_payload(compactor.last_meta, len(msgs))
 
             return await asyncio.to_thread(_run_compact)
@@ -3328,7 +1772,9 @@ class ScienceAPI:
         async def compact_conversation_stream(conversation_id: str, request: Request):
             # 流式手动压缩: SSE 逐段推送摘要增量(delta), 结束后一条 done 携带完整结果;
             # 前端等待消息实时渲染 markdown 摘要, 观感与模型回复流式一致
-            conv, base_url, api_key, model_name, msgs, compactor, manual_keep = _compact_utils(conversation_id, request)
+            conv, base_url, api_key, model_name, msgs, compactor, manual_keep = (
+                _compact_utils(conversation_id, request)
+            )
 
             loop = asyncio.get_running_loop()
             aq: asyncio.Queue = asyncio.Queue()
@@ -3338,7 +1784,12 @@ class ScienceAPI:
 
             def _run():
                 try:
-                    compactor.summary_compact(msgs, force=True, keep_tokens_override=manual_keep, on_delta=_on_delta)
+                    compactor.summary_compact(
+                        msgs,
+                        force=True,
+                        keep_tokens_override=manual_keep,
+                        on_delta=_on_delta,
+                    )
                 except Exception as e:
                     loop.call_soon_threadsafe(aq.put_nowait, ("error", str(e)))
                 loop.call_soon_threadsafe(aq.put_nowait, ("end", None))
@@ -3385,10 +1836,17 @@ class ScienceAPI:
 
             agent_module = _agent_agent_module()
             compactor_mod = _agent_tools_module()
-            window = agent_module.MAX_MODEL_LEN.get(model_name.lower(), agent_module.MAX_MODEL_LEN["default"])
+            window = agent_module.MAX_MODEL_LEN.get(
+                model_name.lower(), agent_module.MAX_MODEL_LEN["default"]
+            )
             compactor = compactor_mod.Compactor(
                 agent_module.TRANSCRIPT_DIR,
-                OpenAI(base_url=base_url, api_key=api_key or "sk-empty", timeout=300, max_retries=0),
+                OpenAI(
+                    base_url=base_url,
+                    api_key=api_key or "sk-empty",
+                    timeout=300,
+                    max_retries=0,
+                ),
                 window,
                 model=model_name,
             )
@@ -3410,13 +1868,21 @@ class ScienceAPI:
 
         def _compact_result_payload(meta, total):
             if not (meta and meta.get("applied")):
-                return {"applied": False, "removed": 0, "kept": total, "text": "", "transcript": ""}
+                return {
+                    "applied": False,
+                    "removed": 0,
+                    "kept": total,
+                    "text": "",
+                    "transcript": "",
+                }
             return {
                 "applied": True,
                 "summaryTokens": int(meta.get("summaryTokens") or 0),
                 "summaryInputTokens": int(meta.get("summaryInputTokens") or 0),
                 "removed": int(meta.get("removed") or 0),
-                "dropOldIdx": int(meta.get("dropOldIdx", -1) or 0) if meta.get("dropOldIdx", -1) is not None else -1,
+                "dropOldIdx": int(meta.get("dropOldIdx", -1) or 0)
+                if meta.get("dropOldIdx", -1) is not None
+                else -1,
                 "kept": int(meta.get("kept") or 0),
                 "text": str(meta.get("text") or ""),
                 "transcript": str(meta.get("transcript") or ""),
@@ -3953,15 +2419,27 @@ class ScienceAPI:
                             def on_tool_wrap(ev):
                                 # ask 轮次: 记录 id 供停止/断开时取消;
                                 # isAsk 标记让前端在工具被改名时也能识别 ask 卡片
-                                if isinstance(ev, dict) and ev.get("kind") in ("call", "result"):
-                                    base = _TOOL_ALIASES.get(ev.get("name"), ev.get("name"))
+                                if isinstance(ev, dict) and ev.get("kind") in (
+                                    "call",
+                                    "result",
+                                ):
+                                    base = _TOOL_ALIASES.get(
+                                        ev.get("name"), ev.get("name")
+                                    )
                                     if base == "ask":
                                         ev["isAsk"] = True
-                                if isinstance(ev, dict) and ev.get("kind") == "ask" and ev.get("id"):
-                                    chat_asks.setdefault(request_id, set()).add(ev["id"])
+                                if (
+                                    isinstance(ev, dict)
+                                    and ev.get("kind") == "ask"
+                                    and ev.get("id")
+                                ):
+                                    chat_asks.setdefault(request_id, set()).add(
+                                        ev["id"]
+                                    )
                                 loop.call_soon_threadsafe(
                                     chat_queue.put_nowait, ("tool", ev)
                                 )
+
                             try:
                                 _stream_agent_chat(
                                     base_url,
@@ -4221,7 +2699,8 @@ class ScienceAPI:
                 # 记录断开码/原因: 便于与 Caddy、节点前缀代理的断开时间对账定位掐断方
                 _LOGGER_WS.info(
                     "[ws] disconnected code=%s reason=%r",
-                    disconnect_ev.code, disconnect_ev.reason,
+                    disconnect_ev.code,
+                    disconnect_ev.reason,
                 )
             finally:
                 if pump:
@@ -4681,19 +3160,26 @@ def _run_agent_chat(
     ]
     # 压缩契约: 界面保留全部历史, 但最后一处压缩摘要卡之前的内容不再发送,
     # 由卡内摘要开场(pi CompactionEntry 语义); 旧卡内容已随迭代并入最新摘要
-    marker = getattr(_agent_tools_module(), "_COMPACT_MARKER", "[Conversation compressed")
+    marker = getattr(
+        _agent_tools_module(), "_COMPACT_MARKER", "[Conversation compressed"
+    )
     card_idx = -1
     for i, m in enumerate(raw):
         if str(m.get("content", "")).startswith(marker):
             card_idx = i
     convo = (
-        [{"role": "user", "content": str(raw[card_idx].get("content") or "")}, *raw[card_idx + 1:]]
+        [
+            {"role": "user", "content": str(raw[card_idx].get("content") or "")},
+            *raw[card_idx + 1 :],
+        ]
         if card_idx >= 0
         else raw
     )
     logging.getLogger("uvicorn.error").info(
         "contract: raw=%d card_idx=%d convo=%d est=%d",
-        len(raw), card_idx, len(convo),
+        len(raw),
+        card_idx,
+        len(convo),
         sum(len(str(m.get("content") or "")) for m in convo),
     )
     # 仅保留 user/assistant 两类角色, 其余消息直接丢弃

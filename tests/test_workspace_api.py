@@ -137,4 +137,4 @@ def test_missing_index_json_returns_empty(tmp_path):
     idx.write_text('{"favorites":["a"]}')
     r = client.get("/workspace/api/userdata/workflows/.index.json")
     assert r.status_code == 200
-    assert r.json() == {"favorites":["a"]}
+    assert r.json() == {"favorites": ["a"]}

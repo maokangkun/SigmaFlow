@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 import jwt
 import bcrypt
-from fastapi import Depends, HTTPException, Header
+from fastapi import HTTPException, Header
 
 
 # Configuration
@@ -21,6 +21,7 @@ API_KEY_PREFIX = "ak_"
 
 class JwtPayload:
     """JWT token payload"""
+
     def __init__(self, user_id: str, role: str):
         self.id = user_id
         self.role = role
@@ -80,7 +81,6 @@ def generate_api_key() -> tuple[str, str, str]:
     Generate API key with format: ak_<random>
     Returns: (key, prefix, suffix)
     """
-    random_bytes = secrets.token_bytes(24)
     random_string = secrets.token_urlsafe(24)[:24]
     key = f"{API_KEY_PREFIX}{random_string}"
     prefix = key[:5]
@@ -100,43 +100,41 @@ def compare_api_key(api_key: str, hash_value: str) -> bool:
 
 # Dependency injection functions
 
-async def authenticate_jwt(
-    authorization: Optional[str] = Header(None)
-) -> JwtPayload:
+
+async def authenticate_jwt(authorization: Optional[str] = Header(None)) -> JwtPayload:
     """Extract and verify JWT from Authorization header"""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="No token provided")
-    
+
     token = authorization[7:]  # Remove "Bearer " prefix
     return verify_jwt(token)
 
 
 async def authenticate_api_key(
-    authorization: Optional[str] = Header(None),
-    storage = None
+    authorization: Optional[str] = Header(None), storage=None
 ) -> Dict[str, str]:
     """Extract and verify API key from Authorization header"""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="No API key provided")
-    
+
     api_key = authorization[7:]  # Remove "Bearer " prefix
-    
+
     if not api_key.startswith(API_KEY_PREFIX):
         raise HTTPException(status_code=401, detail="Invalid API key format")
-    
+
     # Check against stored keys (requires storage implementation)
     # This will be injected from the AdminAPI class
     if storage:
         valid_key = storage.find_api_key_by_key(api_key)
         if not valid_key:
             raise HTTPException(status_code=401, detail="Invalid API key")
-        
+
         # Check expiration
         if valid_key.expires_at:
             expires_at = datetime.fromisoformat(valid_key.expires_at)
             if expires_at < datetime.utcnow():
                 raise HTTPException(status_code=401, detail="API key has expired")
-        
+
         return {"id": valid_key.id, "name": valid_key.name}
-    
+
     raise HTTPException(status_code=401, detail="Invalid API key")

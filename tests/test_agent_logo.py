@@ -2,9 +2,9 @@ from pathlib import Path
 from runpy import run_path
 
 
-Logo = run_path(Path(__file__).parents[1] / "src" / "sigmaflow" / "agent" / "logo.py")[
-    "Logo"
-]
+Logo = run_path(
+    str(Path(__file__).parents[1] / "src" / "sigmaflow" / "agent" / "logo.py")
+)["Logo"]
 
 
 def test_click_listener_is_disabled_after_the_first_message():

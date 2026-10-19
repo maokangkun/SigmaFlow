@@ -11,6 +11,7 @@ from ..nodes import Node
 from ..nodes.constant import InputData, OutputData
 from ..server.admin_storage import get_admin_storage
 
+
 class Graph:
     def __init__(
         self,
@@ -25,7 +26,7 @@ class Graph:
         self.name = name
         self.pipeconf = pipeconf
         self.pipefile = pipefile
-        self.config = {}
+        self.config: dict[str, Any] = {}
         self.run_mode = run_mode
         self.is_async = run_mode == "async"
         self.perf: list[tuple] = []
@@ -272,7 +273,12 @@ class Graph:
         pipeconf = {
             "CONFIG": {"name": self.name},
         }
-        loop_nodes = {nid for d in comfyui_data.values() if d["class_type"] == "LoopNode" for nid in d["inputs"]["node_in_loop"]["__value__"]}
+        loop_nodes = {
+            nid
+            for d in comfyui_data.values()
+            if d["class_type"] == "LoopNode"
+            for nid in d["inputs"]["node_in_loop"]["__value__"]
+        }
 
         for node_id, node_data in comfyui_data.items():
             node_type = node_data["class_type"]
@@ -298,33 +304,54 @@ class Graph:
                     "prompt": node_inputs["prompt"],
                     "return_json": node_inputs["return_json"],
                     "remove_think": node_inputs["remove_think"],
-                    "inp": list(node_inputs.keys() - {"prompt", "return_json", "remove_think", "preview", "model", "format", "out", "condition"}),
+                    "inp": list(
+                        node_inputs.keys()
+                        - {
+                            "prompt",
+                            "return_json",
+                            "remove_think",
+                            "preview",
+                            "model",
+                            "format",
+                            "out",
+                            "condition",
+                        }
+                    ),
                     "next": [],
                 }
 
-                if (o := node_inputs["out"].strip()):
+                if o := node_inputs["out"].strip():
                     if o.startswith("{") and o.endswith("}"):
                         d["out"] = eval(o)
                     else:
                         d["out"] = o
 
-                if (f := node_inputs["format"].strip()):
-                    if f.startswith("{") and f.endswith("}") or f.startswith("[") and f.endswith("]"):
+                if f := node_inputs["format"].strip():
+                    if (
+                        f.startswith("{")
+                        and f.endswith("}")
+                        or f.startswith("[")
+                        and f.endswith("]")
+                    ):
                         d["format"] = eval(f)
 
                 for nid in node_outputs["out"]:
-                    if node_id in loop_nodes and nid not in loop_nodes: continue
+                    if node_id in loop_nodes and nid not in loop_nodes:
+                        continue
                     n = f"{nid}-{comfyui_data[nid]['_meta']['title']}"
                     d["next"].append(n)
             elif node_type == "LoopNode":
                 d = {
                     "inp": [],
-                    "pipe_in_loop": [f"{nid}-{comfyui_data[nid]['_meta']['title']}" for nid in node_inputs["node_in_loop"]["__value__"]],
+                    "pipe_in_loop": [
+                        f"{nid}-{comfyui_data[nid]['_meta']['title']}"
+                        for nid in node_inputs["node_in_loop"]["__value__"]
+                    ],
                     "next": [],
                 }
 
                 nid = node_inputs["items"][0]
-                if (o := comfyui_data[nid]["inputs"]["out"]):
+                if o := comfyui_data[nid]["inputs"]["out"]:
                     if o.startswith("{") and o.endswith("}"):
                         d["inp"] = list(eval(o).values())[0]
                     else:
@@ -338,11 +365,17 @@ class Graph:
                     "inp": [],
                     "use_llm": node_inputs["use_llm"],
                     "code": node_inputs["code"],
-                    "next": {k: [f"{nid}-{comfyui_data[nid]['_meta']['title']}" for nid in node_outputs[k]] for k in node_outputs},
+                    "next": {
+                        k: [
+                            f"{nid}-{comfyui_data[nid]['_meta']['title']}"
+                            for nid in node_outputs[k]
+                        ]
+                        for k in node_outputs
+                    },
                 }
 
                 nid = node_inputs["inp"][0]
-                if (o := comfyui_data[nid]["inputs"]["out"]):
+                if o := comfyui_data[nid]["inputs"]["out"]:
                     if o.startswith("{") and o.endswith("}"):
                         d["inp"] = list(eval(o).values())[0]
                     else:
@@ -356,17 +389,18 @@ class Graph:
                 }
 
                 nid = node_inputs["inp"][0]
-                if (o := comfyui_data[nid]["inputs"]["out"]):
+                if o := comfyui_data[nid]["inputs"]["out"]:
                     if o.startswith("{") and o.endswith("}"):
                         d["inp"] = list(eval(o).values())[0]
                     else:
                         d["inp"] = [o]
-                
+
                 for nid in node_outputs["out"]:
                     n = f"{nid}-{comfyui_data[nid]['_meta']['title']}"
                     d["next"].append(n)
 
-            if d: pipeconf |= {name: d}
+            if d:
+                pipeconf |= {name: d}
 
         self.pipeconf = pipeconf
 

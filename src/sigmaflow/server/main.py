@@ -22,6 +22,8 @@ class SPAStaticFiles(StaticFiles):
                 raise
             if scope.get("method") not in {"GET", "HEAD"}:
                 raise
+            if self.directory is None:
+                raise
             index_path = Path(self.directory) / "index.html"
             if not index_path.exists():
                 raise

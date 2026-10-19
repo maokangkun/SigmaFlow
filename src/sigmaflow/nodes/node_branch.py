@@ -150,19 +150,19 @@ class BranchNode(Node):
         elif "code" in self.conf:
             code = self.conf["code"]
             if callable(code):
-                out = code(*inps)
+                code(*inps)
             elif type(code) is str:
                 if "def" in code:
                     func_name = code.split("def ")[1].split("(")[0].strip()
                     local = {}
                     exec(code, local)
-                    out = local[func_name](*inps)
+                    local[func_name](*inps)
                 else:
                     inps_dict = {
                         k: self._eval_format(v)
                         for k, v in zip(self.conf.get("inp", []), inps)
                     }
-                    out = eval(code.format(**inps_dict))
+                    eval(code.format(**inps_dict))
         else:
             cond = inps[0]
 
@@ -241,19 +241,19 @@ class BranchNode(Node):
         elif "code" in self.conf:
             code = self.conf["code"]
             if callable(code):
-                out = code(*inps)
+                code(*inps)
             elif type(code) is str:
                 if "def" in code:
                     func_name = code.split("def ")[1].split("(")[0].strip()
                     local = {}
                     exec(code, local)
-                    out = local[func_name](*inps)
+                    local[func_name](*inps)
                 else:
                     inps_dict = {
                         k: self._eval_format(v)
                         for k, v in zip(self.conf.get("inp", []), inps)
                     }
-                    out = eval(code.format(**inps_dict))
+                    eval(code.format(**inps_dict))
         else:
             cond = inps[0]
 
@@ -302,19 +302,19 @@ class BranchNode(Node):
         elif "code" in self.conf:
             code = self.conf["code"]
             if callable(code):
-                out = code(*inps)
+                code(*inps)
             elif type(code) is str:
                 if "def" in code:
                     func_name = code.split("def ")[1].split("(")[0].strip()
                     local = {}
                     exec(code, local)
-                    out = local[func_name](*inps)
+                    local[func_name](*inps)
                 else:
                     inps_dict = {
                         k: self._eval_format(v)
                         for k, v in zip(self.conf.get("inp", []), inps)
                     }
-                    out = eval(code.format(**inps_dict))
+                    eval(code.format(**inps_dict))
         else:
             cond = inps[0]
 

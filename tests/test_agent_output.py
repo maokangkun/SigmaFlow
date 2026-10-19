@@ -14,12 +14,11 @@ def test_print_syntax_preserves_tail_line_numbers(monkeypatch):
         "console",
         Console(file=output, width=100, color_system=None),
     )
-    code = "\n".join(
-        f"BEGIN {line} {'x' * 40} END {line}"
-        for line in range(1, 301)
-    )
+    code = "\n".join(f"BEGIN {line} {'x' * 40} END {line}" for line in range(1, 301))
 
-    agent_module._print_syntax(code, "text")
+    # _print_syntax 是实例方法但只读模块级 console, 用 __new__ 跳过重构造
+    agent = agent_module.Agent.__new__(agent_module.Agent)
+    agent._print_syntax(code, "text")
 
     rendered_lines = output.getvalue().splitlines()
     omitted_line = next(
@@ -30,5 +29,7 @@ def test_print_syntax_preserves_tail_line_numbers(monkeypatch):
     assert rendered_lines[omitted_line - 1].strip() == ""
     assert rendered_lines[omitted_line + 1].strip() == ""
     assert any("300 BEGIN 300" in line for line in rendered_lines)
-    displayed_code = [line for line in rendered_lines if "BEGIN" in line or "END" in line]
+    displayed_code = [
+        line for line in rendered_lines if "BEGIN" in line or "END" in line
+    ]
     assert all("BEGIN" in line and "END" in line for line in displayed_code)

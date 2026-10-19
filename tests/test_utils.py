@@ -54,7 +54,7 @@ def test_jdump_bad(tmp_path):
 def test_calc_hash_file(tmp_path):
     f = tmp_path / "data.bin"
     f.write_bytes(b"hello")
-    h = utils.calc_hash(str(f))
+    h = utils.calc_hash(file=str(f))
     expected = hashlib.sha256(b"hello").hexdigest()[-16:]
     assert h == expected
 
