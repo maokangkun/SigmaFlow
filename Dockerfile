@@ -1,4 +1,7 @@
-FROM python:slim
+# 固定 Python 版本: python:slim 当前解析到 3.15(cp315),
+# aiohttp/fastuuid/pydantic-core/tiktoken 等原生扩展包尚无 cp315 预编译 wheel,
+# pip 退回源码编译又无 Rust 工具链, 导致镜像构建失败; 3.13 与本项目运行环境一致且 wheel 全覆盖
+FROM python:3.13-slim
 WORKDIR /app
 # Install Node.js & mermaid
 RUN apt-get update && \
