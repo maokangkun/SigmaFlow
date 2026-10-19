@@ -582,8 +582,8 @@ class Compactor:
         self.last_usage_tokens = 0
         self.last_input_tokens = 0
         try:
-            parts = []
-            buf = []
+            parts: list[str] = []
+            buf: list[str] = []
 
             def _flush(final=False):
                 # 服务端先按 ~48 字符合并, 降低回调/SSE 频率
