@@ -75,7 +75,7 @@ PRUNE_TAIL_CHARS = int(os.getenv("PRUNE_TAIL_CHARS", "400"))
 # 统一工具调用超时(秒): 外层兜底, 工具内部的超时(bash 300s 等)仍在里层生效;
 # 特定工具可用 TOOL_TIMEOUTS 覆盖, 设 0 表示不限时(ask 由用户回答节奏决定, 默认不限时)
 TOOL_TIMEOUT_DEFAULT = int(os.getenv("TOOL_TIMEOUT_DEFAULT", "180"))
-TOOL_TIMEOUTS = json.loads(os.getenv("TOOL_TIMEOUTS", '{"ask":0,"bash":360,"rag":330,"arxiv_search":330,"read_arxiv":330,"background_run":60}'))
+TOOL_TIMEOUTS = json.loads(os.getenv("TOOL_TIMEOUTS", '{"ask":0,"bash":360,"rag":330,"arxiv_search":330,"read_arxiv":330,"background_run":60,"run_job":60}'))
 RAG_ENDPOINT = os.getenv("RAG_ENDPOINT")
 Sciverse_API_KEY = os.getenv("Sciverse_API_KEY")
 
@@ -112,7 +112,7 @@ GREP_TOOL_DESCRIPTION = {
 AVAILABLE_GREP_TOOLS = [tool for tool in GREP_TOOL_CANDIDATES if shutil.which(tool)]
 
 SYSTEM = f"""You are a team lead and coding agent at {WORKDIR}.
-Use `task` tools to plan and track work. Use background_run for long-running commands. Spawn teammates and communicate via inboxes.
+Use `task` tools to plan and track work. Use run_job for long-running commands; check_job to inspect and kill_job to stop them. Spawn teammates and communicate via inboxes.
 """
 SUBAGENT_SYSTEM = f"""You are a coding subagent at {WORKDIR}. Complete the given task, then summarize your findings.
 """
@@ -367,7 +367,7 @@ TOOLS = CHILD_TOOLS + [
         }
     },
     {
-        "name": "background_run", 
+        "name": "run_job", 
         "description": "Run command in background thread. Returns task_id immediately.",
         "input_schema": {
             "type": "object", 
@@ -378,7 +378,7 @@ TOOLS = CHILD_TOOLS + [
         }
     },
     {
-        "name": "check_background", 
+        "name": "check_job", 
         "description": "Check background task status. Omit task_id to list all.",
         "input_schema": {
             "type": "object", 
@@ -388,7 +388,7 @@ TOOLS = CHILD_TOOLS + [
         }
     },
     {
-        "name": "kill_background",
+        "name": "kill_job",
         "description": "Kill a running background task by task_id. Omit task_id to kill all running tasks. Only running tasks can be killed.",
         "input_schema": {
             "type": "object",

@@ -490,7 +490,7 @@ class BackgroundManager:
         workdir is captured on the caller thread (thread-local does not cross
         threads); background tasks run where the session was bound.
 
-        Popen 而非 subprocess.run: 保留进程句柄供 kill_background 中止任务。
+        Popen 而非 subprocess.run: 保留进程句柄供 kill_job 中止任务。
         """
         status, output = "completed", ""
         proc = None
@@ -518,7 +518,7 @@ class BackgroundManager:
         except Exception as e:
             output = f"Error: {e}"
             status = "error"
-        # kill 竞态保护: 若执行期间被 kill_background 标记, 不覆盖 killed 状态;
+        # kill 竞态保护: 若执行期间被 kill_job 标记, 不覆盖 killed 状态;
         # killed 的完成通知已由 kill() 入队, 这里不再重复
         killed = self.tasks[task_id].get("status") == "killed"
         if not killed:
@@ -964,9 +964,9 @@ TOOL_HANDLERS = {
     "task_update": lambda **kw: TM.update(kw["task_id"], kw.get("status"), kw.get("addBlockedBy"), kw.get("addBlocks")),
     "task_list":   lambda **kw: TM.list_all(),
     "task_get":    lambda **kw: TM.get(kw["task_id"]),
-    "background_run":   lambda **kw: BG.run(kw["command"]),
-    "check_background": lambda **kw: BG.check(kw.get("task_id")),
-    "kill_background":  lambda **kw: BG.kill(kw.get("task_id")),
+    "run_job":   lambda **kw: BG.run(kw["command"]),
+    "check_job": lambda **kw: BG.check(kw.get("task_id")),
+    "kill_job":  lambda **kw: BG.kill(kw.get("task_id")),
     "send_message":    lambda **kw: BUS.send("lead", kw["to"], kw["content"], kw.get("msg_type", "message")),
     "read_inbox":      lambda **kw: json.dumps(BUS.read_inbox("lead"), indent=2),
     "broadcast":       lambda **kw: BUS.broadcast("lead", kw["content"], TEAM.member_names()),
