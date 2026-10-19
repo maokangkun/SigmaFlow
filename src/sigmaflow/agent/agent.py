@@ -64,6 +64,26 @@ SUBAGENT_SYSTEM += skill_loader.get_descriptions()
 console = Console()
 
 
+def _usage_cache_read(usage) -> int:
+    """Cache-read tokens from a usage object across provider shapes.
+
+    OpenAI 官方口径放 prompt_tokens_details.cached_tokens; 部分网关平铺
+    cached_tokens / prompt_cache_hit_tokens, anthropic 为 cache_read_input_tokens。
+    """
+    for owner in (getattr(usage, "prompt_tokens_details", None), usage):
+        if owner is None:
+            continue
+        for field in (
+            "cached_tokens",
+            "prompt_cache_hit_tokens",
+            "cache_read_input_tokens",
+        ):
+            value = getattr(owner, field, None)
+            if value:
+                return int(value)
+    return 0
+
+
 class Agent:
     def __init__(
         self,
@@ -364,9 +384,8 @@ class Agent:
                             info["last_prompt_tokens"] = (
                                 getattr(response.usage, "input_tokens", 0) or 0
                             )
-                            info["cache_read_tokens"] += (
-                                getattr(response.usage, "cache_read_input_tokens", 0)
-                                or 0
+                            info["cache_read_tokens"] += _usage_cache_read(
+                                response.usage
                             )
                             messages.append(
                                 {"role": "assistant", "content": response.content}
@@ -572,14 +591,9 @@ class Agent:
                             info["prompt_tokens"] += usage.prompt_tokens or 0
                             info["completion_tokens"] += usage.completion_tokens or 0
                             # 缓存读取: OpenAI 口径在 prompt_tokens_details 里
-                            info["cache_read_tokens"] += (
-                                getattr(
-                                    getattr(usage, "prompt_tokens_details", None),
-                                    "cached_tokens",
-                                    0,
-                                )
-                                or 0
-                            )
+                            # 缓存读取: OpenAI 官方在 prompt_tokens_details; 部分网关平铺字段,
+                            # 统一走 _usage_cache_read 兼容
+                            info["cache_read_tokens"] += _usage_cache_read(usage)
                             # 最后一轮当次 prompt: 反映单次请求的真实窗口占用(累计值是多轮求和)
                             info["last_prompt_tokens"] = usage.prompt_tokens or 0
                             msg = _DeltaMsg()
@@ -645,13 +659,7 @@ class Agent:
                                 else 0
                             )
                             info["cache_read_tokens"] += (
-                                getattr(
-                                    getattr(
-                                        response.usage, "prompt_tokens_details", None
-                                    ),
-                                    "cached_tokens",
-                                    0,
-                                )
+                                _usage_cache_read(response.usage)
                                 if response.usage
                                 else 0
                             )

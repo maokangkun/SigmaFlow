@@ -21,6 +21,8 @@ CS.icons = {
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 4 2c-1 .5-1.5 1-1.5 2M12 17h.01"/>',
   chevron: '<path d="m9 5 7 7-7 7"/>',
   down: '<path d="m6 9 6 6 6-6"/>',
+  arrowdown: '<path d="M12 5v14m-6-6 6 6 6-6"/>',
+  gauge: '<path d="M3.4 19a10 10 0 1 1 17.2 0"/><path d="m12 14 3.5-3.5"/>',
   arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
   up: '<path d="M12 19V5m-6 6 6-6 6 6"/>',
   back: '<path d="M19 12H5m6-6-6 6 6 6"/>',

@@ -917,8 +917,10 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .fs-md p{margin:0 0 8px}
 .fs-md img{max-width:100%}
 /* 标题栏右侧 usage 行: mono 小字右对齐, 贴标题行的水平线 */
-.run-usage{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;align-self:flex-end;padding-bottom:2px}
-.run-usage .ru-dot{margin:0 6px;color:var(--faint)}
+.run-usage{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;align-self:flex-end;padding-bottom:2px;display:inline-flex;gap:13px}
+.run-usage .ru-item{display:inline-flex;align-items:center;gap:4px}
+.run-usage .ru-item .icon{color:var(--faint)}
+.run-usage .ru-item b{font-weight:500;color:var(--muted)}
 
 </style>
 </head>
@@ -964,6 +966,8 @@ CS.icons = {
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 4 2c-1 .5-1.5 1-1.5 2M12 17h.01"/>',
   chevron: '<path d="m9 5 7 7-7 7"/>',
   down: '<path d="m6 9 6 6 6-6"/>',
+  arrowdown: '<path d="M12 5v14m-6-6 6 6 6-6"/>',
+  gauge: '<path d="M3.4 19a10 10 0 1 1 17.2 0"/><path d="m12 14 3.5-3.5"/>',
   arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
   up: '<path d="M12 19V5m-6 6 6-6 6 6"/>',
   back: '<path d="M19 12H5m6-6-6 6 6 6"/>',
@@ -4628,13 +4632,11 @@ CS.audio = (function () {
   };
   V.topbar = () => `<div class="topbar"><div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div></div>`;
   // 上下文用量圆环 + 详情浮层(位于模型选择按钮左侧, 点击圆环展开)
-    // 标题栏右侧 usage 行: 输入/输出/缓存读取(计费累计) + 上下文占比, 右对齐贴水平线
+    // 标题栏右侧 usage 行: 图标+数值(输入↓/输出↑/缓存②/上下文表盘), 右对齐贴水平线; 缓存网关不出时显 0
   V.runUsage = () => {
     const u = CS.chatUsage();
-    const nums = ['in ' + CS.knum(u.tin), 'out ' + CS.knum(u.tout)];
-    if (u.tinCache > 0) nums.push('cache ' + CS.knum(u.tinCache));
-    nums.push('ctx ' + u.pct + '%');
-    return `<div class="run-usage mono" title="累计输入 · 累计输出 · 缓存读取 · 上下文占用">${nums.join('<span class="ru-dot">·</span>')}</div>`;
+    const item = (ic, val, tip) => `<span class="ru-item" title="${tip}">${i(ic, '', 13)}<b>${CS.knum(val)}</b></span>`;
+    return `<div class="run-usage mono">${item('arrowdown', u.tin, '累计输入 token')}${item('up', u.tout, '累计输出 token')}${item('database', u.tinCache, '累计缓存读取(网关未上报则为 0)')}${`<span class="ru-item" title="上下文占用">${i('gauge', '', 13)}<b>${u.pct}%</b></span>`}</div>`;
   };
 
 V.ctxRing = () => {

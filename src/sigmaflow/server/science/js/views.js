@@ -229,13 +229,11 @@
   };
   V.topbar = () => `<div class="topbar"><div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div></div>`;
   // 上下文用量圆环 + 详情浮层(位于模型选择按钮左侧, 点击圆环展开)
-    // 标题栏右侧 usage 行: 输入/输出/缓存读取(计费累计) + 上下文占比, 右对齐贴水平线
+    // 标题栏右侧 usage 行: 图标+数值(输入↓/输出↑/缓存②/上下文表盘), 右对齐贴水平线; 缓存网关不出时显 0
   V.runUsage = () => {
     const u = CS.chatUsage();
-    const nums = ['in ' + CS.knum(u.tin), 'out ' + CS.knum(u.tout)];
-    if (u.tinCache > 0) nums.push('cache ' + CS.knum(u.tinCache));
-    nums.push('ctx ' + u.pct + '%');
-    return `<div class="run-usage mono" title="累计输入 · 累计输出 · 缓存读取 · 上下文占用">${nums.join('<span class="ru-dot">·</span>')}</div>`;
+    const item = (ic, val, tip) => `<span class="ru-item" title="${tip}">${i(ic, '', 13)}<b>${CS.knum(val)}</b></span>`;
+    return `<div class="run-usage mono">${item('arrowdown', u.tin, '累计输入 token')}${item('up', u.tout, '累计输出 token')}${item('database', u.tinCache, '累计缓存读取(网关未上报则为 0)')}${`<span class="ru-item" title="上下文占用">${i('gauge', '', 13)}<b>${u.pct}%</b></span>`}</div>`;
   };
 
 V.ctxRing = () => {
