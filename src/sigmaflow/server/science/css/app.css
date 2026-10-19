@@ -505,6 +505,8 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .plan-body{padding:12px 16px;font-size:13px}
 .plan-body ol,.plan-body ul{padding-left:20px;margin:6px 0}
 .plan-actions{display:flex;gap:10px;padding:10px 14px;border-top:1px solid var(--line-soft)}
+/* 已批准历史计划的底部提示: 与正文同缘(plan-body 左右 16px) */
+.plan-foot-hint{padding:0 16px 12px}
 
 /* 上下文压缩摘要卡(pi compaction): 队首摘要以卡片形式回放 */
 .compact-block{margin:10px 0 2px 0}

@@ -354,7 +354,7 @@
                   if (pm && pm[2].trim()) {
                     // 只有最后一条消息上的计划卡显示操作按钮, 历史 plan 只读
                     const canApprove = !m.streaming && idxOf === run.messages.length - 1;
-                    return `${pm[1].trim() ? `<div class="agent-intro md-body">${CS.markdown(pm[1])}</div>` : ''}<div class="plan-card"><div class="plan-head">${i('workflow', '', 15)}<span>计划方案</span><span class="plan-tag">等待你的确认</span></div><div class="plan-body md-body">${CS.markdown(pm[2])}</div>${canApprove ? `<div class="plan-actions"><button type="button" class="btn primary" data-action="approve-plan" data-id="${idxOf}">批准并执行</button><button type="button" class="btn flat" data-action="refine-plan">继续讨论</button></div>` : '<div class="small muted mt-8">该计划已生成，可继续对话调整或直接下指令。</div>'}</div>${pm[3].trim() ? `<div class="agent-intro md-body">${CS.markdown(pm[3])}</div>` : ''}`;
+                    return `${pm[1].trim() ? `<div class="agent-intro md-body">${CS.markdown(pm[1])}</div>` : ''}<div class="plan-card"><div class="plan-head">${i('workflow', '', 15)}<span>计划方案</span><span class="plan-tag">等待你的确认</span></div><div class="plan-body md-body">${CS.markdown(pm[2])}</div>${canApprove ? `<div class="plan-actions"><button type="button" class="btn primary" data-action="approve-plan" data-id="${idxOf}">批准并执行</button><button type="button" class="btn flat" data-action="refine-plan">继续讨论</button></div>` : '<div class="small muted plan-foot-hint">该计划已生成，可继续对话调整或直接下指令。</div>'}</div>${pm[3].trim() ? `<div class="agent-intro md-body">${CS.markdown(pm[3])}</div>` : ''}`;
                   }
                   return `<div class="agent-intro md-body"${live ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(b.text)}</div>`;
                 }

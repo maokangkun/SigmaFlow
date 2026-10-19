@@ -859,6 +859,8 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .plan-body{padding:12px 16px;font-size:13px}
 .plan-body ol,.plan-body ul{padding-left:20px;margin:6px 0}
 .plan-actions{display:flex;gap:10px;padding:10px 14px;border-top:1px solid var(--line-soft)}
+/* 已批准历史计划的底部提示: 与正文同缘(plan-body 左右 16px) */
+.plan-foot-hint{padding:0 16px 12px}
 
 /* 上下文压缩摘要卡(pi compaction): 队首摘要以卡片形式回放 */
 .compact-block{margin:10px 0 2px 0}
@@ -4668,7 +4670,7 @@ CS.audio = (function () {
                   if (pm && pm[2].trim()) {
                     // 只有最后一条消息上的计划卡显示操作按钮, 历史 plan 只读
                     const canApprove = !m.streaming && idxOf === run.messages.length - 1;
-                    return `${pm[1].trim() ? `<div class="agent-intro md-body">${CS.markdown(pm[1])}</div>` : ''}<div class="plan-card"><div class="plan-head">${i('workflow', '', 15)}<span>计划方案</span><span class="plan-tag">等待你的确认</span></div><div class="plan-body md-body">${CS.markdown(pm[2])}</div>${canApprove ? `<div class="plan-actions"><button type="button" class="btn primary" data-action="approve-plan" data-id="${idxOf}">批准并执行</button><button type="button" class="btn flat" data-action="refine-plan">继续讨论</button></div>` : '<div class="small muted mt-8">该计划已生成，可继续对话调整或直接下指令。</div>'}</div>${pm[3].trim() ? `<div class="agent-intro md-body">${CS.markdown(pm[3])}</div>` : ''}`;
+                    return `${pm[1].trim() ? `<div class="agent-intro md-body">${CS.markdown(pm[1])}</div>` : ''}<div class="plan-card"><div class="plan-head">${i('workflow', '', 15)}<span>计划方案</span><span class="plan-tag">等待你的确认</span></div><div class="plan-body md-body">${CS.markdown(pm[2])}</div>${canApprove ? `<div class="plan-actions"><button type="button" class="btn primary" data-action="approve-plan" data-id="${idxOf}">批准并执行</button><button type="button" class="btn flat" data-action="refine-plan">继续讨论</button></div>` : '<div class="small muted plan-foot-hint">该计划已生成，可继续对话调整或直接下指令。</div>'}</div>${pm[3].trim() ? `<div class="agent-intro md-body">${CS.markdown(pm[3])}</div>` : ''}`;
                   }
                   return `<div class="agent-intro md-body"${live ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(b.text)}</div>`;
                 }
