@@ -274,5 +274,5 @@ def test_transcript_dumped(tmp_path):
     assert meta["transcript"]
     p = tmp_path / "transcripts" / meta["transcript"]
     assert p.exists()
-    lines = [json.loads(l) for l in p.read_text().splitlines()]
+    lines = [json.loads(raw) for raw in p.read_text().splitlines()]
     assert lines[0]["content"] == "内容"
