@@ -367,8 +367,8 @@ TOOLS = CHILD_TOOLS + [
         }
     },
     {
-        "name": "run_job", 
-        "description": "Run command in background thread. Returns task_id immediately.",
+        "name": "run_job",
+        "description": "Run command as a background job. Returns job_id immediately.",
         "input_schema": {
             "type": "object", 
             "properties": {
@@ -378,22 +378,22 @@ TOOLS = CHILD_TOOLS + [
         }
     },
     {
-        "name": "check_job", 
-        "description": "Check background task status. Omit task_id to list all.",
+        "name": "check_job",
+        "description": "Check background job status or output. Omit job_id to list all jobs.",
         "input_schema": {
-            "type": "object", 
+            "type": "object",
             "properties": {
-                "task_id": {"type": "string"}
+                "job_id": {"type": "string"}
             }
         }
     },
     {
         "name": "kill_job",
-        "description": "Kill a running background task by task_id. Omit task_id to kill all running tasks. Only running tasks can be killed.",
+        "description": "Kill a running background job by job_id. Omit job_id to kill all running jobs. Only running jobs can be killed.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "task_id": {"type": "string"}
+                "job_id": {"type": "string"}
             }
         }
     },

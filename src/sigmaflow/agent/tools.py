@@ -482,7 +482,7 @@ class BackgroundManager:
             target=self._execute, args=(task_id, command, get_session_workdir()), daemon=True
         )
         thread.start()
-        return f"Background task {task_id} started: {command[:80]}"
+        return f"Background job {task_id} started: {command[:80]}"
 
     def _execute(self, task_id: str, command: str, workdir=None):
         """Thread target: run subprocess, capture output, push to queue.
@@ -538,7 +538,7 @@ class BackgroundManager:
             targets = [tid for tid, t in self.tasks.items() if t["status"] == "running"] if task_id is None \
                 else ([task_id] if self.tasks.get(task_id, {}).get("status") == "running" else [])
             if task_id and not targets:
-                return f"Error: no running background task {task_id}"
+                return f"Error: no running background job {task_id}"
             for tid in targets:
                 self.tasks[tid]["status"] = "killed"
                 self.tasks[tid]["result"] = "(killed by request)"
@@ -553,19 +553,19 @@ class BackgroundManager:
                     "command": self.tasks[tid]["command"][:80],
                     "result": "(killed by request)",
                 })
-        return f"Killed {len(targets)} background task(s): {', '.join(targets)}"
+        return f"Killed {len(targets)} background job(s): {', '.join(targets)}"
 
     def check(self, task_id: str = None) -> str:
         """Check status of one task or list all."""
         if task_id:
             t = self.tasks.get(task_id)
             if not t:
-                return f"Error: Unknown task {task_id}"
+                return f"Error: unknown job {task_id}"
             return f"[{t['status']}] {t['command'][:60]}\n{t.get('result') or '(running)'}"
         lines = []
         for tid, t in self.tasks.items():
             lines.append(f"{tid}: ({t['status']}) {t['command'][:60]}")
-        return "\n".join(lines) if lines else "No background tasks."
+        return "\n".join(lines) if lines else "No background jobs."
 
     def drain_notifications(self) -> list:
         """Return and clear all pending completion notifications."""
@@ -965,8 +965,8 @@ TOOL_HANDLERS = {
     "task_list":   lambda **kw: TM.list_all(),
     "task_get":    lambda **kw: TM.get(kw["task_id"]),
     "run_job":   lambda **kw: BG.run(kw["command"]),
-    "check_job": lambda **kw: BG.check(kw.get("task_id")),
-    "kill_job":  lambda **kw: BG.kill(kw.get("task_id")),
+    "check_job": lambda **kw: BG.check(kw.get("job_id")),
+    "kill_job":  lambda **kw: BG.kill(kw.get("job_id")),
     "send_message":    lambda **kw: BUS.send("lead", kw["to"], kw["content"], kw.get("msg_type", "message")),
     "read_inbox":      lambda **kw: json.dumps(BUS.read_inbox("lead"), indent=2),
     "broadcast":       lambda **kw: BUS.broadcast("lead", kw["content"], TEAM.member_names()),
