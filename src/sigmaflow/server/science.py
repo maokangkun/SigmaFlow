@@ -3362,6 +3362,7 @@ class ScienceAPI:
                 return {
                     "applied": True,
                     "removed": int(meta.get("removed") or 0),
+                    "dropOldIdx": int(meta.get("dropOldIdx", -1) or 0) if meta.get("dropOldIdx", -1) is not None else -1,
                     "kept": int(meta.get("kept") or 0),
                     "text": str(meta.get("text") or ""),
                     "transcript": str(meta.get("transcript") or ""),

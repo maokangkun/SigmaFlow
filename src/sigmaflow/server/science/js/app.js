@@ -1439,7 +1439,7 @@
       CS.save(); CS.render();
       setTimeout(scrollToLatest, 30);
       try {
-        const r = await CS.api.request(`/conversations/${encodeURIComponent(run.id)}/compact`, { method: 'POST', body: '{}' });
+        const r = await CS.api.request(`/conversations/${encodeURIComponent(run.id)}/compact`, { method: 'POST', timeout: 300000, body: '{}' });
         if (!r.applied) {
           run.messages = run.messages.filter(m => m !== pending);
           CS.save(); CS.render();
