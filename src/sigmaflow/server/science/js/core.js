@@ -52,10 +52,16 @@ CS.estimateTokens = text => {
   }
   return Math.round(cjk * 0.6 + (text.length - cjk) / 4.6);
 };
-// token 数值的紧凑展示: ~850 / ~1.7K / ~67.7K / ~131K
+// token 数值的紧凑展示: ~850 / ~1.7K / ~67.7K / ~131K; 到 M 用 M 单位(~1M / ~1.2M), 不到的才用 K
 CS.kfmt = n => {
   n = Math.round(n || 0);
   if (n < 1000) return '~' + n;
+  // 999.5K 起四舍五入会进到 1000K, 一并按 M 口径展示, 避免“1000K”这种写法
+  if (n >= 999500) {
+    const m = n / 1e6;
+    const one = Math.round(m * 10) / 10;
+    return '~' + (m >= 100 ? Math.round(m) : (one % 1 ? one : one.toFixed(0))) + 'M';
+  }
   const k = n / 1000;
   return '~' + (k < 100 ? Math.round(k * 10) / 10 : Math.round(k)) + 'K';
 };
