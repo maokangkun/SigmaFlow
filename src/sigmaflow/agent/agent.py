@@ -107,7 +107,7 @@ class Agent:
                 raise ValueError(f"Unsupported method: {method}")
 
         max_model_len = MAX_MODEL_LEN.get(self.model.lower(), MAX_MODEL_LEN['default'])
-        self.compactor = Compactor(TRANSCRIPT_DIR, self.client, max_model_len)
+        self.compactor = Compactor(TRANSCRIPT_DIR, self.client, max_model_len, model=self.model)
 
         self.config = {
             "api_method": self.client.__class__.__name__,
@@ -217,6 +217,22 @@ class Agent:
         max_model_len = MAX_MODEL_LEN.get(self.model.lower(), MAX_MODEL_LEN['default'])
         while cur_turn < max_turn:
             messages[:] = self.compactor.auto_compact(messages, force=manual_compact, context_ratio=ratio)
+            # 压缩发生时同步通知前端: 前端丢弃被摘要的轮次并渲染摘要卡(pi CompactionEntry)
+            cmeta = getattr(self.compactor, "last_meta", None)
+            if cmeta and isinstance(cmeta, dict) and cmeta.get("applied"):
+                info["compaction"] = {k: v for k, v in cmeta.items() if k != "text"}
+                if self.on_tool is not None:
+                    try:
+                        self.on_tool({
+                            "kind": "compact",
+                            "removed": cmeta.get("removed"),
+                            "kept": cmeta.get("kept"),
+                            "tokensBefore": cmeta.get("tokens_before"),
+                            "transcript": cmeta.get("transcript"),
+                            "text": cmeta.get("text"),
+                        })
+                    except Exception:
+                        pass
             if messages[0]["role"] == "user" and messages[0]["content"].startswith("[Conversation compressed"):
                 info["messages"].extend(messages)
                 if self.method == "openai":

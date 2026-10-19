@@ -1,5 +1,6 @@
 import re
 import shlex
+from typing import Any
 import yaml
 import time
 import json
@@ -234,11 +235,301 @@ class SkillLoader:
 skill_loader = SkillLoader(SKILLS_DIR)
 
 # -- Compactor: compact history --
+# 参考 pi 的 compaction 设计重写: 触发提前(window-reserve)/保尾窗口/
+# 结构化摘要/previousSummary 迭代/文件清单累计/序列化截断/切点永不落在
+# 工具结果上。旧方案一次性丢掉全部历史, 模型失去近期工作细节; 新方案
+# 保留最近约 COMPACT_KEEP_RECENT_TOKENS 的原文, 只替换更早的部分。
+
+_COMPACT_MARKER = "[Conversation compressed"
+
+# 摘要时视为文件操作的工具名: read_* 只读, write/edit 修改
+_COMPACT_READ_TOOLS = {"read", "read_arxiv", "rag"}
+_COMPACT_WRITE_TOOLS = {"write", "edit"}
+
+
 class Compactor:
-    def __init__(self, transript_dir: Path, client=None, max_model_len=None):
+    def __init__(self, transript_dir: Path, client=None, max_model_len=None, model=None):
         self.transript_dir = transript_dir
         self.client = client
         self.max_model_len = max_model_len
+        self.model = model
+        self.last_meta: Any = None  # 上次压缩的事件元数据(dict)或 None
+
+    # -- token 估算: 中日韩字符约 1 token/字, 其余约 3.5 字符/token --
+    @staticmethod
+    def _tokens_of(text: object) -> int:
+        if not isinstance(text, str):
+            text = str(text or "")
+        if not text:
+            return 0
+        cjk = sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
+        return max(1, int(cjk + (len(text) - cjk) / 3.5))
+
+    def estimate_tokens(self, messages: list) -> int:
+        return sum(self._tokens_of(self._msg_text(m)) for m in messages) + 8 * len(messages)
+
+    @staticmethod
+    def _msg_text(m: dict) -> str:
+        c = m.get("content")
+        if isinstance(c, str):
+            return c
+        if isinstance(c, list):
+            parts = []
+            for part in c:
+                if isinstance(part, dict):
+                    parts.append(str(part.get("text") or part.get("content") or ""))
+                else:
+                    parts.append(str(part))
+            return "\n".join(parts)
+        return str(c or "")
+
+    @staticmethod
+    def _clip(text: str, limit: int) -> str:
+        if len(text) <= limit:
+            return text
+        return text[:limit] + f"\n[... {len(text) - limit} chars truncated]"
+
+    @staticmethod
+    def _is_turn_start(m: dict) -> bool:
+        # 安全切点: user 消息且不携带 tool_result(pi: 切点永不落在工具结果上,
+        # 工具结果必须与其 tool_call 成对保留)
+        if m.get("role") != "user":
+            return False
+        c = m.get("content")
+        if isinstance(c, list) and any(
+            isinstance(p, dict) and p.get("type") == "tool_result" for p in c
+        ):
+            return False
+        return True
+
+    # -- 切点: 从尾部往前累计 token, 到达保留预算即停; 边界非法则前移 --
+    def _cut_index(self, messages: list, keep_tokens: int) -> int:
+        if self.max_model_len:
+            keep_tokens = min(keep_tokens, max(1500, int(self.max_model_len * 0.15)))
+        total = 0
+        cut = len(messages)
+        for i in range(len(messages) - 1, 0, -1):
+            total += self._tokens_of(self._msg_text(messages[i]))
+            if total >= keep_tokens:
+                cut = i
+                break
+        else:
+            return len(messages)  # 全部消息都在保留窗口内, 无可压缩段
+        while cut > 0 and not self._is_turn_start(messages[cut]):
+            cut -= 1
+        return cut if cut > 0 else len(messages)
+
+    # -- 序列化正文: [User]/[Assistant]/[Tool result] 风格, 单条截断 --
+    @staticmethod
+    def _call_parts(tc) -> tuple:
+        if isinstance(tc, dict):
+            fn = tc.get("function") or {}
+            tid, name, args = tc.get("id"), fn.get("name"), fn.get("arguments", {})
+        else:
+            fn = getattr(tc, "function", None)
+            tid = getattr(tc, "id", None)
+            name = getattr(fn, "name", None)
+            args = getattr(fn, "arguments", {})
+        if isinstance(args, str):
+            args_s = args
+        else:
+            args_s = json.dumps(args, ensure_ascii=False, default=str)
+        return tid, name or "tool", args_s
+
+    def _tool_name_map(self, messages: list) -> dict:
+        names = {}
+        for m in messages:
+            if m.get("role") != "assistant":
+                continue
+            for tc in m.get("tool_calls") or []:
+                tid, name, _ = self._call_parts(tc)
+                if tid and name:
+                    names[tid] = name
+        return names
+
+    def _serialize(self, messages: list, names: dict) -> str:
+        lines = []
+        for m in messages:
+            role = m.get("role")
+            if role == "assistant":
+                text = self._msg_text(m).strip()
+                if text:
+                    lines.append(f"[Assistant]: {self._clip(text, 8000)}")
+                calls = m.get("tool_calls") or []
+                if calls:
+                    parts = []
+                    for tc in calls:
+                        _, name, args_s = self._call_parts(tc)
+                        parts.append(f"{name}({self._clip(args_s, COMPACT_SERIAL_ARG_CHARS)})")
+                    lines.append("[Assistant tool calls]: " + "; ".join(parts))
+            elif role == "user":
+                c = m.get("content")
+                if isinstance(c, list):
+                    for part in c:
+                        if isinstance(part, dict) and part.get("type") == "tool_result":
+                            tid = part.get("tool_use_id")
+                            body = part.get("content")
+                            if not isinstance(body, str):
+                                body = self._msg_text({"content": body})
+                            lines.append(
+                                f"[Tool result of {names.get(tid, '') or 'tool'}]: "
+                                + self._clip(body.strip(), COMPACT_SERIAL_RESULT_CHARS)
+                            )
+                        else:
+                            text = str(part.get("text") or "") if isinstance(part, dict) else str(part)
+                            if text:
+                                lines.append(f"[User]: {self._clip(str(text), 8000)}")
+                else:
+                    text = self._msg_text(m).strip()
+                    if text:
+                        lines.append(f"[User]: {self._clip(text, 8000)}")
+            elif role == "tool":
+                tid = m.get("tool_call_id")
+                body = self._msg_text(m).strip()
+                lines.append(
+                    f"[Tool result of {names.get(tid, '') or 'tool'}]: "
+                    + self._clip(body, COMPACT_SERIAL_RESULT_CHARS)
+                )
+        return "\n".join(lines)
+
+    # -- 文件清单: 从 tool_calls 参数位收集(pi details: read/modified files) --
+    def _collect_files(self, messages: list) -> tuple:
+        read_files, modified_files = [], []
+        for m in messages:
+            if m.get("role") != "assistant":
+                continue
+            for tc in m.get("tool_calls") or []:
+                _, name, args_s = self._call_parts(tc)
+                base = str(name).split("__")[-1].lower()
+                try:
+                    args = json.loads(args_s) if args_s.strip().startswith("{") else {}
+                except Exception:
+                    args = {}
+                path = next(
+                    (args[k] for k in ("path", "file_path", "filepath", "file") if isinstance(args.get(k), str)),
+                    "",
+                )
+                if not path:
+                    continue
+                path = str(path)[:200]
+                if base in _COMPACT_WRITE_TOOLS:
+                    if path not in modified_files:
+                        modified_files.append(path)
+                elif base in _COMPACT_READ_TOOLS and path not in read_files:
+                    read_files.append(path)
+        return read_files, modified_files
+
+    @staticmethod
+    def _file_section(prev_summary, tag) -> list:
+        if not prev_summary:
+            return []
+        match = re.search(rf"<{tag}>\n([\s\S]*?)</{tag}>", prev_summary)
+        if not match:
+            return []
+        return [ln.strip() for ln in match.group(1).splitlines() if ln.strip()]
+
+    # -- Layer 2: summary_compact - 摘要头部 + 保留尾部(pi: summary + kept) --
+    def summary_compact(self, messages: list, force: bool = False) -> list:
+        self.last_meta = None
+        cut = self._cut_index(messages, COMPACT_KEEP_RECENT_TOKENS)
+        # 队首的旧压缩摘要作为 previousSummary 迭代, 不再重复序列化(pi 语义)
+        prev_summary = None
+        start = 0
+        if messages and isinstance(messages[0].get("content"), str) and messages[0]["content"].startswith(_COMPACT_MARKER):
+            prev_summary = messages[0]["content"]
+            start = 1
+        dropped = cut - start
+        if dropped <= 0 or (not force and dropped < COMPACT_MIN_DROPS):
+            return messages
+        kept = messages[cut:]
+        names = self._tool_name_map(messages)
+        # 全文转存 transcripts, 供事后审计
+        transcript_path = None
+        try:
+            tdir = Path(self.transript_dir)
+            tdir.mkdir(parents=True, exist_ok=True)
+            transcript_path = tdir / f"transcript_{int(time.time())}.jsonl"
+            with open(transcript_path, "w", encoding="utf-8") as f:
+                for msg in messages:
+                    f.write(json.dumps(msg, default=str, ensure_ascii=False) + "\n")
+            print(f"{' ' * 12}transcript saved: {transcript_path}")
+        except Exception as e:
+            print(f"{' ' * 12}compact transcript dump failed (compaction still applies): {e}")
+        # 文件清单 = 本段 tool_calls 采集 + 旧摘要清单(跨压缩累计)
+        sec_read, sec_mod = self._collect_files(messages[start:cut])
+        for p in self._file_section(prev_summary, "read-files"):
+            if p not in sec_read:
+                sec_read.append(p)
+        for p in self._file_section(prev_summary, "modified-files"):
+            if p not in sec_mod:
+                sec_mod.append(p)
+        summary = self._summarize(messages[start:cut], names, prev_summary)
+        if not summary:
+            # 摘要失败不阻塞会话: 机械兜底说明, 保尾照常生效
+            summary = (
+                "(The earlier part of this conversation was compacted to free context. "
+                + (f"Full original transcript: {transcript_path.name}. " if transcript_path else "")
+                + "Recent messages below are verbatim.)"
+            )
+        marker_text = _COMPACT_MARKER
+        if transcript_path is not None:
+            marker_text += f" · transcript {transcript_path.name}"
+        marker_text += f"]\n\n{summary}"
+        if sec_read:
+            marker_text += "\n\n<read-files>\n" + "\n".join(sec_read[:200]) + "\n</read-files>"
+        if sec_mod:
+            marker_text += "\n\n<modified-files>\n" + "\n".join(sec_mod[:200]) + "\n</modified-files>"
+        new_messages = [{"role": "user", "content": marker_text}, *kept]
+        self.last_meta = {
+            "applied": True,
+            "removed": dropped,
+            "kept": len(kept),
+            "tokens_before": self.estimate_tokens(messages),
+            "transcript": transcript_path.name if transcript_path else "",
+            "text": marker_text,
+        }
+        print(f"{' ' * 12}compacted: dropped {dropped}, kept {len(kept)}, tokens before ~{self.estimate_tokens(messages)}")
+        return new_messages
+
+    # -- 摘要请求: 结构化 pi 摘要 + 迭代 previousSummary; 失败返回空 --
+    def _summarize(self, span: list, names: dict, prev_summary=None) -> str:
+        if self.client is None:
+            return ""
+        conversation = self._serialize(span, names)
+        prompt = SUMMARY_PROMPT
+        if prev_summary:
+            prompt += f"\n\n### Previous summary (iterate on it; keep still-relevant points, do not repeat verbatim):\n{prev_summary}\n"
+        prompt += f"\n\n### Conversation:\n{conversation}"
+        model = self.model or MODEL
+        try:
+            if self.client.__class__.__name__ == "Anthropic":
+                response = self.client.messages.create(
+                    model=model, messages=[{"role": "user", "content": prompt}], max_tokens=COMPACT_TOKENS,
+                )
+                summary = response.content[0].text
+            else:
+                response = self.client.chat.completions.create(
+                    model=model, messages=[{"role": "user", "content": prompt}], max_tokens=COMPACT_TOKENS,
+                )
+                summary = (response.choices[0].message.content or "").strip()
+            print(f"{' ' * 12}summary({len(summary)} chars) via {model}")
+            return summary
+        except Exception as e:
+            # 摘要失败: 上层走机械兜底, 会话不中断
+            print(f"{' ' * 12}compact summary failed, fallback note: {e}")
+            return ""
+
+    # -- 触发器: 实际用量与估算取大者决定是否走摘要压缩(pi: tokens > window-reserve) --
+    def auto_compact(self, messages: list, force=False, context_ratio=0) -> list:
+        est_ratio = self.estimate_tokens(messages) / self.max_model_len if self.max_model_len else 0
+        ratio = max(est_ratio, context_ratio or 0)
+        if force or ratio >= COMPACT_RATIO or (ratio * self.max_model_len or 0) > COMPACT_THRESHOLD:
+            print(f"{Prompt.Compact}manual compact" if force else f"{Prompt.Compact}auto compact triggered")
+            return self.summary_compact(messages, force=force)
+        # 未触发: 只做轻量裁剪; 未发生压缩时清掉上次的事件残留
+        messages = self.tool_compact(messages, context_ratio=context_ratio)
+        self.last_meta = None
+        return messages
 
     # -- Layer 1: tool_compact - replace old tool results with placeholders --
     def tool_compact(self, messages: list, context_ratio: float = 0) -> list:
@@ -331,59 +622,6 @@ class Compactor:
         except Exception as e:
             # 转存失败不阻断裁剪本体, 只提示
             print(f"{' '*12}prune dump failed (trim still applied): {e}")
-
-    # -- Layer 2: summary_compact - save transcript, summarize, replace messages --
-    def summary_compact(self, messages: list) -> list:
-        # Save full transcript to disk
-        self.transript_dir.mkdir(exist_ok=True)
-        transcript_path = self.transript_dir / f"transcript_{int(time.time())}.jsonl"
-        with open(transcript_path, "w") as f:
-            for msg in messages:
-                f.write(json.dumps(msg, default=str, ensure_ascii=False) + "\n")
-        print(f"{' '*12}transcript saved: {transcript_path}")
-        # Ask LLM to summarize
-        conversation_text = json.dumps(messages, default=str)
-        msg = [{
-            "role": "user", 
-            "content": SUMMARY_PROMPT + conversation_text
-        }]
-        # with KnightRiderStatus("", width=11, color="#5c9cf5", fps=30):
-        if self.client.__class__.__name__ == 'Anthropic':
-            response = self.client.messages.create(
-                model=MODEL,
-                messages=msg,
-                max_tokens=COMPACT_TOKENS,
-            )
-            summary = response.content[0].text
-            print(f"{' '*12}summary: {summary}")
-            print(f"{Prompt.Tokens}compress to: {response.usage.output_tokens}")
-        else:
-            response = self.client.chat.completions.create(
-                model=MODEL,
-                messages=msg,
-                max_tokens=COMPACT_TOKENS
-            )
-            summary = response.choices[0].message.content
-            print(f"{' '*12}summary: {summary}")
-            print(f"{Prompt.Tokens}compress to: {response.usage.completion_tokens}")
-
-        return [
-            {"role": "user", "content": f"[Conversation compressed. Transcript: {transcript_path.name}]\n\n{summary}"},
-            {"role": "assistant", "content": "Understood. I have the context from the summary. Continuing."},
-        ]
-
-    def estimate_tokens(self, messages: list) -> int:
-        """Rough token count: ~4 chars per token."""
-        return len(str(messages)) // 4
-
-    def auto_compact(self, messages: list, force=False, context_ratio=0) -> list:
-        if force or context_ratio >= COMPACT_RATIO or (context_ratio * self.max_model_len) > COMPACT_THRESHOLD:
-            info = f"{Prompt.Compact}manual compact" if force else f"{Prompt.Compact}auto compact triggered"
-            print(info)
-            messages = self.summary_compact(messages)
-        else:
-            messages = self.tool_compact(messages, context_ratio=context_ratio)
-        return messages
 
 # -- TaskManager: CRUD with dependency graph, persisted as JSON files --
 class TaskManager:

@@ -240,7 +240,16 @@
   V.chat = () => {
     const run = CS.currentRun(); if (!run) return `<section class="page">${empty('message','开始一个新的科研任务','先在首页描述研究问题，或选择一条演示工作流。')}<div class="center">${btn('go-home','开始对话','plus','primary')}</div></section>`;
     if (run.kind === 'chat') {
-      const bubble = m => { const idxOf = run.messages.indexOf(m); return m.role === 'user'
+      // 压缩摘要卡(pi CompactionEntry): 折叠态只显标题, 展开看摘要与保留说明
+      const V_COMPACT = m => {
+        const c = String(m.content || '');
+        const header = c.split('\n')[0] || '上下文已压缩';
+        const body = c.split('\n').slice(1).join('\n').trim();
+        return `<div class="msg-block compact-block"><div class="compact-card"><div class="compact-head"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">${e(header)}</span></div>${body ? `<div class="compact-body">${e(body)}</div>` : ''}</div></div>`;
+      };
+      const bubble = m => {
+        if (m.compact || String(m.content || '').startsWith('[Conversation compressed')) return V_COMPACT(m);
+        const idxOf = run.messages.indexOf(m); return m.role === 'user'
         ? `<div class="msg-block user-block"><div class="user-message">${e(m.content)}${m.datasetIds?.length ? `<div class="attachment-list mt-12">${m.datasetIds.map(id => `<span class="attachment">${i('file')}${e(CS.state.datasets.find(d => d.id === id)?.name || id)}</span>`).join('')}</div>` : ''}</div><div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span><span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="edit-message" data-id="${idxOf}" title="修改">${i('edit','',13)}</span></span></div></div>`
         : (() => {
             const blockMeta = t => t.name === 'bash' ? {icon: 'terminal', label: '终端'} : {icon: 'code', label: '工具'};

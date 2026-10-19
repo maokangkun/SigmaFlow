@@ -60,10 +60,18 @@ API_KEY = os.getenv("API_KEY")
 ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", MAX_OUT_LEN["default"]))
-COMPACT_TOKENS = int(os.getenv("COMPACT_TOKENS", 2048))
+COMPACT_TOKENS = int(os.getenv("COMPACT_TOKENS", 4096))
 COMPACT_THRESHOLD = int(os.getenv("COMPACT_THRESHOLD", 1e20))
-COMPACT_RATIO = float(os.getenv("COMPACT_RATIO", 0.95))
+# 触发阈值从 0.95 提前到 0.85(pi: window - reserveTokens, 给回答留余量)
+COMPACT_RATIO = float(os.getenv("COMPACT_RATIO", 0.85))
 KEEP_RECENT_TOOL = int(os.getenv("KEEP_RECENT_TOOL", 1e8))
+# pi 式压缩: 保留最近若干 token 的原文, 只摘要更早部分(pi keepRecentTokens)
+COMPACT_KEEP_RECENT_TOKENS = int(os.getenv("COMPACT_KEEP_RECENT_TOKENS", "16000"))
+# 被摘要的消息少于这个数时不压缩, 避免频繁摘要小会话
+COMPACT_MIN_DROPS = int(os.getenv("COMPACT_MIN_DROPS", "4"))
+# 序列化正文时单条工具结果与单个工具参数的截断长度(pi: 工具结果 2000 字符)
+COMPACT_SERIAL_RESULT_CHARS = int(os.getenv("COMPACT_SERIAL_RESULT_CHARS", "2000"))
+COMPACT_SERIAL_ARG_CHARS = int(os.getenv("COMPACT_SERIAL_ARG_CHARS", "200"))
 # 工具结果裁剪(dsh pruner 思路): 上下文逼近阈值时, 把较早的大结果保头截尾,
 # 缓解 token 压力以推迟全量 summary 压缩; 原文转存到 transcripts 目录留档
 PRUNE_TOOL_RESULTS = bool(int(os.getenv("PRUNE_TOOL_RESULTS", "1")))
@@ -470,9 +478,34 @@ API_ERRORS = [
     '用户额度不足',
 ]
 
-SUMMARY_PROMPT = """Summarize this conversation for continuity in the corresponding language. Include: 
-1) Core mission, 2) What was accomplished, 3) Current state, 4) Key decisions made.
-Be concise but preserve critical details (e.g. IDs, error messages, configs, paths). Keep it brief.\n
+# pi 结构化摘要: Goal/Progress/Decisions/Next Steps/Critical Context,
+# 语言跟随对话; 文件清单由程序追加(不信任模型枚举)
+SUMMARY_PROMPT = """You are compacting a long agent conversation so a fresh context can continue the work seamlessly. Summarize the conversation below in the SAME LANGUAGE the user used. Output ONLY the summary, in this exact structure:
+
+## Goal
+What the user is ultimately trying to accomplish.
+
+## Constraints & Preferences
+- Requirements, style or environment constraints the user stated.
+
+## Progress
+### Done
+- [x] Completed work, with concrete outcomes
+### In Progress
+- [ ] Current work and its exact state
+### Blocked
+- Known issues, errors or blockers
+
+## Key Decisions
+- **Decision**: why it was made
+
+## Next Steps
+1. What should happen next, in order
+
+## Critical Context
+- Data, IDs, paths, error messages, configs and numbers the next context MUST keep (verbatim).
+
+Rules: keep filenames, function names, identifiers, numbers, error text and commands exactly as they appear; omit small talk; no preamble like "Here is the summary".\n
 """
 
 @dataclass

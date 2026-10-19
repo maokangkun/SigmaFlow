@@ -731,6 +731,16 @@
       else reply.blocks.push({ type: 'text', text: delta });
     };
     const pushTool = (t, reqId) => {
+      // pi 式压缩: 服务器把头几轮替换为摘要; 前端丢弃对应轮次并置入摘要卡,
+      // 会话列表变短后随 reply 结束的同步一起持久化, 下轮请求上下文即已压缩
+      if (t.kind === 'compact' && t.text) {
+        const dropped = Math.max(0, Math.floor(Number(t.removed) || 0));
+        const card = { id: 'cmp-' + Math.random().toString(36).slice(2, 8), role: 'user', compact: true, content: String(t.text), at: new Date().toISOString() };
+        if (dropped) run.messages.splice(0, dropped);
+        run.messages.unshift(card);
+        CS.save(); CS.render();
+        return;
+      }
       // 产出文件行(dsh deliverables 思路): 后到的事件携带全量清单, 移除旧块重挂尾部
       if (t.kind === 'deliverables' && Array.isArray(t.files)) {
         reply.blocks = reply.blocks.filter(b => b.type !== 'deliverables');
