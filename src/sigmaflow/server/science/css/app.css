@@ -476,7 +476,13 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .compact-title{font-weight:600;font-size:13px}
 .compact-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
 .compact-sub,.compact-head .tiny{flex:1 1 auto;min-width:0}
-.compact-body{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);white-space:pre-wrap;font-size:12.5px;line-height:1.65;color:var(--text);max-height:340px;overflow-y:auto}
+.compact-body{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:12.5px;line-height:1.65;color:var(--text);max-height:340px;overflow-y:auto}
+.compact-body p{margin:0 0 8px 0}
+.compact-body p:last-child{margin-bottom:0}
+.compact-body ul,.compact-body ol{margin:4px 0 8px 0;padding-left:20px}
+.compact-body h1,.compact-body h2,.compact-body h3{font-size:13px;margin:10px 0 6px 0}
+.compact-body code{background:var(--bg);border:1px solid var(--line-soft);border-radius:4px;padding:1px 5px;font-size:11.5px}
+.compact-body pre{background:var(--bg);border:1px solid var(--line-soft);border-radius:8px;padding:9px 11px;overflow-x:auto;font-size:11.5px}
 
 /* 上下文压缩参数: 数字输入与单位 */
 .compact-num{width:120px;text-align:right;font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)}

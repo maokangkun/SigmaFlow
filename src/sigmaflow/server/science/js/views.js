@@ -245,7 +245,7 @@
         const c = String(m.content || '');
         const header = c.split('\n')[0] || '上下文已压缩';
         const body = c.split('\n').slice(1).join('\n').trim();
-        return `<div class="compact-card"><div class="compact-head"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">${e(header)}</span></div>${body ? `<div class="compact-body">${e(body)}</div>` : ''}</div>`;
+        return `<div class="compact-card"><div class="compact-head"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">${e(header)}</span></div>${body ? `<div class="compact-body md-body">${CS.markdown(body)}</div>` : ''}</div>`;
       };
       // 压缩摘要作为特殊回复消息: agent 消息外壳(头像/名称) + 内嵌摘要卡;
       // 进行中状态(compactPending)显示"上下文正在压缩中"等待动画
