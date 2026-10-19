@@ -314,22 +314,32 @@ class Compactor:
             return False
         return True
 
-    # -- 切点: 从尾部往前累计 token, 到达保留预算即停; 边界非法则前移 --
+    # -- 切点: 从尾部往前累计 token 到保尾预算; 切点必须落在轮首 --
     def _cut_index(self, messages: list, keep_tokens: int) -> int:
+        n = len(messages)
         if self.max_model_len:
             keep_tokens = min(keep_tokens, max(1500, int(self.max_model_len * 0.15)))
         total = 0
-        cut = len(messages)
-        for i in range(len(messages) - 1, 0, -1):
+        cut = n
+        # 含 index 0: 越过预算的那条作为保留头(pi: 近期重消息原文保留)
+        for i in range(n - 1, -1, -1):
             total += self._tokens_of(self._msg_text(messages[i]))
             if total >= keep_tokens:
                 cut = i
                 break
         else:
-            return len(messages)  # 全部消息都在保留窗口内, 无可压缩段
+            return n  # 全部消息都在保留窗口内, 无可压缩段
+        # 落在轮中时回退到轮首(窗口略大, 保证工具结果与其 tool_call 成对)
         while cut > 0 and not self._is_turn_start(messages[cut]):
             cut -= 1
-        return cut if cut > 0 else len(messages)
+        if cut == 0:
+            # split-turn 精神的近似: 越界发生在首条消息 → 首轮整体过大,
+            # 从下一个轮首切断, 让巨轮进入摘要段; 没有下一个轮首则整体保留
+            for j in range(1, n):
+                if self._is_turn_start(messages[j]):
+                    return j
+            return n
+        return cut
 
     # -- 序列化正文: [User]/[Assistant]/[Tool result] 风格, 单条截断 --
     @staticmethod
@@ -446,6 +456,8 @@ class Compactor:
     def summary_compact(self, messages: list, force: bool = False) -> list:
         self.last_meta = None
         cut = self._cut_index(messages, self._cfg("COMPACT_KEEP_RECENT_TOKENS", int, 16000))
+        if cut >= len(messages):
+            return messages  # 保留窗口覆盖了全部消息, 无可摘要段(手动压缩对小会话同样为空操作)
         # 队首的旧压缩摘要作为 previousSummary 迭代, 不再重复序列化(pi 语义)
         prev_summary = None
         start = 0
@@ -541,7 +553,8 @@ class Compactor:
         hard_limit = self._cfg("COMPACT_THRESHOLD", int, 10**20)
         enabled = self._cfg("COMPACT_ENABLED", bool, True)
         # pi 语义: enabled=False 只关自动触发, 手动 /compact 仍然可用
-        auto = enabled and (ratio >= threshold or (ratio * self.max_model_len or 0) > hard_limit)
+        window = self.max_model_len or 0
+        auto = enabled and (ratio >= threshold or (ratio * window if window else 0) > hard_limit)
         if force or auto:
             print(f"{Prompt.Compact}manual compact" if force else f"{Prompt.Compact}auto compact triggered")
             return self.summary_compact(messages, force=force)

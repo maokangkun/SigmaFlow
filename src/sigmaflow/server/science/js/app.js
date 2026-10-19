@@ -1421,6 +1421,25 @@
       members.forEach(t => { t.enabled = enable; });
       CS.render();
     },
+    'ctx-compact': async () => {
+      // 圆环弹卡里的手动压缩: 独立接口调用, 成功后前端裁轮次 + 插摘要卡并立即同步
+      const run = CS.currentRun();
+      if (!run) return;
+      if (run.messages.some(m => m.streaming)) { CS.toast('正在生成回复，稍后再压缩。', 'error'); return; }
+      CS.ui.contextMenu = false; CS.render();
+      try {
+        const r = await CS.api.request(`/conversations/${encodeURIComponent(run.id)}/compact`, { method: 'POST', body: '{}' });
+        if (!r.applied) { CS.toast('上下文还很轻，无需压缩。'); return; }
+        const dropped = Math.max(0, Math.floor(Number(r.removed) || 0));
+        const card = { id: 'cmp-' + Math.random().toString(36).slice(2, 8), role: 'user', compact: true, content: String(r.text || ''), at: new Date().toISOString() };
+        if (dropped) run.messages.splice(0, dropped);
+        run.messages.unshift(card);
+        CS.save(); CS.render();
+        syncConversation(run);
+        await CS.refreshContextInfo().catch(() => {});
+        CS.toast(`已压缩：早期 ${dropped} 条消息并入摘要, 保留最近 ${r.kept} 条。`);
+      } catch (error) { CS.toast('压缩失败：' + CS.api.friendlyError(error), 'error'); }
+    },
     'save-tools': async () => {
       if (!CS.ui.toolDraft?.length) { CS.toast('没有需要保存的修改。'); return; }
       try {

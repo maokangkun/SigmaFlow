@@ -3313,6 +3313,58 @@ class ScienceAPI:
                 raise HTTPException(status_code=500, detail="反馈写入失败")
             return {"ok": True}
 
+        @router.post("/conversations/{conversation_id}/compact")
+        async def compact_conversation(conversation_id: str, request: Request):
+            # 手动压缩: 圆环弹卡触发, 独立于会话请求, 复用 Compactor 全量逻辑
+            _check_origin(request)
+            conv = self.project_store.conversations.get(conversation_id)
+            if conv is None:
+                raise HTTPException(status_code=404, detail="Conversation not found")
+            msgs = [
+                {"role": m.get("role"), "content": m.get("content", "")}
+                for m in (conv.get("content") or [])
+                if m.get("role") in ("user", "assistant")
+            ]
+            if len(msgs) < 2:
+                raise HTTPException(status_code=400, detail="会话内容过少，无需压缩")
+            base_url, api_key, model_name = _resolve_chat(self.model_store, None)
+
+            def _run_compact():
+                from openai import OpenAI
+
+                agent_module = _agent_agent_module()
+                compactor_mod = _agent_tools_module()
+                window = agent_module.MAX_MODEL_LEN.get(model_name.lower(), agent_module.MAX_MODEL_LEN["default"])
+                compactor = compactor_mod.Compactor(
+                    agent_module.TRANSCRIPT_DIR,
+                    OpenAI(base_url=base_url, api_key=api_key or "sk-empty", timeout=120, max_retries=0),
+                    window,
+                    model=model_name,
+                )
+                cfg = _effective_compaction()
+                compactor.overrides = {
+                    "COMPACT_ENABLED": bool(cfg["enabled"]),
+                    "COMPACT_RATIO": float(cfg["ratio"]),
+                    "COMPACT_KEEP_RECENT_TOKENS": int(cfg["keepRecentTokens"]),
+                    "COMPACT_MIN_DROPS": int(cfg["minDrops"]),
+                    "COMPACT_TOKENS": int(cfg["summaryTokens"]),
+                    "COMPACT_SERIAL_RESULT_CHARS": int(cfg["resultChars"]),
+                    "COMPACT_SERIAL_ARG_CHARS": int(cfg["argChars"]),
+                }
+                compactor.summary_compact(msgs, force=True)
+                meta = compactor.last_meta
+                if not (meta and meta.get("applied")):
+                    return {"applied": False, "removed": 0, "kept": len(msgs), "text": "", "transcript": ""}
+                return {
+                    "applied": True,
+                    "removed": int(meta.get("removed") or 0),
+                    "kept": int(meta.get("kept") or 0),
+                    "text": str(meta.get("text") or ""),
+                    "transcript": str(meta.get("transcript") or ""),
+                }
+
+            return await asyncio.to_thread(_run_compact)
+
         @router.get("/conversations/{conversation_id}/content")
         async def get_conversation_content(conversation_id: str):
             conv = self.project_store.conversations.get(conversation_id)
