@@ -1453,15 +1453,18 @@
         if (pending.summaryDelta) {
           const blk = document.querySelector('.compact-reply-block');
           if (blk) {
-            let body = blk.querySelector('.compact-body');
-            if (!body) {
+            // 流式卡与最终卡同外壳: 首个 delta 建卡(静态头 + 空 body), 之后只刷 body 内的 markdown
+            let card = blk.querySelector('.compact-card');
+            if (!card) {
               const status = blk.querySelector('.compact-status');
               const div = document.createElement('div');
-              div.className = 'compact-body md-body compact-streaming';
+              div.className = 'compact-card compact-streaming-card';
+              div.innerHTML = '<div class="compact-head"><span class="compact-ico"></span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">摘要生成中…</span></div><div class="compact-body md-body compact-streaming"></div>';
               if (status && status.parentElement) status.insertAdjacentElement('afterend', div);
               else blk.appendChild(div);
-              body = blk.querySelector('.compact-body');
+              card = blk.querySelector('.compact-card');
             }
+            const body = card.querySelector('.compact-body');
             body.innerHTML = CS.markdown(pending.summaryDelta);
             if (!seenDelta) { seenDelta = true; setTimeout(scrollToLatest, 30); }
           }
