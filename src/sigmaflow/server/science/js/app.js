@@ -630,7 +630,7 @@
       id: run.id, title: run.title, projectId: run.projectId,
       pinned: !!conv?.pinned, archived: !!conv?.archived,
       content: run.messages.filter(m => m.role === 'user' || m.role === 'assistant')
-        .map(m => ({ role: m.role, content: m.content, at: m.at, ...(m.model ? { model: m.model } : {}), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) })),
+        .map(m => ({ role: m.role, content: m.content, at: m.at, ...(m.model ? { model: m.model } : {}), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed, ...(m.contextTokens ? { contextTokens: m.contextTokens } : {}), ...(m.cacheTokens ? { cacheTokens: m.cacheTokens } : {}) } : {}) })),
     };
     try { await CS.api.modelCall('conversation.save', 'POST', '/conversations', payload); }
     catch { if (retry) setTimeout(() => syncConversation(run, false), 3000); }
