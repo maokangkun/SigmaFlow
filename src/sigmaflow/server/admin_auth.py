@@ -69,7 +69,7 @@ def verify_jwt(token: str) -> JwtPayload:
     """Verify and decode JWT token"""
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-        return JwtPayload(payload.get("id"), payload.get("role"))
+        return JwtPayload(str(payload.get("id") or ""), str(payload.get("role") or ""))
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")
     except jwt.InvalidTokenError:

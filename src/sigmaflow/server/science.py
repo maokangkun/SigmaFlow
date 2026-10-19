@@ -710,7 +710,7 @@ class ScienceModelStore:
         for mid in [
             k for k, m in self.models.items() if m.get("providerId") == provider_id
         ]:
-            lost_default = lost_default or self.models[mid].get("isDefault")
+            lost_default = bool(lost_default or self.models[mid].get("isDefault"))
             self.models.pop(mid, None)
         if lost_default:
             self._fix_default()
@@ -720,7 +720,7 @@ class ScienceModelStore:
     # --------------------------------------------------------------- models
 
     def _public_model(self, model: dict) -> dict:
-        provider = self.providers.get(model.get("providerId")) or {}
+        provider = self.providers.get(str(model.get("providerId") or "")) or {}
         name = model.get("model") or ""
         entry = _litellm_lookup(name)
         pin, pout = _model_pricing(entry)
@@ -1001,6 +1001,44 @@ class ScienceAPI:
         ws_router = APIRouter(prefix="/api")
         auth_router = APIRouter(prefix="/api/auth")
 
+        self._register_auth_routes(auth_router)
+
+        self.ws_router = ws_router
+        self.auth_router = auth_router
+
+        self._register_system_routes(router)
+
+        self._register_fs_routes(router)
+
+        self._register_chat_routes(router)
+
+        self._register_admin_routes(router)
+
+        self._register_conversation_routes(router)
+
+        self._register_pty_routes(router, ws_router)
+
+        @router.on_event("startup")
+        async def startup_event():
+            await self.manager.start()
+
+        @router.on_event("shutdown")
+        async def shutdown_event():
+            await self.manager.stop()
+
+        self.router = router
+
+    def _check_run_owner(self, run_id: str) -> None:
+        """Multi-user isolation: a run is only visible to its owner."""
+        run = self.manager.runs.get(run_id)
+        if run is None:
+            return
+        if _multi_user() and run.get("owner") != _current_user():
+            raise HTTPException(status_code=404, detail="Run not found")
+
+    def _register_auth_routes(self, auth_router: APIRouter) -> None:
+        """Register routes for this domain (order preserved)."""
+
         # ------------------------------------------------------- auth API
 
         @auth_router.get("/me")
@@ -1057,7 +1095,9 @@ class ScienceAPI:
             name = _clip(str(payload.username or "").strip(), 64)
             password = str(payload.password or "")
             users = _load_users()
-            record = users.get(name) if isinstance(users.get(name), dict) else {}
+            record = users.get(name)
+            if not isinstance(record, dict):
+                record = {}
             stored = str(record.get("hash") or "")
             try:
                 salt = bytes.fromhex(str(record.get("salt") or ""))
@@ -1177,8 +1217,8 @@ class ScienceAPI:
             )
             return {"mode": "multi", "user": {"name": name}}
 
-        self.ws_router = ws_router
-        self.auth_router = auth_router
+    def _register_system_routes(self, router: APIRouter) -> None:
+        """Register routes for this domain (order preserved)."""
 
         # ------------------------------------------------------------- HTTP
 
@@ -1202,14 +1242,6 @@ class ScienceAPI:
             run_id = self.manager.create(payload, _current_user())
             return {"id": run_id, "isDemo": True}
 
-        def _check_run_owner(run_id: str) -> None:
-            """Multi-user isolation: a run is only visible to its owner."""
-            run = self.manager.runs.get(run_id)
-            if run is None:
-                return
-            if _multi_user() and run.get("owner") != _current_user():
-                raise HTTPException(status_code=404, detail="Run not found")
-
         @router.get("/runs")
         async def list_runs():
             runs = [
@@ -1229,7 +1261,7 @@ class ScienceAPI:
 
         @router.get("/runs/{run_id}")
         async def get_run(run_id: str):
-            _check_run_owner(run_id)
+            self._check_run_owner(run_id)
             try:
                 return self.manager.snapshot(run_id)
             except KeyError:
@@ -1241,7 +1273,7 @@ class ScienceAPI:
         @router.post("/runs/{run_id}/control")
         async def control_run(run_id: str, payload: RunControl, request: Request):
             _check_origin(request)
-            _check_run_owner(run_id)
+            self._check_run_owner(run_id)
             return self.manager.control(run_id, payload.action)
 
         # ---------------------------------------------------- provider & model configs
@@ -1351,6 +1383,9 @@ class ScienceAPI:
                 raise HTTPException(status_code=404, detail="Model not found")
             return {"models": self.model_store.list_models()}
 
+    def _register_fs_routes(self, router: APIRouter) -> None:
+        """Register routes for this domain (order preserved)."""
+
         # ------------------------------------------------ projects & conversations
         # Projects group conversations. Deleting a project unassigns (keeps)
         # its conversations.
@@ -1432,6 +1467,9 @@ class ScienceAPI:
                 "conversations": self.project_store.list_conversations(),
             }
 
+    def _register_chat_routes(self, router: APIRouter) -> None:
+        """Register routes for this domain (order preserved)."""
+
         @router.post("/chat")
         async def chat(payload: ChatIn, request: Request):
             _check_origin(request)
@@ -1467,6 +1505,9 @@ class ScienceAPI:
                 "tokens": stats.get("completion_tokens") or 0,
                 "promptTokens": stats.get("prompt_tokens") or 0,
             }
+
+    def _register_admin_routes(self, router: APIRouter) -> None:
+        """Register routes for this domain (order preserved)."""
 
         @router.get("/tools")
         async def list_tools():
@@ -1575,10 +1616,12 @@ class ScienceAPI:
             _check_origin(request)
             if payload.reset:
                 # 恢复默认: 删除存储文件, 下次读取回落环境基线
-                await asyncio.to_thread(
-                    lambda: os.path.exists(_compaction_config_path())
-                    and os.remove(_compaction_config_path())
-                )
+                def _drop_compaction_file() -> None:
+                    p = _compaction_config_path()
+                    if os.path.exists(p):
+                        os.remove(p)
+
+                await asyncio.to_thread(_drop_compaction_file)
                 return {"compaction": await asyncio.to_thread(_effective_compaction)}
             stored = {
                 k: v
@@ -1624,6 +1667,9 @@ class ScienceAPI:
             # 密钥变化会同步调整 Sciverse 工具启用状态, 固定开销随之变化
             _AGENT_CONTEXT_SIZES.clear()
             return {"tokens": await asyncio.to_thread(_token_listing)}
+
+    def _register_conversation_routes(self, router: APIRouter) -> None:
+        """Register routes for this domain (order preserved)."""
 
         @router.get("/conversations")
         async def list_conversations():
@@ -1911,7 +1957,7 @@ class ScienceAPI:
 
         @router.get("/runs/{run_id}/events")
         async def run_events(run_id: str):
-            _check_run_owner(run_id)
+            self._check_run_owner(run_id)
             try:
                 self.manager.snapshot(run_id)
             except KeyError:
@@ -1945,6 +1991,9 @@ class ScienceAPI:
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
             )
+
+    def _register_pty_routes(self, router: APIRouter, ws_router: APIRouter) -> None:
+        """Register routes for this domain (order preserved)."""
 
         # ------------------------------------------------------ WebSocket
         #
@@ -2069,11 +2118,9 @@ class ScienceAPI:
             async def handle(message: dict):
                 action = message.get("action")
                 request_id = message.get("requestId")
-                data = (
-                    message.get("data")
-                    if isinstance(message.get("data"), dict)
-                    else message
-                )
+                data = message.get("data")
+                if not isinstance(data, dict):
+                    data = message
                 if action == "ping":
                     await reply("pong", request_id)
                 elif action == "run.create":
@@ -2106,7 +2153,7 @@ class ScienceAPI:
                     )
                 elif action == "run.get":
                     run_id = run_id_of(data)
-                    _check_run_owner(run_id)
+                    self._check_run_owner(run_id)
                     if run_id not in self.manager.runs:
                         await fail(request_id, "Run not found")
                         return
@@ -2115,7 +2162,7 @@ class ScienceAPI:
                     )
                 elif action == "run.subscribe":
                     run_id = run_id_of(data)
-                    _check_run_owner(run_id)
+                    self._check_run_owner(run_id)
                     if run_id not in self.manager.runs:
                         await fail(request_id, "Run not found")
                         return
@@ -2582,8 +2629,8 @@ class ScienceAPI:
                     chat_task.add_done_callback(chat_tasks.discard)
                 elif action == "pty.open":
                     project_id = str(data.get("projectId") or data.get("id") or "")[:64]
-                    project = self.project_store.projects.get(project_id or "")
-                    basedir = str((project or {}).get("dir") or "").strip()
+                    project_entry = self.project_store.projects.get(project_id or "")
+                    basedir = str((project_entry or {}).get("dir") or "").strip()
                     if not basedir or not os.path.isdir(basedir):
                         await fail(
                             request_id, "项目未配置本地目录，先在项目设置里填写路径"
@@ -2721,16 +2768,6 @@ class ScienceAPI:
                 for run_id in subscribed:
                     self.manager.unsubscribe(run_id, queue)
 
-        @router.on_event("startup")
-        async def startup_event():
-            await self.manager.start()
-
-        @router.on_event("shutdown")
-        async def shutdown_event():
-            await self.manager.stop()
-
-        self.router = router
-
 
 def _push_loop(ws: WebSocket, queue: asyncio.Queue):
     """Fan manager snapshots queued for this connection out onto the socket."""
@@ -2835,7 +2872,7 @@ class ScienceProjectStore:
     def list_projects(self) -> list:
         # 最近活动优先排序: 取项目自身更新时间与项目下未归档会话的最新时间中的较大者。
         # 新建的项目 updatedAt 最新, 自然排最上; 老项目有新对话时同样被顶到最上方。
-        latest = {}
+        latest: dict[str, Any] = {}
         for conv in self.conversations.values():
             pid = conv.get("projectId")
             if pid and not conv.get("archived"):
@@ -2942,7 +2979,7 @@ class ScienceProjectStore:
             for msg in payload.content[-100:]:
                 if not isinstance(msg, dict):
                     continue
-                item: dict[str, str] = {
+                item: dict[str, Any] = {
                     "role": _clip(str(msg.get("role", "")), 16),
                     "content": _clip(str(msg.get("content", "")), 20000),
                 }
@@ -3136,7 +3173,7 @@ def _run_agent_chat(
     on_reasoning=None,
     on_tool=None,
     on_retry=None,
-    stats: dict = None,
+    stats: dict | None = None,
     workdir: Optional[str] = None,
     plan_mode: bool = False,
 ) -> str:
@@ -3501,7 +3538,7 @@ def _stream_agent_chat(
     on_reasoning=None,
     on_tool=None,
     on_retry=None,
-    stats: dict = None,
+    stats: dict | None = None,
     workdir: Optional[str] = None,
     plan_mode: bool = False,
 ):
