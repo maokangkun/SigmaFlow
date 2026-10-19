@@ -4778,14 +4778,14 @@ CS.audio = (function () {
         const cfg = CS.ui.compactionDraft || CS.ui.agentCompaction;
         if (!cfg) return `<div class="panel settings-section"><h2>上下文压缩</h2><p class="small muted mb-20">正在加载压缩参数配置…</p></div>`;
         const on = cfg.enabled !== false;
-        const num = (id, label, sub, field, min, max, step, unit) => `<div class="setting-row compact"><div><h3>${e(label)}</h3><p>${e(sub)}</p></div><span class="row gap-6"><input type="number" id="compact-${id}" class="compact-num" min="${min}" max="${max}" step="${step}" value="${e(String(cfg[field] != null ? cfg[field] : ''))}" data-field="${field}" aria-label="${e(label)}">${unit ? `<span class="tiny muted">${unit}</span>` : ''}</span></div>`;
-        return `<section class="panel settings-section"><div class="row-between"><h2>上下文压缩</h2>${pill('服务端存储')}</div><p class="small muted mb-20">上下文即将占满时, Agent 自动把较早的对话压缩成结构化摘要并保留最近消息原文(pi compaction 思路)。保存后即时对下一次会话生效; 自动压缩关闭时, 手动 /compact 命令仍然可用。</p><div class="setting-row"><div><h3>自动压缩</h3><p>仅在上下文占用超过触发阈值时执行摘要压缩。</p></div><button type="button" role="switch" aria-checked="${on}" class="switch" data-action="compaction-toggle" aria-label="自动压缩"></button></div>`
-          + num('ratio', '触发阈值', '上下文占用达到该比例时压缩, 例如 0.85 表示 85%。', 'ratio', 0.3, 0.98, 0.01, '')
-          + num('keep', '保留窗口', '最近这一段 token 数的原文保持原样不参与摘要, 以保住近期工作细节。', 'keepRecentTokens', 2000, 200000, 1000, 'tokens')
-          + num('mindrops', '最少压缩消息数', '被摘要的消息少于此数时跳过本次压缩, 避免频繁摘要小会话。', 'minDrops', 2, 50, 1, '条')
-          + num('summary', '摘要长度上限', '单次摘要生成允许的最大 token 数。', 'summaryTokens', 512, 16384, 256, 'tokens')
-          + num('result', '单条工具结果截断', '喂给摘要模型的工具结果每条最多保留的字符数。', 'resultChars', 200, 20000, 100, '字符')
-          + num('arg', '单个工具参数截断', '摘要中工具调用参数最多保留的字符数。', 'argChars', 40, 4000, 20, '字符')
+        const num = (id, label, sub, field, min, max, step) => `<div class="setting-row compact"><div><h3>${e(label)}</h3><p>${e(sub)}</p></div><span class="row gap-6"><input type="number" id="compact-${id}" class="compact-num" min="${min}" max="${max}" step="${step}" value="${e(String(cfg[field] != null ? cfg[field] : ''))}" data-field="${field}" aria-label="${e(label)}"></span></div>`;
+        return `<section class="panel settings-section"><div class="row-between"><h2>上下文压缩</h2>${pill('服务端存储')}</div><p class="small muted mb-20">上下文即将占满时, Agent 自动把较早的对话压缩成结构化摘要并保留最近消息原文(pi compaction 思路)。保存后即时对下一次会话生效; 自动压缩关闭时, 手动 /compact 命令仍然可用。</p><div class="setting-row compact"><div><h3>自动压缩</h3><p>仅在上下文占用超过触发阈值时执行摘要压缩。</p></div><button type="button" role="switch" aria-checked="${on}" class="switch" data-action="compaction-toggle" aria-label="自动压缩"></button></div>`
+          + num('ratio', '触发阈值', '上下文占用达到该比例时压缩, 例如 0.85 表示 85%。', 'ratio', 0.3, 0.98, 0.01)
+          + num('keep', '保留窗口', '最近这一段 token 数的原文保持原样不参与摘要, 以保住近期工作细节(单位 tokens)。', 'keepRecentTokens', 2000, 200000, 1000)
+          + num('mindrops', '最少压缩消息数', '被摘要的消息少于此数时跳过本次压缩, 避免频繁摘要小会话(按条计)。', 'minDrops', 2, 50, 1)
+          + num('summary', '摘要长度上限', '单次摘要生成允许的最大 token 数。', 'summaryTokens', 512, 16384, 256)
+          + num('result', '单条工具结果截断', '喂给摘要模型的工具结果每条最多保留的字符数。', 'resultChars', 200, 20000, 100)
+          + num('arg', '单个工具参数截断', '摘要中工具调用参数最多保留的字符数。', 'argChars', 40, 4000, 20)
           + `<div class="settings-actions row wrap">${btn('save-compaction', '保存', 'check', 'primary')}${btn('reset-compaction', '恢复默认', 'refresh', 'flat')}</div></section>`;
       })(),
       general: (() => {
