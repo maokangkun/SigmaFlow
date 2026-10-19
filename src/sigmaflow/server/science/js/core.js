@@ -59,7 +59,8 @@ CS.chatUsage = () => {
   const msgs = CS.currentRun()?.messages || [];
   let tin = 0, tout = 0, tcache = 0;
   msgs.forEach(m => { if (m.role === 'assistant') { tin += m.promptTokens || 0; tout += m.tokens || 0; tcache += m.cacheTokens || 0; } });
-  return { tin, tout, tinCache: tcache, pct: CS.contextUsage().pct };
+  const ctx = CS.contextUsage();
+  return { tin, tout, tinCache: tcache, pct: ctx.pct, win: ctx.window };
 };
 // token 数值的紧凑展示: ~850 / ~1.7K / ~67.7K / ~131K; 到 M 用 M 单位(~1M / ~1.2M), 不到的才用 K
 CS.kfmt = n => {

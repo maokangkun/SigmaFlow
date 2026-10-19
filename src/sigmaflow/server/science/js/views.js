@@ -233,7 +233,7 @@
   V.runUsage = () => {
     const u = CS.chatUsage();
     const item = (ic, val, tip) => `<span class="ru-item" title="${tip}">${i(ic, '', 13)}<b>${CS.knum(val)}</b></span>`;
-    return `<div class="run-usage mono">${item('arrowdown', u.tin, '累计输入 token')}${item('up', u.tout, '累计输出 token')}${item('database', u.tinCache, '累计缓存读取(网关未上报则为 0)')}${`<span class="ru-item" title="上下文占用">${i('gauge', '', 13)}<b>${u.pct}%</b></span>`}</div>`;
+    return `<div class="run-usage mono">${item('up', u.tin, '累计输入 token')}${item('arrowdown', u.tout, '累计输出 token')}${item('database', u.tinCache, '累计缓存读取(模型/网关不支持缓存时为 0, glm-5.3-flash 无缓存上报)')}${`<span class="ru-item" title="上下文占用 / 模型窗口">${i('gauge', '', 13)}<b>${u.pct}% / ${CS.knum(u.win)}</b></span>`}</div>`;
   };
 
 V.ctxRing = () => {
