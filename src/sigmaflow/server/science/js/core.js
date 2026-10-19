@@ -208,7 +208,7 @@ CS.markdown = text => {
   CS.defaults = () => ({
     version: 1, projects: clone(CS.data.projects), datasets: clone(CS.data.datasets), runs: [],
     bookmarks: [], notes: {}, projectId: 'pr-pbmc', currentRunId: null,
-    settings: { persist: true, contrast: false, reducedMotion: false, mode: 'local', endpoint: '/sigmaflow/api', inspector: true, model: 'openrouter/free', modelId: null, apiKey: '', lastTest: null, notifySound: true, soundVolume: 1, enterSend: true, autoScroll: true, toolGroupsOpen: {}, uiScale: 100 },
+    settings: { persist: true, contrast: false, reducedMotion: false, mode: 'local', endpoint: '/sigmaflow/api', inspector: true, model: 'openrouter/free', modelId: null, apiKey: '', lastTest: null, notifySound: true, soundVolume: 1, enterSend: true, autoScroll: true, toolGroupsOpen: {}, uiScale: 100, terminalTheme: 'monokai' },
     username: '',
     me: null
   });

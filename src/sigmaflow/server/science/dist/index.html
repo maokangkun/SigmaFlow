@@ -571,6 +571,29 @@ html:has(.auth-page){scrollbar-gutter:auto}
 /* 服务器状态栏: 输入框下方两行 10px 硬件/网速信息(缩进与 composer 的 + 按钮左对齐) */
 .sys-stats{display:flex;flex-direction:column;gap:3px;margin-top:5px;padding-left:17px;padding-right:17px;font-size:10px;line-height:10px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden}
 .sys-line{display:flex;align-items:center;gap:16px;min-height:10px}
+/* 终端仿卡: bash 工具消息展开时以真实终端观感展示(命令带 “> ” 前缀+输出等宽);
+   主题经 CSS 变量注入, 默认 Monokai Dark, 设置里可切换 */
+.term-view{--t-bg:#272822;--t-fg:#f8f8f2;--t-accent:#a6e22e;--t-border:#49483e;margin:6px 0 2px;border:1px solid var(--t-border);border-radius:11px;background:var(--t-bg);color:var(--t-fg);font-family:var(--mono);font-size:11.5px;line-height:1.7;overflow:hidden;box-shadow:0 2px 12px #1e223122}
+.term-dracula{--t-bg:#282a36;--t-fg:#f8f8f2;--t-accent:#50fa7b;--t-border:#44475a}
+.term-solarized-dark{--t-bg:#002b36;--t-fg:#839496;--t-accent:#2aa198;--t-border:#073642}
+.term-one-dark{--t-bg:#282c34;--t-fg:#abb2bf;--t-accent:#98c379;--t-border:#3e4451}
+.term-nord{--t-bg:#2e3440;--t-fg:#d8dee9;--t-accent:#88c0d0;--t-border:#3b4252}
+.term-github-dark{--t-bg:#0d1117;--t-fg:#c9d1d9;--t-accent:#7ee787;--t-border:#30363d}
+.term-view .term-titlebar{display:flex;align-items:center;gap:6px;padding:8px 12px;background:rgba(255,255,255,.055);border-bottom:1px solid var(--t-border)}
+.term-view .term-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.term-view .term-dot:nth-child(1){background:#ff5f57}
+.term-view .term-dot:nth-child(2){background:#febc2e}
+.term-view .term-dot:nth-child(3){background:#28c840}
+.term-view .term-name{margin-left:6px;font-size:10px;letter-spacing:.6px;color:#ffffff9c}
+.term-view .term-live{margin-left:auto;font-size:10px;color:var(--t-accent);animation:pulse 1.4s ease-in-out infinite}
+.term-view .term-cmdline{padding:10px 14px 2px;white-space:pre-wrap;word-break:break-all}
+.term-view .term-prompt{color:var(--t-accent);font-weight:700;user-select:none}
+.term-view .term-cmd{color:var(--t-fg)}
+.term-view .term-out{margin:6px 0 12px;padding:0 14px;font-family:var(--mono);font-size:11.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word;max-height:420px;overflow-y:auto;color:var(--t-fg)}
+.term-view .term-runmsg{padding:4px 14px 12px;font-size:10.5px;color:var(--t-accent)}
+/* 终端主题下拉(通用设置) */
+.terminal-theme-select{height:38px;min-width:180px;padding:0 34px 0 13px;background:var(--surface);border:1px solid var(--line);border-radius:10px;font-size:12px;color:var(--ink);appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23808b9f' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='m9 5 7 7-7 7'/></svg>");background-repeat:no-repeat;background-position:right 12px center;transform:rotate(90deg) translateX(0);cursor:pointer}
+.terminal-theme-select:focus-visible{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px #7775b61f}
 /* 硬件状态栏首次加载占位: 骨架行各条 flex 拉满(与输入框同缘), shimmer 滑过亮块, 数据到达后整块替换消失 */
 .sys-stats .sys-line .sys-skel{flex:1 1 0;min-width:30px;height:10px;border-radius:0;background:var(--line-soft);position:relative;overflow:hidden}
 .sys-stats .sys-skel::after{content:'';position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,#ffffff9c,transparent);animation:skel-slide 1.25s linear infinite}
@@ -1252,7 +1275,7 @@ CS.markdown = text => {
   CS.defaults = () => ({
     version: 1, projects: clone(CS.data.projects), datasets: clone(CS.data.datasets), runs: [],
     bookmarks: [], notes: {}, projectId: 'pr-pbmc', currentRunId: null,
-    settings: { persist: true, contrast: false, reducedMotion: false, mode: 'local', endpoint: '/sigmaflow/api', inspector: true, model: 'openrouter/free', modelId: null, apiKey: '', lastTest: null, notifySound: true, soundVolume: 1, enterSend: true, autoScroll: true, toolGroupsOpen: {}, uiScale: 100 },
+    settings: { persist: true, contrast: false, reducedMotion: false, mode: 'local', endpoint: '/sigmaflow/api', inspector: true, model: 'openrouter/free', modelId: null, apiKey: '', lastTest: null, notifySound: true, soundVolume: 1, enterSend: true, autoScroll: true, toolGroupsOpen: {}, uiScale: 100, terminalTheme: 'monokai' },
     username: '',
     me: null
   });
@@ -4372,6 +4395,16 @@ CS.audio = (function () {
   V.hlJSON = text => text.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])).replace(/("(?:\\.|[^"\\])*")(\s*:)|("(?:\\.|[^"\\])*")|\b(true|false|null)\b|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g, (m, key, colon, str, kw, num) => key ? `<span class="j-key">${key}</span>${colon}` : str ? `<span class="j-str">${str}</span>` : kw ? `<span class="j-kw">${kw}</span>` : num ? `<span class="j-num">${num}</span>` : m);
   // unified diff → GitHub 风格双行号 HTML; 仅在结果长得像 diff 时由工具卡调用
   V.isUnifiedDiff = text => /^--- .+$/m.test(text) && /^\+\+\+ .+$/m.test(text) && /@@ -\d+/.test(text);
+  const TE_THEMES = [['monokai', 'Monokai Dark'], ['dracula', 'Dracula'], ['solarized-dark', 'Solarized Dark'], ['one-dark', 'One Dark'], ['nord', 'Nord'], ['github-dark', 'GitHub Dark']];
+  const bashCmd = args => String((args && typeof args === 'object' ? (args.command ?? args.cmd ?? '') : (args ?? '')) || '').trim();
+  // bash 工具消息的终端仿卡: 主题随设置(默认 Monokai), 命令完整显示并加 “> ” 前缀, 输出等宽白字
+  V.toolTerminal = (name, args, result, live) => {
+    const theme = String(CS.state.settings.terminalTheme || 'monokai').replace(/[^a-z0-9-]/gi, '').toLowerCase() || 'monokai';
+    const cmd = bashCmd(args);
+    const out = result != null ? String(result) : '';
+    const screen = `${out ? `<pre class="term-out">${e(out.slice(0, 20000))}${out.length > 20000 ? '\n…(输出过长已截断)' : ''}</pre>` : ''}${live && !out ? '<div class="term-runmsg">执行中…</div>' : ''}`;
+    return `<div class="term-view term-${e(theme)}"><div class="term-titlebar"><span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span><span class="term-name">${e(name)}</span>${live ? '<span class="term-live">运行中</span>' : ''}</div><div class="term-screen">${cmd ? `<div class="term-cmdline"><span class="term-prompt">&gt; </span><span class="term-cmd">${e(cmd)}</span></div>` : ''}${screen}</div></div>`;
+  };
   V.renderUnifiedDiff = text => {
     const esc = CS.escape;
     const lines = text.split('\n');
@@ -4568,8 +4601,7 @@ CS.audio = (function () {
             </button>
             ${CS.ui.thinkingOpen ? `<div class="think-body">${e(m.streaming ? (CS.ui.thinkingText || m.reasoning || '') : (m.reasoning || ''))}</div>` : ''}
           </div>` : ''}
-          ${(m.tools || []).length ? (() => { const meta = blockMeta(m.tools[m.tools.length - 1]); const running = m.tools.some(t => t.running); const last = m.tools[m.tools.length - 1]; return `<div class="think-root tool-root${running ? ' think-live' : ''}" data-state="${running ? 'running' : 'ok'}"${CS.ui.toolsOpen ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-tools" aria-expanded="${!!CS.ui.toolsOpen}"><span class="think-leading">${i(meta.icon, '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${meta.label} ${e(last.name)} · ${m.tools.length} 次调用${running ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(m.tools.map(t => t.name).join(', '))}</span></span></button>${CS.ui.toolsOpen ? `<div class="tool-list">${m.tools.map(t => `<div class="tool-item${t.running ? ' tool-running' : ''}"><div class="tool-head"><code>${e(t.name)}</code><span class="tool-args">${e(JSON.stringify(t.args || {}).slice(0, 160))}</span>${t.running ? '<span class="tool-status">运行中…</span>' : ''}</div>${t.result != null ? `<pre class="tool-result">${e(String(t.result).slice(0, 600))}${String(t.result).length > 600 ? '\n…' : ''}</pre>` : ''}</div>`).join('')}</div>` : ''}</div>`; })() : ''}
-          <div class="agent-intro md-body"${m.streaming ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(m.content)}</div>`;
+          ${(m.tools || []).length ? (() => { const meta = blockMeta(m.tools[m.tools.length - 1]); const running = m.tools.some(t => t.running); const last = m.tools[m.tools.length - 1]; const firstBash = m.tools.find(t => t.name === 'bash'); const bashCmdText = firstBash ? bashCmd(firstBash.args) : ''; return `<div class="think-root tool-root${running ? ' think-live' : ''}" data-state="${running ? 'running' : 'ok'}"${CS.ui.toolsOpen ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-tools" aria-expanded="${!!CS.ui.toolsOpen}"><span class="think-leading">${i(bashCmdText ? 'terminal' : meta.icon, '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${bashCmdText ? '终端' : meta.label} ${e(last.name)} · ${m.tools.length} 次调用${running ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(bashCmdText || m.tools.map(t => t.name).join(', '))}</span></span></button>${CS.ui.toolsOpen ? `<div class="tool-list">${m.tools.map(t => t.name === 'bash' ? `<div class="tool-item${t.running ? ' tool-running' : ''}">${V.toolTerminal(t.name, t.args, t.result, !!t.running)}</div>` : `<div class="tool-item${t.running ? ' tool-running' : ''}"><div class="tool-head"><code>${e(t.name)}</code><span class="tool-args">${e(JSON.stringify(t.args || {}).slice(0, 160))}</span>${t.running ? '<span class="tool-status">运行中…</span>' : ''}</div>${t.result != null ? `<pre class="tool-result">${e(String(t.result).slice(0, 600))}${String(t.result).length > 600 ? '\n…' : ''}</pre>` : ''}</div>`).join('')}</div>` : ''}</div>`; })() : ''}          <div class="agent-intro md-body"${m.streaming ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(m.content)}</div>`;
             } else {
               // 单块渲染: 思考/工具块可折叠(状态存 CS.ui.blockOpen), 正文块渲染 markdown
               const seg = (b, bi) => {
@@ -4601,6 +4633,12 @@ CS.audio = (function () {
                 }
                 const meta = blockMeta(b);
                 const open = blockOpen(bi);
+                const isBash = b.name === 'bash';
+                const bcmd = isBash ? bashCmd(b.args) : '';
+                if (isBash) {
+                  const summary = bcmd || '（无命令）';
+                  return `<div class="think-root tool-root${live ? ' think-live' : ''}" data-state="${live ? 'running' : 'ok'}"${open ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-block" data-id="${e(bkey(bi))}" aria-expanded="${open}"><span class="think-leading">${i('terminal', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${meta.label} ${e(b.name)}${live ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(summary.length > 120 ? summary.slice(0, 120) + '…' : summary)}</span></span></button>${open ? V.toolTerminal(b.name, b.args, b.result, live) : ''}</div>`;
+                }
                 return `<div class="think-root tool-root${live ? ' think-live' : ''}" data-state="${live ? 'running' : 'ok'}"${open ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-block" data-id="${e(bkey(bi))}" aria-expanded="${open}"><span class="think-leading">${i(meta.icon, '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${meta.label} ${e(b.name)}${live ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(JSON.stringify(b.args || {}).slice(0, 160))}</span></span></button>${open ? `<div class="tool-list"><div class="tool-item${live ? ' tool-running' : ''}"><div class="tool-head"><code>${e(b.name)}</code><span class="tool-args">${e(JSON.stringify(b.args || {}).slice(0, 160))}</span>${live ? '<span class="tool-status">运行中…</span>' : ''}</div>${b.result != null ? (V.isUnifiedDiff(String(b.result)) ? V.renderUnifiedDiff(String(b.result).slice(0, 20000)) : `<pre class="tool-result">${e(String(b.result).slice(0, 600))}${String(b.result).length > 600 ? '\n…' : ''}</pre>`) : ''}</div></div>` : ''}</div>`;
               };
               // ask 问题卡: 未回答时可选项+自由输入; 已回答后默认折叠成一行摘要,
@@ -4866,7 +4904,7 @@ CS.audio = (function () {
         const pct = Math.round((Number.isFinite(raw) ? raw : 1) * 100);
         const scaleRaw = Number(CS.state.settings.uiScale);
         const scale = Number.isFinite(scaleRaw) ? Math.min(125, Math.max(85, Math.round(scaleRaw))) : 100;
-        return `<div class="panel settings-section"><h2>通用</h2><p class="small muted mb-20">影响整体体验的通用偏好, 只保存在本机浏览器。</p>${toggle('notifySound','消息回复提示音','模型回复完成或被停止时播放一声短提示音。')}<div class="setting-row"><div><h3>提示音音量</h3><p>拖动后点「试听」确认效果；拖到 0 等效静音。</p></div><div class="row gap-6 sound-volume-row"><input type="range" class="sound-volume-input" min="0" max="100" step="5" value="${pct}" aria-label="提示音音量"><span class="small muted mono sound-volume-label">${pct}%</span>${btn('sound-preview','试听','play','small-btn flat')}</div></div>${toggle('enterSend','按 Enter 直接发送','开启时 Enter 发送、Shift+Enter 换行；关闭后 Enter 换行，需按 Ctrl/Cmd+Enter 发送。')}${toggle('autoScroll','回复时自动滚动','流式输出与回复完成时自动滚到最新内容；关闭后不再自动拽动滚动位置，可点「回到底部」一键跳转。')}<div class="setting-row"><div><h3>界面缩放</h3><p>整体放大或缩小界面（85%–125%），拖动即时生效。</p></div><div class="row gap-6 ui-scale-row"><input type="range" class="ui-scale-input" min="85" max="125" step="5" value="${scale}" aria-label="界面缩放"><span class="small muted mono ui-scale-label">${scale}%</span></div></div></div>`;
+        return `<div class="panel settings-section"><h2>通用</h2><p class="small muted mb-20">影响整体体验的通用偏好, 只保存在本机浏览器。</p>${toggle('notifySound','消息回复提示音','模型回复完成或被停止时播放一声短提示音。')}<div class="setting-row"><div><h3>提示音音量</h3><p>拖动后点「试听」确认效果；拖到 0 等效静音。</p></div><div class="row gap-6 sound-volume-row"><input type="range" class="sound-volume-input" min="0" max="100" step="5" value="${pct}" aria-label="提示音音量"><span class="small muted mono sound-volume-label">${pct}%</span>${btn('sound-preview','试听','play','small-btn flat')}</div></div>${toggle('enterSend','按 Enter 直接发送','开启时 Enter 发送、Shift+Enter 换行；关闭后 Enter 换行，需按 Ctrl/Cmd+Enter 发送。')}${toggle('autoScroll','回复时自动滚动','流式输出与回复完成时自动滚到最新内容；关闭后不再自动拽动滚动位置，可点「回到底部」一键跳转。')}<div class="setting-row"><div><h3>界面缩放</h3><p>整体放大或缩小界面（85%–125%），拖动即时生效。</p></div><div class="row gap-6 ui-scale-row"><input type="range" class="ui-scale-input" min="85" max="125" step="5" value="${scale}" aria-label="界面缩放"><span class="small muted mono ui-scale-label">${scale}%</span></div></div><div class="setting-row"><div><h3>终端主题</h3><p>终端工具消息展开内容采用的颜色主题，默认 Monokai Dark。</p></div><select class="terminal-theme-select" aria-label="终端主题">${TE_THEMES.map(([v, label]) => `<option value="${v}" ${(CS.state.settings.terminalTheme || 'monokai') === v ? 'selected' : ''}>${label}</option>`).join('')}</select></div></div>`;
       })(),
       appearance: `<div class="panel settings-section"><h2>外观与交互</h2>${toggle('contrast','增强文字与边界对比','保持浅灰色主题，提高说明文字与控件边界的可读性。')}${toggle('reducedMotion','减少动态效果','关闭过渡与旋转动画，不影响任务状态更新。')}${toggle('inspector','显示任务详情侧栏','在宽屏的 Agent 对话中显示输入上下文与执行边界。')}</div>`,
       privacy: `<div class="panel settings-section"><h2>数据与隐私</h2>${toggle('persist','在本机保存工作空间','保存项目、文件名、对话与任务记录；不保存原始文件。共享电脑建议关闭。关闭后删除已有本地保存，当前会话仍保留。')}<div class="setting-row"><div><h3>导出工作空间</h3><p>导出元信息与任务记录。包含对话内容，分享前请检查隐私。</p></div>${btn('export-workspace','导出 JSON','download','flat')}</div><div class="setting-row"><div><h3>清空并恢复示例</h3><p>移除本机保存的项目、导入记录与对话，恢复初始演示。</p></div>${btn('reset-workspace','重置','trash','flat danger')}</div></div>`,
@@ -6897,6 +6935,11 @@ CS.audio = (function () {
   });
   document.addEventListener('change', event => {
     if (event.target?.classList?.contains?.('sound-volume-input') || event.target?.classList?.contains?.('ui-scale-input')) CS.save();
+    // 终端主题切换: 持久化到 settings, 重渲染后所有终端卡立即换肤
+    if (event.target?.classList?.contains?.('terminal-theme-select')) {
+      CS.state.settings.terminalTheme = String(event.target.value || 'monokai').replace(/[^a-z0-9-]/gi, '').toLowerCase();
+      CS.save(); CS.render(); CS.toast('终端主题已切换。');
+    }
     if (event.target?.id === 'fs-upload-input') {
       const picked = [...(event.target.files || [])];
       event.target.value = '';

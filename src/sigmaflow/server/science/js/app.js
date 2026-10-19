@@ -2015,6 +2015,11 @@
   });
   document.addEventListener('change', event => {
     if (event.target?.classList?.contains?.('sound-volume-input') || event.target?.classList?.contains?.('ui-scale-input')) CS.save();
+    // 终端主题切换: 持久化到 settings, 重渲染后所有终端卡立即换肤
+    if (event.target?.classList?.contains?.('terminal-theme-select')) {
+      CS.state.settings.terminalTheme = String(event.target.value || 'monokai').replace(/[^a-z0-9-]/gi, '').toLowerCase();
+      CS.save(); CS.render(); CS.toast('终端主题已切换。');
+    }
     if (event.target?.id === 'fs-upload-input') {
       const picked = [...(event.target.files || [])];
       event.target.value = '';
