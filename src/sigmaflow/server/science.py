@@ -3361,6 +3361,8 @@ class ScienceAPI:
                     return {"applied": False, "removed": 0, "kept": len(msgs), "text": "", "transcript": ""}
                 return {
                     "applied": True,
+                    "summaryTokens": int(meta.get("summaryTokens") or 0),
+                    "summaryInputTokens": int(meta.get("summaryInputTokens") or 0),
                     "removed": int(meta.get("removed") or 0),
                     "dropOldIdx": int(meta.get("dropOldIdx", -1) or 0) if meta.get("dropOldIdx", -1) is not None else -1,
                     "kept": int(meta.get("kept") or 0),

@@ -1450,10 +1450,15 @@
         // 下一次真实回复的 usage 回填后锚点机制自然重新校准
         run.messages.forEach(m => { if (m.promptTokens) delete m.promptTokens; });
         // 等待消息原地变成摘要卡(它 push 时就在末尾 = 压缩时刻的最新消息)
+        // 完成: 计时与 in/out 元数据与正常回复同构(调用摘要 LLM 的真实用量)
         pending.compactPending = false;
         delete pending.streaming;
         pending.compact = true;
+        pending.elapsed = Date.now() - new Date(pending.at).getTime();
         pending.content = String(r.text || '');
+        if (r.summaryTokens) pending.tokens = r.summaryTokens; else delete pending.tokens;
+        if (r.summaryInputTokens) pending.promptTokens = r.summaryInputTokens;
+        pending.model = CS.state.settings.model || '';
         pending.at = new Date().toISOString();
         CS.save();
         await syncConversation(run);       // 服务端先落库, 后续统计才读到新列表

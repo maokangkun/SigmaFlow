@@ -516,6 +516,8 @@ class Compactor:
         new_messages = [*kept, {"role": "user", "content": marker_text}]
         drop_old_idx = (marker_idx - cut) if old_card_in_kept else -1
         self.last_meta = {
+            "summaryTokens": int(getattr(self, "last_usage_tokens", 0) or 0),
+            "summaryInputTokens": int(getattr(self, "last_input_tokens", 0) or 0),
             "applied": True,
             "removed": cut,          # 前端需从头部删除的条数(含落在其中的旧卡)
             "dropOldIdx": drop_old_idx,  # 旧卡若在保留区, 删头后的相对索引(-1=已随头部删除)
@@ -538,18 +540,24 @@ class Compactor:
             prompt += f"\n\n### Previous summary (iterate on it; keep still-relevant points, do not repeat verbatim):\n{prev_summary}\n"
         prompt += f"\n\n### Conversation:\n{conversation}"
         model = self.model or MODEL
+        self.last_usage_tokens = 0
+        self.last_input_tokens = 0
         try:
             if self.client.__class__.__name__ == "Anthropic":
                 response = self.client.messages.create(
                     model=model, messages=[{"role": "user", "content": prompt}], max_tokens=self._cfg("COMPACT_TOKENS", int, 4096),
                 )
                 summary = response.content[0].text
+                self.last_usage_tokens = getattr(getattr(response, "usage", None), "output_tokens", 0) or 0
+                self.last_input_tokens = getattr(getattr(response, "usage", None), "input_tokens", 0) or 0
             else:
                 response = self.client.chat.completions.create(
                     model=model, messages=[{"role": "user", "content": prompt}], max_tokens=self._cfg("COMPACT_TOKENS", int, 4096),
                 )
                 summary = (response.choices[0].message.content or "").strip()
-            print(f"{' ' * 12}summary({len(summary)} chars) via {model}")
+                self.last_usage_tokens = getattr(getattr(response, "usage", None), "completion_tokens", 0) or 0
+                self.last_input_tokens = getattr(getattr(response, "usage", None), "prompt_tokens", 0) or 0
+            print(f"{' ' * 12}summary({len(summary)} chars, {self.last_usage_tokens} tokens) via {model}")
             return summary
         except Exception as e:
             # 摘要失败: 上层走机械兜底, 会话不中断

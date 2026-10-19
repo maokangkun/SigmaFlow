@@ -850,13 +850,16 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 
 /* 压缩摘要回复: agent 外壳 + 等待动画 */
 .compact-reply-block{margin:10px 0 2px 0}
-.compact-waiting{font-size:11px;color:var(--muted);font-weight:400;letter-spacing:.2px}
+.compact-status{--accent-inherit:var(--muted);border:1px solid var(--line-soft);border-radius:10px;padding:9px 12px;display:flex;margin:7px 0 0 0}
+.compact-status-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.compact-status[data-state="running"] .compact-status-row{color:var(--accent)}
+.compact-status-text{letter-spacing:.2px}
 .compact-dots{display:inline-block;margin-left:2px}
 .compact-dots span{animation:compact-dot 1.2s infinite;opacity:0}
 .compact-dots span:nth-child(2){animation-delay:.2s}
 .compact-dots span:nth-child(3){animation-delay:.4s}
 @keyframes compact-dot{0%,60%,100%{opacity:0}30%{opacity:1}}
-.compact-reply-block .compact-card{margin-top:8px}
+.compact-reply-block .compact-card{margin-top:10px}
 
 </style>
 </head>
@@ -4516,8 +4519,11 @@ CS.audio = (function () {
       // 进行中状态(compactPending)显示"上下文正在压缩中"等待动画
       const isCompactMsg = m => !!(m.compactPending || m.compact || String(m.content || '').startsWith('[Conversation compressed'));
       const V_COMPACT_REPLY = m => {
+        const idxOf = run.messages.indexOf(m);  // meta 行的操作按钮需要消息索引
         const pending = !!m.compactPending;
-        return `<div class="msg-block compact-reply-block"><div class="agent-message"><div class="agent-avatar${pending ? ' avatar-pulsing' : ''}">${i('dna', '', 21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${pending ? ' <span class="compact-waiting">上下文正在压缩中<span class="compact-dots"><span>.</span><span>.</span><span>.</span></span></span>' : ''}</div>${pending ? '' : V_COMPACT(m)}</div></div></div>`;
+        // 名称行/计时/token 与正常回复一套结构; 进行中在 body 内显示压缩状态行(仿思考行)
+        const status = `<div class="think-root compact-status${pending ? ' think-live' : ''}" data-state="${pending ? 'running' : 'ok'}"><div class="compact-status-row">${i('minimize2', '', 14)}<span class="compact-status-text">${pending ? '上下文正在压缩中' : '已完成上下文压缩'}</span>${pending ? '<span class="compact-dots"><span>.</span><span>.</span><span>.</span></span>' : ''}</div></div>`;
+        return `<div class="msg-block compact-reply-block"><div class="agent-message"><div class="agent-avatar${pending ? ' avatar-pulsing' : ''}">${i('dna', '', 21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span> <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${status}${pending ? '' : V_COMPACT(m)}${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.tokens ? `<span class="message-meta">${CS.num(m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy', '', 13)}</span></span></div>`}</div></div></div>`;
       };
       const bubble = m => {
         if (m.role === 'assistant' && isCompactMsg(m)) return V_COMPACT_REPLY(m);
@@ -6310,10 +6316,15 @@ CS.audio = (function () {
         // 下一次真实回复的 usage 回填后锚点机制自然重新校准
         run.messages.forEach(m => { if (m.promptTokens) delete m.promptTokens; });
         // 等待消息原地变成摘要卡(它 push 时就在末尾 = 压缩时刻的最新消息)
+        // 完成: 计时与 in/out 元数据与正常回复同构(调用摘要 LLM 的真实用量)
         pending.compactPending = false;
         delete pending.streaming;
         pending.compact = true;
+        pending.elapsed = Date.now() - new Date(pending.at).getTime();
         pending.content = String(r.text || '');
+        if (r.summaryTokens) pending.tokens = r.summaryTokens; else delete pending.tokens;
+        if (r.summaryInputTokens) pending.promptTokens = r.summaryInputTokens;
+        pending.model = CS.state.settings.model || '';
         pending.at = new Date().toISOString();
         CS.save();
         await syncConversation(run);       // 服务端先落库, 后续统计才读到新列表

@@ -251,8 +251,11 @@
       // 进行中状态(compactPending)显示"上下文正在压缩中"等待动画
       const isCompactMsg = m => !!(m.compactPending || m.compact || String(m.content || '').startsWith('[Conversation compressed'));
       const V_COMPACT_REPLY = m => {
+        const idxOf = run.messages.indexOf(m);  // meta 行的操作按钮需要消息索引
         const pending = !!m.compactPending;
-        return `<div class="msg-block compact-reply-block"><div class="agent-message"><div class="agent-avatar${pending ? ' avatar-pulsing' : ''}">${i('dna', '', 21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${pending ? ' <span class="compact-waiting">上下文正在压缩中<span class="compact-dots"><span>.</span><span>.</span><span>.</span></span></span>' : ''}</div>${pending ? '' : V_COMPACT(m)}</div></div></div>`;
+        // 名称行/计时/token 与正常回复一套结构; 进行中在 body 内显示压缩状态行(仿思考行)
+        const status = `<div class="think-root compact-status${pending ? ' think-live' : ''}" data-state="${pending ? 'running' : 'ok'}"><div class="compact-status-row">${i('minimize2', '', 14)}<span class="compact-status-text">${pending ? '上下文正在压缩中' : '已完成上下文压缩'}</span>${pending ? '<span class="compact-dots"><span>.</span><span>.</span><span>.</span></span>' : ''}</div></div>`;
+        return `<div class="msg-block compact-reply-block"><div class="agent-message"><div class="agent-avatar${pending ? ' avatar-pulsing' : ''}">${i('dna', '', 21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span> <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${status}${pending ? '' : V_COMPACT(m)}${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.tokens ? `<span class="message-meta">${CS.num(m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy', '', 13)}</span></span></div>`}</div></div></div>`;
       };
       const bubble = m => {
         if (m.role === 'assistant' && isCompactMsg(m)) return V_COMPACT_REPLY(m);
