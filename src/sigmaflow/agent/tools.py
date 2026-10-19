@@ -453,11 +453,13 @@ class Compactor:
         return [ln.strip() for ln in match.group(1).splitlines() if ln.strip()]
 
     # -- Layer 2: summary_compact - 摘要头部 + 保留尾部(pi: summary + kept) --
-    def summary_compact(self, messages: list, force: bool = False) -> list:
+    # keep_tokens_override: 手动压缩按钮传入收窄后的窗口, 保证轻会话也有可见压缩
+    def summary_compact(self, messages: list, force: bool = False, keep_tokens_override: int = 0) -> list:
         self.last_meta = None
-        cut = self._cut_index(messages, self._cfg("COMPACT_KEEP_RECENT_TOKENS", int, 16000))
+        keep_tokens = int(keep_tokens_override or 0) or self._cfg("COMPACT_KEEP_RECENT_TOKENS", int, 16000)
+        cut = self._cut_index(messages, keep_tokens)
         if cut >= len(messages):
-            return messages  # 保留窗口覆盖了全部消息, 无可摘要段(手动压缩对小会话同样为空操作)
+            return messages  # 保留窗口覆盖了全部消息, 无可摘要段
         # 队首的旧压缩摘要作为 previousSummary 迭代, 不再重复序列化(pi 语义)
         prev_summary = None
         start = 0

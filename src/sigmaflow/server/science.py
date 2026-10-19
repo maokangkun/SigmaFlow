@@ -3351,7 +3351,11 @@ class ScienceAPI:
                     "COMPACT_SERIAL_RESULT_CHARS": int(cfg["resultChars"]),
                     "COMPACT_SERIAL_ARG_CHARS": int(cfg["argChars"]),
                 }
-                compactor.summary_compact(msgs, force=True)
+                # 手动语义: 保留窗口动态收窄到当前会话的约 25%(下限 400, 上限为设置值),
+                # 避免小会话完全落进默认保尾窗口而无事可做(pi 的 auto 有阈值兜底, 手动按钮需要立刻见效)
+                est = compactor.estimate_tokens(msgs)
+                manual_keep = min(int(cfg["keepRecentTokens"]), max(400, int(est * 0.25)))
+                compactor.summary_compact(msgs, force=True, keep_tokens_override=manual_keep)
                 meta = compactor.last_meta
                 if not (meta and meta.get("applied")):
                     return {"applied": False, "removed": 0, "kept": len(msgs), "text": "", "transcript": ""}
