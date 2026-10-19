@@ -217,8 +217,8 @@ html:has(.auth-page){scrollbar-gutter:auto}
 /* 服务器状态栏: 输入框下方两行 10px 硬件/网速信息(缩进与 composer 的 + 按钮左对齐) */
 .sys-stats{display:flex;flex-direction:column;gap:3px;margin-top:5px;padding-left:17px;padding-right:17px;font-size:10px;line-height:10px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden}
 .sys-line{display:flex;align-items:center;gap:16px;min-height:10px}
-/* 硬件状态栏首次加载占位: shimmer 滑过亮块的骨架条, 数据到达后整块替换消失 */
-.sys-stats .sys-skel{display:inline-block;height:10px;border-radius:5px;background:var(--line-soft);position:relative;overflow:hidden;flex-shrink:1}
+/* 硬件状态栏首次加载占位: 骨架行各条 flex 拉满(与输入框同缘), shimmer 滑过亮块, 数据到达后整块替换消失 */
+.sys-stats .sys-line .sys-skel{flex:1 1 0;min-width:30px;height:10px;border-radius:0;background:var(--line-soft);position:relative;overflow:hidden}
 .sys-stats .sys-skel::after{content:'';position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,#ffffff9c,transparent);animation:skel-slide 1.25s linear infinite}
 @keyframes skel-slide{100%{transform:translateX(100%)}}
 .sys-seg{display:inline-flex;align-items:center;gap:4px;overflow:hidden;text-overflow:ellipsis;flex-shrink:1}
