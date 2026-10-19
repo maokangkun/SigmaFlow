@@ -24,6 +24,94 @@ _GIT_STATUS_TTL = 3.0
 _GIT_STATUS_CACHE: Dict[str, tuple] = {}
 _FS_TEXT_MAX = 512 * 1024
 
+# 文件浏览器分类: markdown/json/代码高亮/图片/PDF 直显, 其余按二进制降级
+_MD_EXTS = {"md", "markdown"}
+_JSON_EXTS = {"json", "jsonc", "json5"}
+_JSONL_EXTS = {"jsonl", "ndjson"}
+_IMG_EXTS = {"png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico"}
+_IMG_MIME = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "webp": "image/webp",
+    "svg": "image/svg+xml",
+    "bmp": "image/bmp",
+    "ico": "image/x-icon",
+}
+_PLAIN_EXTS = {"txt", "log", "csv", "tsv"}
+_PDF_MAX = 24 * 1024 * 1024
+_IMG_MAX = 8 * 1024 * 1024
+_CODE_EXTS = {
+    "py",
+    "pyi",
+    "js",
+    "mjs",
+    "cjs",
+    "ts",
+    "tsx",
+    "jsx",
+    "sh",
+    "bash",
+    "zsh",
+    "yml",
+    "yaml",
+    "toml",
+    "ini",
+    "cfg",
+    "conf",
+    "css",
+    "scss",
+    "html",
+    "htm",
+    "xml",
+    "sql",
+    "c",
+    "h",
+    "cpp",
+    "hpp",
+    "cc",
+    "go",
+    "rs",
+    "java",
+    "rb",
+    "lua",
+    "r",
+    "jl",
+    "swift",
+    "kt",
+    "php",
+    "pl",
+    "ps1",
+    "bat",
+    "dockerfile",
+    "makefile",
+    "svgxml",
+}
+
+
+def _fs_file_kind(rel: str) -> tuple:
+    """Map a path to (kind, lang/mime): markdown | json | jsonl | code | image | pdf | text | binary."""
+    name = os.path.basename(rel).lower()
+    ext = rel.rsplit(".", 1)[-1].lower() if "." in os.path.basename(rel) else ""
+    if name in ("dockerfile", "makefile"):
+        return ("code", name)
+    if ext in _MD_EXTS:
+        return ("markdown", "")
+    if ext in _JSONL_EXTS:
+        return ("jsonl", "jsonl")
+    if ext in _JSON_EXTS:
+        return ("json", "json")
+    if ext in _IMG_EXTS:
+        return ("image", _IMG_MIME.get(ext, "application/octet-stream"))
+    if ext == "pdf":
+        return ("pdf", "")
+    if ext in _CODE_EXTS:
+        return ("code", ext)
+    if ext in _PLAIN_EXTS:
+        return ("text", "txt")
+    return ("text", "")
+
 
 def _fs_resolve(project_dir: str, rel: str):
     """Resolve `rel` inside the project dir, refusing escapes (returns abs path)."""
@@ -386,7 +474,11 @@ def _fs_tree_payload(project, rel: str) -> dict:
 
 
 def _fs_file_payload(project, rel: str) -> dict:
-    """Read one file for the read-only preview modal."""
+    """Read one file for the read-only preview modal.
+
+    分类预览: markdown/json/代码返回文本给前端渲染; 图片与 PDF 返回 base64
+    直显(浏览器内建 PDF 查看器); 其余按 NUL 探测的原始二进制降级为提示。
+    """
     base = str((project or {}).get("dir") or "").strip()
     if not base or not os.path.isdir(base):
         raise HTTPException(status_code=404, detail="项目目录不存在")
@@ -396,16 +488,41 @@ def _fs_file_payload(project, rel: str) -> dict:
     if not os.path.isfile(target):
         raise HTTPException(status_code=404, detail="文件不存在")
     size = os.path.getsize(target)
+    kind, lang = _fs_file_kind(rel)
+    payload = {"path": rel, "size": size, "kind": kind, "lang": lang}
+    if kind == "image":
+        if size > _IMG_MAX:
+            payload.update(
+                {"binary": True, "content": "", "note": "图片超过 8MB，仅可下载查看。"}
+            )
+            return payload
+        import base64 as _b64
+
+        with open(target, "rb") as fh:
+            payload["dataUrl"] = (
+                f"data:{lang};base64,{_b64.b64encode(fh.read()).decode('ascii')}"
+            )
+        return payload
+    if kind == "pdf":
+        # 前端用 <iframe> 嵌入浏览器内建 PDF 查看器, agent 无需引入 pdf.js
+        if size > _PDF_MAX:
+            payload.update(
+                {"binary": True, "content": "", "note": "PDF 超过 24MB，仅可下载查看。"}
+            )
+            return payload
+        import base64 as _b64
+
+        with open(target, "rb") as fh:
+            payload["dataUrl"] = "data:application/pdf;base64," + _b64.b64encode(
+                fh.read()
+            ).decode("ascii")
+        return payload
     with open(target, "rb") as fh:
         head = fh.read(min(size, _FS_TEXT_MAX + 64 * 1024))
     if b"\x00" in head[:8192]:
-        return {"path": rel, "size": size, "binary": True, "content": ""}
+        payload.update({"binary": True, "content": ""})
+        return payload
     truncated = size > _FS_TEXT_MAX
     text = head[:_FS_TEXT_MAX].decode("utf-8", "replace")
-    return {
-        "path": rel,
-        "size": size,
-        "binary": False,
-        "content": text,
-        "truncated": truncated,
-    }
+    payload.update({"binary": False, "content": text, "truncated": truncated})
+    return payload

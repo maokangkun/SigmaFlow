@@ -906,6 +906,16 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 /* 输入框工具行内的 primary 态(如计划模式开启): .composer-tools .btn 的背景声明在主链之后会把 .btn.primary 吞掉, 这里恢复 */
 .composer-tools .btn.primary{background:var(--accent);color:#fff;box-shadow:3px 3px 8px #7775b62a}
 .composer-tools .btn.primary:hover{background:var(--accent-dark)}
+/* 文件预览弹窗: 代码/JSON 视图配色沿用终端主题的色板节奏, 独立于明暗主题都站在深底卡上 */
+.code-view{font-family:var(--mono,monospace);font-size:12.5px;line-height:1.55;padding:14px 16px;background:#14151a;color:#e8e8ea;border-radius:10px;white-space:pre;tab-size:4}
+.code-view .tk-k{color:#c792ea}
+.code-view .tk-c{color:#89a37d;font-style:italic}
+.code-view .tk-s{color:#ecc48d}
+.code-view .tk-n{color:#f78c6c}
+.fs-md{font-size:13.5px}
+.fs-md h1,.fs-md h2,.fs-md h3{margin:14px 0 8px}
+.fs-md p{margin:0 0 8px}
+.fs-md img{max-width:100%}
 
 </style>
 </head>
@@ -1215,6 +1225,43 @@ CS.tokRateTag = m => {
   if (!text) return '';
   return `<span class="tok-rate"${m.streaming ? ` data-start="${m.at}"` : ''}>${text}</span>`;
 };
+  // 文件预览语法着色: json/jsonl 与通用代码共用一个 tokenizer(按 kind 走分部表达),
+  // 每个 token 独立转义防 XSS; 分类规则简单但覆盖 md/json/代码类文件的主要场景。
+  const FS_KW = new Set(('def class import from return if elif else for while try except finally with as pass break continue in is not and or lambda none true false self yield raise assert async await del global nonlocal ' +
+    'function const let var new this typeof instanceof export default extends super null undefined void of case switch do then fi until range dim sub mkdir cd ls cat echo exit local readonly declare shift ' +
+    'select insert update delete join on group by order limit create table drop alter index where values set ' +
+    'func type struct impl use pub fn match mod crate loop ref mut if let else static enum trait').split(" "));
+  const FS_KW_RE = /(\/\*[\s\S]*?\*\/|\/\/[^\n]*|#(?!!)[^\n]*|<!--[\s\S]*?-->)|("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|([A-Za-z_$][\w$]*)/g;
+  const FS_JSON_RE = /("(?:[^"\\]|\\.)*")(\s*:)|("(?:[^"\\]|\\.)*")|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|\b(true|false|null)\b/g;
+  CS.fsHighlight = (code, lang) => {
+    code = String(code == null ? '' : code);
+    const E = t => t.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    if (lang === 'json' || lang === 'jsonl') {
+      let out = '', last = 0, m;
+      FS_JSON_RE.lastIndex = 0;
+      while ((m = FS_JSON_RE.exec(code))) {
+        out += E(code.slice(last, m.index));
+        if (m[1]) out += `<span class="tk-k">${E(m[1])}</span>` + E(m[2] || '');
+        else if (m[3]) out += `<span class="tk-s">${E(m[3])}</span>`;
+        else if (m[4]) out += `<span class="tk-n">${E(m[4])}</span>`;
+        else if (m[5]) out += `<span class="tk-k">${E(m[5])}</span>`;
+        last = m.index + m[0].length;
+      }
+      return out + E(code.slice(last));
+    }
+    let out = '', last = 0, m;
+    FS_KW_RE.lastIndex = 0;
+    while ((m = FS_KW_RE.exec(code))) {
+      out += E(code.slice(last, m.index));
+      if (m[1]) out += `<span class="tk-c">${E(m[1])}</span>`;
+      else if (m[2]) out += `<span class="tk-s">${E(m[2])}</span>`;
+      else if (m[3]) out += `<span class="tk-n">${E(m[3])}</span>`;
+      else if (m[4]) out += FS_KW.has(m[4].toLowerCase()) ? `<span class="tk-k">${E(m[4])}</span>` : E(m[4]);
+      last = m.index + m[0].length;
+    }
+    return out + E(code.slice(last));
+  };
+
 CS.datetime = value => {
   const d = new Date(value);
   const date = d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
@@ -5953,9 +6000,28 @@ CS.audio = (function () {
     let title = '', body = '', footer = '', wide = false;
     if (modal.type === 'fs-preview') {
       title = modal.name || '文件预览'; wide = true;
-      body = modal.binary
-        ? `<div class="modal-pad"><p class="small muted">二进制文件（${CS.formatBytes(modal.size)}），不支持预览。</p></div>`
-        : `<div class="modal-pad"><div class="row-between mb-20"><span class="small muted mono">${e(modal.path || '')}</span><span class="small muted">${CS.formatBytes(modal.size)}</span></div><pre style="max-height:62vh;overflow:auto;margin:0">${e(modal.content || '')}</pre>${modal.truncated ? '<p class="small muted mt-12">内容过大，仅显示前 512 KB。</p>' : ''}</div>`;
+      const kind = modal.kind || 'text';
+      const metaBar = `<div class="row-between mb-20"><span class="small muted mono">${e(modal.path || '')}</span><span class="small muted">${kind !== 'text' && kind !== 'binary' ? e(String(kind).toUpperCase() + ' · ') : ''}${CS.formatBytes(modal.size)}</span></div>`;
+      if (kind === 'pdf' && modal.dataUrl) {
+        body = `<div class="modal-pad">${metaBar}<iframe src="${modal.dataUrl}" title="${e(modal.name || 'pdf')}" style="width:100%;height:66vh;border:0;border-radius:8px;background:#fff"></iframe>${modal.note ? `<p class="small muted mt-8">${e(modal.note)}</p>` : ''}</div>`;
+      } else if (kind === 'image' && modal.dataUrl) {
+        body = `<div class="modal-pad" style="text-align:center">${metaBar}<img src="${modal.dataUrl}" alt="${e(modal.name || '')}" style="max-width:100%;max-height:60vh;border-radius:8px" />${modal.note ? `<p class="small muted mt-8">${e(modal.note)}</p>` : ''}</div>`;
+      } else if (kind === 'markdown' && !modal.binary) {
+        body = `<div class="modal-pad">${metaBar}<div class="md-body fs-md" style="max-height:62vh;overflow:auto">${CS.markdown(modal.content || '')}</div>${modal.truncated ? '<p class="small muted mt-12">内容过大，仅显示前 512 KB。</p>' : ''}</div>`;
+      } else if ((kind === 'json' || kind === 'jsonl') && !modal.binary) {
+        let pretty = modal.content || '';
+        try {
+          if (kind === 'json') pretty = JSON.stringify(JSON.parse(pretty), null, 2);
+          else pretty = pretty.trim().split('\n').filter(Boolean).map(l => JSON.stringify(JSON.parse(l), null, 2)).join('\n');
+        } catch { /* 解析失败按原文高亮 */ }
+        body = `<div class="modal-pad">${metaBar}<pre class="code-view" style="max-height:62vh;overflow:auto;margin:0">${CS.fsHighlight(pretty, 'json')}</pre>${modal.truncated ? '<p class="small muted mt-12">内容过大，仅显示前 512 KB。</p>' : ''}</div>`;
+      } else if (kind === 'code' && !modal.binary) {
+        body = `<div class="modal-pad">${metaBar}<pre class="code-view" style="max-height:62vh;overflow:auto;margin:0">${CS.fsHighlight(modal.content || '', modal.lang || '')}</pre>${modal.truncated ? '<p class="small muted mt-12">内容过大，仅显示前 512 KB。</p>' : ''}</div>`;
+      } else if (modal.binary) {
+        body = `<div class="modal-pad"><p class="small muted">二进制文件（${CS.formatBytes(modal.size)}），不支持预览。${modal.note ? e(modal.note) : ''}</p></div>`;
+      } else {
+        body = `<div class="modal-pad">${metaBar}<pre style="max-height:62vh;overflow:auto;margin:0">${e(modal.content || '')}</pre>${modal.truncated ? '<p class="small muted mt-12">内容过大，仅显示前 512 KB。</p>' : ''}</div>`;
+      }
     } else if (modal.type === 'feedback') {
       // 消息反馈弹窗: 点赞/点踩共用, 类别随 rating 切换(dsh message-feedback 思路)
       const cats = modal.rating === 'up'

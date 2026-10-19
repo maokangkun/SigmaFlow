@@ -961,9 +961,28 @@
     let title = '', body = '', footer = '', wide = false;
     if (modal.type === 'fs-preview') {
       title = modal.name || '文件预览'; wide = true;
-      body = modal.binary
-        ? `<div class="modal-pad"><p class="small muted">二进制文件（${CS.formatBytes(modal.size)}），不支持预览。</p></div>`
-        : `<div class="modal-pad"><div class="row-between mb-20"><span class="small muted mono">${e(modal.path || '')}</span><span class="small muted">${CS.formatBytes(modal.size)}</span></div><pre style="max-height:62vh;overflow:auto;margin:0">${e(modal.content || '')}</pre>${modal.truncated ? '<p class="small muted mt-12">内容过大，仅显示前 512 KB。</p>' : ''}</div>`;
+      const kind = modal.kind || 'text';
+      const metaBar = `<div class="row-between mb-20"><span class="small muted mono">${e(modal.path || '')}</span><span class="small muted">${kind !== 'text' && kind !== 'binary' ? e(String(kind).toUpperCase() + ' · ') : ''}${CS.formatBytes(modal.size)}</span></div>`;
+      if (kind === 'pdf' && modal.dataUrl) {
+        body = `<div class="modal-pad">${metaBar}<iframe src="${modal.dataUrl}" title="${e(modal.name || 'pdf')}" style="width:100%;height:66vh;border:0;border-radius:8px;background:#fff"></iframe>${modal.note ? `<p class="small muted mt-8">${e(modal.note)}</p>` : ''}</div>`;
+      } else if (kind === 'image' && modal.dataUrl) {
+        body = `<div class="modal-pad" style="text-align:center">${metaBar}<img src="${modal.dataUrl}" alt="${e(modal.name || '')}" style="max-width:100%;max-height:60vh;border-radius:8px" />${modal.note ? `<p class="small muted mt-8">${e(modal.note)}</p>` : ''}</div>`;
+      } else if (kind === 'markdown' && !modal.binary) {
+        body = `<div class="modal-pad">${metaBar}<div class="md-body fs-md" style="max-height:62vh;overflow:auto">${CS.markdown(modal.content || '')}</div>${modal.truncated ? '<p class="small muted mt-12">内容过大，仅显示前 512 KB。</p>' : ''}</div>`;
+      } else if ((kind === 'json' || kind === 'jsonl') && !modal.binary) {
+        let pretty = modal.content || '';
+        try {
+          if (kind === 'json') pretty = JSON.stringify(JSON.parse(pretty), null, 2);
+          else pretty = pretty.trim().split('\n').filter(Boolean).map(l => JSON.stringify(JSON.parse(l), null, 2)).join('\n');
+        } catch { /* 解析失败按原文高亮 */ }
+        body = `<div class="modal-pad">${metaBar}<pre class="code-view" style="max-height:62vh;overflow:auto;margin:0">${CS.fsHighlight(pretty, 'json')}</pre>${modal.truncated ? '<p class="small muted mt-12">内容过大，仅显示前 512 KB。</p>' : ''}</div>`;
+      } else if (kind === 'code' && !modal.binary) {
+        body = `<div class="modal-pad">${metaBar}<pre class="code-view" style="max-height:62vh;overflow:auto;margin:0">${CS.fsHighlight(modal.content || '', modal.lang || '')}</pre>${modal.truncated ? '<p class="small muted mt-12">内容过大，仅显示前 512 KB。</p>' : ''}</div>`;
+      } else if (modal.binary) {
+        body = `<div class="modal-pad"><p class="small muted">二进制文件（${CS.formatBytes(modal.size)}），不支持预览。${modal.note ? e(modal.note) : ''}</p></div>`;
+      } else {
+        body = `<div class="modal-pad">${metaBar}<pre style="max-height:62vh;overflow:auto;margin:0">${e(modal.content || '')}</pre>${modal.truncated ? '<p class="small muted mt-12">内容过大，仅显示前 512 KB。</p>' : ''}</div>`;
+      }
     } else if (modal.type === 'feedback') {
       // 消息反馈弹窗: 点赞/点踩共用, 类别随 rating 切换(dsh message-feedback 思路)
       const cats = modal.rating === 'up'

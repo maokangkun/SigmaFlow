@@ -132,6 +132,43 @@ CS.tokRateTag = m => {
   if (!text) return '';
   return `<span class="tok-rate"${m.streaming ? ` data-start="${m.at}"` : ''}>${text}</span>`;
 };
+  // 文件预览语法着色: json/jsonl 与通用代码共用一个 tokenizer(按 kind 走分部表达),
+  // 每个 token 独立转义防 XSS; 分类规则简单但覆盖 md/json/代码类文件的主要场景。
+  const FS_KW = new Set(('def class import from return if elif else for while try except finally with as pass break continue in is not and or lambda none true false self yield raise assert async await del global nonlocal ' +
+    'function const let var new this typeof instanceof export default extends super null undefined void of case switch do then fi until range dim sub mkdir cd ls cat echo exit local readonly declare shift ' +
+    'select insert update delete join on group by order limit create table drop alter index where values set ' +
+    'func type struct impl use pub fn match mod crate loop ref mut if let else static enum trait').split(" "));
+  const FS_KW_RE = /(\/\*[\s\S]*?\*\/|\/\/[^\n]*|#(?!!)[^\n]*|<!--[\s\S]*?-->)|("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|([A-Za-z_$][\w$]*)/g;
+  const FS_JSON_RE = /("(?:[^"\\]|\\.)*")(\s*:)|("(?:[^"\\]|\\.)*")|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|\b(true|false|null)\b/g;
+  CS.fsHighlight = (code, lang) => {
+    code = String(code == null ? '' : code);
+    const E = t => t.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    if (lang === 'json' || lang === 'jsonl') {
+      let out = '', last = 0, m;
+      FS_JSON_RE.lastIndex = 0;
+      while ((m = FS_JSON_RE.exec(code))) {
+        out += E(code.slice(last, m.index));
+        if (m[1]) out += `<span class="tk-k">${E(m[1])}</span>` + E(m[2] || '');
+        else if (m[3]) out += `<span class="tk-s">${E(m[3])}</span>`;
+        else if (m[4]) out += `<span class="tk-n">${E(m[4])}</span>`;
+        else if (m[5]) out += `<span class="tk-k">${E(m[5])}</span>`;
+        last = m.index + m[0].length;
+      }
+      return out + E(code.slice(last));
+    }
+    let out = '', last = 0, m;
+    FS_KW_RE.lastIndex = 0;
+    while ((m = FS_KW_RE.exec(code))) {
+      out += E(code.slice(last, m.index));
+      if (m[1]) out += `<span class="tk-c">${E(m[1])}</span>`;
+      else if (m[2]) out += `<span class="tk-s">${E(m[2])}</span>`;
+      else if (m[3]) out += `<span class="tk-n">${E(m[3])}</span>`;
+      else if (m[4]) out += FS_KW.has(m[4].toLowerCase()) ? `<span class="tk-k">${E(m[4])}</span>` : E(m[4]);
+      last = m.index + m[0].length;
+    }
+    return out + E(code.slice(last));
+  };
+
 CS.datetime = value => {
   const d = new Date(value);
   const date = d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });

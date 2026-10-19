@@ -552,3 +552,13 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 /* 输入框工具行内的 primary 态(如计划模式开启): .composer-tools .btn 的背景声明在主链之后会把 .btn.primary 吞掉, 这里恢复 */
 .composer-tools .btn.primary{background:var(--accent);color:#fff;box-shadow:3px 3px 8px #7775b62a}
 .composer-tools .btn.primary:hover{background:var(--accent-dark)}
+/* 文件预览弹窗: 代码/JSON 视图配色沿用终端主题的色板节奏, 独立于明暗主题都站在深底卡上 */
+.code-view{font-family:var(--mono,monospace);font-size:12.5px;line-height:1.55;padding:14px 16px;background:#14151a;color:#e8e8ea;border-radius:10px;white-space:pre;tab-size:4}
+.code-view .tk-k{color:#c792ea}
+.code-view .tk-c{color:#89a37d;font-style:italic}
+.code-view .tk-s{color:#ecc48d}
+.code-view .tk-n{color:#f78c6c}
+.fs-md{font-size:13.5px}
+.fs-md h1,.fs-md h2,.fs-md h3{margin:14px 0 8px}
+.fs-md p{margin:0 0 8px}
+.fs-md img{max-width:100%}
