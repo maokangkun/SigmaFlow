@@ -69,6 +69,16 @@ CS.fmtCost = u => {
   if (u >= 0.01) return '$' + u.toFixed(3);
   return '$' + u.toFixed(4);
 };
+// 压缩契约口径: 最后一张摘要卡(含)之后 + 卡本身 的对话上下文估算。
+// 在压缩前后各调用一次, 口径一致才能如实反映压缩收益
+CS.contractMsgsEst = () => {
+  const all = CS.currentRun()?.messages || [];
+  let cardIdx = -1;
+  all.forEach((m, i) => { if (String(m.content || '').startsWith('[Conversation compressed')) cardIdx = i; });
+  const slice = cardIdx >= 0 ? all.slice(cardIdx) : all;
+  const est = slice.reduce((sum, m) => sum + CS.estimateTokens(m.content), 0);
+  return est + 9 * slice.length;
+};
 CS.contextUsage = () => {
   const model = CS.ui.models.find(x => x.id === CS.state.settings.modelId);
   const win = model?.contextWindow || 131072;
@@ -76,21 +86,30 @@ CS.contextUsage = () => {
   // 服务端未就绪时的回退值: 与实测(新会话首轮 ≈2780 prompt tokens)校准的常数
   const sysT = info.systemTokens || 183;
   const toolT = info.toolsTokens || 2570;
-  const msgs = CS.currentRun()?.messages || [];
+  // 压缩契约口径: 最后一张摘要卡(含)之后的消息才真正发给模型
+  const all = CS.currentRun()?.messages || [];
+  let cardIdx = -1;
+  all.forEach((m, i) => { if (String(m.content || '').startsWith('[Conversation compressed')) cardIdx = i; });
+  const msgs = cardIdx >= 0 ? all.slice(cardIdx) : all;
   let anchorIdx = -1, anchorP = 0;
   msgs.forEach((m, i) => { if (m.role === 'assistant' && m.promptTokens) { anchorIdx = i; anchorP = m.promptTokens; } });
+  // 锚点只在其含义成立时使用: promptTokens 应远大于固定开销(sys+tools);
+  // 压缩后锚点是旧量级(负的 base 会被钳 0 导致显示崩坏), 回退逐条估算
   let base = 0, after = 0, count = 0;
-  if (anchorIdx >= 0) {
+  if (anchorIdx >= 0 && anchorP > sysT + toolT) {
     base = Math.max(0, anchorP - sysT - toolT);
     for (let j = anchorIdx; j < msgs.length; j++) { after += CS.estimateTokens(msgs[j].content); count++; }
   } else {
+    anchorIdx = -1;
     msgs.forEach(m => { base += CS.estimateTokens(m.content); count++; });
   }
   const draft = (CS.ui.composer || '').trim();
   if (draft) { after += CS.estimateTokens(draft); count++; }
   const msgsT = Math.max(0, base + after + 9 * count);  // 每条消息约 9 token 模板开销(实测)
   const total = sysT + toolT + msgsT;
-  const pct = Math.min(100, Math.round(total / win * 100));
+  // 一位小数: 工具定义是大头(~28k), 消息压缩的收益在 131k 窗口里不足 1%,
+  // 整数百分比会完全吞掉这个变化, 展示小数让压缩效果可见
+  const pct = Math.min(100, Math.round(total / win * 1000) / 10);
   return { sysT, toolT, msgsT, total, window: win, pct };
 };
 CS.tokRateTag = m => {

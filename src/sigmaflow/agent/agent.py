@@ -234,10 +234,10 @@ class Agent:
                         })
                     except Exception:
                         pass
-            if messages[0]["role"] == "user" and messages[0]["content"].startswith("[Conversation compressed"):
-                info["messages"].extend(messages)
-                if self.method == "openai":
-                    messages.insert(0, {"role": "system", "content": self.system if not subagent else self.sub_system})
+            # 压缩只收缩上下文(摘要卡追加尾部), 原本占头部的 system 消息可能被
+            # 摘要吞掉: 每轮压缩后都补插一次, 与函数开头的装配保持一致
+            if messages[0]["role"] != "system":
+                messages.insert(0, {"role": "system", "content": self.system if not subagent else self.sub_system})
             manual_compact = False
 
             notifs = BG.drain_notifications()

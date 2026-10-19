@@ -4622,11 +4622,28 @@ def _run_agent_chat(
     tools_mod = _agent_tools_module()
     tools_mod.set_session_workdir(workdir)
 
-    convo = [
+    raw = [
         {"role": m.get("role"), "content": m.get("content", "")}
         for m in messages
         if m.get("role") in ("user", "assistant")
     ]
+    # 压缩契约: 界面保留全部历史, 但最后一处压缩摘要卡之前的内容不再发送,
+    # 由卡内摘要开场(pi CompactionEntry 语义); 旧卡内容已随迭代并入最新摘要
+    marker = getattr(_agent_tools_module(), "_COMPACT_MARKER", "[Conversation compressed")
+    card_idx = -1
+    for i, m in enumerate(raw):
+        if str(m.get("content", "")).startswith(marker):
+            card_idx = i
+    convo = (
+        [{"role": "user", "content": str(raw[card_idx].get("content") or "")}, *raw[card_idx + 1:]]
+        if card_idx >= 0
+        else raw
+    )
+    logging.getLogger("uvicorn.error").info(
+        "contract: raw=%d card_idx=%d convo=%d est=%d",
+        len(raw), card_idx, len(convo),
+        sum(len(str(m.get("content") or "")) for m in convo),
+    )
     # 仅保留 user/assistant 两类角色, 其余消息直接丢弃
     # 轮次上限按助手消息数加预留余量, 防止无限循环
     max_turn = max(1, sum(1 for m in convo if m["role"] == "assistant") + 17)
