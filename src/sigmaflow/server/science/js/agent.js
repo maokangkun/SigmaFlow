@@ -74,7 +74,7 @@
       return { content: data.content, tokens: data.tokens || 0, promptTokens: data.promptTokens || 0 };
     }
     const data = await CS.api.request('/chat', { method: 'POST', timeout: 600000, body: JSON.stringify(payload) });
-    return { content: data.content, tokens: data.tokens || 0, promptTokens: data.promptTokens || 0 };
+    return { content: data.content, tokens: data.tokens || 0, promptTokens: data.promptTokens || 0, compaction: data.compaction };
   };
   CS.api.friendlyError = error => /fetch/i.test(error.message)
     ? '无法连接服务器：请确认 sigmaflow serve 已启动、接口地址与页面同源（如 /api），并已重启到最新代码。'

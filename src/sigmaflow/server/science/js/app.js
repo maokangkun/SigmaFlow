@@ -748,6 +748,8 @@
       // pi 式压缩: 服务器把头几轮替换为摘要; 前端丢弃对应轮次并置入摘要卡,
       // 会话列表变短后随 reply 结束的同步一起持久化, 下轮请求上下文即已压缩
       if (t.kind === 'compact' && t.text) {
+        // 相同摘要卡已存在时不重复插入(防护事件重放与 HTTP/WS 双通路)
+        if (run.messages.some(m => m.compact && m.content === String(t.text))) return;
         // 自动压缩同样只在尾部追加摘要卡; 界面历史不删除, 上下文由服务端契约裁剪
         const card = { id: 'cmp-' + Math.random().toString(36).slice(2, 8), role: 'assistant', compact: true, content: String(t.text), at: new Date().toISOString() };
         const lastMsg = run.messages[run.messages.length - 1];
@@ -855,6 +857,8 @@
         const now = Date.now();
         if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock && CS.state.settings.autoScroll !== false; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       }, toolEvent, retryEvent);
+      // HTTP 降级路径: 服务端在响应里带回压缩元数据, 复用插卡逻辑保持契约一致
+      if (done.compaction && done.compaction.text) toolEvent(done.compaction);
       // 正文以流式时间线为准(保留各轮文本); 服务端最终内容仅在本地没收到任何文本时兑底
       if (!reply.content && typeof done.content === 'string' && done.content) {
         reply.content = done.content;
