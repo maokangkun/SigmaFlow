@@ -240,12 +240,16 @@
   V.chat = () => {
     const run = CS.currentRun(); if (!run) return `<section class="page">${empty('message','开始一个新的科研任务','先在首页描述研究问题，或选择一条演示工作流。')}<div class="center">${btn('go-home','开始对话','plus','primary')}</div></section>`;
     if (run.kind === 'chat') {
-      // 压缩摘要卡(pi CompactionEntry): 折叠态只显标题, 展开看摘要与保留说明
-      const V_COMPACT = m => {
+      // 压缩摘要卡(pi CompactionEntry): 点击头部折叠/展开
+      const V_COMPACT = (m, idxOf) => {
         const c = String(m.content || '');
         const header = c.split('\n')[0] || '上下文已压缩';
         const body = c.split('\n').slice(1).join('\n').trim();
-        return `<div class="compact-card"><div class="compact-head"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">${e(header)}</span></div>${body ? `<div class="compact-body md-body">${CS.markdown(body)}</div>` : ''}</div>`;
+        // 折叠键 = 会话id+消息序号(追加式列表里 idxOf 稳定): 默认展开, 与错误卡同一套内存态机制
+        const ckey = `${run.id}|${idxOf}`;
+        const collapsed = (CS.ui.compactCollapsedSet || (CS.ui.compactCollapsedSet = new Set())).has(ckey);
+        const head = `<button type="button" class="compact-head" data-action="toggle-compact" data-ckey="${e(ckey)}" aria-expanded="${collapsed ? 'false' : 'true'}" title="${collapsed ? '展开摘要' : '折叠摘要'}"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">${e(header)}</span><span class="compact-chev${collapsed ? ' collapsed' : ''}">${i('chevron', '', 12)}</span></button>`;
+        return `<div class="compact-card">${head}${body && !collapsed ? `<div class="compact-body md-body">${CS.markdown(body)}</div>` : ''}</div>`;
       };
       // 压缩摘要作为特殊回复消息: agent 消息外壳(头像/名称) + 内嵌摘要卡;
       // 进行中状态(compactPending)显示"上下文正在压缩中"等待动画
@@ -256,12 +260,14 @@
         // 名称行/计时/token 与正常回复一套结构; 进行中在 body 内显示压缩状态行(仿思考行)
         const status = `<div class="compact-status" data-state="${pending ? 'running' : 'ok'}">${i('minimize2', '', 14)}<span class="compact-status-text">${pending ? '上下文正在压缩中' : '已完成上下文压缩'}</span>${pending ? '<span class="compact-dots"><span>.</span><span>.</span><span>.</span></span>' : ''}</div>`;
         const streamBody = pending && m.summaryDelta ? `<div class="compact-body md-body compact-streaming">${CS.markdown(m.summaryDelta)}</div>` : '';
-        return `<div class="msg-block compact-reply-block"><div class="agent-message"><div class="agent-avatar${pending ? ' avatar-pulsing' : ''}">${i('dna', '', 21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span> <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${status}${streamBody}${pending ? '' : V_COMPACT(m)}${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.tokens ? `<span class="message-meta">${CS.num(m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy', '', 13)}</span></span></div>`}</div></div></div>`;
+        return `<div class="msg-block compact-reply-block"><div class="agent-message"><div class="agent-avatar${pending ? ' avatar-pulsing' : ''}">${i('dna', '', 21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span> <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${status}${streamBody}${pending ? '' : V_COMPACT(m, idxOf)}${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.tokens ? `<span class="message-meta">${CS.num(m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy', '', 13)}</span></span></div>`}</div></div></div>`;
       };
       const bubble = m => {
-        if (m.role === 'assistant' && isCompactMsg(m)) return V_COMPACT_REPLY(m);
-        if (m.compact || String(m.content || '').startsWith('[Conversation compressed')) return V_COMPACT(m);
-        const idxOf = run.messages.indexOf(m); return m.role === 'user'
+        // idxOf 上提到分支前: 压缩卡(meta 行/折叠键)与普通消息操作都按消息序号定位
+        const idxOf = run.messages.indexOf(m);
+        if (m.role === 'assistant' && isCompactMsg(m)) return V_COMPACT_REPLY(m, idxOf);
+        if (m.compact || String(m.content || '').startsWith('[Conversation compressed')) return V_COMPACT(m, idxOf);
+        return m.role === 'user'
         ? `<div class="msg-block user-block"><div class="user-message">${e(m.content)}${m.datasetIds?.length ? `<div class="attachment-list mt-12">${m.datasetIds.map(id => `<span class="attachment">${i('file')}${e(CS.state.datasets.find(d => d.id === id)?.name || id)}</span>`).join('')}</div>` : ''}</div><div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span><span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="edit-message" data-id="${idxOf}" title="修改">${i('edit','',13)}</span></span></div></div>`
         : (() => {
             const blockMeta = t => t.name === 'bash' ? {icon: 'terminal', label: '终端'} : {icon: 'code', label: '工具'};

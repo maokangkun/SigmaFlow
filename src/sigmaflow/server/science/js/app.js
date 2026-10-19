@@ -1357,6 +1357,14 @@
       const set = CS.ui.errorOpenSet || (CS.ui.errorOpenSet = new Set());
       if (set.has(k)) set.delete(k); else set.add(k);
     }),
+    'toggle-compact': (id, el) => {
+      // 摘要卡点击折叠/展开: 键 = 会话id+消息序号(内存态, 与错误卡同机制)
+      const k = el?.dataset?.ckey;
+      if (!k) return;
+      const set = CS.ui.compactCollapsedSet || (CS.ui.compactCollapsedSet = new Set());
+      if (set.has(k)) set.delete(k); else set.add(k);
+      CS.render();
+    },
     'jump-latest': () => { CS.ui.canJumpLatest = false; CS.render(); scrollToLatest(); },
     'open-conversation': id => {
       if (!CS.state.runs.some(r => r.id === id) && !CS.ui.conversations.some(c => c.id === id)) { CS.toast('该会话不存在。', 'error'); return; }
