@@ -225,6 +225,7 @@ class Agent:
             "cost_tokens": 0,
             "completion_tokens": 0,  # 辅助上屏 tok/s 统计: 与 cost_tokens 分开, 只计补全侧
             "prompt_tokens": 0,  # 输入侧 token, 多轮工具循环时逐轮累加
+            "cache_read_tokens": 0,  # 缓存读取 token(成本远低于未命中输入), 逐轮累加
             "cost_time": 0,
             "used_tools": [],
             "used_skills": [],
@@ -362,6 +363,10 @@ class Agent:
                             )
                             info["last_prompt_tokens"] = (
                                 getattr(response.usage, "input_tokens", 0) or 0
+                            )
+                            info["cache_read_tokens"] += (
+                                getattr(response.usage, "cache_read_input_tokens", 0)
+                                or 0
                             )
                             messages.append(
                                 {"role": "assistant", "content": response.content}
@@ -566,6 +571,15 @@ class Agent:
                             info["cost_tokens"] += usage.total_tokens
                             info["prompt_tokens"] += usage.prompt_tokens or 0
                             info["completion_tokens"] += usage.completion_tokens or 0
+                            # 缓存读取: OpenAI 口径在 prompt_tokens_details 里
+                            info["cache_read_tokens"] += (
+                                getattr(
+                                    getattr(usage, "prompt_tokens_details", None),
+                                    "cached_tokens",
+                                    0,
+                                )
+                                or 0
+                            )
                             # 最后一轮当次 prompt: 反映单次请求的真实窗口占用(累计值是多轮求和)
                             info["last_prompt_tokens"] = usage.prompt_tokens or 0
                             msg = _DeltaMsg()
@@ -627,6 +641,17 @@ class Agent:
                             )
                             info["last_prompt_tokens"] = (
                                 getattr(response.usage, "prompt_tokens", 0)
+                                if response.usage
+                                else 0
+                            )
+                            info["cache_read_tokens"] += (
+                                getattr(
+                                    getattr(
+                                        response.usage, "prompt_tokens_details", None
+                                    ),
+                                    "cached_tokens",
+                                    0,
+                                )
                                 if response.usage
                                 else 0
                             )

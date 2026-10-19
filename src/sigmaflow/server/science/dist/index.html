@@ -916,6 +916,9 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .fs-md h1,.fs-md h2,.fs-md h3{margin:14px 0 8px}
 .fs-md p{margin:0 0 8px}
 .fs-md img{max-width:100%}
+/* 标题栏右侧 usage 行: mono 小字右对齐, 贴标题行的水平线 */
+.run-usage{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;align-self:flex-end;padding-bottom:2px}
+.run-usage .ru-dot{margin:0 6px;color:var(--faint)}
 
 </style>
 </head>
@@ -1144,6 +1147,15 @@ CS.estimateTokens = text => {
     if ((c >= 0x4e00 && c <= 0x9fff) || (c >= 0x3000 && c <= 0x303f) || (c >= 0xff00 && c <= 0xffef)) cjk++;
   }
   return Math.round(cjk * 0.6 + (text.length - cjk) / 4.6);
+};
+// 无 ~ 前缀的紧凑数(标题栏 usage 行等真实口径展示), 与 kfmt 同一套 M/K 阶梯
+CS.knum = n => CS.kfmt(n).slice(1);
+// 标题栏 usage 行: 全会话累计的输入/输出/缓存读取(计费口径, 含压缩前历史) + 上下文占比
+CS.chatUsage = () => {
+  const msgs = CS.currentRun()?.messages || [];
+  let tin = 0, tout = 0, tcache = 0;
+  msgs.forEach(m => { if (m.role === 'assistant') { tin += m.promptTokens || 0; tout += m.tokens || 0; tcache += m.cacheTokens || 0; } });
+  return { tin, tout, tinCache: tcache, pct: CS.contextUsage().pct };
 };
 // token 数值的紧凑展示: ~850 / ~1.7K / ~67.7K / ~131K; 到 M 用 M 单位(~1M / ~1.2M), 不到的才用 K
 CS.kfmt = n => {
@@ -4616,7 +4628,16 @@ CS.audio = (function () {
   };
   V.topbar = () => `<div class="topbar"><div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div></div>`;
   // 上下文用量圆环 + 详情浮层(位于模型选择按钮左侧, 点击圆环展开)
-  V.ctxRing = () => {
+    // 标题栏右侧 usage 行: 输入/输出/缓存读取(计费累计) + 上下文占比, 右对齐贴水平线
+  V.runUsage = () => {
+    const u = CS.chatUsage();
+    const nums = ['in ' + CS.knum(u.tin), 'out ' + CS.knum(u.tout)];
+    if (u.tinCache > 0) nums.push('cache ' + CS.knum(u.tinCache));
+    nums.push('ctx ' + u.pct + '%');
+    return `<div class="run-usage mono" title="累计输入 · 累计输出 · 缓存读取 · 上下文占用">${nums.join('<span class="ru-dot">·</span>')}</div>`;
+  };
+
+V.ctxRing = () => {
     if (!CS.ui.modelsLoaded || !CS.ui.models.length) return '';
     const u = CS.contextUsage();
     const level = u.pct >= 90 ? 'danger' : u.pct >= 60 ? 'warn' : 'ok';
@@ -4813,7 +4834,7 @@ CS.audio = (function () {
             const err = m.error ? (typeof m.error === 'string' ? { message: m.error } : m.error || {}) : null;
             return `<div class="msg-block agent-block"><div class="agent-message"><div class="agent-avatar${m.streaming ? ' avatar-pulsing' : ' '}">${i('dna','',21)}</div><div class="agent-body"${blocks ? ` data-block-sig="${e(blocks.map(b => b.type).join(','))}"` : ''}><div class="agent-name">SigmaFlow Science${m.streaming && m.tokens ? ` <span class="tok-down" data-start="${m.at}">↓ ${CS.num(m.tokens)}</span>` : (m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span>` : '')}${m.streaming ? ` <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${segments}${err ?(() => { const errKey = (run.id || ['']) + '|' + idxOf; const errOpen = (CS.ui.errorOpenSet || []).has ? CS.ui.errorOpenSet.has(errKey) : false; return `<div class="think-root error-root"${errOpen ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-error" data-errkey="${e(errKey)}" aria-expanded="${errOpen}"><span class="think-leading">${i('alert', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">请求出错</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(String(err.message || '未知错误').split('\n')[0])}</span></span></button>${errOpen ? `<div class="error-body"><pre class="error-detail">${e(err.detail || err.message || '')}</pre></div>` : ''}</div>`; })() : ''}${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.role === 'assistant' && m.tokens ? `<span class="message-meta">${CS.num(m.contextTokens || m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn${m.feedback && m.feedback.rating === 'up' ? ' rated rated-up' : ''}" role="button" data-action="rate-message" data-id="${idxOf}" data-rating="up" title="点赞">${i('thumbup','',13)}</span><span class="icon-btn${m.feedback && m.feedback.rating === 'down' ? ' rated rated-down' : ''}" role="button" data-action="rate-message" data-id="${idxOf}" data-rating="down" title="点踩">${i('thumbdown','',13)}</span><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="branch-chat" data-id="${idxOf}" title="分支到新聊天">${i('workflow','',13)}</span></span></div>`}</div></div></div>`;
           })(); };
-      return `<section class="page chat-page"><div class="chat-layout no-inspector"><div class="chat-main chat-main-chat"><header class="chat-title chat-title-compact"><div><h1>${e(run.title)}</h1><p class="small muted">${e(CS.state.projects.find(p => p.id === run.projectId)?.name || '未指定项目')} <span class="faint"> / </span> ${e(CS.state.settings.model || '默认模型')}</p></div></header>
+      return `<section class="page chat-page"><div class="chat-layout no-inspector"><div class="chat-main chat-main-chat"><header class="chat-title chat-title-compact"><div><h1>${e(run.title)}</h1><p class="small muted">${e(CS.state.projects.find(p => p.id === run.projectId)?.name || '未指定项目')} <span class="faint"> / </span> ${e(CS.state.settings.model || '默认模型')}</p></div>${V.runUsage()}</header>
       <div class="conversation">${run.messages.map(bubble).join('')}</div>
       ${V.composer(false)}</div></div></section>`;
     }
@@ -4821,7 +4842,7 @@ CS.audio = (function () {
     const approveLabel = run.status === 'paused' ? '继续执行' : run.status === 'error' ? '重试连接' : '确认并执行';
     const controls = ['awaiting','paused','error'].includes(run.status) ? btn('approve-run',approveLabel,'play','primary') : run.status === 'running' ? btn('pause-run','暂停','pause','flat') : '';
     const cancel = ['awaiting','running','paused','error'].includes(run.status) ? btn('cancel-run','取消任务','stop','flat') : '';
-    return `<section class="page chat-page"><div class="chat-layout ${!CS.state.settings.inspector ? 'no-inspector' : ''}"><div class="chat-main"><header class="chat-title"><div><h1>${e(run.title)}</h1><p class="small muted">${e(CS.state.projects.find(p => p.id === run.projectId)?.name || '未指定项目')} <span class="faint"> / </span> 演示任务</p></div><div class="row">${status(run.status)}${iconBtn('toggle-inspector','panel','显示 / 隐藏任务详情')}</div></header>
+    return `<section class="page chat-page"><div class="chat-layout ${!CS.state.settings.inspector ? 'no-inspector' : ''}"><div class="chat-main"><header class="chat-title"><div><h1>${e(run.title)}</h1><p class="small muted">${e(CS.state.projects.find(p => p.id === run.projectId)?.name || '未指定项目')} <span class="faint"> / </span> 演示任务</p></div>${V.runUsage()}<div class="row">${status(run.status)}${iconBtn('toggle-inspector','panel','显示 / 隐藏任务详情')}</div></header>
       <div class="conversation"><div class="user-message">${e(run.prompt)}${run.datasetIds.length ? `<div class="attachment-list mt-12">${run.datasetIds.map(id => `<span class="attachment">${i('file')}${e(CS.state.datasets.find(d => d.id === id)?.name || '已删除的输入记录')}</span>`).join('')}</div>` : ''}<div class="message-meta">${CS.time(run.createdAt)}</div></div>
       <div class="agent-message"><div class="agent-avatar${run.streaming ? ' avatar-pulsing' : ' '}">${i('dna','',21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science <span class="pill small">演示 Agent</span></div><p class="agent-intro">${completed ? '演示流程已完成。下面保留了每一步的状态、输入记录与可导出的结果。' : waiting ? '我已将你的问题整理为以下演示计划。请先检查输入与步骤，确认后再执行。' : '正在按已确认的计划展示任务进度。你可以随时暂停、查看日志，或取消任务。'}所有分析图表均使用预设合成数据，不对上传文件进行生物学分析。</p>
       <div class="run-card" data-phase="${run.status}"><div class="run-card-title"><div class="row">${run.status === 'running' ? '<span class="spinner"></span>' : i(completed ? 'checkcircle' : 'workflow','',17)}<strong>${waiting ? '执行前，确认你的分析计划' : completed ? '演示分析已完成' : 'Agent 任务进度'}</strong></div><span class="small muted">${run.progress}%</span></div><div class="run-progress"><span style="width:${run.progress}%"></span></div><ol class="step-list">
@@ -5915,6 +5936,7 @@ CS.audio = (function () {
       if (done.promptTokens) reply.promptTokens = done.promptTokens;
       // 最后一轮当次 prompt(真实窗口占用): 供上下文圆环与 meta 行使用; 与累计 promptTokens 区分
       if (done.contextTokens) reply.contextTokens = done.contextTokens;
+      if (done.cacheTokens) reply.cacheTokens = done.cacheTokens;
       CS.audio.playDone();  // 回复完成提示音; 出错分支不播放
     } catch (error) {
       // 失败不再伪装成正文追在 content 里, 而是挂到 error 字段,

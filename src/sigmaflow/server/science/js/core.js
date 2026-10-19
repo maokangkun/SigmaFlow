@@ -52,6 +52,15 @@ CS.estimateTokens = text => {
   }
   return Math.round(cjk * 0.6 + (text.length - cjk) / 4.6);
 };
+// 无 ~ 前缀的紧凑数(标题栏 usage 行等真实口径展示), 与 kfmt 同一套 M/K 阶梯
+CS.knum = n => CS.kfmt(n).slice(1);
+// 标题栏 usage 行: 全会话累计的输入/输出/缓存读取(计费口径, 含压缩前历史) + 上下文占比
+CS.chatUsage = () => {
+  const msgs = CS.currentRun()?.messages || [];
+  let tin = 0, tout = 0, tcache = 0;
+  msgs.forEach(m => { if (m.role === 'assistant') { tin += m.promptTokens || 0; tout += m.tokens || 0; tcache += m.cacheTokens || 0; } });
+  return { tin, tout, tinCache: tcache, pct: CS.contextUsage().pct };
+};
 // token 数值的紧凑展示: ~850 / ~1.7K / ~67.7K / ~131K; 到 M 用 M 单位(~1M / ~1.2M), 不到的才用 K
 CS.kfmt = n => {
   n = Math.round(n || 0);

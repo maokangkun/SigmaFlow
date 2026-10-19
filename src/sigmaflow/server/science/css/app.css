@@ -562,3 +562,6 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .fs-md h1,.fs-md h2,.fs-md h3{margin:14px 0 8px}
 .fs-md p{margin:0 0 8px}
 .fs-md img{max-width:100%}
+/* 标题栏右侧 usage 行: mono 小字右对齐, 贴标题行的水平线 */
+.run-usage{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;align-self:flex-end;padding-bottom:2px}
+.run-usage .ru-dot{margin:0 6px;color:var(--faint)}
