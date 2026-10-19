@@ -477,3 +477,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .compact-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
 .compact-sub,.compact-head .tiny{flex:1 1 auto;min-width:0}
 .compact-body{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);white-space:pre-wrap;font-size:12.5px;line-height:1.65;color:var(--text);max-height:340px;overflow-y:auto}
+
+/* 上下文压缩参数: 数字输入与单位 */
+.compact-num{width:120px;text-align:right;font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)}
+.compact-num:focus{outline:none;border-color:var(--accent)}

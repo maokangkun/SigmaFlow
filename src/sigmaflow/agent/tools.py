@@ -248,12 +248,24 @@ _COMPACT_WRITE_TOOLS = {"write", "edit"}
 
 
 class Compactor:
-    def __init__(self, transript_dir: Path, client=None, max_model_len=None, model=None):
+    def __init__(self, transript_dir: Path, client=None, max_model_len=None, model=None, overrides=None):
         self.transript_dir = transript_dir
         self.client = client
         self.max_model_len = max_model_len
         self.model = model
         self.last_meta: Any = None  # 上次压缩的事件元数据(dict)或 None
+        # 运行参数覆盖: web 设置面板按 key 写入; 缺省回落到模块常量(env 可调)
+        self.overrides: dict = dict(overrides or {})
+
+    def _cfg(self, key: str, kind, default_value):
+        # 读取一个压缩参数: overrides(设置面板) > 模块常量(env) > 内置默认
+        try:
+            v = self.overrides.get(key)
+            if v is None:
+                v = globals().get(key, default_value)
+            return kind(v) if v is not None else default_value
+        except Exception:
+            return default_value
 
     # -- token 估算: 中日韩字符约 1 token/字, 其余约 3.5 字符/token --
     @staticmethod
@@ -348,6 +360,8 @@ class Compactor:
         return names
 
     def _serialize(self, messages: list, names: dict) -> str:
+        result_chars = self._cfg("COMPACT_SERIAL_RESULT_CHARS", int, 2000)
+        arg_chars = self._cfg("COMPACT_SERIAL_ARG_CHARS", int, 200)
         lines = []
         for m in messages:
             role = m.get("role")
@@ -360,7 +374,7 @@ class Compactor:
                     parts = []
                     for tc in calls:
                         _, name, args_s = self._call_parts(tc)
-                        parts.append(f"{name}({self._clip(args_s, COMPACT_SERIAL_ARG_CHARS)})")
+                        parts.append(f"{name}({self._clip(args_s, arg_chars)})")
                     lines.append("[Assistant tool calls]: " + "; ".join(parts))
             elif role == "user":
                 c = m.get("content")
@@ -373,7 +387,7 @@ class Compactor:
                                 body = self._msg_text({"content": body})
                             lines.append(
                                 f"[Tool result of {names.get(tid, '') or 'tool'}]: "
-                                + self._clip(body.strip(), COMPACT_SERIAL_RESULT_CHARS)
+                                + self._clip(body.strip(), result_chars)
                             )
                         else:
                             text = str(part.get("text") or "") if isinstance(part, dict) else str(part)
@@ -388,7 +402,7 @@ class Compactor:
                 body = self._msg_text(m).strip()
                 lines.append(
                     f"[Tool result of {names.get(tid, '') or 'tool'}]: "
-                    + self._clip(body, COMPACT_SERIAL_RESULT_CHARS)
+                    + self._clip(body, result_chars)
                 )
         return "\n".join(lines)
 
@@ -431,7 +445,7 @@ class Compactor:
     # -- Layer 2: summary_compact - 摘要头部 + 保留尾部(pi: summary + kept) --
     def summary_compact(self, messages: list, force: bool = False) -> list:
         self.last_meta = None
-        cut = self._cut_index(messages, COMPACT_KEEP_RECENT_TOKENS)
+        cut = self._cut_index(messages, self._cfg("COMPACT_KEEP_RECENT_TOKENS", int, 16000))
         # 队首的旧压缩摘要作为 previousSummary 迭代, 不再重复序列化(pi 语义)
         prev_summary = None
         start = 0
@@ -439,7 +453,7 @@ class Compactor:
             prev_summary = messages[0]["content"]
             start = 1
         dropped = cut - start
-        if dropped <= 0 or (not force and dropped < COMPACT_MIN_DROPS):
+        if dropped <= 0 or (not force and dropped < self._cfg("COMPACT_MIN_DROPS", int, 4)):
             return messages
         kept = messages[cut:]
         names = self._tool_name_map(messages)
@@ -504,12 +518,12 @@ class Compactor:
         try:
             if self.client.__class__.__name__ == "Anthropic":
                 response = self.client.messages.create(
-                    model=model, messages=[{"role": "user", "content": prompt}], max_tokens=COMPACT_TOKENS,
+                    model=model, messages=[{"role": "user", "content": prompt}], max_tokens=self._cfg("COMPACT_TOKENS", int, 4096),
                 )
                 summary = response.content[0].text
             else:
                 response = self.client.chat.completions.create(
-                    model=model, messages=[{"role": "user", "content": prompt}], max_tokens=COMPACT_TOKENS,
+                    model=model, messages=[{"role": "user", "content": prompt}], max_tokens=self._cfg("COMPACT_TOKENS", int, 4096),
                 )
                 summary = (response.choices[0].message.content or "").strip()
             print(f"{' ' * 12}summary({len(summary)} chars) via {model}")
@@ -523,7 +537,12 @@ class Compactor:
     def auto_compact(self, messages: list, force=False, context_ratio=0) -> list:
         est_ratio = self.estimate_tokens(messages) / self.max_model_len if self.max_model_len else 0
         ratio = max(est_ratio, context_ratio or 0)
-        if force or ratio >= COMPACT_RATIO or (ratio * self.max_model_len or 0) > COMPACT_THRESHOLD:
+        threshold = self._cfg("COMPACT_RATIO", float, 0.85)
+        hard_limit = self._cfg("COMPACT_THRESHOLD", int, 10**20)
+        enabled = self._cfg("COMPACT_ENABLED", bool, True)
+        # pi 语义: enabled=False 只关自动触发, 手动 /compact 仍然可用
+        auto = enabled and (ratio >= threshold or (ratio * self.max_model_len or 0) > hard_limit)
+        if force or auto:
             print(f"{Prompt.Compact}manual compact" if force else f"{Prompt.Compact}auto compact triggered")
             return self.summary_compact(messages, force=force)
         # 未触发: 只做轻量裁剪; 未发生压缩时清掉上次的事件残留

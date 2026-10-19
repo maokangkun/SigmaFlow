@@ -155,6 +155,18 @@ class SystemPromptIn(BaseModel):
     enabled: Optional[bool] = None
 
 
+class CompactionIn(BaseModel):
+    # 上下文压缩参数: None 表示不修改对应字段
+    enabled: Optional[bool] = None
+    ratio: Optional[float] = None
+    keepRecentTokens: Optional[int] = None
+    minDrops: Optional[int] = None
+    summaryTokens: Optional[int] = None
+    resultChars: Optional[int] = None
+    argChars: Optional[int] = None
+    reset: Optional[bool] = None
+
+
 class TokensUpdateIn(BaseModel):
     tokens: Dict[str, Optional[str]] = Field(default_factory=dict)
 
@@ -2062,6 +2074,81 @@ def _save_system_prompt_config(cfg: dict) -> None:
     os.replace(tmp, path)
 
 
+def _compaction_config_path() -> str:
+    return os.path.join(_science_data_root(), "compaction.json")
+
+
+def _load_compaction_config() -> dict:
+    try:
+        with open(_compaction_config_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_compaction_config(cfg: dict) -> None:
+    path = _compaction_config_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+
+
+# 压缩参数的定义域: (类型, 默认值, 最小, 最大), 默认值取 agent conf 的环境变量基线
+def _compaction_defaults() -> dict:
+    from sigmaflow.agent import conf as agent_conf
+
+    return {
+        "enabled": (bool, True, None, None),
+        "ratio": (float, float(getattr(agent_conf, "COMPACT_RATIO", 0.85)), 0.3, 0.98),
+        "keepRecentTokens": (int, int(getattr(agent_conf, "COMPACT_KEEP_RECENT_TOKENS", 16000)), 2000, 200000),
+        "minDrops": (int, int(getattr(agent_conf, "COMPACT_MIN_DROPS", 4)), 2, 50),
+        "summaryTokens": (int, int(getattr(agent_conf, "COMPACT_TOKENS", 4096)), 512, 16384),
+        "resultChars": (int, int(getattr(agent_conf, "COMPACT_SERIAL_RESULT_CHARS", 2000)), 200, 20000),
+        "argChars": (int, int(getattr(agent_conf, "COMPACT_SERIAL_ARG_CHARS", 200)), 40, 4000),
+    }
+
+
+def _effective_compaction() -> dict:
+    # 合并环境默认与设置面板存储的覆盖值, 逐字段做类型与范围钳制
+    stored = _load_compaction_config()
+    out = {}
+    for key, (kind, default_v, lo, hi) in _compaction_defaults().items():
+        val = stored.get(key, default_v)
+        try:
+            val = kind(val) if val is not None else default_v
+        except (TypeError, ValueError):
+            val = default_v
+        if lo is not None and val < lo:
+            val = lo
+        if hi is not None and val > hi:
+            val = hi
+        out[key] = val
+    out["enabled"] = bool(out["enabled"])
+    return out
+
+
+def _apply_compaction_to(agent) -> None:
+    # 把设置面板的压缩参数注入 Agent 内的 Compactor(按 conf 常量名映射)
+    try:
+        cfg = _effective_compaction()
+        compactor = getattr(agent, "compactor", None)
+        if compactor is not None:
+            compactor.overrides = {
+                "COMPACT_ENABLED": bool(cfg["enabled"]),
+                "COMPACT_RATIO": float(cfg["ratio"]),
+                "COMPACT_KEEP_RECENT_TOKENS": int(cfg["keepRecentTokens"]),
+                "COMPACT_MIN_DROPS": int(cfg["minDrops"]),
+                "COMPACT_TOKENS": int(cfg["summaryTokens"]),
+                "COMPACT_SERIAL_RESULT_CHARS": int(cfg["resultChars"]),
+                "COMPACT_SERIAL_ARG_CHARS": int(cfg["argChars"]),
+            }
+    except Exception as exc:  # 设置注入失败回落 env 默认, 不拦截会话
+        logging.getLogger("uvicorn.error").warning("compaction settings apply failed: %s", exc)
+
+
 class ScienceModelStore:
     """File-based model-config storage (`~/.sigmaflow/science/models.json`).
 
@@ -3048,6 +3135,44 @@ class ScienceAPI:
             # 自定义提示词改变系统提示长度, 清空缓存让 /context-info 重新测量
             _AGENT_CONTEXT_SIZES.clear()
             return {"prompt": prompt_text, "enabled": enabled}
+
+        @router.get("/compaction")
+        async def get_compaction():
+            return {"compaction": await asyncio.to_thread(_effective_compaction)}
+
+        @router.post("/compaction")
+        async def save_compaction(payload: CompactionIn, request: Request):
+            _check_origin(request)
+            if payload.reset:
+                # 恢复默认: 删除存储文件, 下次读取回落环境基线
+                await asyncio.to_thread(lambda: os.path.exists(_compaction_config_path()) and os.remove(_compaction_config_path()))
+                return {"compaction": await asyncio.to_thread(_effective_compaction)}
+            stored = {k: v for k, v in {
+                "enabled": payload.enabled,
+                "ratio": payload.ratio,
+                "keepRecentTokens": payload.keepRecentTokens,
+                "minDrops": payload.minDrops,
+                "summaryTokens": payload.summaryTokens,
+                "resultChars": payload.resultChars,
+                "argChars": payload.argChars,
+            }.items() if v is not None}
+            merged = dict(await asyncio.to_thread(_load_compaction_config))
+            merged.update(stored)
+            # 写入前按同样规则钳制, 非法输入不能保存生效
+            out = {}
+            for key, (kind, default_v, lo, hi) in _compaction_defaults().items():
+                if key in merged:
+                    try:
+                        val = kind(merged[key]) if merged[key] is not None else default_v
+                        if lo is not None and val < lo:
+                            val = lo
+                        if hi is not None and val > hi:
+                            val = hi
+                        out[key] = val
+                    except (TypeError, ValueError):
+                        continue
+            await asyncio.to_thread(_save_compaction_config, out)
+            return {"compaction": await asyncio.to_thread(_effective_compaction)}
 
         @router.get("/tokens")
         async def list_tokens():
@@ -4491,6 +4616,7 @@ def _run_agent_chat(
     )
     agent.client.timeout = 90
     agent.client.max_retries = 0  # 不用 SDK 内置重试; 统一由 agent 循环重试三次
+    _apply_compaction_to(agent)  # 设置面板的压缩参数即时生效
     info = agent(convo, is_print=False, max_turn=max_turn)
     try:
         if stats is not None and isinstance(info, dict):

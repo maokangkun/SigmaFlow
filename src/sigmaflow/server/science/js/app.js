@@ -529,6 +529,20 @@
       CS.render();
     } catch (error) { CS.toast('系统提示词加载失败：' + CS.api.friendlyError(error), 'error'); }
   };
+
+  // 上下文压缩参数: GET 拉取当前生效值; draft 供表单未保存修改, 数字输入不重渲染
+  CS.loadAgentCompaction = async force => {
+    if (CS.ui.agentCompaction && !force) {
+      if (!CS.ui.compactionDraft) CS.ui.compactionDraft = { ...CS.ui.agentCompaction };
+      return;
+    }
+    try {
+      const d = await CS.api.request('/compaction');
+      CS.ui.agentCompaction = d.compaction || {};
+      if (!CS.ui.compactionDraft) CS.ui.compactionDraft = { ...CS.ui.agentCompaction };
+      CS.render();
+    } catch (error) { CS.toast('压缩参数加载失败：' + CS.api.friendlyError(error), 'error'); }
+  };
   // Token 用量卡数据: 服务端聚合 SigmaFlow 自身会话记录; force=true 跳过前端缓存重拉
   CS.loadUsage = async force => {
     if (CS.ui.usage && !force) return;
@@ -1349,7 +1363,7 @@
     },
     'connect-project': () => { CS.ui.projectMenu = false; CS.showModal('remote-project'); },
     'submit-remote-project': () => {},
-    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') { CS.loadAgentTools(); CS.loadAgentTokens(); } if (id === 'skills') CS.loadAgentSkills(); if (id === 'mcp') CS.loadAgentMcp(); if (id === 'keys') CS.loadAgentTokens(); if (id === 'sysprompt') CS.loadSystemPrompt(); if (id === 'usage') CS.loadUsage(); },
+    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') { CS.loadAgentTools(); CS.loadAgentTokens(); } if (id === 'skills') CS.loadAgentSkills(); if (id === 'mcp') CS.loadAgentMcp(); if (id === 'keys') CS.loadAgentTokens(); if (id === 'sysprompt') CS.loadSystemPrompt(); if (id === 'context') CS.loadAgentCompaction(); if (id === 'usage') CS.loadUsage(); },
     'usage-gran': id => { CS.ui.usageGran = id; CS.render(); },
     'reload-usage': () => { CS.ui.usage = null; CS.loadUsage(true); },
     'configure-model': () => { CS.ui.modelMenu = false; CS.ui.settingsTab = 'agent'; CS.navigate('settings'); },
@@ -1530,6 +1544,39 @@
         await CS.refreshContextInfo();
         CS.render();
         CS.toast('MCP 配置已恢复默认。');
+      } catch (error) { CS.toast('恢复失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'compaction-toggle': () => {
+      const d = CS.ui.compactionDraft || (CS.ui.compactionDraft = { ...(CS.ui.agentCompaction || {}) });
+      d.enabled = !(d.enabled !== false);
+      CS.render();
+    },
+    'save-compaction': async () => {
+      const d = CS.ui.compactionDraft || {};
+      try {
+        const r = await CS.api.request('/compaction', { method: 'POST', body: JSON.stringify({
+          enabled: d.enabled !== false,
+          ratio: Number(d.ratio),
+          keepRecentTokens: Number(d.keepRecentTokens),
+          minDrops: Number(d.minDrops),
+          summaryTokens: Number(d.summaryTokens),
+          resultChars: Number(d.resultChars),
+          argChars: Number(d.argChars),
+        }) });
+        CS.ui.agentCompaction = r.compaction || {};
+        CS.ui.compactionDraft = { ...CS.ui.agentCompaction };
+        CS.render();
+        CS.toast('压缩参数已保存，立即对下一次会话生效。');
+      } catch (error) { CS.toast('保存失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'reset-compaction': async () => {
+      if (!confirm('恢复压缩参数默认值？')) return;
+      try {
+        const r = await CS.api.request('/compaction', { method: 'POST', body: JSON.stringify({ reset: true }) });
+        CS.ui.agentCompaction = r.compaction || {};
+        CS.ui.compactionDraft = { ...r.compaction };
+        CS.render();
+        CS.toast('已恢复默认压缩参数。');
       } catch (error) { CS.toast('恢复失败：' + CS.api.friendlyError(error), 'error'); }
     },
     'sysprompt-toggle': () => {
@@ -1942,7 +1989,8 @@
     else if(id==='pubmed-query') CS.ui.pubmedQuery=target.value;
     else if(id==='min-genes') CS.ui.minGenes=target.value;
     else if(id==='max-mito') CS.ui.maxMito=target.value;
-    else if(id==='sysprompt-textarea'){ const d=CS.ui.syspromptDraft||(CS.ui.syspromptDraft={prompt:'',enabled:!!CS.ui.systemPrompt?.enabled}); d.prompt=target.value; }
+    else if(id&&id.startsWith('compact-')){ const d=CS.ui.compactionDraft; if(d && target.dataset.field) d[target.dataset.field]=target.value; }
+        else if(id==='sysprompt-textarea'){ const d=CS.ui.syspromptDraft||(CS.ui.syspromptDraft={prompt:'',enabled:!!CS.ui.systemPrompt?.enabled}); d.prompt=target.value; }
     else if(target.dataset?.toolId){ const t=(CS.ui.toolDraft||[]).find(x=>x.id===target.dataset.toolId); if(t) t[target.dataset.field]=target.value; if(target.dataset.field==='schema') CS.syncSchemaHighlight(target); }
     else if(target.dataset?.skillId){ const s=(CS.ui.skillDraft||[]).find(x=>x.id===target.dataset.skillId); if(s) s[target.dataset.field]=target.value; }
     else if(target.dataset?.mcpId){ const s=(CS.ui.mcpDraft||[]).find(x=>x.key===target.dataset.mcpId); if(s) s[target.dataset.field]=target.value; }

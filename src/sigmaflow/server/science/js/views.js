@@ -435,7 +435,7 @@
     const s = CS.state.settings;
     const toggle = (id, label, sub) => `<div class="setting-row"><div><h3>${e(label)}</h3><p>${e(sub)}</p></div><button type="button" role="switch" aria-checked="${!!s[id]}" aria-label="${e(label)}" class="switch" data-action="setting-toggle" data-id="${id}"></button></div>`;
     const tab = CS.ui.settingsTab;
-    const nav = [['general','settings','通用'],['appearance','sun','外观与交互'],['usage','chart','Token 用量'],['privacy','shield','数据与隐私'],['agent','bolt','模型配置'],['tools','grid','Agent 工具'],['skills','book','Agent 技能'],['mcp','network','MCP 服务'],['keys','lock','第三方 API Key'],['sysprompt','code','系统提示词']];
+    const nav = [['general','settings','通用'],['appearance','sun','外观与交互'],['usage','chart','Token 用量'],['privacy','shield','数据与隐私'],['agent','bolt','模型配置'],['tools','grid','Agent 工具'],['skills','book','Agent 技能'],['mcp','network','MCP 服务'],['keys','lock','第三方 API Key'],['sysprompt','code','系统提示词'],['context','layers','上下文压缩']];
     const edit = CS.ui.edit;
     const editProvider = edit?.type === 'provider' ? (CS.ui.providers.find(x => x.id === edit.id) || null) : null;
     const editModel = edit?.type === 'model' ? (CS.ui.models.find(x => x.id === edit.id) || null) : null;
@@ -549,6 +549,21 @@
         const builtinTokens = sp.builtinTokens || CS.ui.systemPrompt?.builtinTokens;
         const chars = (sp.prompt || '').length;
         return `<div class="panel settings-section"><div class="row-between"><h2>系统提示词</h2>${pill('服务端存储')}</div><p class="small muted mb-20">自定义提示词会替换 Agent 内置默认(会改变内置任务/团队等指令, 请谨慎); 技能清单自动附加在末尾, 工具调用说明由 Agent 自动追加。子代理仍使用内置提示词。</p><div class="tool-setting-row"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">开关</span><div class="row gap-6"><button type="button" role="switch" aria-checked="${on}" class="switch" data-action="sysprompt-toggle" aria-label="启用自定义系统提示词"></button><span class="small muted">${on ? '已启用自定义' : '使用内置默认'}</span></div></div><div class="tool-field tool-field-top"><span class="tool-field-label">内容</span><textarea id="sysprompt-textarea" class="sysprompt-textarea mono" rows="12" maxlength="32000" spellcheck="false" placeholder="留空并用内置默认; 触发后这里的内容将作为 Agent 的系统提示词…">${e(sp.prompt || '')}</textarea></div><span class="tiny muted">自定义 ${chars} 字符${builtinTokens ? ` · 内置默认约 ${builtinTokens} tokens` : ''} · 保存后上下文圆环自动重新测量</span></div></div>${builtin ? `<details class="sysprompt-builtin"><summary class="small muted">查看内置默认系统提示词</summary><pre class="sysprompt-builtin-pre mono">${e(builtin)}</pre></details>` : ''}<div class="settings-actions row wrap">${btn('save-sysprompt','保存','check','primary')}${btn('reset-sysprompt','恢复默认','refresh','flat')}</div></div>`;
+      })(),
+      context: (() => {
+        // 上下文压缩设置: draft 含全部压缩参数; 数字输入不触发重渲染避免输入中断
+        const cfg = CS.ui.compactionDraft || CS.ui.agentCompaction;
+        if (!cfg) return `<div class="panel settings-section"><h2>上下文压缩</h2><p class="small muted mb-20">正在加载压缩参数配置…</p></div>`;
+        const on = cfg.enabled !== false;
+        const num = (id, label, sub, field, min, max, step, unit) => `<div class="setting-row compact"><div><h3>${e(label)}</h3><p>${e(sub)}</p></div><span class="row gap-6"><input type="number" id="compact-${id}" class="compact-num" min="${min}" max="${max}" step="${step}" value="${e(String(cfg[field] != null ? cfg[field] : ''))}" data-field="${field}" aria-label="${e(label)}">${unit ? `<span class="tiny muted">${unit}</span>` : ''}</span></div>`;
+        return `<section class="panel settings-section"><div class="row-between"><h2>上下文压缩</h2>${pill('服务端存储')}</div><p class="small muted mb-20">上下文即将占满时, Agent 自动把较早的对话压缩成结构化摘要并保留最近消息原文(pi compaction 思路)。保存后即时对下一次会话生效; 自动压缩关闭时, 手动 /compact 命令仍然可用。</p><div class="setting-row"><div><h3>自动压缩</h3><p>仅在上下文占用超过触发阈值时执行摘要压缩。</p></div><button type="button" role="switch" aria-checked="${on}" class="switch" data-action="compaction-toggle" aria-label="自动压缩"></button></div>`
+          + num('ratio', '触发阈值', '上下文占用达到该比例时压缩, 例如 0.85 表示 85%。', 'ratio', 0.3, 0.98, 0.01, '')
+          + num('keep', '保留窗口', '最近这一段 token 数的原文保持原样不参与摘要, 以保住近期工作细节。', 'keepRecentTokens', 2000, 200000, 1000, 'tokens')
+          + num('mindrops', '最少压缩消息数', '被摘要的消息少于此数时跳过本次压缩, 避免频繁摘要小会话。', 'minDrops', 2, 50, 1, '条')
+          + num('summary', '摘要长度上限', '单次摘要生成允许的最大 token 数。', 'summaryTokens', 512, 16384, 256, 'tokens')
+          + num('result', '单条工具结果截断', '喂给摘要模型的工具结果每条最多保留的字符数。', 'resultChars', 200, 20000, 100, '字符')
+          + num('arg', '单个工具参数截断', '摘要中工具调用参数最多保留的字符数。', 'argChars', 40, 4000, 20, '字符')
+          + `<div class="settings-actions row wrap">${btn('save-compaction', '保存', 'check', 'primary')}${btn('reset-compaction', '恢复默认', 'refresh', 'flat')}</div></section>`;
       })(),
       general: (() => {
         // 通用卡片: 与具体功能无关的整体偏好; 提示音 / 键位 / 滚动 / 缩放
