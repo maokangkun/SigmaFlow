@@ -3316,7 +3316,59 @@ class ScienceAPI:
         @router.post("/conversations/{conversation_id}/compact")
         async def compact_conversation(conversation_id: str, request: Request):
             # 手动压缩: 圆环弹卡触发, 独立于会话请求, 复用 Compactor 全量逻辑
-            _check_origin(request)
+            conv, base_url, api_key, model_name, msgs, compactor, manual_keep = _compact_utils(conversation_id, request)
+
+            def _run_compact():
+                compactor.summary_compact(msgs, force=True, keep_tokens_override=manual_keep)
+                return _compact_result_payload(compactor.last_meta, len(msgs))
+
+            return await asyncio.to_thread(_run_compact)
+
+        @router.post("/conversations/{conversation_id}/compact-stream")
+        async def compact_conversation_stream(conversation_id: str, request: Request):
+            # 流式手动压缩: SSE 逐段推送摘要增量(delta), 结束后一条 done 携带完整结果;
+            # 前端等待消息实时渲染 markdown 摘要, 观感与模型回复流式一致
+            conv, base_url, api_key, model_name, msgs, compactor, manual_keep = _compact_utils(conversation_id, request)
+
+            loop = asyncio.get_running_loop()
+            aq: asyncio.Queue = asyncio.Queue()
+
+            def _on_delta(text):
+                loop.call_soon_threadsafe(aq.put_nowait, ("delta", text))
+
+            def _run():
+                try:
+                    compactor.summary_compact(msgs, force=True, keep_tokens_override=manual_keep, on_delta=_on_delta)
+                except Exception as e:
+                    loop.call_soon_threadsafe(aq.put_nowait, ("error", str(e)))
+                loop.call_soon_threadsafe(aq.put_nowait, ("end", None))
+
+            threading.Thread(target=_run, daemon=True).start()
+
+            async def event_stream():
+                err = None
+                while True:
+                    kind, payload = await aq.get()
+                    if kind == "delta":
+                        yield f"event: delta\ndata: {json.dumps({'text': payload}, ensure_ascii=False)}\n\n"
+                    elif kind == "error":
+                        err = payload
+                    elif kind == "end":
+                        break
+                if err is not None:
+                    yield f"event: error\ndata: {json.dumps({'detail': err}, ensure_ascii=False)}\n\n"
+                    return
+                # 摘要本身失败时 Compactor 已产出机械兜底文案, 照常发 done 保证前端收尾
+                yield f"event: done\ndata: {json.dumps(_compact_result_payload(compactor.last_meta, len(msgs)), ensure_ascii=False)}\n\n"
+
+            return StreamingResponse(
+                event_stream(),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
+
+        def _compact_utils(conversation_id: str, request: Request):
+            # 流式/非流式压缩端点的公共准备: 校验 + Compactor 构建 + 手动窗口收窄
             conv = self.project_store.conversations.get(conversation_id)
             if conv is None:
                 raise HTTPException(status_code=404, detail="Conversation not found")
@@ -3327,50 +3379,48 @@ class ScienceAPI:
             ]
             if len(msgs) < 2:
                 raise HTTPException(status_code=400, detail="会话内容过少，无需压缩")
+            _check_origin(request)
             base_url, api_key, model_name = _resolve_chat(self.model_store, None)
+            from openai import OpenAI
 
-            def _run_compact():
-                from openai import OpenAI
+            agent_module = _agent_agent_module()
+            compactor_mod = _agent_tools_module()
+            window = agent_module.MAX_MODEL_LEN.get(model_name.lower(), agent_module.MAX_MODEL_LEN["default"])
+            compactor = compactor_mod.Compactor(
+                agent_module.TRANSCRIPT_DIR,
+                OpenAI(base_url=base_url, api_key=api_key or "sk-empty", timeout=300, max_retries=0),
+                window,
+                model=model_name,
+            )
+            cfg = _effective_compaction()
+            compactor.overrides = {
+                "COMPACT_ENABLED": bool(cfg["enabled"]),
+                "COMPACT_RATIO": float(cfg["ratio"]),
+                "COMPACT_KEEP_RECENT_TOKENS": int(cfg["keepRecentTokens"]),
+                "COMPACT_MIN_DROPS": int(cfg["minDrops"]),
+                "COMPACT_TOKENS": int(cfg["summaryTokens"]),
+                "COMPACT_SERIAL_RESULT_CHARS": int(cfg["resultChars"]),
+                "COMPACT_SERIAL_ARG_CHARS": int(cfg["argChars"]),
+            }
+            # 手动语义: 保留窗口动态收窄到当前会话的约 25%(下限 400, 上限为设置值),
+            # 避免小会话完全落进默认保尾窗口而无事可做(pi 的 auto 有阈值兜底, 手动按钮需要立刻见效)
+            est = compactor.estimate_tokens(msgs)
+            manual_keep = min(int(cfg["keepRecentTokens"]), max(400, int(est * 0.25)))
+            return conv, base_url, api_key, model_name, msgs, compactor, manual_keep
 
-                agent_module = _agent_agent_module()
-                compactor_mod = _agent_tools_module()
-                window = agent_module.MAX_MODEL_LEN.get(model_name.lower(), agent_module.MAX_MODEL_LEN["default"])
-                compactor = compactor_mod.Compactor(
-                    agent_module.TRANSCRIPT_DIR,
-                    OpenAI(base_url=base_url, api_key=api_key or "sk-empty", timeout=300, max_retries=0),
-                    window,
-                    model=model_name,
-                )
-                cfg = _effective_compaction()
-                compactor.overrides = {
-                    "COMPACT_ENABLED": bool(cfg["enabled"]),
-                    "COMPACT_RATIO": float(cfg["ratio"]),
-                    "COMPACT_KEEP_RECENT_TOKENS": int(cfg["keepRecentTokens"]),
-                    "COMPACT_MIN_DROPS": int(cfg["minDrops"]),
-                    "COMPACT_TOKENS": int(cfg["summaryTokens"]),
-                    "COMPACT_SERIAL_RESULT_CHARS": int(cfg["resultChars"]),
-                    "COMPACT_SERIAL_ARG_CHARS": int(cfg["argChars"]),
-                }
-                # 手动语义: 保留窗口动态收窄到当前会话的约 25%(下限 400, 上限为设置值),
-                # 避免小会话完全落进默认保尾窗口而无事可做(pi 的 auto 有阈值兜底, 手动按钮需要立刻见效)
-                est = compactor.estimate_tokens(msgs)
-                manual_keep = min(int(cfg["keepRecentTokens"]), max(400, int(est * 0.25)))
-                compactor.summary_compact(msgs, force=True, keep_tokens_override=manual_keep)
-                meta = compactor.last_meta
-                if not (meta and meta.get("applied")):
-                    return {"applied": False, "removed": 0, "kept": len(msgs), "text": "", "transcript": ""}
-                return {
-                    "applied": True,
-                    "summaryTokens": int(meta.get("summaryTokens") or 0),
-                    "summaryInputTokens": int(meta.get("summaryInputTokens") or 0),
-                    "removed": int(meta.get("removed") or 0),
-                    "dropOldIdx": int(meta.get("dropOldIdx", -1) or 0) if meta.get("dropOldIdx", -1) is not None else -1,
-                    "kept": int(meta.get("kept") or 0),
-                    "text": str(meta.get("text") or ""),
-                    "transcript": str(meta.get("transcript") or ""),
-                }
-
-            return await asyncio.to_thread(_run_compact)
+        def _compact_result_payload(meta, total):
+            if not (meta and meta.get("applied")):
+                return {"applied": False, "removed": 0, "kept": total, "text": "", "transcript": ""}
+            return {
+                "applied": True,
+                "summaryTokens": int(meta.get("summaryTokens") or 0),
+                "summaryInputTokens": int(meta.get("summaryInputTokens") or 0),
+                "removed": int(meta.get("removed") or 0),
+                "dropOldIdx": int(meta.get("dropOldIdx", -1) or 0) if meta.get("dropOldIdx", -1) is not None else -1,
+                "kept": int(meta.get("kept") or 0),
+                "text": str(meta.get("text") or ""),
+                "transcript": str(meta.get("transcript") or ""),
+            }
 
         @router.get("/conversations/{conversation_id}/content")
         async def get_conversation_content(conversation_id: str):

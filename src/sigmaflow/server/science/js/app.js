@@ -1435,15 +1435,70 @@
       run.messages.push(pending);
       CS.save(); CS.render();
       setTimeout(scrollToLatest, 30);
-      // 压缩等待不在正常回复的 timerInterval 更新链里, 自起一个 tick(结束自清)
+      // 压缩等待不在正常回复的 timerInterval 更新链里, 自起一个 tick(结束自清):
+      // 同时负责刷新计时器与流式摘要增量的 markdown 渲染(直改 DOM, 不整树重渲染)
       const tick = setInterval(() => {
         const still = (CS.currentRun() || { messages: [] }).messages.some(m => m.compactPending && m.id === pending.id);
         if (!still) { clearInterval(tick); return; }
         const el = document.querySelector('.compact-reply-block .elapsed-timer');
         if (el) el.textContent = CS.elapsed(pending.at);
+        if (pending.summaryDelta) {
+          const blk = document.querySelector('.compact-reply-block');
+          if (blk) {
+            let body = blk.querySelector('.compact-body');
+            if (!body) {
+              const status = blk.querySelector('.compact-status');
+              const div = document.createElement('div');
+              div.className = 'compact-body md-body compact-streaming';
+              if (status && status.parentElement) status.insertAdjacentElement('afterend', div);
+              else blk.appendChild(div);
+              body = blk.querySelector('.compact-body');
+            }
+            body.innerHTML = CS.markdown(pending.summaryDelta);
+            if (!seenDelta) { seenDelta = true; setTimeout(scrollToLatest, 30); }
+          }
+        }
       }, 500);
+      let seenDelta = false;
       try {
-        const r = await CS.api.request(`/conversations/${encodeURIComponent(run.id)}/compact`, { method: 'POST', timeout: 300000, body: '{}' });
+        // 流式压缩: SSE 增量推送摘要, 等待消息下方跟打字机一样的节奏长出摘要卡
+        const resp = await fetch(CS.api.url(`/conversations/${encodeURIComponent(run.id)}/compact-stream`), {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        if (!resp.ok) {
+          let detail = `HTTP ${resp.status}`;
+          try { const b = await resp.json(); if (b?.detail) detail = String(b.detail); } catch {}
+          if (resp.status === 401 && typeof CS.handleAuthLoss === 'function') setTimeout(() => { try { CS.handleAuthLoss(); } catch {} }, 0);
+          throw new Error(detail);
+        }
+        const reader = resp.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        let r = null, streamErr = null;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let idx;
+          while ((idx = buf.indexOf('\n\n')) >= 0) {
+            const block = buf.slice(0, idx);
+            buf = buf.slice(idx + 2);
+            let ev = 'message', data = '';
+            for (const line of block.split('\n')) {
+              if (line.startsWith('event: ')) ev = line.slice(7).trim();
+              else if (line.startsWith('data: ')) data += (data ? '\n' : '') + line.slice(6);
+            }
+            if (!data) continue;
+            let payload; try { payload = JSON.parse(data); } catch { continue; }
+            if (ev === 'delta' && payload.text) pending.summaryDelta = (pending.summaryDelta || '') + payload.text;
+            else if (ev === 'done') r = payload;
+            else if (ev === 'error') streamErr = new Error(String(payload.detail || '压缩失败'));
+          }
+        }
+        if (streamErr) throw streamErr;
+        if (!r) throw new Error('压缩流提前结束');
         if (!r.applied) {
           run.messages = run.messages.filter(m => m !== pending);
           CS.save(); CS.render();

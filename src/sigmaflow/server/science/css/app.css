@@ -500,6 +500,8 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .compact-status svg.icon{flex-shrink:0}
 .compact-status[data-state="running"]{color:var(--accent)}
 .compact-status-text{letter-spacing:.2px;white-space:nowrap}
+/* 流式摘要中的打字机光标: 跟随最后内容闪 烁 */
+.compact-body.compact-streaming::after{content:'▍';color:var(--accent);display:inline-block;margin-left:2px;animation:compact-dot 1.1s infinite}
 .compact-dots{display:inline-block;margin-left:2px}
 .compact-dots span{animation:compact-dot 1.2s infinite;opacity:0}
 .compact-dots span:nth-child(2){animation-delay:.2s}

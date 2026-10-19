@@ -854,6 +854,8 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .compact-status svg.icon{flex-shrink:0}
 .compact-status[data-state="running"]{color:var(--accent)}
 .compact-status-text{letter-spacing:.2px;white-space:nowrap}
+/* 流式摘要中的打字机光标: 跟随最后内容闪 烁 */
+.compact-body.compact-streaming::after{content:'▍';color:var(--accent);display:inline-block;margin-left:2px;animation:compact-dot 1.1s infinite}
 .compact-dots{display:inline-block;margin-left:2px}
 .compact-dots span{animation:compact-dot 1.2s infinite;opacity:0}
 .compact-dots span:nth-child(2){animation-delay:.2s}
@@ -4525,7 +4527,8 @@ CS.audio = (function () {
         const pending = !!m.compactPending;
         // 名称行/计时/token 与正常回复一套结构; 进行中在 body 内显示压缩状态行(仿思考行)
         const status = `<div class="compact-status" data-state="${pending ? 'running' : 'ok'}">${i('minimize2', '', 14)}<span class="compact-status-text">${pending ? '上下文正在压缩中' : '已完成上下文压缩'}</span>${pending ? '<span class="compact-dots"><span>.</span><span>.</span><span>.</span></span>' : ''}</div>`;
-        return `<div class="msg-block compact-reply-block"><div class="agent-message"><div class="agent-avatar${pending ? ' avatar-pulsing' : ''}">${i('dna', '', 21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span> <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${status}${pending ? '' : V_COMPACT(m)}${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.tokens ? `<span class="message-meta">${CS.num(m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy', '', 13)}</span></span></div>`}</div></div></div>`;
+        const streamBody = pending && m.summaryDelta ? `<div class="compact-body md-body compact-streaming">${CS.markdown(m.summaryDelta)}</div>` : '';
+        return `<div class="msg-block compact-reply-block"><div class="agent-message"><div class="agent-avatar${pending ? ' avatar-pulsing' : ''}">${i('dna', '', 21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span> <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${status}${streamBody}${pending ? '' : V_COMPACT(m)}${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.tokens ? `<span class="message-meta">${CS.num(m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy', '', 13)}</span></span></div>`}</div></div></div>`;
       };
       const bubble = m => {
         if (m.role === 'assistant' && isCompactMsg(m)) return V_COMPACT_REPLY(m);
@@ -6303,15 +6306,70 @@ CS.audio = (function () {
       run.messages.push(pending);
       CS.save(); CS.render();
       setTimeout(scrollToLatest, 30);
-      // 压缩等待不在正常回复的 timerInterval 更新链里, 自起一个 tick(结束自清)
+      // 压缩等待不在正常回复的 timerInterval 更新链里, 自起一个 tick(结束自清):
+      // 同时负责刷新计时器与流式摘要增量的 markdown 渲染(直改 DOM, 不整树重渲染)
       const tick = setInterval(() => {
         const still = (CS.currentRun() || { messages: [] }).messages.some(m => m.compactPending && m.id === pending.id);
         if (!still) { clearInterval(tick); return; }
         const el = document.querySelector('.compact-reply-block .elapsed-timer');
         if (el) el.textContent = CS.elapsed(pending.at);
+        if (pending.summaryDelta) {
+          const blk = document.querySelector('.compact-reply-block');
+          if (blk) {
+            let body = blk.querySelector('.compact-body');
+            if (!body) {
+              const status = blk.querySelector('.compact-status');
+              const div = document.createElement('div');
+              div.className = 'compact-body md-body compact-streaming';
+              if (status && status.parentElement) status.insertAdjacentElement('afterend', div);
+              else blk.appendChild(div);
+              body = blk.querySelector('.compact-body');
+            }
+            body.innerHTML = CS.markdown(pending.summaryDelta);
+            if (!seenDelta) { seenDelta = true; setTimeout(scrollToLatest, 30); }
+          }
+        }
       }, 500);
+      let seenDelta = false;
       try {
-        const r = await CS.api.request(`/conversations/${encodeURIComponent(run.id)}/compact`, { method: 'POST', timeout: 300000, body: '{}' });
+        // 流式压缩: SSE 增量推送摘要, 等待消息下方跟打字机一样的节奏长出摘要卡
+        const resp = await fetch(CS.api.url(`/conversations/${encodeURIComponent(run.id)}/compact-stream`), {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        if (!resp.ok) {
+          let detail = `HTTP ${resp.status}`;
+          try { const b = await resp.json(); if (b?.detail) detail = String(b.detail); } catch {}
+          if (resp.status === 401 && typeof CS.handleAuthLoss === 'function') setTimeout(() => { try { CS.handleAuthLoss(); } catch {} }, 0);
+          throw new Error(detail);
+        }
+        const reader = resp.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        let r = null, streamErr = null;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let idx;
+          while ((idx = buf.indexOf('\n\n')) >= 0) {
+            const block = buf.slice(0, idx);
+            buf = buf.slice(idx + 2);
+            let ev = 'message', data = '';
+            for (const line of block.split('\n')) {
+              if (line.startsWith('event: ')) ev = line.slice(7).trim();
+              else if (line.startsWith('data: ')) data += (data ? '\n' : '') + line.slice(6);
+            }
+            if (!data) continue;
+            let payload; try { payload = JSON.parse(data); } catch { continue; }
+            if (ev === 'delta' && payload.text) pending.summaryDelta = (pending.summaryDelta || '') + payload.text;
+            else if (ev === 'done') r = payload;
+            else if (ev === 'error') streamErr = new Error(String(payload.detail || '压缩失败'));
+          }
+        }
+        if (streamErr) throw streamErr;
+        if (!r) throw new Error('压缩流提前结束');
         if (!r.applied) {
           run.messages = run.messages.filter(m => m !== pending);
           CS.save(); CS.render();

@@ -455,7 +455,7 @@ class Compactor:
     # -- Layer 2: summary_compact - 摘要较早部分 + 摘要卡追加到会话末尾 --
     # 摘要卡按时间顺序作为最新消息放在保留轮次之后(pi 的 compaction entry 语义);
     # 旧摘要卡(任意位置)移除, 其内容经 previousSummary 并入新摘要
-    def summary_compact(self, messages: list, force: bool = False, keep_tokens_override: int = 0) -> list:
+    def summary_compact(self, messages: list, force: bool = False, keep_tokens_override: int = 0, on_delta=None) -> list:
         self.last_meta = None
         keep_tokens = int(keep_tokens_override or 0) or self._cfg("COMPACT_KEEP_RECENT_TOKENS", int, 16000)
         # 旧摘要卡可在列表任意位置(首次在头部, 之后始终是上轮追加的尾部)
@@ -496,7 +496,7 @@ class Compactor:
         for p2 in self._file_section(prev_summary, "modified-files"):
             if p2 not in sec_mod:
                 sec_mod.append(p2)
-        summary = self._summarize(span, names, prev_summary)
+        summary = self._summarize(span, names, prev_summary, on_delta=on_delta)
         if not summary:
             # 摘要失败不阻塞会话: 机械兜底说明, 保尾照常生效
             summary = (
@@ -531,14 +531,24 @@ class Compactor:
         return new_messages
 
     # -- 摘要请求: 结构化 pi 摘要 + 迭代 previousSummary; 失败返回空 --
-    def _summarize(self, span: list, names: dict, prev_summary=None) -> str:
-        if self.client is None:
-            return ""
+    def _summary_prompt(self, span: list, names: dict, prev_summary=None) -> str:
         conversation = self._serialize(span, names)
         prompt = SUMMARY_PROMPT
         if prev_summary:
             prompt += f"\n\n### Previous summary (iterate on it; keep still-relevant points, do not repeat verbatim):\n{prev_summary}\n"
         prompt += f"\n\n### Conversation:\n{conversation}"
+        return prompt
+
+    def _summarize(self, span: list, names: dict, prev_summary=None, on_delta=None) -> str:
+        if self.client is None:
+            return ""
+        prompt = self._summary_prompt(span, names, prev_summary)
+        # 流式优先: delta 逐段推给调用方(手动压缩的等待消息可以实时渲染);
+        # 网关不支持流式时退回非流式路径, 结果一致
+        if on_delta is not None:
+            text = self._summarize_stream(prompt, on_delta)
+            if text is not None:
+                return text
         model = self.model or MODEL
         self.last_usage_tokens = 0
         self.last_input_tokens = 0
@@ -563,6 +573,91 @@ class Compactor:
             # 摘要失败: 上层走机械兜底, 会话不中断
             print(f"{' ' * 12}compact summary failed, fallback note: {e}")
             return ""
+
+    def _summarize_stream(self, prompt: str, on_delta):
+        # 流式摘要: 逐 delta 回调, 返回全文; 失败返回 None 交由非流式路径重试
+        if self.client is None:
+            return None
+        model = self.model or MODEL
+        self.last_usage_tokens = 0
+        self.last_input_tokens = 0
+        try:
+            parts = []
+            buf = []
+
+            def _flush(final=False):
+                # 服务端先按 ~48 字符合并, 降低回调/SSE 频率
+                if buf and (final or sum(len(x) for x in buf) >= 48):
+                    text = "".join(buf)
+                    buf.clear()
+                    parts.append(text)
+                    try:
+                        on_delta(text)
+                    except Exception:
+                        # on_delta 故障只影响展示, 压缩照常
+                        pass
+
+            if self.client.__class__.__name__ == "Anthropic":
+                with self.client.messages.stream(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=self._cfg("COMPACT_TOKENS", int, 4096),
+                ) as stream:
+                    for t in stream.text_stream:
+                        if t:
+                            buf.append(t)
+                            _flush()
+                    _flush(final=True)
+                    final_msg = stream.get_final_message()
+                    usage = getattr(final_msg, "usage", None)
+                    self.last_usage_tokens = getattr(usage, "output_tokens", 0) or 0
+                    self.last_input_tokens = getattr(usage, "input_tokens", 0) or 0
+            else:
+                try:
+                    stream = self.client.chat.completions.create(
+                        model=model,
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=self._cfg("COMPACT_TOKENS", int, 4096),
+                        stream=True,
+                        stream_options={"include_usage": True},
+                    )
+                except Exception:
+                    # 个别网关不识别 stream_options, 去掉后重试
+                    stream = self.client.chat.completions.create(
+                        model=model,
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=self._cfg("COMPACT_TOKENS", int, 4096),
+                        stream=True,
+                    )
+                usage_seen = None
+                for chunk in stream:
+                    ch_usage = getattr(chunk, "usage", None)
+                    if ch_usage is not None:
+                        usage_seen = ch_usage
+                    choices = getattr(chunk, "choices", None) or []
+                    delta = ""
+                    if choices:
+                        delta = getattr(getattr(choices[0], "delta", None), "content", None) or ""
+                    if delta:
+                        buf.append(delta)
+                        _flush()
+                _flush(final=True)
+                if usage_seen is not None:
+                    self.last_usage_tokens = getattr(usage_seen, "completion_tokens", 0) or 0
+                    self.last_input_tokens = getattr(usage_seen, "prompt_tokens", 0) or 0
+            text = "".join(parts).strip()
+            if not text:
+                raise RuntimeError("empty stream")
+            if not self.last_usage_tokens:
+                # 网关流式下没回 usage: 用本地估算兜底
+                self.last_usage_tokens = self._tokens_of(text)
+            if not self.last_input_tokens:
+                self.last_input_tokens = self._tokens_of(prompt)
+            print(f"{' ' * 12}summary({len(text)} chars, ~{self.last_usage_tokens} tokens) via {model} [stream]")
+            return text
+        except Exception as e:
+            print(f"{' ' * 12}compact summary stream failed, falling back to non-stream: {e}")
+            return None
 
     # -- 触发器: 实际用量与估算取大者决定是否走摘要压缩(pi: tokens > window-reserve) --
     def auto_compact(self, messages: list, force=False, context_ratio=0) -> list:
