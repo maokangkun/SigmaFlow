@@ -838,8 +838,8 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 
 /* 圆环弹卡底部的手动压缩按钮 */
 .ctx-foot{margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft);display:flex;justify-content:flex-end}
-.ctx-compact-btn{display:inline-flex;align-items:center;gap:7px;font-size:12px;padding:7px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);cursor:pointer}
-.ctx-compact-btn:hover{border-color:var(--accent);color:var(--accent)}
+.ctx-compact-btn{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:6px 10px;border:none;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}
+.ctx-compact-btn:hover{color:var(--accent);background:var(--accent-bg)}
 .ctx-compact-btn .icon{width:13px;height:13px}
 
 </style>
@@ -870,6 +870,7 @@ CS.icons = {
   dna: '<path d="M6 2c0 10 12 10 12 20M18 2C18 12 6 12 6 22M7 5h10M9 9h6M9 15h6M7 19h10"/>',
   wechat: '<path d="M9 3.2c-4.3 0-7.8 2.9-7.8 6.6 0 2.1 1.1 3.9 2.9 5.1l-.7 2.6 3-1.5c.4.1.9.2 1.4.3A6.8 6.8 0 0 1 7.6 13c0-3.4 3.2-6.1 7.2-6.1h.4C14.5 4.9 12 3.2 9 3.2Z"/><path d="M22.8 13.7c0-3-2.9-5.4-6.4-5.4s-6.4 2.4-6.4 5.4 2.9 5.4 6.4 5.4c.7 0 1.4-.1 2-.3l2.7 1.4-.7-2.4c1.6-1 2.4-2.5 2.4-4.1Z"/><circle cx="6.6" cy="7.6" r=".95" fill="currentColor" stroke="none"/><circle cx="11.4" cy="7.6" r=".95" fill="currentColor" stroke="none"/><circle cx="14.5" cy="12.4" r=".85" fill="currentColor" stroke="none"/><circle cx="18.3" cy="12.4" r=".85" fill="currentColor" stroke="none"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  minimize2: '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>',
   minus: '<path d="M5 12h14"/>',
   message: '<path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 3V6a2 2 0 0 1 1-2Z"/><path d="M8 9h8M8 13h5"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/>',
@@ -4419,7 +4420,7 @@ CS.audio = (function () {
     return `<div class="ctx-use"><button type="button" class="ctx-ring-btn${CS.ui.terminal?.open ? ' compact' : ' '}" data-action="toggle-context-menu" data-level="${level}" aria-label="上下文用量" aria-expanded="${!!CS.ui.contextMenu}" title="上下文已用 ~${u.pct}% · 点击查看详情"><svg class="ctx-ring-svg" viewBox="0 0 22 22" width="18" height="18" aria-hidden="true"><circle class="ctx-track" cx="11" cy="11" r="${R}"/><circle class="ctx-fill" cx="11" cy="11" r="${R}" stroke-dasharray="${C.toFixed(2)}" stroke-dashoffset="${(C - on).toFixed(2)}" transform="rotate(-90 11 11)"/></svg><span class="ctx-pct">${u.pct}%</span></button>${CS.ui.contextMenu ? (() => {
       const win = u.window;
       const seg = t => t > 0 ? `width:${Math.max(0, Math.min(100, t / win * 100)).toFixed(2)}%;min-width:5px` : 'width:0%;min-width:0';
-      return `<div class="ctx-pop" role="dialog" aria-label="上下文用量详情"><div class="ctx-head"><span>上下文已用 <b data-ctx="pct">${u.pct}%</b></span><span class="ctx-head-cap" data-ctx="cap">${CS.kfmt(u.total)} / ${CS.kfmt(win).slice(1)}</span></div><div class="ctx-bar"><span class="ctx-seg sys" data-ctx="w-sys" style="${seg(u.sysT)}"></span><span class="ctx-seg tools" data-ctx="w-tools" style="${seg(u.toolT)}"></span><span class="ctx-seg msgs" data-ctx="w-msgs" style="${seg(u.msgsT)}"></span></div><div class="ctx-rows"><div class="ctx-row"><span class="ctx-dot sys"></span><span class="ctx-label">系统提示词</span><span class="ctx-val" data-ctx="v-sys">${CS.kfmt(u.sysT)}</span></div><div class="ctx-row"><span class="ctx-dot tools"></span><span class="ctx-label">工具定义</span><span class="ctx-val" data-ctx="v-tools">${CS.kfmt(u.toolT)}</span></div><div class="ctx-row"><span class="ctx-dot msgs"></span><span class="ctx-label">对话消息</span><span class="ctx-val" data-ctx="v-msgs">${CS.kfmt(u.msgsT)}</span></div></div><div class="ctx-foot"><button type="button" class="ctx-compact-btn" data-action="ctx-compact" title="把较早的对话压缩成摘要, 保留最近消息原文">${i('layers', '', 14)}<span>手动压缩</span></button></div></div>`;
+      return `<div class="ctx-pop" role="dialog" aria-label="上下文用量详情"><div class="ctx-head"><span>上下文已用 <b data-ctx="pct">${u.pct}%</b></span><span class="ctx-head-cap" data-ctx="cap">${CS.kfmt(u.total)} / ${CS.kfmt(win).slice(1)}</span></div><div class="ctx-bar"><span class="ctx-seg sys" data-ctx="w-sys" style="${seg(u.sysT)}"></span><span class="ctx-seg tools" data-ctx="w-tools" style="${seg(u.toolT)}"></span><span class="ctx-seg msgs" data-ctx="w-msgs" style="${seg(u.msgsT)}"></span></div><div class="ctx-rows"><div class="ctx-row"><span class="ctx-dot sys"></span><span class="ctx-label">系统提示词</span><span class="ctx-val" data-ctx="v-sys">${CS.kfmt(u.sysT)}</span></div><div class="ctx-row"><span class="ctx-dot tools"></span><span class="ctx-label">工具定义</span><span class="ctx-val" data-ctx="v-tools">${CS.kfmt(u.toolT)}</span></div><div class="ctx-row"><span class="ctx-dot msgs"></span><span class="ctx-label">对话消息</span><span class="ctx-val" data-ctx="v-msgs">${CS.kfmt(u.msgsT)}</span></div></div><div class="ctx-foot"><button type="button" class="ctx-compact-btn" data-action="ctx-compact" title="把较早的对话压缩成摘要, 保留最近消息原文">${i('minimize2', '', 13)}<span>压缩</span></button></div></div>`;
     })() : ''}</div>`;
   };
   V.fsTree = () => {

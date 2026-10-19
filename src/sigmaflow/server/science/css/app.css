@@ -484,6 +484,6 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 
 /* 圆环弹卡底部的手动压缩按钮 */
 .ctx-foot{margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft);display:flex;justify-content:flex-end}
-.ctx-compact-btn{display:inline-flex;align-items:center;gap:7px;font-size:12px;padding:7px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);cursor:pointer}
-.ctx-compact-btn:hover{border-color:var(--accent);color:var(--accent)}
+.ctx-compact-btn{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:6px 10px;border:none;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}
+.ctx-compact-btn:hover{color:var(--accent);background:var(--accent-bg)}
 .ctx-compact-btn .icon{width:13px;height:13px}

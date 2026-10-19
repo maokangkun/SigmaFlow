@@ -5,6 +5,7 @@ CS.icons = {
   dna: '<path d="M6 2c0 10 12 10 12 20M18 2C18 12 6 12 6 22M7 5h10M9 9h6M9 15h6M7 19h10"/>',
   wechat: '<path d="M9 3.2c-4.3 0-7.8 2.9-7.8 6.6 0 2.1 1.1 3.9 2.9 5.1l-.7 2.6 3-1.5c.4.1.9.2 1.4.3A6.8 6.8 0 0 1 7.6 13c0-3.4 3.2-6.1 7.2-6.1h.4C14.5 4.9 12 3.2 9 3.2Z"/><path d="M22.8 13.7c0-3-2.9-5.4-6.4-5.4s-6.4 2.4-6.4 5.4 2.9 5.4 6.4 5.4c.7 0 1.4-.1 2-.3l2.7 1.4-.7-2.4c1.6-1 2.4-2.5 2.4-4.1Z"/><circle cx="6.6" cy="7.6" r=".95" fill="currentColor" stroke="none"/><circle cx="11.4" cy="7.6" r=".95" fill="currentColor" stroke="none"/><circle cx="14.5" cy="12.4" r=".85" fill="currentColor" stroke="none"/><circle cx="18.3" cy="12.4" r=".85" fill="currentColor" stroke="none"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  minimize2: '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>',
   minus: '<path d="M5 12h14"/>',
   message: '<path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 3V6a2 2 0 0 1 1-2Z"/><path d="M8 9h8M8 13h5"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/>',
