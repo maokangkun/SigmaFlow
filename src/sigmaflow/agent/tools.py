@@ -452,24 +452,29 @@ class Compactor:
             return []
         return [ln.strip() for ln in match.group(1).splitlines() if ln.strip()]
 
-    # -- Layer 2: summary_compact - 摘要头部 + 保留尾部(pi: summary + kept) --
-    # keep_tokens_override: 手动压缩按钮传入收窄后的窗口, 保证轻会话也有可见压缩
+    # -- Layer 2: summary_compact - 摘要较早部分 + 摘要卡追加到会话末尾 --
+    # 摘要卡按时间顺序作为最新消息放在保留轮次之后(pi 的 compaction entry 语义);
+    # 旧摘要卡(任意位置)移除, 其内容经 previousSummary 并入新摘要
     def summary_compact(self, messages: list, force: bool = False, keep_tokens_override: int = 0) -> list:
         self.last_meta = None
         keep_tokens = int(keep_tokens_override or 0) or self._cfg("COMPACT_KEEP_RECENT_TOKENS", int, 16000)
+        # 旧摘要卡可在列表任意位置(首次在头部, 之后始终是上轮追加的尾部)
+        marker_idx = -1
+        for i, m in enumerate(messages):
+            c = m.get("content")
+            if isinstance(c, str) and c.startswith(_COMPACT_MARKER):
+                marker_idx = i
+        prev_summary = messages[marker_idx].get("content") if marker_idx >= 0 else None
         cut = self._cut_index(messages, keep_tokens)
         if cut >= len(messages):
             return messages  # 保留窗口覆盖了全部消息, 无可摘要段
-        # 队首的旧压缩摘要作为 previousSummary 迭代, 不再重复序列化(pi 语义)
-        prev_summary = None
-        start = 0
-        if messages and isinstance(messages[0].get("content"), str) and messages[0]["content"].startswith(_COMPACT_MARKER):
-            prev_summary = messages[0]["content"]
-            start = 1
-        dropped = cut - start
+        # 摘要跨度 = [0, cut) 且不含旧卡; 旧卡若落在保留区则单独剔除
+        span = [m for i, m in enumerate(messages[:cut]) if i != marker_idx]
+        old_card_in_kept = marker_idx >= cut
+        dropped = len(span) + (1 if marker_idx >= 0 else 0)
         if dropped <= 0 or (not force and dropped < self._cfg("COMPACT_MIN_DROPS", int, 4)):
             return messages
-        kept = messages[cut:]
+        kept = [m for i, m in enumerate(messages[cut:]) if i + cut != marker_idx]
         names = self._tool_name_map(messages)
         # 全文转存 transcripts, 供事后审计
         transcript_path = None
@@ -484,20 +489,20 @@ class Compactor:
         except Exception as e:
             print(f"{' ' * 12}compact transcript dump failed (compaction still applies): {e}")
         # 文件清单 = 本段 tool_calls 采集 + 旧摘要清单(跨压缩累计)
-        sec_read, sec_mod = self._collect_files(messages[start:cut])
-        for p in self._file_section(prev_summary, "read-files"):
-            if p not in sec_read:
-                sec_read.append(p)
-        for p in self._file_section(prev_summary, "modified-files"):
-            if p not in sec_mod:
-                sec_mod.append(p)
-        summary = self._summarize(messages[start:cut], names, prev_summary)
+        sec_read, sec_mod = self._collect_files(span)
+        for p2 in self._file_section(prev_summary, "read-files"):
+            if p2 not in sec_read:
+                sec_read.append(p2)
+        for p2 in self._file_section(prev_summary, "modified-files"):
+            if p2 not in sec_mod:
+                sec_mod.append(p2)
+        summary = self._summarize(span, names, prev_summary)
         if not summary:
             # 摘要失败不阻塞会话: 机械兜底说明, 保尾照常生效
             summary = (
                 "(The earlier part of this conversation was compacted to free context. "
                 + (f"Full original transcript: {transcript_path.name}. " if transcript_path else "")
-                + "Recent messages below are verbatim.)"
+                + "Recent messages above are verbatim; this card carries the rolling summary.)"
             )
         marker_text = _COMPACT_MARKER
         if transcript_path is not None:
@@ -507,11 +512,15 @@ class Compactor:
             marker_text += "\n\n<read-files>\n" + "\n".join(sec_read[:200]) + "\n</read-files>"
         if sec_mod:
             marker_text += "\n\n<modified-files>\n" + "\n".join(sec_mod[:200]) + "\n</modified-files>"
-        new_messages = [{"role": "user", "content": marker_text}, *kept]
+        # 新摘要卡按时间顺序追加到末尾(用户视角: 压缩那一刻的最新一条消息)
+        new_messages = [*kept, {"role": "user", "content": marker_text}]
+        drop_old_idx = (marker_idx - cut) if old_card_in_kept else -1
         self.last_meta = {
             "applied": True,
-            "removed": dropped,
+            "removed": cut,          # 前端需从头部删除的条数(含落在其中的旧卡)
+            "dropOldIdx": drop_old_idx,  # 旧卡若在保留区, 删头后的相对索引(-1=已随头部删除)
             "kept": len(kept),
+            "droppedTotal": dropped,
             "tokens_before": self.estimate_tokens(messages),
             "transcript": transcript_path.name if transcript_path else "",
             "text": marker_text,

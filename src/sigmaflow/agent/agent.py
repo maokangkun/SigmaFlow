@@ -226,6 +226,7 @@ class Agent:
                         self.on_tool({
                             "kind": "compact",
                             "removed": cmeta.get("removed"),
+                            "dropOldIdx": cmeta.get("dropOldIdx", -1),
                             "kept": cmeta.get("kept"),
                             "tokensBefore": cmeta.get("tokens_before"),
                             "transcript": cmeta.get("transcript"),

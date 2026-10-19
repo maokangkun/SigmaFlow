@@ -5566,9 +5566,13 @@ CS.audio = (function () {
       // 会话列表变短后随 reply 结束的同步一起持久化, 下轮请求上下文即已压缩
       if (t.kind === 'compact' && t.text) {
         const dropped = Math.max(0, Math.floor(Number(t.removed) || 0));
+        const oldIdx = Math.floor(Number(t.dropOldIdx));
         const card = { id: 'cmp-' + Math.random().toString(36).slice(2, 8), role: 'user', compact: true, content: String(t.text), at: new Date().toISOString() };
         if (dropped) run.messages.splice(0, dropped);
-        run.messages.unshift(card);
+        // 旧摘要卡在保留区时单独移除(索引相对删头后的数组)
+        if (oldIdx >= 0) run.messages.splice(oldIdx, 1);
+        // 摘要卡按时间顺序追加为最新消息
+        run.messages.push(card);
         CS.save(); CS.render();
         return;
       }
@@ -6248,12 +6252,16 @@ CS.audio = (function () {
         const r = await CS.api.request(`/conversations/${encodeURIComponent(run.id)}/compact`, { method: 'POST', body: '{}' });
         if (!r.applied) { CS.toast('上下文还很轻，无需压缩。'); return; }
         const dropped = Math.max(0, Math.floor(Number(r.removed) || 0));
+        const oldIdx = Math.floor(Number(r.dropOldIdx));
         const card = { id: 'cmp-' + Math.random().toString(36).slice(2, 8), role: 'user', compact: true, content: String(r.text || ''), at: new Date().toISOString() };
         // 锚点估算失效: 旧 promptTokens 反映压缩前量级, 清掉后圆环改为逐条估算,
         // 下一次真实回复的 usage 回填后锚点机制自然重新校准
         run.messages.forEach(m => { if (m.promptTokens) delete m.promptTokens; });
         if (dropped) run.messages.splice(0, dropped);
-        run.messages.unshift(card);
+        // 旧摘要卡在保留区时单独移除(索引相对删头后的数组)
+        if (oldIdx >= 0) run.messages.splice(oldIdx, 1);
+        // 摘要卡按时间顺序追加为最新消息(压缩时刻的位置)
+        run.messages.push(card);
         CS.save();
         await syncConversation(run);       // 服务端先落库, 后续统计才读到新列表
         CS.ui.contextMenu = true;          // 重开弹卡, 让用量拆分的变化直接可见
