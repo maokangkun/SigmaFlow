@@ -53,6 +53,9 @@
     if (await CS.api.ws.connect()) {
       // GET 路径参数(如 /conversations/{id}/content)转成 WS payload, 后端按 data 取用
       const payload = { ...(body || {}) };
+      // 单体路径(删除/更新项目与会话等): path 里的 id 同样要走 WS 的 data.id, 否则后端取空报不存在
+      const one = httpPath.match(/^\/(projects|conversations)\/([^/]+)\/?$/);
+      if (one) payload.id = decodeURIComponent(one[2]);
       if (httpMethod === 'GET') {
         const m = httpPath.match(/^\/conversations\/([^/]+)\/content$/);
         if (m) payload.id = decodeURIComponent(m[1]);
