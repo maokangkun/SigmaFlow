@@ -6249,10 +6249,15 @@ CS.audio = (function () {
         if (!r.applied) { CS.toast('上下文还很轻，无需压缩。'); return; }
         const dropped = Math.max(0, Math.floor(Number(r.removed) || 0));
         const card = { id: 'cmp-' + Math.random().toString(36).slice(2, 8), role: 'user', compact: true, content: String(r.text || ''), at: new Date().toISOString() };
+        // 锚点估算失效: 旧 promptTokens 反映压缩前量级, 清掉后圆环改为逐条估算,
+        // 下一次真实回复的 usage 回填后锚点机制自然重新校准
+        run.messages.forEach(m => { if (m.promptTokens) delete m.promptTokens; });
         if (dropped) run.messages.splice(0, dropped);
         run.messages.unshift(card);
-        CS.save(); CS.render();
-        syncConversation(run);
+        CS.save();
+        await syncConversation(run);       // 服务端先落库, 后续统计才读到新列表
+        CS.ui.contextMenu = true;          // 重开弹卡, 让用量拆分的变化直接可见
+        CS.render();
         await CS.refreshContextInfo().catch(() => {});
         CS.toast(`已压缩：早期 ${dropped} 条消息并入摘要, 保留最近 ${r.kept} 条。`);
       } catch (error) { CS.toast('压缩失败：' + CS.api.friendlyError(error), 'error'); }
