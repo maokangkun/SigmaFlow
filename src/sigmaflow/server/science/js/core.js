@@ -93,12 +93,27 @@ CS.contextUsage = () => {
   const msgs = cardIdx >= 0 ? all.slice(cardIdx) : all;
   let anchorIdx = -1, anchorP = 0;
   msgs.forEach((m, i) => { if (m.role === 'assistant' && m.promptTokens) { anchorIdx = i; anchorP = m.promptTokens; } });
-  // 锚点只在其含义成立时使用: promptTokens 应远大于固定开销(sys+tools);
-  // 压缩后锚点是旧量级(负的 base 会被钳 0 导致显示崩坏), 回退逐条估算
+  // 优先用 contextTokens(最后一轮当次 prompt = 真实窗口占用)。老的 promptTokens 是
+  // 单次请求内 max_turn 多轮循环的累计值, 不能当窗口占用锚点(旧数据无 contextTokens 时回退)。
+  let ctxP = 0;
+  msgs.forEach((m, i) => { if (m.role === 'assistant' && m.contextTokens) { if (i >= anchorIdx) { ctxP = m.contextTokens; anchorIdx = i; } } });
+  if (ctxP && anchorP && ctxP <= anchorP) { /* 旧数据: contextTokens 缺失 */ }
+  const useCtx = ctxP > 0 && ctxP >= anchorP;
+  // 锚点只在其含义成立时使用: 锚点应远大于固定开销(sys+tools); 荒谬值(超窗口)不采信, 回退逐条估算
+  const winLimit = Math.floor(win * 0.98);
+  if (useCtx) anchorP = ctxP;
+  if (anchorP > winLimit) { anchorIdx = -1; }
+  // 老数据识别: promptTokens 若是 max_turn 多轮循环的累计值, 会远超逐条估算的总和;
+  // 超出 25 倍视为口径污染, 回退逐条估算(新数据有 contextTokens, 不走本分支)
+  if (!useCtx && anchorIdx >= 0) {
+    const estAll = msgs.reduce((a, m) => a + CS.estimateTokens(m.content), 0);
+    if (anchorP - sysT - toolT > estAll * 25) anchorIdx = -1;
+  }
   let base = 0, after = 0, count = 0;
   if (anchorIdx >= 0 && anchorP > sysT + toolT) {
     base = Math.max(0, anchorP - sysT - toolT);
-    for (let j = anchorIdx; j < msgs.length; j++) { after += CS.estimateTokens(msgs[j].content); count++; }
+    for (let j = anchorIdx + 1; j < msgs.length; j++) { after += CS.estimateTokens(msgs[j].content); count++; }
+    count++;
   } else {
     anchorIdx = -1;
     msgs.forEach(m => { base += CS.estimateTokens(m.content); count++; });

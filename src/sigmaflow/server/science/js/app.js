@@ -868,6 +868,8 @@
       }
       if (done.tokens) reply.tokens = done.tokens;  // 真实 usage(含思考 token), 覆盖流式粗估
       if (done.promptTokens) reply.promptTokens = done.promptTokens;
+      // 最后一轮当次 prompt(真实窗口占用): 供上下文圆环与 meta 行使用; 与累计 promptTokens 区分
+      if (done.contextTokens) reply.contextTokens = done.contextTokens;
       CS.audio.playDone();  // 回复完成提示音; 出错分支不播放
     } catch (error) {
       // 失败不再伪装成正文追在 content 里, 而是挂到 error 字段,

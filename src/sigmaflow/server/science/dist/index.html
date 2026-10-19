@@ -1176,12 +1176,27 @@ CS.contextUsage = () => {
   const msgs = cardIdx >= 0 ? all.slice(cardIdx) : all;
   let anchorIdx = -1, anchorP = 0;
   msgs.forEach((m, i) => { if (m.role === 'assistant' && m.promptTokens) { anchorIdx = i; anchorP = m.promptTokens; } });
-  // 锚点只在其含义成立时使用: promptTokens 应远大于固定开销(sys+tools);
-  // 压缩后锚点是旧量级(负的 base 会被钳 0 导致显示崩坏), 回退逐条估算
+  // 优先用 contextTokens(最后一轮当次 prompt = 真实窗口占用)。老的 promptTokens 是
+  // 单次请求内 max_turn 多轮循环的累计值, 不能当窗口占用锚点(旧数据无 contextTokens 时回退)。
+  let ctxP = 0;
+  msgs.forEach((m, i) => { if (m.role === 'assistant' && m.contextTokens) { if (i >= anchorIdx) { ctxP = m.contextTokens; anchorIdx = i; } } });
+  if (ctxP && anchorP && ctxP <= anchorP) { /* 旧数据: contextTokens 缺失 */ }
+  const useCtx = ctxP > 0 && ctxP >= anchorP;
+  // 锚点只在其含义成立时使用: 锚点应远大于固定开销(sys+tools); 荒谬值(超窗口)不采信, 回退逐条估算
+  const winLimit = Math.floor(win * 0.98);
+  if (useCtx) anchorP = ctxP;
+  if (anchorP > winLimit) { anchorIdx = -1; }
+  // 老数据识别: promptTokens 若是 max_turn 多轮循环的累计值, 会远超逐条估算的总和;
+  // 超出 25 倍视为口径污染, 回退逐条估算(新数据有 contextTokens, 不走本分支)
+  if (!useCtx && anchorIdx >= 0) {
+    const estAll = msgs.reduce((a, m) => a + CS.estimateTokens(m.content), 0);
+    if (anchorP - sysT - toolT > estAll * 25) anchorIdx = -1;
+  }
   let base = 0, after = 0, count = 0;
   if (anchorIdx >= 0 && anchorP > sysT + toolT) {
     base = Math.max(0, anchorP - sysT - toolT);
-    for (let j = anchorIdx; j < msgs.length; j++) { after += CS.estimateTokens(msgs[j].content); count++; }
+    for (let j = anchorIdx + 1; j < msgs.length; j++) { after += CS.estimateTokens(msgs[j].content); count++; }
+    count++;
   } else {
     anchorIdx = -1;
     msgs.forEach(m => { base += CS.estimateTokens(m.content); count++; });
@@ -4743,7 +4758,7 @@ CS.audio = (function () {
               segments = `${blocks.map(seg).join('')}${m.streaming && !tailText ? `<div class="agent-intro md-body" data-stream-at="${e(m.at)}"></div>${waitHint}` : ''}`;
             }
             const err = m.error ? (typeof m.error === 'string' ? { message: m.error } : m.error || {}) : null;
-            return `<div class="msg-block agent-block"><div class="agent-message"><div class="agent-avatar${m.streaming ? ' avatar-pulsing' : ' '}">${i('dna','',21)}</div><div class="agent-body"${blocks ? ` data-block-sig="${e(blocks.map(b => b.type).join(','))}"` : ''}><div class="agent-name">SigmaFlow Science${m.streaming && m.tokens ? ` <span class="tok-down" data-start="${m.at}">↓ ${CS.num(m.tokens)}</span>` : (m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span>` : '')}${m.streaming ? ` <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${segments}${err ?(() => { const errKey = (run.id || ['']) + '|' + idxOf; const errOpen = (CS.ui.errorOpenSet || []).has ? CS.ui.errorOpenSet.has(errKey) : false; return `<div class="think-root error-root"${errOpen ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-error" data-errkey="${e(errKey)}" aria-expanded="${errOpen}"><span class="think-leading">${i('alert', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">请求出错</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(String(err.message || '未知错误').split('\n')[0])}</span></span></button>${errOpen ? `<div class="error-body"><pre class="error-detail">${e(err.detail || err.message || '')}</pre></div>` : ''}</div>`; })() : ''}${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.role === 'assistant' && m.tokens ? `<span class="message-meta">${CS.num(m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn${m.feedback && m.feedback.rating === 'up' ? ' rated rated-up' : ''}" role="button" data-action="rate-message" data-id="${idxOf}" data-rating="up" title="点赞">${i('thumbup','',13)}</span><span class="icon-btn${m.feedback && m.feedback.rating === 'down' ? ' rated rated-down' : ''}" role="button" data-action="rate-message" data-id="${idxOf}" data-rating="down" title="点踩">${i('thumbdown','',13)}</span><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="branch-chat" data-id="${idxOf}" title="分支到新聊天">${i('workflow','',13)}</span></span></div>`}</div></div></div>`;
+            return `<div class="msg-block agent-block"><div class="agent-message"><div class="agent-avatar${m.streaming ? ' avatar-pulsing' : ' '}">${i('dna','',21)}</div><div class="agent-body"${blocks ? ` data-block-sig="${e(blocks.map(b => b.type).join(','))}"` : ''}><div class="agent-name">SigmaFlow Science${m.streaming && m.tokens ? ` <span class="tok-down" data-start="${m.at}">↓ ${CS.num(m.tokens)}</span>` : (m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span>` : '')}${m.streaming ? ` <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${segments}${err ?(() => { const errKey = (run.id || ['']) + '|' + idxOf; const errOpen = (CS.ui.errorOpenSet || []).has ? CS.ui.errorOpenSet.has(errKey) : false; return `<div class="think-root error-root"${errOpen ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-error" data-errkey="${e(errKey)}" aria-expanded="${errOpen}"><span class="think-leading">${i('alert', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">请求出错</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(String(err.message || '未知错误').split('\n')[0])}</span></span></button>${errOpen ? `<div class="error-body"><pre class="error-detail">${e(err.detail || err.message || '')}</pre></div>` : ''}</div>`; })() : ''}${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.role === 'assistant' && m.tokens ? `<span class="message-meta">${CS.num(m.contextTokens || m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn${m.feedback && m.feedback.rating === 'up' ? ' rated rated-up' : ''}" role="button" data-action="rate-message" data-id="${idxOf}" data-rating="up" title="点赞">${i('thumbup','',13)}</span><span class="icon-btn${m.feedback && m.feedback.rating === 'down' ? ' rated rated-down' : ''}" role="button" data-action="rate-message" data-id="${idxOf}" data-rating="down" title="点踩">${i('thumbdown','',13)}</span><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="branch-chat" data-id="${idxOf}" title="分支到新聊天">${i('workflow','',13)}</span></span></div>`}</div></div></div>`;
           })(); };
       return `<section class="page chat-page"><div class="chat-layout no-inspector"><div class="chat-main chat-main-chat"><header class="chat-title chat-title-compact"><div><h1>${e(run.title)}</h1><p class="small muted">${e(CS.state.projects.find(p => p.id === run.projectId)?.name || '未指定项目')} <span class="faint"> / </span> ${e(CS.state.settings.model || '默认模型')}</p></div></header>
       <div class="conversation">${run.messages.map(bubble).join('')}</div>
@@ -5845,6 +5860,8 @@ CS.audio = (function () {
       }
       if (done.tokens) reply.tokens = done.tokens;  // 真实 usage(含思考 token), 覆盖流式粗估
       if (done.promptTokens) reply.promptTokens = done.promptTokens;
+      // 最后一轮当次 prompt(真实窗口占用): 供上下文圆环与 meta 行使用; 与累计 promptTokens 区分
+      if (done.contextTokens) reply.contextTokens = done.contextTokens;
       CS.audio.playDone();  // 回复完成提示音; 出错分支不播放
     } catch (error) {
       // 失败不再伪装成正文追在 content 里, 而是挂到 error 字段,

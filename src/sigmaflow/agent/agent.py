@@ -360,6 +360,9 @@ class Agent:
                             info["completion_tokens"] += (
                                 getattr(response.usage, "output_tokens", 0) or 0
                             )
+                            info["last_prompt_tokens"] = (
+                                getattr(response.usage, "input_tokens", 0) or 0
+                            )
                             messages.append(
                                 {"role": "assistant", "content": response.content}
                             )
@@ -563,6 +566,8 @@ class Agent:
                             info["cost_tokens"] += usage.total_tokens
                             info["prompt_tokens"] += usage.prompt_tokens or 0
                             info["completion_tokens"] += usage.completion_tokens or 0
+                            # 最后一轮当次 prompt: 反映单次请求的真实窗口占用(累计值是多轮求和)
+                            info["last_prompt_tokens"] = usage.prompt_tokens or 0
                             msg = _DeltaMsg()
                             msg.content = "".join(response_text_parts)
                             msg.tool_calls = [
@@ -616,6 +621,11 @@ class Agent:
                                 else 0
                             )
                             info["prompt_tokens"] += (
+                                getattr(response.usage, "prompt_tokens", 0)
+                                if response.usage
+                                else 0
+                            )
+                            info["last_prompt_tokens"] = (
                                 getattr(response.usage, "prompt_tokens", 0)
                                 if response.usage
                                 else 0

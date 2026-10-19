@@ -1504,6 +1504,7 @@ class ScienceAPI:
                 "content": content,
                 "tokens": stats.get("completion_tokens") or 0,
                 "promptTokens": stats.get("prompt_tokens") or 0,
+                "contextTokens": stats.get("last_prompt_tokens") or 0,
                 "compaction": stats.get("compaction"),
             }
 
@@ -2593,6 +2594,10 @@ class ScienceAPI:
                                             or 0,
                                             "promptTokens": stats.get("prompt_tokens")
                                             or 0,
+                                            "contextTokens": stats.get(
+                                                "last_prompt_tokens"
+                                            )
+                                            or 0,
                                         },
                                     },
                                 )
@@ -3025,6 +3030,8 @@ class ScienceProjectStore:
                     item["tokens"] = msg.get("tokens")
                 if msg.get("promptTokens") is not None:
                     item["promptTokens"] = msg.get("promptTokens")
+                if msg.get("contextTokens") is not None:
+                    item["contextTokens"] = msg.get("contextTokens")
                 if msg.get("model"):
                     item["model"] = _clip(str(msg.get("model")), 120)
                 if msg.get("at"):
@@ -3273,6 +3280,8 @@ def _run_agent_chat(
             # 回填本次请求的 token 用量, 供 /chat 返回统计
             stats["completion_tokens"] = info.get("completion_tokens") or 0
             stats["prompt_tokens"] = info.get("prompt_tokens") or 0
+            # 最后一轮当次 prompt(真实窗口占用, 与累计口径分离)
+            stats["last_prompt_tokens"] = info.get("last_prompt_tokens") or 0
             # 自动压缩元数据回传: HTTP 降级路径没有 on_tool 事件流,
             # 前端靠响应里的 compaction.text 插摘要卡, 下轮请求契约才会按卡收窄;
             # WS 通道的卡经 on_tool kind=compact 推送, done 里不透传避免双插
