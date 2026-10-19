@@ -220,11 +220,10 @@ class Agent:
     ):
         if on_delta is not None:
             self.on_delta = on_delta
-        # 时间上下文不进 system: system 必须字节级稳定才能吃到网关的前缀缓存, 会变的
-        # 时间块放在 create 请求的消息末尾(见各 create 调用点), 不进历史不进存档
+        # system 恒定字节级稳定, 最大化网关前缀缓存命中; 不再注入任何会变内容
+        # (模型需要当前时间时可自行调用 bash 等工具获取)
         if not subagent:
             self.system = self._system_base
-            self._turn_time_text = self._time_block()
         if self.method == "openai" and messages[0]["role"] != "system":
             messages.insert(
                 0,
@@ -364,17 +363,10 @@ class Agent:
                     start_time = time.time()
                     match self.method:
                         case "anthropic":
-                            # 时间上下文作为末尾 user 消息临时注入(anthropic 的 system 参数
-                            # 之外没有静态多变内容, 保住 system 前缀的缓存定位)
-                            _anthropic_msgs = [*messages]
-                            if getattr(self, "_turn_time_text", ""):
-                                _anthropic_msgs.append(
-                                    {"role": "user", "content": self._turn_time_text}
-                                )
                             response = self.client.messages.create(
                                 model=self.model,
                                 system=self.system,
-                                messages=_anthropic_msgs,
+                                messages=messages,
                                 tools=usable_tools,
                                 max_tokens=MAX_TOKENS,
                             )
@@ -445,19 +437,9 @@ class Agent:
                                     "tool_choice": "auto",
                                 }
                             try:
-                                # 时间上下文临时追加在请求末尾, 不写入 messages 历史变量;
-                                # subagent 等无时间上下文的调用路径注入空 tails 直接透传
-                                _tails = [*messages]
-                                if getattr(self, "_turn_time_text", ""):
-                                    _tails.append(
-                                        {
-                                            "role": "system",
-                                            "content": self._turn_time_text,
-                                        }
-                                    )
                                 _stream = self.client.chat.completions.create(
                                     model=self.model,
-                                    messages=_tails,
+                                    messages=messages,
                                     max_tokens=MAX_TOKENS,
                                     **stream_kwargs,
                                 )
@@ -467,7 +449,7 @@ class Agent:
                                 _fallback.pop("stream_options", None)
                                 _stream = self.client.chat.completions.create(
                                     model=self.model,
-                                    messages=_tails,
+                                    messages=messages,
                                     max_tokens=MAX_TOKENS,
                                     **_fallback,
                                 )
@@ -657,17 +639,9 @@ class Agent:
                                 if usable_tools
                                 else {}
                             )
-                            _plain = [*messages]
-                            if getattr(self, "_turn_time_text", ""):
-                                _plain.append(
-                                    {
-                                        "role": "system",
-                                        "content": self._turn_time_text,
-                                    }
-                                )
                             response = self.client.chat.completions.create(
                                 model=self.model,
-                                messages=_plain,
+                                messages=messages,
                                 max_tokens=MAX_TOKENS,
                                 **tool_param,
                             )
