@@ -189,7 +189,7 @@ CS.markdown = text => {
   CS.defaults = () => ({
     version: 1, projects: clone(CS.data.projects), datasets: clone(CS.data.datasets), runs: [],
     bookmarks: [], notes: {}, projectId: 'pr-pbmc', currentRunId: null,
-    settings: { persist: true, contrast: false, reducedMotion: false, mode: 'local', endpoint: '/sigmaflow/api', inspector: true, model: 'openrouter/free', modelId: null, apiKey: '', lastTest: null, notifySound: true, soundVolume: 1, enterSend: true, autoScroll: true, uiScale: 100 },
+    settings: { persist: true, contrast: false, reducedMotion: false, mode: 'local', endpoint: '/sigmaflow/api', inspector: true, model: 'openrouter/free', modelId: null, apiKey: '', lastTest: null, notifySound: true, soundVolume: 1, enterSend: true, autoScroll: true, toolGroupsOpen: {}, uiScale: 100 },
     username: '',
     me: null
   });
@@ -217,7 +217,7 @@ CS.markdown = text => {
     workflowId: 'singlecell', workflowCategory: 'all', datasetId: 'ds-pbmc', organism: 'Homo sapiens', advanced: false,
     minGenes: 200, maxMito: 20, activeTool: 'sequence', sequence: CS.data.sampleFASTA, sequenceResult: null,
     modal: null, expandedLogs: new Set(), selectedCell: null, note: '', apiHealth: null,
-    userMenu: false, authTab: 'login', modelMenu: false, projectMenu: false, projectSettingsMenu: null, expandedProjects: new Set(), conversations: [], settingsTab: 'general', models: [], providers: [], edit: null, providerModels: null, draftModelName: '', draftProviderId: null, dropdown: null, pendingDelete: null, modelsLoaded: false, thinkingOpen: false, thinkingText: '', toolsOpen: false, blockOpen: {}, askOpen: {}, planMode: false, canJumpLatest: false, contextInfo: null, contextMenu: false, agentTools: null, toolDraft: null, toolGroupsCollapsed: null, agentSkills: null, skillDraft: null, mcpServers: null, mcpDraft: null, systemPrompt: null, syspromptDraft: null, tokens: null, tokensDraft: null, fsCollapsed: false, fs: null, terminal: { open: false, cols: 0, rows: 0 }
+    userMenu: false, authTab: 'login', modelMenu: false, projectMenu: false, projectSettingsMenu: null, expandedProjects: new Set(), conversations: [], settingsTab: 'general', models: [], providers: [], edit: null, providerModels: null, draftModelName: '', draftProviderId: null, dropdown: null, pendingDelete: null, modelsLoaded: false, thinkingOpen: false, thinkingText: '', toolsOpen: false, blockOpen: {}, askOpen: {}, planMode: false, canJumpLatest: false, contextInfo: null, contextMenu: false, agentTools: null, toolDraft: null,  agentSkills: null, skillDraft: null, mcpServers: null, mcpDraft: null, systemPrompt: null, syspromptDraft: null, tokens: null, tokensDraft: null, fsCollapsed: false, fs: null, terminal: { open: false, cols: 0, rows: 0 }
   };
   // 侧栏项目折叠状态持久化: 记录用户显式展开的项目, 刷新后保持一致。
   try { const fold = JSON.parse(localStorage.getItem(key + '.fold') || 'null'); if (Array.isArray(fold)) CS.ui.expandedProjects = new Set(fold.map(String)); } catch {}

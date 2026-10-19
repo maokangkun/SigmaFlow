@@ -1381,10 +1381,12 @@
       CS.render();
     },
     'tool-group-toggle': id => {
-      // 点击组标题折叠/展开该组工具; 状态存 CS.ui.toolGroupsCollapsed, 重渲染不丢
-      const c = CS.ui.toolGroupsCollapsed || (CS.ui.toolGroupsCollapsed = {});
-      c[id] = !c[id];
-      CS.render();
+      // 点击组标题折叠/展开该组工具: 展开表存进持久化 settings, 缺省折叠,
+      // 手动展开过的组重渲染/刷新后都保持
+      const st = CS.state.settings;
+      st.toolGroupsOpen = st.toolGroupsOpen || {};
+      st.toolGroupsOpen[id] = !st.toolGroupsOpen[id];
+      CS.save(); CS.render();
     },
     'tool-group-switch': id => {
       // 组级开关: 组内有禁用项 → 一键全开; 全部启用 → 一键全关
