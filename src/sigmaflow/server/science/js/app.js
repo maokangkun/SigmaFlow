@@ -1435,6 +1435,13 @@
       run.messages.push(pending);
       CS.save(); CS.render();
       setTimeout(scrollToLatest, 30);
+      // 压缩等待不在正常回复的 timerInterval 更新链里, 自起一个 tick(结束自清)
+      const tick = setInterval(() => {
+        const still = (CS.currentRun() || { messages: [] }).messages.some(m => m.compactPending && m.id === pending.id);
+        if (!still) { clearInterval(tick); return; }
+        const el = document.querySelector('.compact-reply-block .elapsed-timer');
+        if (el) el.textContent = CS.elapsed(pending.at);
+      }, 500);
       try {
         const r = await CS.api.request(`/conversations/${encodeURIComponent(run.id)}/compact`, { method: 'POST', timeout: 300000, body: '{}' });
         if (!r.applied) {

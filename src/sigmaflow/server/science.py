@@ -3337,7 +3337,7 @@ class ScienceAPI:
                 window = agent_module.MAX_MODEL_LEN.get(model_name.lower(), agent_module.MAX_MODEL_LEN["default"])
                 compactor = compactor_mod.Compactor(
                     agent_module.TRANSCRIPT_DIR,
-                    OpenAI(base_url=base_url, api_key=api_key or "sk-empty", timeout=120, max_retries=0),
+                    OpenAI(base_url=base_url, api_key=api_key or "sk-empty", timeout=300, max_retries=0),
                     window,
                     model=model_name,
                 )

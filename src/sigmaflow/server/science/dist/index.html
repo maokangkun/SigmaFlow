@@ -850,10 +850,10 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 
 /* 压缩摘要回复: agent 外壳 + 等待动画 */
 .compact-reply-block{margin:10px 0 2px 0}
-.compact-status{--accent-inherit:var(--muted);border:1px solid var(--line-soft);border-radius:10px;padding:9px 12px;display:flex;margin:7px 0 0 0}
-.compact-status-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
-.compact-status[data-state="running"] .compact-status-row{color:var(--accent)}
-.compact-status-text{letter-spacing:.2px}
+.compact-status{display:flex;align-items:center;gap:7px;min-height:32px;padding:4px 2px;margin:6px 0 0 0;font-size:12px;color:var(--muted);overflow:visible;line-height:1.5}
+.compact-status svg.icon{flex-shrink:0}
+.compact-status[data-state="running"]{color:var(--accent)}
+.compact-status-text{letter-spacing:.2px;white-space:nowrap}
 .compact-dots{display:inline-block;margin-left:2px}
 .compact-dots span{animation:compact-dot 1.2s infinite;opacity:0}
 .compact-dots span:nth-child(2){animation-delay:.2s}
@@ -1266,6 +1266,8 @@ CS.markdown = text => {
   // 工具调用的 running 标记同样属于页面内存态, 刷新后一并清除。
   // 未回答的 ask 也一并标记失效: 服务端已随断开取消了等待者。
   CS.state.runs.forEach(run => (run.messages || []).forEach(m => { delete m.streaming; (m.tools || []).forEach(t => { delete t.running; }); (m.blocks || []).forEach(b => { if (b.type === 'ask' && !b.answered) b.stale = true; }); }));
+  // 压缩等待消息若因刷新中断, 直接丢弃(id 无主的占位卡没有意义)
+  CS.state.runs.forEach(run => { (run.messages || []).forEach(m => { if (m.compactPending) { (run.messages || []).splice(run.messages.indexOf(m), 1); } }); });
   CS.ui = {
     route: 'home', mobileSidebar: false, composer: '', attachments: [],
     filters: { data: '', dataTab: 'all', project: '', projectTab: 'active', literature: '', paperTab: 'all', tools: '', toolTab: 'all' },
@@ -4522,7 +4524,7 @@ CS.audio = (function () {
         const idxOf = run.messages.indexOf(m);  // meta 行的操作按钮需要消息索引
         const pending = !!m.compactPending;
         // 名称行/计时/token 与正常回复一套结构; 进行中在 body 内显示压缩状态行(仿思考行)
-        const status = `<div class="think-root compact-status${pending ? ' think-live' : ''}" data-state="${pending ? 'running' : 'ok'}"><div class="compact-status-row">${i('minimize2', '', 14)}<span class="compact-status-text">${pending ? '上下文正在压缩中' : '已完成上下文压缩'}</span>${pending ? '<span class="compact-dots"><span>.</span><span>.</span><span>.</span></span>' : ''}</div></div>`;
+        const status = `<div class="compact-status" data-state="${pending ? 'running' : 'ok'}">${i('minimize2', '', 14)}<span class="compact-status-text">${pending ? '上下文正在压缩中' : '已完成上下文压缩'}</span>${pending ? '<span class="compact-dots"><span>.</span><span>.</span><span>.</span></span>' : ''}</div>`;
         return `<div class="msg-block compact-reply-block"><div class="agent-message"><div class="agent-avatar${pending ? ' avatar-pulsing' : ''}">${i('dna', '', 21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span> <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${status}${pending ? '' : V_COMPACT(m)}${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.tokens ? `<span class="message-meta">${CS.num(m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy', '', 13)}</span></span></div>`}</div></div></div>`;
       };
       const bubble = m => {
@@ -6301,6 +6303,13 @@ CS.audio = (function () {
       run.messages.push(pending);
       CS.save(); CS.render();
       setTimeout(scrollToLatest, 30);
+      // 压缩等待不在正常回复的 timerInterval 更新链里, 自起一个 tick(结束自清)
+      const tick = setInterval(() => {
+        const still = (CS.currentRun() || { messages: [] }).messages.some(m => m.compactPending && m.id === pending.id);
+        if (!still) { clearInterval(tick); return; }
+        const el = document.querySelector('.compact-reply-block .elapsed-timer');
+        if (el) el.textContent = CS.elapsed(pending.at);
+      }, 500);
       try {
         const r = await CS.api.request(`/conversations/${encodeURIComponent(run.id)}/compact`, { method: 'POST', timeout: 300000, body: '{}' });
         if (!r.applied) {

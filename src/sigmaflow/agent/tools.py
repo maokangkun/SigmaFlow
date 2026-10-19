@@ -500,9 +500,9 @@ class Compactor:
         if not summary:
             # 摘要失败不阻塞会话: 机械兜底说明, 保尾照常生效
             summary = (
-                "(The earlier part of this conversation was compacted to free context. "
-                + (f"Full original transcript: {transcript_path.name}. " if transcript_path else "")
-                + "Recent messages above are verbatim; this card carries the rolling summary.)"
+                "(本次压缩的摘要生成失败（模型请求未返回内容）, 早期消息已按原文保留在上方, 上下文占位不变; "
+                + (f"原始会话已转存 {transcript_path.name}。 " if transcript_path else "")
+                + "可稍后在圆环弹卡再次点击「压缩」重试生成摘要。）"
             )
         marker_text = _COMPACT_MARKER
         if transcript_path is not None:

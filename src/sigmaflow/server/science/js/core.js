@@ -229,6 +229,8 @@ CS.markdown = text => {
   // 工具调用的 running 标记同样属于页面内存态, 刷新后一并清除。
   // 未回答的 ask 也一并标记失效: 服务端已随断开取消了等待者。
   CS.state.runs.forEach(run => (run.messages || []).forEach(m => { delete m.streaming; (m.tools || []).forEach(t => { delete t.running; }); (m.blocks || []).forEach(b => { if (b.type === 'ask' && !b.answered) b.stale = true; }); }));
+  // 压缩等待消息若因刷新中断, 直接丢弃(id 无主的占位卡没有意义)
+  CS.state.runs.forEach(run => { (run.messages || []).forEach(m => { if (m.compactPending) { (run.messages || []).splice(run.messages.indexOf(m), 1); } }); });
   CS.ui = {
     route: 'home', mobileSidebar: false, composer: '', attachments: [],
     filters: { data: '', dataTab: 'all', project: '', projectTab: 'active', literature: '', paperTab: 'all', tools: '', toolTab: 'all' },
