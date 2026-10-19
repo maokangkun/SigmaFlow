@@ -79,7 +79,7 @@ class LoopNode(Node):
             loop_data.append(new_data)
 
             new_queue = collections.defaultdict(asyncio.Queue)
-            new_queue['#TRACE_PARENT_ID'].put_nowait(self.trace_node_id)
+            new_queue["#TRACE_PARENT_ID"].put_nowait(self.trace_node_id)
             for k in queue:
                 if k == inp_name:
                     new_queue[k].put_nowait(item)

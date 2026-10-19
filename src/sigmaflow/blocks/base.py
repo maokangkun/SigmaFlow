@@ -47,15 +47,17 @@ class Block:
                 "inp", [str(i)[:20] + " ..." if len(str(i)) > 20 else i for i in inp]
             )
             out, query, resp, usage = await self._call(*inp)
-            one_trace.append({
-                "inps": inp,
-                "prompt": query,
-                "resp": resp,
-                "out": out,
-                "usage": usage,
-                "started_at": datetime.utcfromtimestamp(start_t).isoformat()+"Z",
-                "ended_at": datetime.utcnow().isoformat()+"Z"
-            })
+            one_trace.append(
+                {
+                    "inps": inp,
+                    "prompt": query,
+                    "resp": resp,
+                    "out": out,
+                    "usage": usage,
+                    "started_at": datetime.utcfromtimestamp(start_t).isoformat() + "Z",
+                    "ended_at": datetime.utcnow().isoformat() + "Z",
+                }
+            )
 
             t = time.time() - start_t
             inout = {
@@ -77,15 +79,18 @@ class Block:
             if out is None and self.second_round:
                 start_t = time.time()
                 out, query2, resp2, usage2 = await self._second_call([query, resp])
-                one_trace.append({
-                    "inps": inp,
-                    "prompt": query2,
-                    "resp": resp2,
-                    "out": out,
-                    "usage": usage2,
-                    "started_at": datetime.utcfromtimestamp(start_t).isoformat()+"Z",
-                    "ended_at": datetime.utcnow().isoformat()+"Z"
-                })
+                one_trace.append(
+                    {
+                        "inps": inp,
+                        "prompt": query2,
+                        "resp": resp2,
+                        "out": out,
+                        "usage": usage2,
+                        "started_at": datetime.utcfromtimestamp(start_t).isoformat()
+                        + "Z",
+                        "ended_at": datetime.utcnow().isoformat() + "Z",
+                    }
+                )
 
                 t = time.time() - start_t
                 inout = {

@@ -89,7 +89,9 @@ class PipelineManager:
                     pass
             self.rag_client = rag_client(is_async=self.run_mode == "async")
 
-    def add_pipe(self, name, pipeconf=None, pipefile=None, comfyui_data=None, run_mode=None):
+    def add_pipe(
+        self, name, pipeconf=None, pipefile=None, comfyui_data=None, run_mode=None
+    ):
         name = name.removesuffix(self.pipeline_suffix)
 
         if pipefile:
@@ -98,7 +100,11 @@ class PipelineManager:
             sys.path.append(str(pipefile.parent))
 
         p = self._load_pipe(
-            name, pipeconf=pipeconf, pipefile=pipefile, comfyui_data=comfyui_data, run_mode=run_mode
+            name,
+            pipeconf=pipeconf,
+            pipefile=pipefile,
+            comfyui_data=comfyui_data,
+            run_mode=run_mode,
         )
 
         if pipefile:
@@ -106,7 +112,9 @@ class PipelineManager:
 
         return p
 
-    def _load_pipe(self, name, pipeconf=None, pipefile=None, comfyui_data=None, run_mode=None):
+    def _load_pipe(
+        self, name, pipeconf=None, pipefile=None, comfyui_data=None, run_mode=None
+    ):
         if (
             pipefile
             and name in self.pipes
@@ -132,7 +140,9 @@ class PipelineManager:
         return p
 
     def export_pipe_conf(self):
-        conf = {k: copy.deepcopy(p.pipegraph.export_conf()) for k, p in self.pipes.items()}
+        conf = {
+            k: copy.deepcopy(p.pipegraph.export_conf()) for k, p in self.pipes.items()
+        }
         return conf
 
     def update_pipe(self, pipe_name, pipe_data):

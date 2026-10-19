@@ -8,10 +8,11 @@ class LLM:
         conf,
     ):
         self.conf = copy.deepcopy(conf)
-        if conf["llm"] == 'openai':
+        if conf["llm"] == "openai":
             from .llm_openai import completion
+
             self.completion = partial(completion, conf=conf)
-        self.__name__ = self.conf['llm']
+        self.__name__ = self.conf["llm"]
 
     def __call__(self, item: str | list[str]):
         return self.completion(item)

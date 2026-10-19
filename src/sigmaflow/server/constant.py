@@ -83,8 +83,10 @@ class WorkspacePromptData(BaseModel):
     prompt: dict
     prompt_id: str | None = None
 
+
 class InterruptData(BaseModel):
     prompt_id: str
+
 
 PData = Annotated[
     Union[PromptData, PipeData, PipelineData], Field(discriminator="type")
@@ -95,14 +97,17 @@ PData = Annotated[
 # Admin Tracing System Models
 # ============================================================================
 
+
 class SpanError(BaseModel):
     """Error information for a span"""
+
     message: str
     data: Optional[Dict[str, Any]] = None
 
 
 class TracePayload(BaseModel):
     """Incoming trace event payload"""
+
     object: str = Field(default="trace")
     id: str
     workflow_name: str
@@ -112,6 +117,7 @@ class TracePayload(BaseModel):
 
 class SpanPayload(BaseModel):
     """Incoming span event payload"""
+
     object: str = Field(default="trace.span")
     id: str
     trace_id: str
@@ -124,6 +130,7 @@ class SpanPayload(BaseModel):
 
 class Trace(BaseModel):
     """Trace response model"""
+
     object: str = "trace"
     id: str
     workflow_name: str = Field(alias="workflowName")
@@ -144,6 +151,7 @@ class Trace(BaseModel):
 
 class Span(BaseModel):
     """Span response model"""
+
     object: str = "trace.span"
     id: str
     trace_id: str
@@ -161,11 +169,13 @@ class Span(BaseModel):
 
 class EventRequest(BaseModel):
     """Request payload for event submission"""
+
     data: list[TracePayload | SpanPayload]
 
 
 class SearchFilters(BaseModel):
     """Filters for trace search"""
+
     trace_id: Optional[str] = None
     group_id: Optional[str] = None
     workflow_name: Optional[str] = None
@@ -179,6 +189,7 @@ class SearchFilters(BaseModel):
 
 class Pagination(BaseModel):
     """Pagination metadata"""
+
     page: int
     limit: int
     total: int
@@ -189,6 +200,7 @@ class Pagination(BaseModel):
 
 class TracesResponse(BaseModel):
     """Response for traces list"""
+
     data: list[Trace]
     pagination: Pagination
     query: Optional[Dict[str, Any]] = None
@@ -196,11 +208,13 @@ class TracesResponse(BaseModel):
 
 class TraceResponse(BaseModel):
     """Response for single trace"""
+
     data: Trace
 
 
 class User(BaseModel):
     """User model"""
+
     id: Optional[str] = None
     email: str
     role: str  # ADMIN or READ_ONLY
@@ -210,11 +224,13 @@ class User(BaseModel):
 
 class SetupStatusResponse(BaseModel):
     """Response for setup status"""
+
     completed: bool
 
 
 class SetupRequest(BaseModel):
     """Request for initial setup"""
+
     email: str
     password: str
     role: str = "ADMIN"
@@ -222,23 +238,27 @@ class SetupRequest(BaseModel):
 
 class SetupResponse(BaseModel):
     """Response for setup completion"""
+
     message: str
     token: str
 
 
 class LoginRequest(BaseModel):
     """Request for login"""
+
     email: str
     password: str
 
 
 class LoginResponse(BaseModel):
     """Response for login"""
+
     token: str
 
 
 class CreateUserRequest(BaseModel):
     """Request to create new user"""
+
     email: str
     password: str
     role: str
@@ -246,6 +266,7 @@ class CreateUserRequest(BaseModel):
 
 class ApiKey(BaseModel):
     """API Key model"""
+
     id: Optional[str] = None
     name: str
     prefix: str
@@ -261,8 +282,11 @@ class ApiKey(BaseModel):
 
 class CreateApiKeyRequest(BaseModel):
     """Request to create API key"""
+
     name: str
-    expires_in: str = Field(alias="expiresIn")  # 'never', '1_month', '3_months', '6_months', '12_months'
+    expires_in: str = Field(
+        alias="expiresIn"
+    )  # 'never', '1_month', '3_months', '6_months', '12_months'
 
     class Config:
         validate_by_name = True
@@ -270,6 +294,7 @@ class CreateApiKeyRequest(BaseModel):
 
 class CreateApiKeyResponse(BaseModel):
     """Response for API key creation"""
+
     id: str
     name: str
     key: str
@@ -281,6 +306,7 @@ class CreateApiKeyResponse(BaseModel):
 
 class AnalyticsQuery(BaseModel):
     """Query parameters for analytics"""
+
     start_date: str
     end_date: str
     granularity: Optional[str] = "day"  # 'hour' or 'day'
@@ -288,6 +314,7 @@ class AnalyticsQuery(BaseModel):
 
 class PreviousPeriod(BaseModel):
     """Previous period analytics data"""
+
     total_cost: float = Field(alias="totalCost")
     cost_change: float = Field(alias="costChange")
 
@@ -297,6 +324,7 @@ class PreviousPeriod(BaseModel):
 
 class AnalyticsOverview(BaseModel):
     """Analytics overview response"""
+
     total_input_tokens: int = Field(alias="totalInputTokens")
     total_output_tokens: int = Field(alias="totalOutputTokens")
     total_tokens: int = Field(alias="totalTokens")
@@ -311,6 +339,7 @@ class AnalyticsOverview(BaseModel):
 
 class TimeSeriesData(BaseModel):
     """Time series data point"""
+
     date: str
     input_tokens: int
     output_tokens: int
@@ -326,6 +355,7 @@ class TimeSeriesData(BaseModel):
 
 class ModelBreakdown(BaseModel):
     """Model usage breakdown"""
+
     model: str
     requests: int
     input_tokens: int
@@ -338,32 +368,45 @@ class ModelBreakdown(BaseModel):
 # Storage Models (In-Memory or SQLAlchemy ORM)
 # ============================================================================
 
+
 class StorageTrace:
     """Storage representation of Trace"""
-    def __init__(self, object_type: str, id: str, workflow_name: str,
-                 group_id: Optional[str] = None,
-                 metadata: Optional[Dict[str, Any]] = None,
-                 created_at: Optional[str] = None,
-                 updated_at: Optional[str] = None):
+
+    def __init__(
+        self,
+        object_type: str,
+        id: str,
+        workflow_name: str,
+        group_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        created_at: Optional[str] = None,
+        updated_at: Optional[str] = None,
+    ):
         self.object = object_type
         self.id = id
         self.workflow_name = workflow_name
         self.group_id = group_id
         self.metadata = metadata or {}
-        self.created_at = created_at or (datetime.utcnow().isoformat() + 'Z')
-        self.updated_at = updated_at or (datetime.utcnow().isoformat() + 'Z')
+        self.created_at = created_at or (datetime.utcnow().isoformat() + "Z")
+        self.updated_at = updated_at or (datetime.utcnow().isoformat() + "Z")
 
 
 class StorageSpan:
     """Storage representation of Span"""
-    def __init__(self, object_type: str, id: str, trace_id: str,
-                 parent_id: Optional[str] = None,
-                 started_at: Optional[str] = None,
-                 ended_at: Optional[str] = None,
-                 span_data: Optional[Dict[str, Any]] = None,
-                 error: Optional[SpanError] = None,
-                 created_at: Optional[str] = None,
-                 updated_at: Optional[str] = None):
+
+    def __init__(
+        self,
+        object_type: str,
+        id: str,
+        trace_id: str,
+        parent_id: Optional[str] = None,
+        started_at: Optional[str] = None,
+        ended_at: Optional[str] = None,
+        span_data: Optional[Dict[str, Any]] = None,
+        error: Optional[SpanError] = None,
+        created_at: Optional[str] = None,
+        updated_at: Optional[str] = None,
+    ):
         self.object = object_type
         self.id = id
         self.trace_id = trace_id
@@ -372,27 +415,44 @@ class StorageSpan:
         self.ended_at = ended_at
         self.span_data = span_data or {}
         self.error = error
-        self.created_at = created_at or (datetime.utcnow().isoformat() + 'Z')
-        self.updated_at = updated_at or (datetime.utcnow().isoformat() + 'Z')
+        self.created_at = created_at or (datetime.utcnow().isoformat() + "Z")
+        self.updated_at = updated_at or (datetime.utcnow().isoformat() + "Z")
 
 
 class StorageUser:
     """Storage representation of User"""
-    def __init__(self, id: str, email: str, password_hash: str, role: str,
-                 created_at: Optional[str] = None):
+
+    def __init__(
+        self,
+        id: str,
+        email: str,
+        password_hash: str,
+        role: str,
+        created_at: Optional[str] = None,
+    ):
         self.id = id
         self.email = email
         self.password_hash = password_hash
         self.role = role
-        self.created_at = created_at or (datetime.utcnow().isoformat() + 'Z')
+        self.created_at = created_at or (datetime.utcnow().isoformat() + "Z")
 
 
 class StorageApiKey:
     """Storage representation of API Key"""
-    def __init__(self, id: str, name: str, key_hash: str, prefix: str,
-                 suffix: str, created_by: str, expires_at: Optional[str] = None,
-                 last_used_at: Optional[str] = None, is_active: bool = True,
-                 created_at: Optional[str] = None):
+
+    def __init__(
+        self,
+        id: str,
+        name: str,
+        key_hash: str,
+        prefix: str,
+        suffix: str,
+        created_by: str,
+        expires_at: Optional[str] = None,
+        last_used_at: Optional[str] = None,
+        is_active: bool = True,
+        created_at: Optional[str] = None,
+    ):
         self.id = id
         self.name = name
         self.key_hash = key_hash
@@ -402,15 +462,17 @@ class StorageApiKey:
         self.expires_at = expires_at
         self.last_used_at = last_used_at
         self.is_active = is_active
-        self.created_at = created_at or (datetime.utcnow().isoformat() + 'Z')
+        self.created_at = created_at or (datetime.utcnow().isoformat() + "Z")
 
 
 # ============================================================================
 # Model Pricing Models
 # ============================================================================
 
+
 class ModelPricing(BaseModel):
     """Model pricing configuration"""
+
     model_name: str
     input_price_per_1k: float
     output_price_per_1k: float
@@ -420,6 +482,7 @@ class ModelPricing(BaseModel):
 
 class UpdateModelPricingRequest(BaseModel):
     """Request to update model pricing"""
+
     model_name: str
     input_price_per_1k: float
     output_price_per_1k: float
@@ -429,6 +492,6 @@ class UpdateModelPricingRequest(BaseModel):
 
 class ModelPricingResponse(BaseModel):
     """Response with model pricing data"""
+
     models: list[ModelPricing]
     default_pricing: ModelPricing
-

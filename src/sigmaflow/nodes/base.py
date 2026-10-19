@@ -66,9 +66,9 @@ class Base:
         self.mermaid_data = self.mermaid_inps + self.mermaid_outs
 
     def _get_mermaid_defines(self):
-        return [self.__class__.mermaid_shape.format(m=self.mermaid_name, x=self.name)] + [
-            OutputData.mermaid_shape.format(x=d) for d in self.mermaid_data
-        ]
+        return [
+            self.__class__.mermaid_shape.format(m=self.mermaid_name, x=self.name)
+        ] + [OutputData.mermaid_shape.format(x=d) for d in self.mermaid_data]
 
     def get_mermaid(self, info=None):
         inps = " & ".join(self.mermaid_inps) or None

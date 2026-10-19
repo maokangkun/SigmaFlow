@@ -22,13 +22,13 @@ class PipeGraph(Graph):
         queue = collections.defaultdict(asyncio.Queue)
         for k, v in data.items():
             queue[k].put_nowait(v)
-        
+
         metedata = {
             "name": self.name,
             "nodes": len(self.node_manager),
             "required_inputs": list(self.required_inputs),
             "start_nodes": [n.name for n in self.start_nodes],
-            "mermaid": self.graph2mermaid()
+            "mermaid": self.graph2mermaid(),
         }
         self.storage.save_trace(data["#TRACE_ID"], self.name, None, metedata)
 

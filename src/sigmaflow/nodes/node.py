@@ -11,7 +11,9 @@ from .constant import DataState
 
 class Node(Base):
     def add_callback(self, start_cb=[], finish_cb=[]):
-        for item, callback in zip([self.start_callbacks, self.finish_callbacks], [start_cb, finish_cb]):
+        for item, callback in zip(
+            [self.start_callbacks, self.finish_callbacks], [start_cb, finish_cb]
+        ):
             if type(callback) is list:
                 item += callback
             else:
@@ -35,7 +37,9 @@ class Node(Base):
         data = {
             "node": self.name,
             "out": out,
-            "execution_time": int((self.end_time - self.start_time).total_seconds() * 1000), # ms
+            "execution_time": int(
+                (self.end_time - self.start_time).total_seconds() * 1000
+            ),  # ms
         }
         for callback in self.finish_callbacks:
             callback(data)
@@ -49,32 +53,55 @@ class Node(Base):
             queue["#TRACE_PARENT_ID"].put_nowait(parent_id)
         else:
             parent_id = None
-        save_span = partial(self.graph.storage.save_span, trace_id=trace_id, parent_id=parent_id, started_at=self.start_time.isoformat()+"Z", ended_at=self.end_time.isoformat()+"Z")
+        save_span = partial(
+            self.graph.storage.save_span,
+            trace_id=trace_id,
+            parent_id=parent_id,
+            started_at=self.start_time.isoformat() + "Z",
+            ended_at=self.end_time.isoformat() + "Z",
+        )
 
         node_data = {
-            "type": self.__class__.__name__.replace('Node', ''),
+            "type": self.__class__.__name__.replace("Node", ""),
             "name": self.name,
             "handoffs": [],
             "tools": [],
             "output_type": "str",
-            "input": [{"inps": {k:v for k,v in zip(self.conf["inp"], inps)}}],
-            "output": [{"out": out}]
+            "input": [{"inps": {k: v for k, v in zip(self.conf["inp"], inps)}}],
+            "output": [{"out": out}],
         }
         save_span(span_id=trace_node_id, span_data=node_data)
 
-        if hasattr(self, "pipe") and hasattr(self.pipe, "trace_log") and self.pipe.trace_log:
+        if (
+            hasattr(self, "pipe")
+            and hasattr(self.pipe, "trace_log")
+            and self.pipe.trace_log
+        ):
             for log in self.pipe.trace_log[-1]:
                 span_data = {
                     "type": "generation",
-                    "input": [{"inps": {k:v for k,v in zip(self.conf["inp"], log["inps"])}, "prompt": log["prompt"]}],
+                    "input": [
+                        {
+                            "inps": {
+                                k: v for k, v in zip(self.conf["inp"], log["inps"])
+                            },
+                            "prompt": log["prompt"],
+                        }
+                    ],
                     "output": [{"resp": log["resp"], "out": log["out"]}],
                     "model": self.conf["model"],
                     "usage": {
                         "input_tokens": log["usage"].get("prompt_tokens", 0),
-                        "output_tokens": log["usage"].get("completion_tokens", 0)
-                    }
+                        "output_tokens": log["usage"].get("completion_tokens", 0),
+                    },
                 }
-                save_span(span_id=uuid.uuid4().hex, parent_id=trace_node_id, span_data=span_data, started_at=log["started_at"], ended_at=log["ended_at"])
+                save_span(
+                    span_id=uuid.uuid4().hex,
+                    parent_id=trace_node_id,
+                    span_data=span_data,
+                    started_at=log["started_at"],
+                    ended_at=log["ended_at"],
+                )
 
         self.trace_node_id = None
 
@@ -159,7 +186,7 @@ class Node(Base):
                     if "_sub" in q:
                         arr += q["_sub"]
 
-        if (o := self.conf.get("out", None)):
+        if o := self.conf.get("out", None):
             if (t := type(o)) is str:
                 set_data(o, out, config, queue)
             elif t is list:

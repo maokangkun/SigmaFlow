@@ -9,10 +9,10 @@ load_dotenv(".env")
 
 def setup_args():
     parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers(dest='command', help='commands')
+    subparsers = parser.add_subparsers(dest="command", help="commands")
 
     # Pipeline
-    pipe_parser = subparsers.add_parser('pipe', help='Pipeline mode')
+    pipe_parser = subparsers.add_parser("pipe", help="Pipeline mode")
     pipe_parser.add_argument(
         "-p", "--pipeline", type=str, help="specify the pipeline to run"
     )
@@ -45,13 +45,15 @@ def setup_args():
         default="http",
         help="specify the rag backend",
     )
-    pipe_parser.add_argument("--split", type=int, help="split the data into parts to run")
+    pipe_parser.add_argument(
+        "--split", type=int, help="split the data into parts to run"
+    )
     pipe_parser.add_argument("--png", action="store_true", help="export graph as png")
     pipe_parser.add_argument("--log", action="store_true", help="save logs")
     pipe_parser.add_argument("--test", action="store_true", help="run test")
 
     # server
-    serve_parser = subparsers.add_parser('serve', help='Server mode (website & API)')
+    serve_parser = subparsers.add_parser("serve", help="Server mode (website & API)")
     serve_parser.add_argument("--port", type=int, help="specify the server port")
     serve_parser.add_argument(
         "--reload",
@@ -61,7 +63,7 @@ def setup_args():
     )
 
     # agent
-    agent_parser = subparsers.add_parser('agent', help='Agent mode')
+    agent_parser = subparsers.add_parser("agent", help="Agent mode")
     agent_parser.add_argument(
         "-q",
         "--query",
@@ -95,7 +97,7 @@ def setup_args():
     )
 
     # env
-    subparsers.add_parser('env', help='Environment mode')
+    subparsers.add_parser("env", help="Environment mode")
 
     # other
     parser.add_argument("--version", action="version", version=get_version())
@@ -103,7 +105,7 @@ def setup_args():
     # args, _ = parser.parse_known_args()
     args = parser.parse_args()
 
-    if args.command == 'pipe':
+    if args.command == "pipe":
         if not args.serve and not args.pipeline and not args.pipeline_dir:
             parser.error(
                 "the following arguments are required: -p/--pipeline or -d/--pipeline_dir"
@@ -117,9 +119,13 @@ def setup_args():
 
         # persist args in env for reload subprocesses
         if args.serve and args.reload:
-            os.environ["SIGMAFLOW_CMD_ARGS"] = json.dumps({
-                k: v for k, v in vars(args).items() if k in ["mode", "llm", "rag", "pipeline_dir", "prompt"]
-            })
+            os.environ["SIGMAFLOW_CMD_ARGS"] = json.dumps(
+                {
+                    k: v
+                    for k, v in vars(args).items()
+                    if k in ["mode", "llm", "rag", "pipeline_dir", "prompt"]
+                }
+            )
 
     return args
 
@@ -128,7 +134,7 @@ def build_pm(args):
     """Construct a PipelineManager instance using parsed args."""
     from .managers import PipelineManager, PromptManager
 
-    if hasattr(args, 'prompt') and args.prompt:
+    if hasattr(args, "prompt") and args.prompt:
         prompt_manager = PromptManager(prompts_dir=args.prompt)
     else:
         prompt_manager = None
@@ -154,9 +160,12 @@ def build_server(args=None):
         data = {}
 
     if args is None:
-        class Dummy: pass
+
+        class Dummy:
+            pass
+
         args = Dummy()
-    
+
     for key in ["mode", "llm", "rag", "pipeline_dir", "prompt"]:
         if not hasattr(args, key):
             setattr(args, key, data.get(key))
@@ -168,9 +177,9 @@ def build_server(args=None):
 def main():
     args = setup_args()
     match args.command:
-        case 'env':
+        case "env":
             check_env()
-        case 'pipe':
+        case "pipe":
             pipefile = Path(args.pipeline)
             pipe = build_pm(args).add_pipe(pipefile.stem, pipefile=pipefile)
 
@@ -188,7 +197,7 @@ def main():
                     jdump(r[0], args.output)
                 elif type(r) is list:
                     jdump([i for i, _ in r], args.output)
-        case 'serve':
+        case "serve":
             import uvicorn
 
             port = args.port or int(os.getenv("PORT", 8000))
@@ -202,10 +211,16 @@ def main():
                 reload=args.reload,
                 reload_dirs=reload_dirs,
             )
-        case 'agent':
+        case "agent":
             from .agent import cli
+
             tools = [t.strip() for t in args.tool.split(",")] if args.tool else None
-            cli(args.query, args.method, available_tools=tools, debug=args.debug, support_tool=args.support_tool)
+            cli(
+                args.query,
+                args.method,
+                available_tools=tools,
+                debug=args.debug,
+                support_tool=args.support_tool,
+            )
         case _:
             pass
-
