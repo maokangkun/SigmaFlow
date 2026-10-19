@@ -245,9 +245,17 @@
         const c = String(m.content || '');
         const header = c.split('\n')[0] || '上下文已压缩';
         const body = c.split('\n').slice(1).join('\n').trim();
-        return `<div class="msg-block compact-block"><div class="compact-card"><div class="compact-head"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">${e(header)}</span></div>${body ? `<div class="compact-body">${e(body)}</div>` : ''}</div></div>`;
+        return `<div class="compact-card"><div class="compact-head"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">${e(header)}</span></div>${body ? `<div class="compact-body">${e(body)}</div>` : ''}</div>`;
+      };
+      // 压缩摘要作为特殊回复消息: agent 消息外壳(头像/名称) + 内嵌摘要卡;
+      // 进行中状态(compactPending)显示"上下文正在压缩中"等待动画
+      const isCompactMsg = m => !!(m.compactPending || m.compact || String(m.content || '').startsWith('[Conversation compressed'));
+      const V_COMPACT_REPLY = m => {
+        const pending = !!m.compactPending;
+        return `<div class="msg-block compact-reply-block"><div class="agent-message"><div class="agent-avatar${pending ? ' avatar-pulsing' : ''}">${i('dna', '', 21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${pending ? ' <span class="compact-waiting">上下文正在压缩中<span class="compact-dots"><span>.</span><span>.</span><span>.</span></span></span>' : ''}</div>${pending ? '' : V_COMPACT(m)}</div></div></div>`;
       };
       const bubble = m => {
+        if (m.role === 'assistant' && isCompactMsg(m)) return V_COMPACT_REPLY(m);
         if (m.compact || String(m.content || '').startsWith('[Conversation compressed')) return V_COMPACT(m);
         const idxOf = run.messages.indexOf(m); return m.role === 'user'
         ? `<div class="msg-block user-block"><div class="user-message">${e(m.content)}${m.datasetIds?.length ? `<div class="attachment-list mt-12">${m.datasetIds.map(id => `<span class="attachment">${i('file')}${e(CS.state.datasets.find(d => d.id === id)?.name || id)}</span>`).join('')}</div>` : ''}</div><div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span><span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="edit-message" data-id="${idxOf}" title="修改">${i('edit','',13)}</span></span></div></div>`

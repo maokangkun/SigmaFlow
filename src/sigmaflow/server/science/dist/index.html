@@ -842,6 +842,16 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .ctx-compact-btn:hover{color:var(--accent);background:var(--accent-bg)}
 .ctx-compact-btn .icon{width:13px;height:13px}
 
+/* 压缩摘要回复: agent 外壳 + 等待动画 */
+.compact-reply-block{margin:10px 0 2px 0}
+.compact-waiting{font-size:11px;color:var(--muted);font-weight:400;letter-spacing:.2px}
+.compact-dots{display:inline-block;margin-left:2px}
+.compact-dots span{animation:compact-dot 1.2s infinite;opacity:0}
+.compact-dots span:nth-child(2){animation-delay:.2s}
+.compact-dots span:nth-child(3){animation-delay:.4s}
+@keyframes compact-dot{0%,60%,100%{opacity:0}30%{opacity:1}}
+.compact-reply-block .compact-card{margin-top:8px}
+
 </style>
 </head>
 <body>
@@ -4475,9 +4485,17 @@ CS.audio = (function () {
         const c = String(m.content || '');
         const header = c.split('\n')[0] || '上下文已压缩';
         const body = c.split('\n').slice(1).join('\n').trim();
-        return `<div class="msg-block compact-block"><div class="compact-card"><div class="compact-head"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">${e(header)}</span></div>${body ? `<div class="compact-body">${e(body)}</div>` : ''}</div></div>`;
+        return `<div class="compact-card"><div class="compact-head"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">${e(header)}</span></div>${body ? `<div class="compact-body">${e(body)}</div>` : ''}</div>`;
+      };
+      // 压缩摘要作为特殊回复消息: agent 消息外壳(头像/名称) + 内嵌摘要卡;
+      // 进行中状态(compactPending)显示"上下文正在压缩中"等待动画
+      const isCompactMsg = m => !!(m.compactPending || m.compact || String(m.content || '').startsWith('[Conversation compressed'));
+      const V_COMPACT_REPLY = m => {
+        const pending = !!m.compactPending;
+        return `<div class="msg-block compact-reply-block"><div class="agent-message"><div class="agent-avatar${pending ? ' avatar-pulsing' : ''}">${i('dna', '', 21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${pending ? ' <span class="compact-waiting">上下文正在压缩中<span class="compact-dots"><span>.</span><span>.</span><span>.</span></span></span>' : ''}</div>${pending ? '' : V_COMPACT(m)}</div></div></div>`;
       };
       const bubble = m => {
+        if (m.role === 'assistant' && isCompactMsg(m)) return V_COMPACT_REPLY(m);
         if (m.compact || String(m.content || '').startsWith('[Conversation compressed')) return V_COMPACT(m);
         const idxOf = run.messages.indexOf(m); return m.role === 'user'
         ? `<div class="msg-block user-block"><div class="user-message">${e(m.content)}${m.datasetIds?.length ? `<div class="attachment-list mt-12">${m.datasetIds.map(id => `<span class="attachment">${i('file')}${e(CS.state.datasets.find(d => d.id === id)?.name || id)}</span>`).join('')}</div>` : ''}</div><div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span><span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="edit-message" data-id="${idxOf}" title="修改">${i('edit','',13)}</span></span></div></div>`
@@ -5567,12 +5585,14 @@ CS.audio = (function () {
       if (t.kind === 'compact' && t.text) {
         const dropped = Math.max(0, Math.floor(Number(t.removed) || 0));
         const oldIdx = Math.floor(Number(t.dropOldIdx));
-        const card = { id: 'cmp-' + Math.random().toString(36).slice(2, 8), role: 'user', compact: true, content: String(t.text), at: new Date().toISOString() };
+        const card = { id: 'cmp-' + Math.random().toString(36).slice(2, 8), role: 'assistant', compact: true, content: String(t.text), at: new Date().toISOString() };
         if (dropped) run.messages.splice(0, dropped);
         // 旧摘要卡在保留区时单独移除(索引相对删头后的数组)
         if (oldIdx >= 0) run.messages.splice(oldIdx, 1);
-        // 摘要卡按时间顺序追加为最新消息
-        run.messages.push(card);
+        // 摘要卡属于历史压缩的时刻: 正在流式的回复之前插入, 不打断当前流
+        const lastMsg = run.messages[run.messages.length - 1];
+        const insertAt = lastMsg && lastMsg.streaming ? run.messages.length - 1 : run.messages.length;
+        run.messages.splice(insertAt, 0, card);
         CS.save(); CS.render();
         return;
       }
@@ -6243,32 +6263,48 @@ CS.audio = (function () {
       CS.render();
     },
     'ctx-compact': async () => {
-      // 圆环弹卡里的手动压缩: 独立接口调用, 成功后前端裁轮次 + 插摘要卡并立即同步
+      // 圆环弹卡里的手动压缩: 会话流内出现 agent 样式的压缩等待消息(与回复一致),
+      // 完成后原地变为摘要卡; 全程不重开圆环弹卡
       const run = CS.currentRun();
       if (!run) return;
-      if (run.messages.some(m => m.streaming)) { CS.toast('正在生成回复，稍后再压缩。', 'error'); return; }
+      if (run.messages.some(m => m.streaming || m.compactPending)) { CS.toast('正在生成回复或压缩中，稍后再试。', 'error'); return; }
       CS.ui.contextMenu = false; CS.render();
+      const pending = { id: 'cmpp-' + Math.random().toString(36).slice(2, 8), role: 'assistant', compactPending: true, blocks: [], streaming: true, content: '', at: new Date().toISOString() };
+      run.messages.push(pending);
+      CS.save(); CS.render();
+      setTimeout(scrollToLatest, 30);
       try {
         const r = await CS.api.request(`/conversations/${encodeURIComponent(run.id)}/compact`, { method: 'POST', body: '{}' });
-        if (!r.applied) { CS.toast('上下文还很轻，无需压缩。'); return; }
+        if (!r.applied) {
+          run.messages = run.messages.filter(m => m !== pending);
+          CS.save(); CS.render();
+          CS.toast('上下文还很轻，无需压缩。');
+          return;
+        }
         const dropped = Math.max(0, Math.floor(Number(r.removed) || 0));
         const oldIdx = Math.floor(Number(r.dropOldIdx));
-        const card = { id: 'cmp-' + Math.random().toString(36).slice(2, 8), role: 'user', compact: true, content: String(r.text || ''), at: new Date().toISOString() };
         // 锚点估算失效: 旧 promptTokens 反映压缩前量级, 清掉后圆环改为逐条估算,
         // 下一次真实回复的 usage 回填后锚点机制自然重新校准
         run.messages.forEach(m => { if (m.promptTokens) delete m.promptTokens; });
         if (dropped) run.messages.splice(0, dropped);
         // 旧摘要卡在保留区时单独移除(索引相对删头后的数组)
         if (oldIdx >= 0) run.messages.splice(oldIdx, 1);
-        // 摘要卡按时间顺序追加为最新消息(压缩时刻的位置)
-        run.messages.push(card);
+        // 等待消息原地变成摘要卡(它 push 时就在末尾 = 压缩时刻的最新消息)
+        pending.compactPending = false;
+        delete pending.streaming;
+        pending.compact = true;
+        pending.content = String(r.text || '');
+        pending.at = new Date().toISOString();
         CS.save();
         await syncConversation(run);       // 服务端先落库, 后续统计才读到新列表
-        CS.ui.contextMenu = true;          // 重开弹卡, 让用量拆分的变化直接可见
         CS.render();
         await CS.refreshContextInfo().catch(() => {});
         CS.toast(`已压缩：早期 ${dropped} 条消息并入摘要, 保留最近 ${r.kept} 条。`);
-      } catch (error) { CS.toast('压缩失败：' + CS.api.friendlyError(error), 'error'); }
+      } catch (error) {
+        run.messages = run.messages.filter(m => m !== pending);
+        CS.save(); CS.render();
+        CS.toast('压缩失败：' + CS.api.friendlyError(error), 'error');
+      }
     },
     'save-tools': async () => {
       if (!CS.ui.toolDraft?.length) { CS.toast('没有需要保存的修改。'); return; }

@@ -487,3 +487,13 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .ctx-compact-btn{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:6px 10px;border:none;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}
 .ctx-compact-btn:hover{color:var(--accent);background:var(--accent-bg)}
 .ctx-compact-btn .icon{width:13px;height:13px}
+
+/* 压缩摘要回复: agent 外壳 + 等待动画 */
+.compact-reply-block{margin:10px 0 2px 0}
+.compact-waiting{font-size:11px;color:var(--muted);font-weight:400;letter-spacing:.2px}
+.compact-dots{display:inline-block;margin-left:2px}
+.compact-dots span{animation:compact-dot 1.2s infinite;opacity:0}
+.compact-dots span:nth-child(2){animation-delay:.2s}
+.compact-dots span:nth-child(3){animation-delay:.4s}
+@keyframes compact-dot{0%,60%,100%{opacity:0}30%{opacity:1}}
+.compact-reply-block .compact-card{margin-top:8px}

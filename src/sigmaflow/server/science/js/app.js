@@ -750,12 +750,14 @@
       if (t.kind === 'compact' && t.text) {
         const dropped = Math.max(0, Math.floor(Number(t.removed) || 0));
         const oldIdx = Math.floor(Number(t.dropOldIdx));
-        const card = { id: 'cmp-' + Math.random().toString(36).slice(2, 8), role: 'user', compact: true, content: String(t.text), at: new Date().toISOString() };
+        const card = { id: 'cmp-' + Math.random().toString(36).slice(2, 8), role: 'assistant', compact: true, content: String(t.text), at: new Date().toISOString() };
         if (dropped) run.messages.splice(0, dropped);
         // 旧摘要卡在保留区时单独移除(索引相对删头后的数组)
         if (oldIdx >= 0) run.messages.splice(oldIdx, 1);
-        // 摘要卡按时间顺序追加为最新消息
-        run.messages.push(card);
+        // 摘要卡属于历史压缩的时刻: 正在流式的回复之前插入, 不打断当前流
+        const lastMsg = run.messages[run.messages.length - 1];
+        const insertAt = lastMsg && lastMsg.streaming ? run.messages.length - 1 : run.messages.length;
+        run.messages.splice(insertAt, 0, card);
         CS.save(); CS.render();
         return;
       }
@@ -1426,32 +1428,48 @@
       CS.render();
     },
     'ctx-compact': async () => {
-      // 圆环弹卡里的手动压缩: 独立接口调用, 成功后前端裁轮次 + 插摘要卡并立即同步
+      // 圆环弹卡里的手动压缩: 会话流内出现 agent 样式的压缩等待消息(与回复一致),
+      // 完成后原地变为摘要卡; 全程不重开圆环弹卡
       const run = CS.currentRun();
       if (!run) return;
-      if (run.messages.some(m => m.streaming)) { CS.toast('正在生成回复，稍后再压缩。', 'error'); return; }
+      if (run.messages.some(m => m.streaming || m.compactPending)) { CS.toast('正在生成回复或压缩中，稍后再试。', 'error'); return; }
       CS.ui.contextMenu = false; CS.render();
+      const pending = { id: 'cmpp-' + Math.random().toString(36).slice(2, 8), role: 'assistant', compactPending: true, blocks: [], streaming: true, content: '', at: new Date().toISOString() };
+      run.messages.push(pending);
+      CS.save(); CS.render();
+      setTimeout(scrollToLatest, 30);
       try {
         const r = await CS.api.request(`/conversations/${encodeURIComponent(run.id)}/compact`, { method: 'POST', body: '{}' });
-        if (!r.applied) { CS.toast('上下文还很轻，无需压缩。'); return; }
+        if (!r.applied) {
+          run.messages = run.messages.filter(m => m !== pending);
+          CS.save(); CS.render();
+          CS.toast('上下文还很轻，无需压缩。');
+          return;
+        }
         const dropped = Math.max(0, Math.floor(Number(r.removed) || 0));
         const oldIdx = Math.floor(Number(r.dropOldIdx));
-        const card = { id: 'cmp-' + Math.random().toString(36).slice(2, 8), role: 'user', compact: true, content: String(r.text || ''), at: new Date().toISOString() };
         // 锚点估算失效: 旧 promptTokens 反映压缩前量级, 清掉后圆环改为逐条估算,
         // 下一次真实回复的 usage 回填后锚点机制自然重新校准
         run.messages.forEach(m => { if (m.promptTokens) delete m.promptTokens; });
         if (dropped) run.messages.splice(0, dropped);
         // 旧摘要卡在保留区时单独移除(索引相对删头后的数组)
         if (oldIdx >= 0) run.messages.splice(oldIdx, 1);
-        // 摘要卡按时间顺序追加为最新消息(压缩时刻的位置)
-        run.messages.push(card);
+        // 等待消息原地变成摘要卡(它 push 时就在末尾 = 压缩时刻的最新消息)
+        pending.compactPending = false;
+        delete pending.streaming;
+        pending.compact = true;
+        pending.content = String(r.text || '');
+        pending.at = new Date().toISOString();
         CS.save();
         await syncConversation(run);       // 服务端先落库, 后续统计才读到新列表
-        CS.ui.contextMenu = true;          // 重开弹卡, 让用量拆分的变化直接可见
         CS.render();
         await CS.refreshContextInfo().catch(() => {});
         CS.toast(`已压缩：早期 ${dropped} 条消息并入摘要, 保留最近 ${r.kept} 条。`);
-      } catch (error) { CS.toast('压缩失败：' + CS.api.friendlyError(error), 'error'); }
+      } catch (error) {
+        run.messages = run.messages.filter(m => m !== pending);
+        CS.save(); CS.render();
+        CS.toast('压缩失败：' + CS.api.friendlyError(error), 'error');
+      }
     },
     'save-tools': async () => {
       if (!CS.ui.toolDraft?.length) { CS.toast('没有需要保存的修改。'); return; }
