@@ -3294,6 +3294,18 @@ def _run_agent_chat(
             # 最后一轮当次 prompt(真实窗口占用, 与累计口径分离)
             stats["last_prompt_tokens"] = info.get("last_prompt_tokens") or 0
             stats["cache_read_tokens"] = info.get("cache_read_tokens") or 0
+            logging.getLogger("uvicorn.error").info(
+                "agent usage diag: prompt=%d cache=%d turns=%.0f",
+                stats["prompt_tokens"],
+                stats["cache_read_tokens"],
+                info.get("messages", [])
+                and sum(
+                    1
+                    for m_ in info.get("messages", [])
+                    if m_.get("role") == "assistant"
+                )
+                or 0,
+            )
             # 自动压缩元数据回传: HTTP 降级路径没有 on_tool 事件流,
             # 前端靠响应里的 compaction.text 插摘要卡, 下轮请求契约才会按卡收窄;
             # WS 通道的卡经 on_tool kind=compact 推送, done 里不透传避免双插

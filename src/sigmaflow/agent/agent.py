@@ -176,7 +176,9 @@ class Agent:
             now = time.localtime()
             return (
                 "\n\n# Current time\n"
-                f"- Now: {time.strftime('%Y-%m-%d %H:%M:%S', now)} ({weekdays[now.tm_wday]})\n"
+                # 分钟粒度: 秒级时间戳让每次请求的 system 前缀必变, 完全阻断网关的
+                # prompt 前缀缓存(跨请求永不命中); 分钟级同样是可靠的“现在”语义
+                f"- Now: {time.strftime('%Y-%m-%d %H:%M', now)} ({weekdays[now.tm_wday]})\n"
                 f"- Timezone: {time.strftime('%Z', now)} (UTC{time.strftime('%z', now)})\n"
                 "- Use this as the current time when interpreting relative dates or "
                 "durations from the user. Ask when time zone provenance is unclear."
