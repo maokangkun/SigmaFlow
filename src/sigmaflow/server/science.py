@@ -3194,6 +3194,8 @@ def _run_agent_chat(
 ) -> str:
     """Run a chat through the SigmaFlow agent/agent.Agent stack.
 
+    pjlab 网关只在流式响应的 usage 里回报缓存字段(prompt_tokens_details.cached_tokens),
+    非流式响应恒为空; 因此无人订阅增量时也用 no-op 回调强制走流式分支, 保住缓存统计。
     Builds an Agent (openai-compatible method) against the configured
     provider, prepends the agent system prompt, and returns the final
     assistant text. Tool/MCP/skill support is enabled: tools execute on
@@ -3274,7 +3276,9 @@ def _run_agent_chat(
         tools=_effective_agent_tools(),
         system=bound_system,
         sub_system=sub_system,
-        on_delta=_make_chat_delta_callback(on_delta, on_reasoning),
+        # pjlab 网关无流式不响应存; 无人订阅增量时也要走流式分支拿缓存字段
+        on_delta=_make_chat_delta_callback(on_delta, on_reasoning)
+        or (lambda piece, think=None: None),
         on_tool=on_tool,
         on_retry=on_retry,
     )

@@ -412,6 +412,7 @@ class Agent:
                                     self.total_tokens = 0
                                     self.prompt_tokens = 0
                                     self.completion_tokens = 0
+                                    self.prompt_tokens_details: Any = None
 
                             class _ToolCall:
                                 def __init__(self, id, name, arguments):
@@ -464,6 +465,13 @@ class Agent:
                                         getattr(chunk.usage, "completion_tokens", 0)
                                         or 0
                                     )
+                                    # 缓存字段引用透传: 手工壳只拷标准三字段会丢
+                                    # prompt_tokens_details, 网关(http cache 命中)的上报无处可取
+                                    _ptd = getattr(
+                                        chunk.usage, "prompt_tokens_details", None
+                                    )
+                                    if _ptd is not None:
+                                        usage.prompt_tokens_details = _ptd
                                 choices = getattr(chunk, "choices", None)
                                 if not choices:
                                     continue
@@ -590,9 +598,6 @@ class Agent:
                             info["cost_tokens"] += usage.total_tokens
                             info["prompt_tokens"] += usage.prompt_tokens or 0
                             info["completion_tokens"] += usage.completion_tokens or 0
-                            # 缓存读取: OpenAI 口径在 prompt_tokens_details 里
-                            # 缓存读取: OpenAI 官方在 prompt_tokens_details; 部分网关平铺字段,
-                            # 统一走 _usage_cache_read 兼容
                             info["cache_read_tokens"] += _usage_cache_read(usage)
                             # 最后一轮当次 prompt: 反映单次请求的真实窗口占用(累计值是多轮求和)
                             info["last_prompt_tokens"] = usage.prompt_tokens or 0
