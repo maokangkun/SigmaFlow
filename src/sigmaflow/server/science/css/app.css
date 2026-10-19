@@ -470,11 +470,9 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 
 /* 上下文压缩摘要卡(pi compaction): 队首摘要以卡片形式回放 */
 .compact-block{margin:10px 0 2px 0}
-.compact-card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 14px;max-width:860px}
+.compact-card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 14px}
 .compact-head{display:flex;align-items:center;gap:8px;width:100%;background:none;border:none;padding:0;margin:0;cursor:pointer;text-align:left;color:inherit;font:inherit}
 .compact-head:hover .compact-title{color:var(--accent)}
-.compact-chev{display:inline-flex;color:var(--muted);transition:transform .15s ease;flex-shrink:0}
-.compact-chev.collapsed{transform:rotate(-90deg)}
 .compact-ico{color:var(--muted);display:inline-flex}
 .compact-title{font-weight:600;font-size:13px}
 .compact-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
