@@ -235,10 +235,21 @@ html:has(.auth-page){scrollbar-gutter:auto}
 .term-view .term-cmdline{padding:10px 14px 2px;white-space:pre-wrap;word-break:break-all}
 .term-view .term-prompt{color:var(--t-accent);font-weight:700;user-select:none}
 .term-view .term-cmd{color:var(--t-fg)}
-.term-view .term-out{margin:6px 0 12px;padding:0 14px;font-family:var(--mono);font-size:11.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word;max-height:420px;overflow-y:auto;color:var(--t-fg)}
+.term-view .term-out{margin:6px 0 12px;padding:0 14px;font-family:var(--mono);font-size:11.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word;max-height:420px;overflow-y:auto;color:var(--t-fg);scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.22) transparent}
+.term-view .term-out::-webkit-scrollbar{width:10px;height:10px}
+.term-view .term-out::-webkit-scrollbar-track{background:transparent}
+.term-view .term-out::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:5px;border:2px solid transparent;background-clip:padding-box}
+/* bash 语法高亮色(Monokai 系, 在各深底主题上都协调) */
+.term-view .tk-str{color:#e6db74}
+.term-view .tk-var{color:#fd971f}
+.term-view .tk-flag{color:#66d9ef}
+.term-view .tk-op{color:#f92672;font-weight:600}
+.term-view .tk-num{color:#ae81ff}
+.term-view .tk-cmd{color:var(--t-accent);font-weight:600}
+.term-view .tk-cmt{color:#75715e;font-style:italic}
 .term-view .term-runmsg{padding:4px 14px 12px;font-size:10.5px;color:var(--t-accent)}
 /* 终端主题下拉(通用设置) */
-.terminal-theme-select{height:38px;min-width:180px;padding:0 34px 0 13px;background:var(--surface);border:1px solid var(--line);border-radius:10px;font-size:12px;color:var(--ink);appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23808b9f' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='m9 5 7 7-7 7'/></svg>");background-repeat:no-repeat;background-position:right 12px center;transform:rotate(90deg) translateX(0);cursor:pointer}
+.terminal-theme-select{height:38px;width:190px;max-width:190px;flex-shrink:0;padding:0 34px 0 13px;background:var(--surface);border:1px solid var(--line);border-radius:10px;font-size:12px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;appearance:none;scrollbar-width:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23808b9f' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='m5 9 7 7 7-7'/></svg>");background-repeat:no-repeat;background-position:right 12px center;cursor:pointer}
 .terminal-theme-select:focus-visible{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px #7775b61f}
 /* 硬件状态栏首次加载占位: 骨架行各条 flex 拉满(与输入框同缘), shimmer 滑过亮块, 数据到达后整块替换消失 */
 .sys-stats .sys-line .sys-skel{flex:1 1 0;min-width:30px;height:10px;border-radius:0;background:var(--line-soft);position:relative;overflow:hidden}

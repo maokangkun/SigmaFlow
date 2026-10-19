@@ -97,13 +97,51 @@
   V.isUnifiedDiff = text => /^--- .+$/m.test(text) && /^\+\+\+ .+$/m.test(text) && /@@ -\d+/.test(text);
   const TE_THEMES = [['monokai', 'Monokai Dark'], ['dracula', 'Dracula'], ['solarized-dark', 'Solarized Dark'], ['one-dark', 'One Dark'], ['nord', 'Nord'], ['github-dark', 'GitHub Dark']];
   const bashCmd = args => String((args && typeof args === 'object' ? (args.command ?? args.cmd ?? '') : (args ?? '')) || '').trim();
-  // bash 工具消息的终端仿卡: 主题随设置(默认 Monokai), 命令完整显示并加 “> ” 前缀, 输出等宽白字
+  const BASH_CMDS = new Set(['cd','ls','cp','mv','rm','mkdir','rmdir','cat','echo','printf','grep','sed','awk','git','pip','pip3','npm','npx','yarn','curl','wget','python','python3','conda','tar','find','chmod','chown','du','df','head','tail','sort','uniq','wc','ln','touch','bash','sh','source','export','env','which','ps','top','kill','docker','rsync','ssh','scp','apt','apt-get','brew','make','cmake','jq','xargs','tee','history','clear','uname','ip','ping','date','sleep','test','sudo','md5sum','sha256sum','base64','openssl']);
+  // bash 语法高亮: 原词分扫描分段, 每段独立转义后包 span, 不会再进任何 markdown/终端转义
+  V.bashHighlight = cmd => {
+    const parts = [];
+    let last = 0;
+    let expectCmd = true;
+    const push = (text, cls) => { if (text) parts.push(cls ? `<span class="${cls}">${e(text)}</span>` : e(text)); };
+    const flushWords = text => {
+      // 普通词: 空白分隔; 操作符后首词视作命令(词表内用同款命令色, 词表外也按命令重点突出)
+      for (const w of text.split(/(\s+)/)) {
+        if (!w) continue;
+        if (/^\s+$/.test(w)) { push(w); continue; }
+        if (expectCmd) { push(w, 'tk-cmd'); expectCmd = false; }
+        else push(w);
+      }
+    };
+    // 捕获组: 1字符串(含单双引号) 2变量(含 $(…)) 3注释(含前导空白与行首) 4flag 5操作符 6数字/孤立$
+    const re = /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')|(\$\{[^}\n]*\}|\$\([^)\n]*\)|\$[A-Za-z_][A-Za-z0-9_]*|\$[?!0-9@#*])|((?:^|\n|\s)#[^\n]*)|(--?[A-Za-z][A-Za-z0-9_-]*)|(&&|\|\||[|;&<>()[\]`{])|(\$|\b\d+(?:\.\d+)?\b)/g;
+    cmd.replace(re, (m, str, v, cm, flag, op, num, offset) => {
+      if (offset > last) flushWords(cmd.slice(last, offset));
+      if (str) { push(m, 'tk-str'); expectCmd = false; }
+      else if (v) push(m, 'tk-var');
+      else if (cm) {
+        // 注释(不确定是行内还是行首): 前导空白原样输出, 注释体用注释色; 若跨行则下一行首重置命令期待
+        const lead = m.match(/^\s*/)[0];
+        push(lead);
+        push(m.slice(lead.length), 'tk-cmt');
+        expectCmd = cm.includes('\n');
+      }
+      else if (flag) push(m, 'tk-flag');
+      else if (op) { push(m, 'tk-op'); expectCmd = true; }
+      else if (num) push(m, 'tk-num');
+      last = offset + m.length;
+      return m;
+    });
+    if (last < cmd.length) flushWords(cmd.slice(last));
+    return parts.join('');
+  };
+  // bash 工具消息的终端仿卡: 主题随设置(默认 Monokai), 命令完整显示并加 “> ” 前缀(带语法高亮), 输出等宽白字
   V.toolTerminal = (name, args, result, live) => {
     const theme = String(CS.state.settings.terminalTheme || 'monokai').replace(/[^a-z0-9-]/gi, '').toLowerCase() || 'monokai';
     const cmd = bashCmd(args);
     const out = result != null ? String(result) : '';
     const screen = `${out ? `<pre class="term-out">${e(out.slice(0, 20000))}${out.length > 20000 ? '\n…(输出过长已截断)' : ''}</pre>` : ''}${live && !out ? '<div class="term-runmsg">执行中…</div>' : ''}`;
-    return `<div class="term-view term-${e(theme)}"><div class="term-titlebar"><span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span><span class="term-name">${e(name)}</span>${live ? '<span class="term-live">运行中</span>' : ''}</div><div class="term-screen">${cmd ? `<div class="term-cmdline"><span class="term-prompt">&gt; </span><span class="term-cmd">${e(cmd)}</span></div>` : ''}${screen}</div></div>`;
+    return `<div class="term-view term-${e(theme)}"><div class="term-titlebar"><span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span><span class="term-name">${e(name)}</span>${live ? '<span class="term-live">运行中</span>' : ''}</div><div class="term-screen">${cmd ? `<div class="term-cmdline"><span class="term-prompt">&gt; </span><span class="term-cmd">${V.bashHighlight(cmd)}</span></div>` : ''}${screen}</div></div>`;
   };
   V.renderUnifiedDiff = text => {
     const esc = CS.escape;
