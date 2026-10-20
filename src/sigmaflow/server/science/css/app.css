@@ -606,10 +606,10 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .trace-head-row{display:flex;align-items:center;gap:13px;height:32px;margin-left:-36px}
 .trace-head-row h1{margin:0;font-size:20px;letter-spacing:-.4px;line-height:32px}
 .trace-sub{margin:3px 0 0 9px}
-.trace-stats{display:flex;gap:17px;align-items:center;flex-wrap:wrap;margin:0 0 13px}
+.trace-stats{display:flex;gap:17px;align-items:center;flex-wrap:wrap;margin:0 0 13px 9px}
 .trace-stats>span{display:inline-flex;align-items:center;gap:4px}
 .trace-stats b{font-weight:600;color:var(--ink-strong)}
-.trace-list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:auto}
+.trace-list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:auto;margin-left:9px}
 .trace-row{border-bottom:1px solid var(--line-soft)}
 .trace-row:last-child{border-bottom:0}
 .trace-main{display:grid;grid-template-columns:38px 88px minmax(180px,1fr) 30px 104px 66px 186px;align-items:center;gap:10px;width:100%;padding:8px 13px;background:none;border:0;text-align:left;font-size:11px;color:var(--ink);cursor:pointer;transition:background .12s}
