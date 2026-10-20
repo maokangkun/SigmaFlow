@@ -603,9 +603,9 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .trace-head{margin:0 0 14px;min-width:0}
 /* 返回按钮与标题同一行: 行高与按钮同高, h1 行高对中心; 副行缩进与标题左缘齐 */
 .trace-back{width:32px;height:32px;flex-shrink:0}
-.trace-head-row{display:flex;align-items:center;gap:13px;height:32px}
+.trace-head-row{display:flex;align-items:center;gap:13px;height:32px;margin-left:-36px}
 .trace-head-row h1{margin:0;font-size:20px;letter-spacing:-.4px;line-height:32px}
-.trace-sub{margin:3px 0 0 45px}
+.trace-sub{margin:3px 0 0 9px}
 .trace-stats{display:flex;gap:17px;align-items:center;flex-wrap:wrap;margin:0 0 13px}
 .trace-stats>span{display:inline-flex;align-items:center;gap:4px}
 .trace-stats b{font-weight:600;color:var(--ink-strong)}
