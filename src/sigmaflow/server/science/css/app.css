@@ -598,13 +598,17 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .run-usage .ru-item.clickable{cursor:pointer;border-radius:7px;padding:2px 5px;margin:-2px -5px}
 .run-usage .ru-item.clickable:hover{background:var(--accent-bg)}
 .run-usage .ru-item.clickable:hover .icon{color:var(--accent)}
-/* 会话 Trace 弹窗: 参考 admin 后台 trace 页(统计条 + 逐条消息时间线 + 行展开详情) */
-.modal.wide.trace{width:1080px;max-width:97vw}
-.trace-modal-sub{margin:-4px 0 13px}
+/* 会话 Trace 页(route=trace, 主区视图; 侧栏保留): 参考 admin 后台 trace 页(统计条 + 逐条消息时间线 + 行展开详情) */
+.trace-page{max-width:1180px;margin:0 auto;padding-top:22px;padding-bottom:46px}
+.trace-head{display:flex;align-items:flex-start;gap:12px;margin:0 0 14px}
+.trace-head .text-button{margin-top:6px;flex-shrink:0}
+.trace-head-row{display:flex;align-items:flex-start;gap:14px;flex:1 1 auto;min-width:0}
+.trace-head h1{margin:0;font-size:21px;letter-spacing:-.4px}
+.trace-head p{margin:4px 0 0}
 .trace-stats{display:flex;gap:17px;align-items:center;flex-wrap:wrap;margin:0 0 13px}
 .trace-stats>span{display:inline-flex;align-items:center;gap:4px}
 .trace-stats b{font-weight:600;color:var(--ink-strong)}
-.trace-list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:auto;max-height:calc(88vh - 230px);min-height:0}
+.trace-list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:auto}
 .trace-row{border-bottom:1px solid var(--line-soft)}
 .trace-row:last-child{border-bottom:0}
 .trace-main{display:grid;grid-template-columns:38px 88px minmax(180px,1fr) 30px 104px 66px 186px;align-items:center;gap:10px;width:100%;padding:8px 13px;background:none;border:0;text-align:left;font-size:11px;color:var(--ink);cursor:pointer;transition:background .12s}

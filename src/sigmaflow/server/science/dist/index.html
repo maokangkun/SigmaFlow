@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="377fb529">
+<meta name="build" content="191f6de5">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -953,13 +953,17 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .run-usage .ru-item.clickable{cursor:pointer;border-radius:7px;padding:2px 5px;margin:-2px -5px}
 .run-usage .ru-item.clickable:hover{background:var(--accent-bg)}
 .run-usage .ru-item.clickable:hover .icon{color:var(--accent)}
-/* 会话 Trace 弹窗: 参考 admin 后台 trace 页(统计条 + 逐条消息时间线 + 行展开详情) */
-.modal.wide.trace{width:1080px;max-width:97vw}
-.trace-modal-sub{margin:-4px 0 13px}
+/* 会话 Trace 页(route=trace, 主区视图; 侧栏保留): 参考 admin 后台 trace 页(统计条 + 逐条消息时间线 + 行展开详情) */
+.trace-page{max-width:1180px;margin:0 auto;padding-top:22px;padding-bottom:46px}
+.trace-head{display:flex;align-items:flex-start;gap:12px;margin:0 0 14px}
+.trace-head .text-button{margin-top:6px;flex-shrink:0}
+.trace-head-row{display:flex;align-items:flex-start;gap:14px;flex:1 1 auto;min-width:0}
+.trace-head h1{margin:0;font-size:21px;letter-spacing:-.4px}
+.trace-head p{margin:4px 0 0}
 .trace-stats{display:flex;gap:17px;align-items:center;flex-wrap:wrap;margin:0 0 13px}
 .trace-stats>span{display:inline-flex;align-items:center;gap:4px}
 .trace-stats b{font-weight:600;color:var(--ink-strong)}
-.trace-list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:auto;max-height:calc(88vh - 230px);min-height:0}
+.trace-list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:auto}
 .trace-row{border-bottom:1px solid var(--line-soft)}
 .trace-row:last-child{border-bottom:0}
 .trace-main{display:grid;grid-template-columns:38px 88px minmax(180px,1fr) 30px 104px 66px 186px;align-items:center;gap:10px;width:100%;padding:8px 13px;background:none;border:0;text-align:left;font-size:11px;color:var(--ink);cursor:pointer;transition:background .12s}
@@ -4752,7 +4756,7 @@ CS.audio = (function () {
     const streaming = new Set(CS.state.runs.filter(r => (r.messages || []).some(m => m.streaming)).map(r => r.id));
     return `${CS.ui.mobileSidebar ? '<button class="sidebar-scrim" aria-label="关闭菜单" data-action="toggle-sidebar"></button>' : ''}<aside class="sidebar ${CS.ui.mobileSidebar ? 'open' : ''}" aria-label="主导航">
       <a class="brand" href="#/home" aria-label="SigmaFlow Science 首页">${i('dna')}<span>SigmaFlow Science</span></a>
-      <div class="sidebar-scroll"><nav class="nav-list">${nav.map(([route, icon, title]) => `<button type="button" data-nav="${route}" class="nav-item ${active === route || (route === 'home' && active === 'chat') ? 'active' : ''}" ${active === route ? 'aria-current="page"' : ''}>${i(icon)}<span>${title}</span>${route === 'tasks' && running ? `<span class="nav-count">${running}</span>` : ''}</button>`).join('')}</nav>
+      <div class="sidebar-scroll"><nav class="nav-list">${nav.map(([route, icon, title]) => `<button type="button" data-nav="${route}" class="nav-item ${active === route || (route === 'home' && (active === 'chat' || active === 'trace')) ? 'active' : ''}" ${active === route ? 'aria-current="page"' : ''}>${i(icon)}<span>${title}</span>${route === 'tasks' && running ? `<span class="nav-count">${running}</span>` : ''}</button>`).join('')}</nav>
       <section class="sidebar-section"><div class="sidebar-section-label"><button type="button" class="text-button muted small ${CS.ui.projectsCollapsed ? 'collapsed' : ''}" data-action="toggle-projects-section" aria-expanded="${!CS.ui.projectsCollapsed}" title="${CS.ui.projectsCollapsed ? '展开项目列表' : '折叠项目列表'}"><span>项目</span></button>${iconBtn('new-project','plus','新建项目')}</div>
         ${CS.ui.projectsCollapsed ? '' : CS.state.projects.filter(p => !p.archived).map(p => { const convs = CS.ui.conversations.filter(c => c.projectId === p.id && !c.archived); return `<div class="project-row"><button type="button" class="project-link ${CS.ui.expandedProjects.has(p.id) ? 'expanded' : ''}" data-action="toggle-project" data-id="${e(p.id)}" title="${e(p.name)}">${i(CS.ui.expandedProjects.has(p.id) ? 'chevron' : 'folder')}<span class="project-name">${e(p.name)}</span><span class="project-actions"><span class="icon-btn" role="button" data-action="edit-project" data-id="${e(p.id)}" title="编辑项目">${i('edit','',14)}</span><span class="icon-btn" role="button" data-action="toggle-project-settings" data-id="${e(p.id)}" title="项目设置">${i('settings','',14)}</span></span>${convs.length ? `<span class="nav-count">${convs.length}</span>` : ''}</button>${CS.ui.projectSettingsMenu === p.id ? `<div class="model-menu project-settings-menu"><button type="button" class="model-menu-item" data-action="edit-project" data-id="${e(p.id)}"><span>编辑项目</span></button><button type="button" class="model-menu-item" data-action="archive-project" data-id="${e(p.id)}"><span>归档项目</span></button><div class="menu-divider"></div><button type="button" class="model-menu-item danger" data-action="delete-project" data-id="${e(p.id)}"><span>删除项目</span></button></div>` : ''}</div>${CS.ui.expandedProjects.has(p.id) ? `<div class="conversation-list">${convs.length ? convs.map(c => `<button type="button" class="conversation-link ${CS.state.currentRunId === c.id ? 'selected' : ''}" data-action="open-conversation" data-id="${e(c.id)}" title="${e(c.title)}">${i('message')}<span class="conversation-title">${e(c.title)}</span>${streaming.has(c.id) ? '<span class="conv-dot" title="生成中"></span>' : ''}<span class="conversation-actions${c.pinned ? ' has-pinned' : ''}"><span class="icon-btn" role="button" data-action="toggle-pin-conversation" data-id="${e(c.id)}" title="${c.pinned ? '取消置顶' : '置顶'}">${i(c.pinned ? 'x' : 'up','',12)}</span><span class="icon-btn" role="button" data-action="archive-conversation" data-id="${e(c.id)}" title="归档">${i('archive','',12)}</span></span></button>`).join('') : '<div class="conversation-empty small muted">暂无会话</div>'}</div>` : ''}`; }).join('')}
         ${CS.ui.projectsCollapsed ? '' : `<button type="button" class="project-link" data-nav="projects">${i('more')}<span>查看全部项目</span></button>`}
@@ -4858,18 +4862,27 @@ CS.audio = (function () {
 
   // 会话 Trace 弹窗(参考后台 trace 页的时间线 + 行展开详情): 每条消息一行, 相对会话时间轴画耗时条, 行点击展开属性与块序列
   // 弹窗体在 app.js 的 renderModal 里调用, 经 CS.traceBody 桥接(V 是本模块私有命名空间)
-  CS.traceBody = () => V.traceModal();
-  V.traceModal = () => {
+  // 会话 Trace 页(route=trace, 主区视图, 保留侧栏; 设计参考 admin 后台 trace 页): 点击 usage 行的消息数进入
+  // 共享上下文: 角色归一 / 时间轴原点与跨度 / 逐条消息的行渲染, 供统计条与列表共同使用
+  const _traceCtx = () => {
     const run = CS.currentRun();
     const msgs = run?.messages || [];
-    if (!msgs.length) return H.notice('当前会话还没有消息。');
     const kindOf = m => m.role === 'user' ? 'user' : m.error ? 'error' : /^\[Conversation compressed/.test(m.content || '') || (m.role !== 'assistant' && m.role !== 'user') ? 'system' : 'reply';
-    const KIND = { user: '用户', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误' };
     const prev = (s, n = 70) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return e(t.slice(0, n)) + (t.length > n ? '…' : ''); };
     let tools = 0, tin = 0, tout = 0, tcache = 0;
     msgs.forEach(m => {
       if (m.role === 'assistant') { tin += m.promptTokens || 0; tout += m.tokens || 0; tcache += m.cacheTokens || 0; tools += (m.tools?.length || 0) + (m.asks?.length || 0); }
     });
+    return { run, msgs, kindOf, prev, tools, tin, tout, tcache };
+  };
+  V.traceStats = () => {
+    const { msgs, tools, tin, tout, tcache } = _traceCtx();
+    return `<div class="trace-stats mono"><span><b>${msgs.length}</b> 条消息</span><span><b>${tools}</b> 次工具调用</span><span>输入 <b>${CS.num(tin)}</b></span><span>输出 <b>${CS.num(tout)}</b></span><span>缓存 <b>${CS.num(tcache)}</b></span><span class="tiny faint">点击任意一行展开该条消息的耗时与调用细节</span></div>`;
+  };
+  V.traceRows = () => {
+    const { msgs, kindOf, prev } = _traceCtx();
+    if (!msgs.length) return '';
+    const KIND = { user: '用户', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误' };
     // 会话时间轴: 以最早消息为原点, 总跨 = 末消息时间 + 该轮耗时(生成中的实时外延)
     const times = msgs.map(m => { const t = Date.parse(m.at || ''); return isNaN(t) ? null : t; });
     const t0 = Math.min(...times.filter(t => t != null));
@@ -4881,8 +4894,8 @@ CS.audio = (function () {
       return { m, idx, t, dur };
     });
     const span = Math.max(1, t1 - t0);
-    const open = CS.ui.modal.traceOpen instanceof Set ? CS.ui.modal.traceOpen : new Set();
-    const rowsHtml = rows.map(({ m, idx, t, dur }) => {
+    const open = CS.ui.traceOpen instanceof Set ? CS.ui.traceOpen : new Set();
+    return rows.map(({ m, idx, t, dur }) => {
       const kind = kindOf(m);
       const streaming = !!m.streaming;
       const off = t == null ? 0 : Math.min(99, Math.round(((t - t0) / span) * 1000) / 10);
@@ -4924,7 +4937,13 @@ CS.audio = (function () {
       const detail = isOpen ? `<div class="trace-detail"><div class="trace-props">${props.map(([k, v]) => `<span class="tpair"><span class="tk">${e(k)}</span><span class="tv mono">${e(v)}</span></span>`).join('')}</div>${blocks.length ? `<div class="trace-blocks">${blocks.map(b => `<span class="tb-item"><span class="tk-${b.k}">${KIND[b.k]}</span><span class="tb-txt" title="${prev(b.t, 240)}">${prev(b.t, 110)}</span></span>`).join('')}</div>` : ''}</div>` : '';
       return `<div class="trace-row${isOpen ? ' open' : ''}"><button type="button" class="trace-main" data-action="toggle-trace-row" data-id="${idx}" aria-expanded="${isOpen}"><span class="trace-idx mono">#${idx + 1}</span><span class="trace-kind tk-${kind}">${KIND[kind]}${kind === 'reply' && streaming ? ' · 生成中' : ''}</span><span class="trace-preview" title="${prev(m.content, 140)}">${prev(m.content)}</span><span class="trace-tools mono">${nTools || ''}</span><span class="trace-tok mono">${tok}</span><span class="trace-dur mono">${dur > 0 ? CS.elapsedMs(dur) : ''}</span><span class="trace-bar"><span class="trace-seg seg-${kind}" style="left:${off}%;width:${segW}%"></span></span></button>${detail}</div>`;
     }).join('');
-    return `<div class="trace-stats mono"><span><b>${msgs.length}</b> 条消息</span><span><b>${tools}</b> 次工具调用</span><span>输入 <b>${CS.num(tin)}</b></span><span>输出 <b>${CS.num(tout)}</b></span><span>缓存 <b>${CS.num(tcache)}</b></span><span class="tiny faint">点击任意一行展开该条消息的耗时与调用细节</span></div><div class="trace-list" role="table">${rowsHtml}</div>`;
+  };
+  // trace 页面: 主区视图替换聊天视图, 侧栏保留; 无会话时给出空态并引导返回
+  V.trace = () => {
+    const { run, msgs } = _traceCtx();
+    const back = `<button type="button" class="text-button" data-action="back-to-chat">${i('arrowleft', '', 14)}<span>返回会话</span></button>`;
+    if (!run || !msgs.length) return `<section class="page trace-page"><div class="trace-head">${back}<div><h1>会话 Trace</h1></div></div>${H.notice(run ? '当前会话还没有消息。' : '没有打开的会话，请先回到聊天页选择会话。')}</section>`;
+    return `<section class="page trace-page"><div class="trace-head"><div class="trace-head-row">${back}<div class="grow"><h1>会话 Trace</h1><p class="small muted text-clip" title="${e(run.title || '')}">${e(run.title || '未命名会话')} <span class="faint">·</span> <span class="mono">${e(run.id || '')}</span></p></div></div></div>${V.traceStats()}<div class="trace-list" role="table">${V.traceRows()}</div></section>`;
   };
 
 V.ctxRing = () => {
@@ -5743,7 +5762,7 @@ V.ctxRing = () => {
 
   window.addEventListener('hashchange', () => {
     CS.ui.route = applyRoute(); CS.ui.mobileSidebar = false; CS.closeModal(); CS.render(); window.scrollTo(0, 0);
-    document.title = 'SigmaFlow Science · ' + ({ home: '科研工作空间', chat: 'Agent 对话', data: '数据集', projects: '项目', workflows: '工作流', results: '分析结果', literature: '文献', tools: '生物工具', tasks: '任务队列', settings: '设置', help: '帮助' }[CS.ui.route] || '工作空间');
+    document.title = 'SigmaFlow Science · ' + ({ home: '科研工作空间', chat: 'Agent 对话', trace: '会话 Trace', data: '数据集', projects: '项目', workflows: '工作流', results: '分析结果', literature: '文献', tools: '生物工具', tasks: '任务队列', settings: '设置', help: '帮助' }[CS.ui.route] || '工作空间');
   });
 
   const loadRemoteConversation = async id => {
@@ -6451,11 +6470,6 @@ V.ctxRing = () => {
       const empty = rows.length ? '' : H.notice(isTools ? '当前没有启用的工具。可在设置的 Agent 工具里开启。' : '当前没有启用的技能。可在设置的 Agent 技能里开启。');
       body = `<p class="small muted mb-20">${isTools ? '当前对话 Agent 可调用的工具, 与设置页“Agent 工具”的启用状态一致; 禁用的工具不会发给模型、也不占用上下文。' : '当前对话 Agent 可用的技能; 技能清单作为系统提示词的一部分自动附加, 禁用的技能不进入会话、不占用上下文。'}</p>${empty}<div class="session-list">${list}</div>`;
       footer = `${H.btn(isTools ? 'open-tool-settings' : 'open-skill-settings','打开设置','settings','flat')}${H.btn('close-modal','关闭','','flat')}`;
-    } else if (modal.type === 'trace') {
-      // 会话 Trace: 参考 admin 后台 trace 页的消息级时间线, 在会话页内以弹窗展示
-      title = '会话 Trace'; wide = true; modal.cls = 'trace';
-      body = `<div class="trace-modal-sub small muted">${e(CS.currentRun()?.title || '未命名会话')} · ${e(CS.currentRun()?.id || '')}</div>${CS.traceBody()}`;
-      footer = H.btn('close-modal', '关闭', '', 'flat');
     } else if (modal.type === 'project') {
       const p = modal.project || {}; title = p.id ? '编辑研究项目' : '新的研究，从这里开始';
       body = `<form id="project-form" data-form="project"><div class="field"><label for="project-name">项目名称</label><input id="project-name" name="name" value="${e(p.name || '')}" placeholder="例如 immune_cell_atlas" maxlength="60" required autocomplete="off"></div><div class="field"><label for="project-dir">项目目录</label><div class="dir-row"><input id="project-dir" value="${e(CS.ui.modal.pickedDir || p.dir || '')}" placeholder="选择文件夹，或输入名称后使用默认路径" readonly autocomplete="off"><button type="button" class="btn small-btn" data-action="browse-dir">浏览</button></div><div id="dir-listing"></div><span class="hint">选择文件夹后以其名称作为项目名；只填名称时使用默认路径下的同名文件夹。</span></div><div class="field"><label for="project-description">项目描述</label><textarea id="project-description" name="description" placeholder="这个项目希望回答什么问题？" rows="3" maxlength="240">${e(p.description || '')}</textarea></div><div class="field"><label for="project-tags">标签</label><input id="project-tags" name="tags" value="${e((p.tags || []).join(', '))}" placeholder="单细胞, 文献, 方法" maxlength="100"><span class="hint">用英文或中文逗号分隔，最多 5 个标签。</span></div></form>`;
@@ -6482,7 +6496,7 @@ V.ctxRing = () => {
       title = '合成细胞详情';
       body = `<div class="row mb-20">${H.tile('cells')}<div><h3>${e(p.id)}</h3><span class="small muted">${e(g.name)} · 合成数据点</span></div></div><div class="info-pairs"><span>分组</span><span>${e(g.name)}</span><span>显示坐标 X</span><span>${p.x.toFixed(2)}</span><span>显示坐标 Y</span><span>${p.y.toFixed(2)}</span><span>数据来源</span><span>synthetic-ui-fixture</span></div><div class="mt-20">${H.notice('坐标是用于界面展示的二维随机点，不是实际降维计算结果。')}</div>`;
     }
-    document.getElementById('modal-root').innerHTML = `<div class="modal-backdrop"><section class="modal ${wide ? 'wide' : ''} ${modal.cls || ''}" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><h2 id="modal-title">${e(title)}</h2>${H.iconBtn('close-modal', 'x', '关闭对话框')}</header><div class="modal-body">${body}</div>${footer ? `<footer class="modal-footer">${footer}</footer>` : ''}</section></div>`;
+    document.getElementById('modal-root').innerHTML = `<div class="modal-backdrop"><section class="modal ${wide ? 'wide' : ''}" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><h2 id="modal-title">${e(title)}</h2>${H.iconBtn('close-modal', 'x', '关闭对话框')}</header><div class="modal-body">${body}</div>${footer ? `<footer class="modal-footer">${footer}</footer>` : ''}</section></div>`;
   };
 
   const previewDataset = async id => {
@@ -6820,8 +6834,8 @@ V.ctxRing = () => {
     },
     'jump-latest': () => { CS.ui.canJumpLatest = false; CS.render(); scrollToLatest(); },
     // 轨迹热力图方块点击: 平滑滚动到对应消息并高亮一瞬
-    'open-trace': () => { if (!CS.currentRun()) return; CS.showModal('trace', {}); },
-    'toggle-trace-row': id => { const mo = CS.ui.modal; if (mo?.type !== 'trace') return; const s = mo.traceOpen instanceof Set ? mo.traceOpen : (mo.traceOpen = new Set()); const n = Number(id); s.has(n) ? s.delete(n) : s.add(n); CS.renderModal(); },
+    'open-trace': () => CS.navigate('trace'),
+    'toggle-trace-row': id => { const s = CS.ui.traceOpen instanceof Set ? CS.ui.traceOpen : (CS.ui.traceOpen = new Set()); const n = Number(id); s.has(n) ? s.delete(n) : s.add(n); CS.render(); },
     'track-jump': id => {
       const mi = parseInt(id, 10);
       if (isNaN(mi)) return;
@@ -7317,6 +7331,7 @@ V.ctxRing = () => {
     'demo-start': () => openNewTask('请使用 PBMC 演示数据，展示从质量检查、细胞图谱到表达特征和分析记录的完整过程。执行前先让我确认计划。','singlecell',['ds-pbmc','ds-meta'].filter(id=>CS.state.datasets.some(d=>d.id===id))),
     'literature-plan': () => openNewTask('围绕单细胞 RNA-seq 数据分析，整理一份可追溯的文献阅读清单。','literature'),
     'close-modal': () => CS.closeModal(),
+    'back-to-chat': () => CS.navigate('chat'),
     // 「文件」按钮: 与输入 @ 同效, 弹项目文件引用浮层(选择后把 @路径 插入输入框);
     // 再点一次或 Esc 或点击其它区域关闭
     'add-attachment': async () => {

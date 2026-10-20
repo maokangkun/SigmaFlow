@@ -215,7 +215,7 @@
     const streaming = new Set(CS.state.runs.filter(r => (r.messages || []).some(m => m.streaming)).map(r => r.id));
     return `${CS.ui.mobileSidebar ? '<button class="sidebar-scrim" aria-label="关闭菜单" data-action="toggle-sidebar"></button>' : ''}<aside class="sidebar ${CS.ui.mobileSidebar ? 'open' : ''}" aria-label="主导航">
       <a class="brand" href="#/home" aria-label="SigmaFlow Science 首页">${i('dna')}<span>SigmaFlow Science</span></a>
-      <div class="sidebar-scroll"><nav class="nav-list">${nav.map(([route, icon, title]) => `<button type="button" data-nav="${route}" class="nav-item ${active === route || (route === 'home' && active === 'chat') ? 'active' : ''}" ${active === route ? 'aria-current="page"' : ''}>${i(icon)}<span>${title}</span>${route === 'tasks' && running ? `<span class="nav-count">${running}</span>` : ''}</button>`).join('')}</nav>
+      <div class="sidebar-scroll"><nav class="nav-list">${nav.map(([route, icon, title]) => `<button type="button" data-nav="${route}" class="nav-item ${active === route || (route === 'home' && (active === 'chat' || active === 'trace')) ? 'active' : ''}" ${active === route ? 'aria-current="page"' : ''}>${i(icon)}<span>${title}</span>${route === 'tasks' && running ? `<span class="nav-count">${running}</span>` : ''}</button>`).join('')}</nav>
       <section class="sidebar-section"><div class="sidebar-section-label"><button type="button" class="text-button muted small ${CS.ui.projectsCollapsed ? 'collapsed' : ''}" data-action="toggle-projects-section" aria-expanded="${!CS.ui.projectsCollapsed}" title="${CS.ui.projectsCollapsed ? '展开项目列表' : '折叠项目列表'}"><span>项目</span></button>${iconBtn('new-project','plus','新建项目')}</div>
         ${CS.ui.projectsCollapsed ? '' : CS.state.projects.filter(p => !p.archived).map(p => { const convs = CS.ui.conversations.filter(c => c.projectId === p.id && !c.archived); return `<div class="project-row"><button type="button" class="project-link ${CS.ui.expandedProjects.has(p.id) ? 'expanded' : ''}" data-action="toggle-project" data-id="${e(p.id)}" title="${e(p.name)}">${i(CS.ui.expandedProjects.has(p.id) ? 'chevron' : 'folder')}<span class="project-name">${e(p.name)}</span><span class="project-actions"><span class="icon-btn" role="button" data-action="edit-project" data-id="${e(p.id)}" title="编辑项目">${i('edit','',14)}</span><span class="icon-btn" role="button" data-action="toggle-project-settings" data-id="${e(p.id)}" title="项目设置">${i('settings','',14)}</span></span>${convs.length ? `<span class="nav-count">${convs.length}</span>` : ''}</button>${CS.ui.projectSettingsMenu === p.id ? `<div class="model-menu project-settings-menu"><button type="button" class="model-menu-item" data-action="edit-project" data-id="${e(p.id)}"><span>编辑项目</span></button><button type="button" class="model-menu-item" data-action="archive-project" data-id="${e(p.id)}"><span>归档项目</span></button><div class="menu-divider"></div><button type="button" class="model-menu-item danger" data-action="delete-project" data-id="${e(p.id)}"><span>删除项目</span></button></div>` : ''}</div>${CS.ui.expandedProjects.has(p.id) ? `<div class="conversation-list">${convs.length ? convs.map(c => `<button type="button" class="conversation-link ${CS.state.currentRunId === c.id ? 'selected' : ''}" data-action="open-conversation" data-id="${e(c.id)}" title="${e(c.title)}">${i('message')}<span class="conversation-title">${e(c.title)}</span>${streaming.has(c.id) ? '<span class="conv-dot" title="生成中"></span>' : ''}<span class="conversation-actions${c.pinned ? ' has-pinned' : ''}"><span class="icon-btn" role="button" data-action="toggle-pin-conversation" data-id="${e(c.id)}" title="${c.pinned ? '取消置顶' : '置顶'}">${i(c.pinned ? 'x' : 'up','',12)}</span><span class="icon-btn" role="button" data-action="archive-conversation" data-id="${e(c.id)}" title="归档">${i('archive','',12)}</span></span></button>`).join('') : '<div class="conversation-empty small muted">暂无会话</div>'}</div>` : ''}`; }).join('')}
         ${CS.ui.projectsCollapsed ? '' : `<button type="button" class="project-link" data-nav="projects">${i('more')}<span>查看全部项目</span></button>`}
@@ -321,18 +321,27 @@
 
   // 会话 Trace 弹窗(参考后台 trace 页的时间线 + 行展开详情): 每条消息一行, 相对会话时间轴画耗时条, 行点击展开属性与块序列
   // 弹窗体在 app.js 的 renderModal 里调用, 经 CS.traceBody 桥接(V 是本模块私有命名空间)
-  CS.traceBody = () => V.traceModal();
-  V.traceModal = () => {
+  // 会话 Trace 页(route=trace, 主区视图, 保留侧栏; 设计参考 admin 后台 trace 页): 点击 usage 行的消息数进入
+  // 共享上下文: 角色归一 / 时间轴原点与跨度 / 逐条消息的行渲染, 供统计条与列表共同使用
+  const _traceCtx = () => {
     const run = CS.currentRun();
     const msgs = run?.messages || [];
-    if (!msgs.length) return H.notice('当前会话还没有消息。');
     const kindOf = m => m.role === 'user' ? 'user' : m.error ? 'error' : /^\[Conversation compressed/.test(m.content || '') || (m.role !== 'assistant' && m.role !== 'user') ? 'system' : 'reply';
-    const KIND = { user: '用户', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误' };
     const prev = (s, n = 70) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return e(t.slice(0, n)) + (t.length > n ? '…' : ''); };
     let tools = 0, tin = 0, tout = 0, tcache = 0;
     msgs.forEach(m => {
       if (m.role === 'assistant') { tin += m.promptTokens || 0; tout += m.tokens || 0; tcache += m.cacheTokens || 0; tools += (m.tools?.length || 0) + (m.asks?.length || 0); }
     });
+    return { run, msgs, kindOf, prev, tools, tin, tout, tcache };
+  };
+  V.traceStats = () => {
+    const { msgs, tools, tin, tout, tcache } = _traceCtx();
+    return `<div class="trace-stats mono"><span><b>${msgs.length}</b> 条消息</span><span><b>${tools}</b> 次工具调用</span><span>输入 <b>${CS.num(tin)}</b></span><span>输出 <b>${CS.num(tout)}</b></span><span>缓存 <b>${CS.num(tcache)}</b></span><span class="tiny faint">点击任意一行展开该条消息的耗时与调用细节</span></div>`;
+  };
+  V.traceRows = () => {
+    const { msgs, kindOf, prev } = _traceCtx();
+    if (!msgs.length) return '';
+    const KIND = { user: '用户', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误' };
     // 会话时间轴: 以最早消息为原点, 总跨 = 末消息时间 + 该轮耗时(生成中的实时外延)
     const times = msgs.map(m => { const t = Date.parse(m.at || ''); return isNaN(t) ? null : t; });
     const t0 = Math.min(...times.filter(t => t != null));
@@ -344,8 +353,8 @@
       return { m, idx, t, dur };
     });
     const span = Math.max(1, t1 - t0);
-    const open = CS.ui.modal.traceOpen instanceof Set ? CS.ui.modal.traceOpen : new Set();
-    const rowsHtml = rows.map(({ m, idx, t, dur }) => {
+    const open = CS.ui.traceOpen instanceof Set ? CS.ui.traceOpen : new Set();
+    return rows.map(({ m, idx, t, dur }) => {
       const kind = kindOf(m);
       const streaming = !!m.streaming;
       const off = t == null ? 0 : Math.min(99, Math.round(((t - t0) / span) * 1000) / 10);
@@ -387,7 +396,13 @@
       const detail = isOpen ? `<div class="trace-detail"><div class="trace-props">${props.map(([k, v]) => `<span class="tpair"><span class="tk">${e(k)}</span><span class="tv mono">${e(v)}</span></span>`).join('')}</div>${blocks.length ? `<div class="trace-blocks">${blocks.map(b => `<span class="tb-item"><span class="tk-${b.k}">${KIND[b.k]}</span><span class="tb-txt" title="${prev(b.t, 240)}">${prev(b.t, 110)}</span></span>`).join('')}</div>` : ''}</div>` : '';
       return `<div class="trace-row${isOpen ? ' open' : ''}"><button type="button" class="trace-main" data-action="toggle-trace-row" data-id="${idx}" aria-expanded="${isOpen}"><span class="trace-idx mono">#${idx + 1}</span><span class="trace-kind tk-${kind}">${KIND[kind]}${kind === 'reply' && streaming ? ' · 生成中' : ''}</span><span class="trace-preview" title="${prev(m.content, 140)}">${prev(m.content)}</span><span class="trace-tools mono">${nTools || ''}</span><span class="trace-tok mono">${tok}</span><span class="trace-dur mono">${dur > 0 ? CS.elapsedMs(dur) : ''}</span><span class="trace-bar"><span class="trace-seg seg-${kind}" style="left:${off}%;width:${segW}%"></span></span></button>${detail}</div>`;
     }).join('');
-    return `<div class="trace-stats mono"><span><b>${msgs.length}</b> 条消息</span><span><b>${tools}</b> 次工具调用</span><span>输入 <b>${CS.num(tin)}</b></span><span>输出 <b>${CS.num(tout)}</b></span><span>缓存 <b>${CS.num(tcache)}</b></span><span class="tiny faint">点击任意一行展开该条消息的耗时与调用细节</span></div><div class="trace-list" role="table">${rowsHtml}</div>`;
+  };
+  // trace 页面: 主区视图替换聊天视图, 侧栏保留; 无会话时给出空态并引导返回
+  V.trace = () => {
+    const { run, msgs } = _traceCtx();
+    const back = `<button type="button" class="text-button" data-action="back-to-chat">${i('arrowleft', '', 14)}<span>返回会话</span></button>`;
+    if (!run || !msgs.length) return `<section class="page trace-page"><div class="trace-head">${back}<div><h1>会话 Trace</h1></div></div>${H.notice(run ? '当前会话还没有消息。' : '没有打开的会话，请先回到聊天页选择会话。')}</section>`;
+    return `<section class="page trace-page"><div class="trace-head"><div class="trace-head-row">${back}<div class="grow"><h1>会话 Trace</h1><p class="small muted text-clip" title="${e(run.title || '')}">${e(run.title || '未命名会话')} <span class="faint">·</span> <span class="mono">${e(run.id || '')}</span></p></div></div></div>${V.traceStats()}<div class="trace-list" role="table">${V.traceRows()}</div></section>`;
   };
 
 V.ctxRing = () => {
