@@ -2516,6 +2516,63 @@ class ScienceAPI:
                                 loop.call_soon_threadsafe(
                                     chat_queue.put_nowait, ("done", None)
                                 )
+                                # 服务端兑底存档: 前端断线(关闭/刷新)期间 agent 在后台跑完时,
+                                # 把结果直接落进会话存储, 用户重连回放即可看到, 不会被丢掉
+                                try:
+                                    _rid = str(data.get("runId") or "")
+                                    _base = list(
+                                        (
+                                            self.project_store.conversations.get(_rid)
+                                            or {}
+                                        ).get("content")
+                                        or []
+                                    )
+                                    _joined = "".join(content)
+                                    _last = _base[-1] if _base else None
+                                    _dup = (
+                                        isinstance(_last, dict)
+                                        and _last.get("role") == "assistant"
+                                        and str(_last.get("content") or "")[:200]
+                                        == _joined[:200]
+                                    )
+                                    if not _dup and (
+                                        _joined or stats.get("completion_tokens")
+                                    ):
+                                        _now_ms = int(time.time() * 1000)
+                                        _base.append(
+                                            {
+                                                "role": "assistant",
+                                                "content": _clip(_joined, 20000),
+                                                "at": time.strftime(
+                                                    "%Y-%m-%dT%H:%M:%S.000Z",
+                                                    time.gmtime(_now_ms / 1000.0),
+                                                ),
+                                                "tokens": stats.get("completion_tokens")
+                                                or 0,
+                                                "promptTokens": stats.get(
+                                                    "prompt_tokens"
+                                                )
+                                                or 0,
+                                                "contextTokens": stats.get(
+                                                    "last_prompt_tokens"
+                                                )
+                                                or 0,
+                                                "cacheTokens": stats.get(
+                                                    "cache_read_tokens"
+                                                )
+                                                or 0,
+                                                "model": model_name,
+                                            }
+                                        )
+                                        self.project_store.conversations[_rid][
+                                            "content"
+                                        ] = _base[-200:]
+                                        self.project_store.conversations[_rid][
+                                            "updatedAt"
+                                        ] = _now_ms
+                                        self.project_store._save()
+                                except Exception:
+                                    pass
                             except Exception as err:
                                 loop.call_soon_threadsafe(
                                     chat_queue.put_nowait, ("error", str(err))
@@ -2779,8 +2836,11 @@ class ScienceAPI:
                 if pty_pump:
                     pty_pump.cancel()
                 _pty_detach_all()
-                for task in chat_tasks:
-                    task.cancel()
+                # 注意: 不 cancel chat_tasks(后台 agent 流)。同步线程无法被 cancel 终止,
+                # 但 cancel 会关掉它正在读的 httpx 流式响应 → GeneratorExit(BaseException)
+                # 逃过所有 except Exception → agent 循环静默死亡, 前端表现
+                # 为“最后一张工具卡后停止”(run-39e29a61 事故)。聊天流与连接解耦,
+                # 断开由 chat_stops/ASK.cancel(下两条)处理。
                 # 连接断开: 所有未回答的 ask 都失效, 让阻塞的工具线程返回
                 for ask_ids in chat_asks.values():
                     for ask_id in ask_ids or ():
