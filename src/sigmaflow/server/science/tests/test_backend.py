@@ -11,16 +11,22 @@ import json
 import os
 import tempfile
 import time
-import importlib.util as _ilu
+
 
 _here = os.path.dirname(os.path.abspath(__file__))
 os.environ["SIGMAFLOW_SCIENCE_DIR"] = tempfile.mkdtemp(prefix="science-models-")
-_spec = _ilu.spec_from_file_location(
-    "science_backend", os.path.join(_here, "..", "..", "science.py")
-)
-assert _spec is not None and _spec.loader is not None
-science_backend = _ilu.module_from_spec(_spec)
-_spec.loader.exec_module(science_backend)
+try:
+    import sigmaflow.server.science as science_backend
+except ImportError:
+    # 未 pip install 时: 把仓库 src 根加入 sys.path 再按包导入。
+    # 注意 science.py 拆分后含相对导入(.science_common 等), 不能再按
+    # 单文件 spec_from_file_location 加载——那拿不到包上下文, 相对导入必失败。
+    _src_root = os.path.abspath(os.path.join(_here, "..", "..", "..", ".."))
+    import sys as _sys
+
+    if _src_root not in _sys.path:
+        _sys.path.insert(0, _src_root)
+    import sigmaflow.server.science as science_backend
 ScienceAPI = science_backend.ScienceAPI
 
 
