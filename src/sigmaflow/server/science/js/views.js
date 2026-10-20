@@ -355,7 +355,7 @@
         return Math.max(1, chars || 1);
       });
       const dTotal = ds.reduce((s, x) => s + x, 0) || 1;
-      return bs.map((b, i) => ({ k: b.type === 'ask' ? 'tool' : b.type === 'text' ? 'reply' : b.type, share: (ds[i] / dTotal) * 100 }));
+      return bs.map((b, i) => ({ k: b.type === 'ask' ? 'tool' : b.type === 'text' ? 'reply' : b.type, share: (ds[i] / dTotal) * 100, ms: ds[i] }));
     };
     const times = msgs.map(m => { const t = Date.parse(m.at || ''); return isNaN(t) ? null : t; });
     const rows = msgs.map((m, idx) => {
@@ -408,7 +408,7 @@
         ] : []),
       ];
       const isOpen = open.has(idx);
-      const detail = isOpen ? `<div class="trace-detail"><div class="trace-props">${props.map(([k, v]) => `<span class="tpair"><span class="tk">${e(k)}</span><span class="tv mono">${e(v)}</span></span>`).join('')}</div>${blocks.length ? `<div class="trace-blocks">${blocks.map(b => `<span class="tb-item"><span class="tk-${b.k}">${KIND[b.k]}</span><span class="tb-txt" title="${prev(b.t, 240)}">${prev(b.t, 110)}</span></span>`).join('')}</div>` : ''}</div>` : '';
+      const detail = isOpen ? `<div class="trace-detail"><div class="trace-props">${props.map(([k, v]) => `<span class="tpair"><span class="tk">${e(k)}</span><span class="tv mono">${e(v)}</span></span>`).join('')}</div>${blocks.length ? `<div class="trace-blocks">${blocks.map((b, ri) => { const ms = segs && segs[ri] ? segs[ri].ms : 0; return `<span class="tb-item"><span class="tk-${b.k}">${KIND[b.k]}</span><span class="tb-txt" title="${prev(b.t, 240)}">${prev(b.t, 110)}</span>${ms > 0 ? `<span class="tb-dur mono">${CS.elapsedMs(ms)}</span>` : ''}</span>`; }).join('')}</div>` : ''}</div>` : '';
       return `<div class="trace-row${isOpen ? ' open' : ''}"><button type="button" class="trace-main" data-action="toggle-trace-row" data-id="${idx}" aria-expanded="${isOpen}"><span class="trace-idx mono">#${idx + 1}</span><span class="trace-kind tk-${kind}">${KIND[kind]}${kind === 'reply' && streaming ? ' · 生成中' : ''}</span><span class="trace-preview" title="${prev(m.content, 140)}">${prev(m.content)}</span><span class="trace-tools mono">${nTools || ''}</span><span class="trace-tok mono">${tok}</span><span class="trace-dur mono">${dur > 0 ? CS.elapsedMs(dur) : ''}</span><span class="trace-bar">${barHtml}</span></button>${detail}</div>`;
     }).join('');
   };

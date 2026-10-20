@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="c5af1146">
+<meta name="build" content="1c8140df">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -994,6 +994,8 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .tpair .tv{font-size:10.5px;color:var(--ink-strong)}
 .trace-blocks{display:flex;flex-direction:column;gap:5px;max-height:210px;overflow:auto;padding:2px 0 4px}
 .tb-item{display:flex;align-items:center;gap:9px;min-height:21px}
+/* 块行耗时: 右缘对齐主行耗时列(距行右 209px = 主行右衬 13 + 时间条列 186 + 列距 10; 详情自身右衬 14 由 padding 消化) */
+.tb-dur{margin-left:auto;font-size:10px;color:var(--muted);white-space:nowrap;padding-right:195px}
 .tb-item .tk-user,.tb-item .tk-reply,.tb-item .tk-think,.tb-item .tk-tool,.tb-item .tk-system,.tb-item .tk-error{flex-shrink:0;width:44px;padding:2px 0;text-align:center;font-size:9px;font-weight:570}
 .tb-txt{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
@@ -4908,7 +4910,7 @@ CS.audio = (function () {
         return Math.max(1, chars || 1);
       });
       const dTotal = ds.reduce((s, x) => s + x, 0) || 1;
-      return bs.map((b, i) => ({ k: b.type === 'ask' ? 'tool' : b.type === 'text' ? 'reply' : b.type, share: (ds[i] / dTotal) * 100 }));
+      return bs.map((b, i) => ({ k: b.type === 'ask' ? 'tool' : b.type === 'text' ? 'reply' : b.type, share: (ds[i] / dTotal) * 100, ms: ds[i] }));
     };
     const times = msgs.map(m => { const t = Date.parse(m.at || ''); return isNaN(t) ? null : t; });
     const rows = msgs.map((m, idx) => {
@@ -4961,7 +4963,7 @@ CS.audio = (function () {
         ] : []),
       ];
       const isOpen = open.has(idx);
-      const detail = isOpen ? `<div class="trace-detail"><div class="trace-props">${props.map(([k, v]) => `<span class="tpair"><span class="tk">${e(k)}</span><span class="tv mono">${e(v)}</span></span>`).join('')}</div>${blocks.length ? `<div class="trace-blocks">${blocks.map(b => `<span class="tb-item"><span class="tk-${b.k}">${KIND[b.k]}</span><span class="tb-txt" title="${prev(b.t, 240)}">${prev(b.t, 110)}</span></span>`).join('')}</div>` : ''}</div>` : '';
+      const detail = isOpen ? `<div class="trace-detail"><div class="trace-props">${props.map(([k, v]) => `<span class="tpair"><span class="tk">${e(k)}</span><span class="tv mono">${e(v)}</span></span>`).join('')}</div>${blocks.length ? `<div class="trace-blocks">${blocks.map((b, ri) => { const ms = segs && segs[ri] ? segs[ri].ms : 0; return `<span class="tb-item"><span class="tk-${b.k}">${KIND[b.k]}</span><span class="tb-txt" title="${prev(b.t, 240)}">${prev(b.t, 110)}</span>${ms > 0 ? `<span class="tb-dur mono">${CS.elapsedMs(ms)}</span>` : ''}</span>`; }).join('')}</div>` : ''}</div>` : '';
       return `<div class="trace-row${isOpen ? ' open' : ''}"><button type="button" class="trace-main" data-action="toggle-trace-row" data-id="${idx}" aria-expanded="${isOpen}"><span class="trace-idx mono">#${idx + 1}</span><span class="trace-kind tk-${kind}">${KIND[kind]}${kind === 'reply' && streaming ? ' · 生成中' : ''}</span><span class="trace-preview" title="${prev(m.content, 140)}">${prev(m.content)}</span><span class="trace-tools mono">${nTools || ''}</span><span class="trace-tok mono">${tok}</span><span class="trace-dur mono">${dur > 0 ? CS.elapsedMs(dur) : ''}</span><span class="trace-bar">${barHtml}</span></button>${detail}</div>`;
     }).join('');
   };
