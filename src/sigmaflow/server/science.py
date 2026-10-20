@@ -2466,6 +2466,8 @@ class ScienceAPI:
 
                         # 事件元组 (kind, value): delta/think/tool/done/error
                         def work():
+                            t0 = time.time()
+
                             def on_tool_wrap(ev):
                                 # ask 轮次: 记录 id 供停止/断开时取消;
                                 # isAsk 标记让前端在工具被改名时也能识别 ask 卡片
@@ -2543,6 +2545,7 @@ class ScienceAPI:
                                                 "cache_read_tokens"
                                             )
                                             or 0,
+                                            "elapsed": int((time.time() - t0) * 1000),
                                             "model": model_name,
                                         },
                                     )

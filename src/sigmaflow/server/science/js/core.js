@@ -66,17 +66,29 @@ CS.chatUsage = () => {
 CS.chatMeta = () => {
   const run = CS.currentRun();
   const msgs = run?.messages || [];
-  let start = null, end = null, tools = 0;
+  let start = null, end = null, tools = 0, elapsed = 0, hasElapsed = false;
   msgs.forEach(m => {
     const t = m.at ? Date.parse(m.at) : NaN;
     if (!isNaN(t)) { if (start === null || t < start) start = t; if (end === null || t > end) end = t; }
-    if (m.role === 'assistant') tools += (m.tools?.length || 0) + (m.asks?.length || 0);
+    if (m.role === 'assistant') {
+      tools += (m.tools?.length || 0) + (m.asks?.length || 0);
+      if (typeof m.elapsed === 'number' && m.elapsed > 0) { elapsed += m.elapsed; hasElapsed = true; }
+    }
+  });
+  // 进行中的本轮回复: 计入实时已过时间, 让总耗时在生成期间跳动
+  msgs.forEach(m => {
+    if (m.role === 'assistant' && m.streaming && m.at) {
+      const t = Date.parse(m.at);
+      if (!isNaN(t)) { elapsed += Math.max(0, Date.now() - t); hasElapsed = true; }
+    }
   });
   if (start === null) {
     const c = run?.createdAt ? Date.parse(run.createdAt) : NaN;
     if (!isNaN(c)) { start = c; end = c; }
   }
-  return { start, end, elapsed: start !== null ? Math.max(0, (end || start) - start) : 0, msgs: msgs.length, tools };
+  // 旧存档没有每轮 elapsed: 回退首末时间差口径
+  if (!hasElapsed && start !== null) elapsed = Math.max(0, (end || start) - start);
+  return { start, end, elapsed: Math.round(elapsed), msgs: msgs.length, tools };
 };
 // 时长紧凑展示: 45秒 / 12分 / 1时23分 / 2天4时
 CS.fmtDur = ms => {

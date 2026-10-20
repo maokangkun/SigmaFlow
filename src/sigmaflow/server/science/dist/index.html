@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="76d17e12">
+<meta name="build" content="5d4cf277">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1169,17 +1169,29 @@ CS.chatUsage = () => {
 CS.chatMeta = () => {
   const run = CS.currentRun();
   const msgs = run?.messages || [];
-  let start = null, end = null, tools = 0;
+  let start = null, end = null, tools = 0, elapsed = 0, hasElapsed = false;
   msgs.forEach(m => {
     const t = m.at ? Date.parse(m.at) : NaN;
     if (!isNaN(t)) { if (start === null || t < start) start = t; if (end === null || t > end) end = t; }
-    if (m.role === 'assistant') tools += (m.tools?.length || 0) + (m.asks?.length || 0);
+    if (m.role === 'assistant') {
+      tools += (m.tools?.length || 0) + (m.asks?.length || 0);
+      if (typeof m.elapsed === 'number' && m.elapsed > 0) { elapsed += m.elapsed; hasElapsed = true; }
+    }
+  });
+  // 进行中的本轮回复: 计入实时已过时间, 让总耗时在生成期间跳动
+  msgs.forEach(m => {
+    if (m.role === 'assistant' && m.streaming && m.at) {
+      const t = Date.parse(m.at);
+      if (!isNaN(t)) { elapsed += Math.max(0, Date.now() - t); hasElapsed = true; }
+    }
   });
   if (start === null) {
     const c = run?.createdAt ? Date.parse(run.createdAt) : NaN;
     if (!isNaN(c)) { start = c; end = c; }
   }
-  return { start, end, elapsed: start !== null ? Math.max(0, (end || start) - start) : 0, msgs: msgs.length, tools };
+  // 旧存档没有每轮 elapsed: 回退首末时间差口径
+  if (!hasElapsed && start !== null) elapsed = Math.max(0, (end || start) - start);
+  return { start, end, elapsed: Math.round(elapsed), msgs: msgs.length, tools };
 };
 // 时长紧凑展示: 45秒 / 12分 / 1时23分 / 2天4时
 CS.fmtDur = ms => {
@@ -4681,7 +4693,7 @@ CS.audio = (function () {
     const meta = CS.chatMeta();
     const item = (ic, val, tip, raw) => `<span class="ru-item" title="${tip}">${i(ic, '', 13)}<b>${raw ? val : CS.knum(val)}</b></span>`;
     const startTxt = meta.start !== null ? new Date(meta.start).toLocaleString('zh-CN', { hour12: false }) : '—';
-    return `<div class="run-usage mono">${item('calendar', CS.fmtDT(meta.start), '会话开始: ' + startTxt, true)}${item('clock', CS.fmtDur(meta.elapsed), '会话总耗时 (首末消息间隔)', true)}${item('message', meta.msgs, '消息总数 (含用户与助手)')}${item('wrench', meta.tools, '工具调用次数 (含 ask)')}${item('up', u.tin, '累计输入 token')}${item('arrowdown', u.tout, '累计输出 token')}${item('database', u.tinCache, '累计缓存读取(模型/网关不支持缓存时为 0, glm-5.3-flash 无缓存上报)')}${`<span class="ru-item" title="上下文占用 / 模型窗口">${i('gauge', '', 13)}<b>${u.pct}% / ${CS.knum(u.win)}</b></span>`}</div>`;
+    return `<div class="run-usage mono">${item('calendar', CS.fmtDT(meta.start), '会话开始: ' + startTxt, true)}${item('clock', CS.fmtDur(meta.elapsed), '累计生成耗时 (每轮回复耗时之和, 不含轮间空闲)', true)}${item('message', meta.msgs, '消息总数 (含用户与助手)')}${item('wrench', meta.tools, '工具调用次数 (含 ask)')}${item('up', u.tin, '累计输入 token')}${item('arrowdown', u.tout, '累计输出 token')}${item('database', u.tinCache, '累计缓存读取(模型/网关不支持缓存时为 0, glm-5.3-flash 无缓存上报)')}${`<span class="ru-item" title="上下文占用 / 模型窗口">${i('gauge', '', 13)}<b>${u.pct}% / ${CS.knum(u.win)}</b></span>`}</div>`;
   };
 
 V.ctxRing = () => {
