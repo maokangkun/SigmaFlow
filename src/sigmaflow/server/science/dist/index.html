@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="38302516">
+<meta name="build" content="cbc58780">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -919,6 +919,17 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .fs-md img{max-width:100%}
 /* 标题栏右侧 usage 行: mono 小字右对齐, 贴标题行的水平线 */
 .run-usage{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;align-self:flex-end;padding-bottom:2px;display:inline-flex;gap:13px}
+.run-usage-stack{position:relative;display:flex;flex-direction:column;align-items:flex-end;min-width:0}
+/* 消息轨迹热力图: 4行方格子, 列内自上而下 / 列间从左往右递增, 贴最右生长, 超左消失; absolute 悬在 usage 行上方, 不参与 stack 宽度 → max-width:100% 恰等于 usage 行宽 */
+.run-track{position:absolute;right:0;bottom:calc(100% + 6px);display:flex;justify-content:flex-end;gap:2px;overflow:hidden;max-width:100%}
+.run-track .tr-col{display:flex;flex-direction:column;gap:2px}
+.run-track .tr-cell{width:6px;height:6px;border-radius:1.5px;background:var(--faint)}
+.run-track .tr-user{background:var(--green)}
+.run-track .tr-think{background:var(--blue)}
+.run-track .tr-tool{background:var(--amber)}
+.run-track .tr-reply{background:var(--accent)}
+.run-track .tr-system{background:var(--faint)}
+@media(max-width:800px){.run-track{max-width:340px}}
 .run-usage .ru-item{display:inline-flex;align-items:center;gap:4px}
 .run-usage .ru-item .icon{color:var(--faint)}
 .run-usage .ru-item b{font-weight:500;color:var(--muted)}
@@ -1217,6 +1228,15 @@ CS.tpath = (s, max = 20) => {
   s = (s || '').trim();
   if (!s || s.length <= max) return s;
   return '…' + s.slice(-(max - 1));
+};
+// 消息分类 (标题栏轨迹热力图的颜色): user/think/tool/reply/system
+CS.msgKind = m => {
+  if (m.role === 'user') return 'user';
+  if (/^\[Conversation compressed/.test(m.content || '')) return 'system';
+  if (m.role !== 'assistant') return m.role === 'system' ? 'system' : 'reply';
+  if (m.tools?.length || m.asks?.length) return 'tool';
+  if ((m.reasoning || '').trim()) return 'think';
+  return 'reply';
 };
 // token 数值的紧凑展示: ~850 / ~1.7K / ~67.7K / ~131K; 到 M 用 M 单位(~1M / ~1.2M), 不到的才用 K
 CS.kfmt = n => {
@@ -4694,6 +4714,22 @@ CS.audio = (function () {
   V.topbar = () => `<div class="topbar"><div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div></div>`;
   // 上下文用量圆环 + 详情浮层(位于模型选择按钮左侧, 点击圆环展开)
     // 标题栏右侧 usage 行: 图标+数值(开始时间/耗时/消息/工具调用 + 输入↓/输出↑/缓存②/上下文表盘), 右对齐贴水平线
+  // 标题栏右侧消息轨迹热力图: 4行方格子, 消息按列内自上而下 / 列间从左往右递增,
+  // 整体贴最右生长, 超出 usage 行左侧的旧列因 overflow 被裁剪 (窗口滑动效果)
+  V.runTrack = () => {
+    const run = CS.currentRun();
+    const all = run?.messages || [];
+    const msgs = all.filter(m => (m.content || '').trim() || m.tools?.length || m.asks?.length || (m.reasoning || '').trim() || m.streaming);
+    if (!msgs.length) return '';
+    const MAX_COLS = 60;
+    const start = Math.max(0, msgs.length - MAX_COLS * 4);
+    const shown = msgs.slice(start);
+    const cols = [];
+    for (let idx = 0; idx < shown.length; idx += 4) cols.push(shown.slice(idx, idx + 4));
+    const cell = (m, gi) => `<span class="tr-cell tr-${CS.msgKind(m)}" title="#${start + gi + 1} ${m.role === 'user' ? '用户' : '助手'} · ${e((m.content || m.reasoning || '工具调用').replace(/\s+/g, ' ').slice(0, 80))}"></span>`;
+    return `<div class="run-track" aria-hidden="true">${cols.map(c => `<span class="tr-col">${c.map(cell).join('')}</span>`).join('')}</div>`;
+  };
+
   V.runUsage = () => {
     const u = CS.chatUsage();
     const meta = CS.chatMeta();
@@ -4701,7 +4737,8 @@ CS.audio = (function () {
     const startTxt = meta.start !== null ? new Date(meta.start).toLocaleString('zh-CN', { hour12: false }) : '—';
     const proj = CS.currentRun() ? CS.state.projects.find(p => p.id === CS.currentRun().projectId) : null;
     const pdir = proj?.dir || '';
-    return `<div class="run-usage mono">${pdir ? item('folder', CS.tpath(pdir), '项目目录: ' + pdir, true) : ''}${item('calendar', CS.fmtDT(meta.start), '会话开始: ' + startTxt, true)}${item('clock', CS.fmtDur(meta.elapsed), '累计生成耗时 (每轮回复耗时之和, 不含轮间空闲)', true)}${item('message', meta.msgs, '消息总数 (含用户与助手)')}${item('wrench', meta.tools, '工具调用次数 (含 ask)')}${item('up', u.tin, '累计输入 token')}${item('arrowdown', u.tout, '累计输出 token')}${item('database', u.tinCache, '累计缓存读取(模型/网关不支持缓存时为 0, glm-5.3-flash 无缓存上报)')}${`<span class="ru-item" title="上下文占用 / 模型窗口">${i('gauge', '', 13)}<b>${u.pct}% / ${CS.knum(u.win)}</b></span>`}</div>`;
+    const row = `${pdir ? item('folder', CS.tpath(pdir), '项目目录: ' + pdir, true) : ''}${item('calendar', CS.fmtDT(meta.start), '会话开始: ' + startTxt, true)}${item('clock', CS.fmtDur(meta.elapsed), '累计生成耗时 (每轮回复耗时之和, 不含轮间空闲)', true)}${item('message', meta.msgs, '消息总数 (含用户与助手)')}${item('wrench', meta.tools, '工具调用次数 (含 ask)')}${item('up', u.tin, '累计输入 token')}${item('arrowdown', u.tout, '累计输出 token')}${item('database', u.tinCache, '累计缓存读取(模型/网关不支持缓存时为 0, glm-5.3-flash 无缓存上报)')}${`<span class="ru-item" title="上下文占用 / 模型窗口">${i('gauge', '', 13)}<b>${u.pct}% / ${CS.knum(u.win)}</b></span>`}`;
+    return `<div class="run-usage-stack">${V.runTrack()}<div class="run-usage mono">${row}</div></div>`;
   };
 
 V.ctxRing = () => {

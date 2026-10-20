@@ -115,6 +115,15 @@ CS.tpath = (s, max = 20) => {
   if (!s || s.length <= max) return s;
   return '…' + s.slice(-(max - 1));
 };
+// 消息分类 (标题栏轨迹热力图的颜色): user/think/tool/reply/system
+CS.msgKind = m => {
+  if (m.role === 'user') return 'user';
+  if (/^\[Conversation compressed/.test(m.content || '')) return 'system';
+  if (m.role !== 'assistant') return m.role === 'system' ? 'system' : 'reply';
+  if (m.tools?.length || m.asks?.length) return 'tool';
+  if ((m.reasoning || '').trim()) return 'think';
+  return 'reply';
+};
 // token 数值的紧凑展示: ~850 / ~1.7K / ~67.7K / ~131K; 到 M 用 M 单位(~1M / ~1.2M), 不到的才用 K
 CS.kfmt = n => {
   n = Math.round(n || 0);

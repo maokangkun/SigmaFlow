@@ -230,6 +230,22 @@
   V.topbar = () => `<div class="topbar"><div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div></div>`;
   // 上下文用量圆环 + 详情浮层(位于模型选择按钮左侧, 点击圆环展开)
     // 标题栏右侧 usage 行: 图标+数值(开始时间/耗时/消息/工具调用 + 输入↓/输出↑/缓存②/上下文表盘), 右对齐贴水平线
+  // 标题栏右侧消息轨迹热力图: 4行方格子, 消息按列内自上而下 / 列间从左往右递增,
+  // 整体贴最右生长, 超出 usage 行左侧的旧列因 overflow 被裁剪 (窗口滑动效果)
+  V.runTrack = () => {
+    const run = CS.currentRun();
+    const all = run?.messages || [];
+    const msgs = all.filter(m => (m.content || '').trim() || m.tools?.length || m.asks?.length || (m.reasoning || '').trim() || m.streaming);
+    if (!msgs.length) return '';
+    const MAX_COLS = 60;
+    const start = Math.max(0, msgs.length - MAX_COLS * 4);
+    const shown = msgs.slice(start);
+    const cols = [];
+    for (let idx = 0; idx < shown.length; idx += 4) cols.push(shown.slice(idx, idx + 4));
+    const cell = (m, gi) => `<span class="tr-cell tr-${CS.msgKind(m)}" title="#${start + gi + 1} ${m.role === 'user' ? '用户' : '助手'} · ${e((m.content || m.reasoning || '工具调用').replace(/\s+/g, ' ').slice(0, 80))}"></span>`;
+    return `<div class="run-track" aria-hidden="true">${cols.map(c => `<span class="tr-col">${c.map(cell).join('')}</span>`).join('')}</div>`;
+  };
+
   V.runUsage = () => {
     const u = CS.chatUsage();
     const meta = CS.chatMeta();
@@ -237,7 +253,8 @@
     const startTxt = meta.start !== null ? new Date(meta.start).toLocaleString('zh-CN', { hour12: false }) : '—';
     const proj = CS.currentRun() ? CS.state.projects.find(p => p.id === CS.currentRun().projectId) : null;
     const pdir = proj?.dir || '';
-    return `<div class="run-usage mono">${pdir ? item('folder', CS.tpath(pdir), '项目目录: ' + pdir, true) : ''}${item('calendar', CS.fmtDT(meta.start), '会话开始: ' + startTxt, true)}${item('clock', CS.fmtDur(meta.elapsed), '累计生成耗时 (每轮回复耗时之和, 不含轮间空闲)', true)}${item('message', meta.msgs, '消息总数 (含用户与助手)')}${item('wrench', meta.tools, '工具调用次数 (含 ask)')}${item('up', u.tin, '累计输入 token')}${item('arrowdown', u.tout, '累计输出 token')}${item('database', u.tinCache, '累计缓存读取(模型/网关不支持缓存时为 0, glm-5.3-flash 无缓存上报)')}${`<span class="ru-item" title="上下文占用 / 模型窗口">${i('gauge', '', 13)}<b>${u.pct}% / ${CS.knum(u.win)}</b></span>`}</div>`;
+    const row = `${pdir ? item('folder', CS.tpath(pdir), '项目目录: ' + pdir, true) : ''}${item('calendar', CS.fmtDT(meta.start), '会话开始: ' + startTxt, true)}${item('clock', CS.fmtDur(meta.elapsed), '累计生成耗时 (每轮回复耗时之和, 不含轮间空闲)', true)}${item('message', meta.msgs, '消息总数 (含用户与助手)')}${item('wrench', meta.tools, '工具调用次数 (含 ask)')}${item('up', u.tin, '累计输入 token')}${item('arrowdown', u.tout, '累计输出 token')}${item('database', u.tinCache, '累计缓存读取(模型/网关不支持缓存时为 0, glm-5.3-flash 无缓存上报)')}${`<span class="ru-item" title="上下文占用 / 模型窗口">${i('gauge', '', 13)}<b>${u.pct}% / ${CS.knum(u.win)}</b></span>`}`;
+    return `<div class="run-usage-stack">${V.runTrack()}<div class="run-usage mono">${row}</div></div>`;
   };
 
 V.ctxRing = () => {

@@ -564,6 +564,17 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .fs-md img{max-width:100%}
 /* 标题栏右侧 usage 行: mono 小字右对齐, 贴标题行的水平线 */
 .run-usage{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;align-self:flex-end;padding-bottom:2px;display:inline-flex;gap:13px}
+.run-usage-stack{position:relative;display:flex;flex-direction:column;align-items:flex-end;min-width:0}
+/* 消息轨迹热力图: 4行方格子, 列内自上而下 / 列间从左往右递增, 贴最右生长, 超左消失; absolute 悬在 usage 行上方, 不参与 stack 宽度 → max-width:100% 恰等于 usage 行宽 */
+.run-track{position:absolute;right:0;bottom:calc(100% + 6px);display:flex;justify-content:flex-end;gap:2px;overflow:hidden;max-width:100%}
+.run-track .tr-col{display:flex;flex-direction:column;gap:2px}
+.run-track .tr-cell{width:6px;height:6px;border-radius:1.5px;background:var(--faint)}
+.run-track .tr-user{background:var(--green)}
+.run-track .tr-think{background:var(--blue)}
+.run-track .tr-tool{background:var(--amber)}
+.run-track .tr-reply{background:var(--accent)}
+.run-track .tr-system{background:var(--faint)}
+@media(max-width:800px){.run-track{max-width:340px}}
 .run-usage .ru-item{display:inline-flex;align-items:center;gap:4px}
 .run-usage .ru-item .icon{color:var(--faint)}
 .run-usage .ru-item b{font-weight:500;color:var(--muted)}
