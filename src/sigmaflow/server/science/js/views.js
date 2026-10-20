@@ -343,6 +343,20 @@
     if (!msgs.length) return '';
     const KIND = { user: '用户', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误' };
     // 运行耗时占比时间轴: 分母 = 各条消息运行耗时之和(流式实时计入), 消息间空闲时段不占条, 段连续堆叠
+    // 行内再分段: 优先块边界时间戳(相邻差), 缺省按文本量等比; 段色随块类型(思考/工具/回复)
+    const barSegs = mm => {
+      const bs = (Array.isArray(mm.blocks) ? mm.blocks : []).filter(b => b && (b.type === 'think' || b.type === 'tool' || b.type === 'ask' || (b.type === 'text' && (b.text || '').trim())));
+      if (bs.length < 2) return null;
+      const ds = bs.map((b, i) => {
+        const nx = bs[i + 1];
+        if (typeof b.at === 'number' && typeof nx?.at === 'number' && nx.at > b.at) return nx.at - b.at;
+        if (typeof b.at === 'number' && typeof b.end === 'number' && b.end > b.at) return b.end - b.at;
+        const chars = b.type === 'tool' || b.type === 'ask' ? String(b.result || '').length : (b.text || '').length;
+        return Math.max(1, chars || 1);
+      });
+      const dTotal = ds.reduce((s, x) => s + x, 0) || 1;
+      return bs.map((b, i) => ({ k: b.type === 'ask' ? 'tool' : b.type === 'text' ? 'reply' : b.type, share: (ds[i] / dTotal) * 100 }));
+    };
     const times = msgs.map(m => { const t = Date.parse(m.at || ''); return isNaN(t) ? null : t; });
     const rows = msgs.map((m, idx) => {
       const t = times[idx];
@@ -358,6 +372,8 @@
       // 占比: 起点 = 前面各行运行时长累计 / 总运行时长; 每条至少 1.2% 可见; 用户消息是瞬时点不占运行时长
       const off = Math.min(99, Math.round((cum / totalRun) * 1000) / 10);
       const segW = dur > 0 ? Math.max(1.2, Math.round((dur / totalRun) * 1000) / 10) : 1;
+      const segs = barSegs(m);
+      const barHtml = segs ? (() => { let picum = 0; return segs.map(s => { const l = Math.round((off + (picum / 100) * segW) * 10) / 10; const w = Math.max(0.9, Math.round((s.share / 100) * segW * 10) / 10); picum += s.share; return `<span class="trace-seg seg-${s.k}" style="left:${l}%;width:${w}%"></span>`; }).join(''); })() : `<span class="trace-seg seg-${kind}" style="left:${off}%;width:${segW}%"></span>`;
       cum += dur;
       const tok = m.tokens ? `${CS.num(m.promptTokens || 0)}→${CS.num(m.tokens)}` : '';
       const nTools = kind === 'reply' ? (m.tools?.length || 0) + (m.asks?.length || 0) : 0;
@@ -393,7 +409,7 @@
       ];
       const isOpen = open.has(idx);
       const detail = isOpen ? `<div class="trace-detail"><div class="trace-props">${props.map(([k, v]) => `<span class="tpair"><span class="tk">${e(k)}</span><span class="tv mono">${e(v)}</span></span>`).join('')}</div>${blocks.length ? `<div class="trace-blocks">${blocks.map(b => `<span class="tb-item"><span class="tk-${b.k}">${KIND[b.k]}</span><span class="tb-txt" title="${prev(b.t, 240)}">${prev(b.t, 110)}</span></span>`).join('')}</div>` : ''}</div>` : '';
-      return `<div class="trace-row${isOpen ? ' open' : ''}"><button type="button" class="trace-main" data-action="toggle-trace-row" data-id="${idx}" aria-expanded="${isOpen}"><span class="trace-idx mono">#${idx + 1}</span><span class="trace-kind tk-${kind}">${KIND[kind]}${kind === 'reply' && streaming ? ' · 生成中' : ''}</span><span class="trace-preview" title="${prev(m.content, 140)}">${prev(m.content)}</span><span class="trace-tools mono">${nTools || ''}</span><span class="trace-tok mono">${tok}</span><span class="trace-dur mono">${dur > 0 ? CS.elapsedMs(dur) : ''}</span><span class="trace-bar"><span class="trace-seg seg-${kind}" style="left:${off}%;width:${segW}%"></span></span></button>${detail}</div>`;
+      return `<div class="trace-row${isOpen ? ' open' : ''}"><button type="button" class="trace-main" data-action="toggle-trace-row" data-id="${idx}" aria-expanded="${isOpen}"><span class="trace-idx mono">#${idx + 1}</span><span class="trace-kind tk-${kind}">${KIND[kind]}${kind === 'reply' && streaming ? ' · 生成中' : ''}</span><span class="trace-preview" title="${prev(m.content, 140)}">${prev(m.content)}</span><span class="trace-tools mono">${nTools || ''}</span><span class="trace-tok mono">${tok}</span><span class="trace-dur mono">${dur > 0 ? CS.elapsedMs(dur) : ''}</span><span class="trace-bar">${barHtml}</span></button>${detail}</div>`;
     }).join('');
   };
   // trace 页面: 主区视图替换聊天视图, 侧栏保留; 返回按钮与标题同一行(页内流), 无会话时给出空态并引导返回

@@ -627,7 +627,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .trace-tools,.trace-tok,.trace-dur{font-size:10px;color:var(--muted);text-align:right;white-space:nowrap}
 .trace-bar{position:relative;height:8px;background:var(--line-soft);border-radius:5px;overflow:hidden}
 .trace-seg{position:absolute;top:1px;bottom:1px;border-radius:4px;min-width:2px}
-.seg-user{background:var(--tr-user)}.seg-reply{background:var(--tr-reply)}.seg-error{background:var(--tr-error)}.seg-system{background:var(--tr-system)}
+.seg-user{background:var(--tr-user)}.seg-think{background:var(--tr-think)}.seg-tool{background:var(--tr-tool)}.seg-reply{background:var(--tr-reply)}.seg-error{background:var(--tr-error)}.seg-system{background:var(--tr-system)}
 .trace-detail{padding:2px 14px 13px 49px;border-top:1px dashed var(--line-soft);background:color-mix(in srgb,var(--accent-bg) 45%,transparent)}
 .trace-props{display:flex;flex-wrap:wrap;gap:7px 20px;padding:10px 0 8px}
 .tpair{display:inline-flex;align-items:baseline;gap:7px}

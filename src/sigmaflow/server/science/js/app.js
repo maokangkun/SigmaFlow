@@ -795,12 +795,12 @@
     const pushThink = think => {
       const last = lastBlock();
       if (last && last.type === 'think') last.text += think;
-      else reply.blocks.push({ type: 'think', text: think });
+      else reply.blocks.push({ type: 'think', text: think, at: Date.now() });
     };
     const pushDelta = delta => {
       const last = lastBlock();
       if (last && last.type === 'text') last.text += delta;
-      else reply.blocks.push({ type: 'text', text: delta });
+      else reply.blocks.push({ type: 'text', text: delta, at: Date.now() });
     };
     const pushTool = (t, reqId) => {
       // pi 式压缩: 服务器把头几轮替换为摘要; 前端丢弃对应轮次并置入摘要卡,
@@ -827,17 +827,17 @@
       if (t.kind === 'call') {
         // ask 的通用工具卡跳过: 问题卡片由专门的 ask 事件负责
         if (t.isAsk) return;
-        reply.blocks.push({ type: 'tool', name: t.name, args: t.args, result: null });
+        reply.blocks.push({ type: 'tool', name: t.name, args: t.args, result: null, at: Date.now() });
       } else if (t.kind === 'ask') {
-        reply.blocks.push({ type: 'ask', id: t.id, requestId: reqId, questions: Array.isArray(t.questions) ? t.questions : [], answered: false });
+        reply.blocks.push({ type: 'ask', id: t.id, requestId: reqId, questions: Array.isArray(t.questions) ? t.questions : [], answered: false, at: Date.now() });
       } else {
         if (t.isAsk) {
           const ab = [...reply.blocks].reverse().find(b => b.type === 'ask' && !b.answered);
-          if (ab) { ab.answered = true; if (!ab.result) ab.result = t.result; return; }
+          if (ab) { ab.answered = true; if (!ab.result) ab.result = t.result; ab.end = Date.now(); return; }
         }
         const ent = [...reply.blocks].reverse().find(b => b.type === 'tool' && b.name === t.name && b.result == null);
-        if (ent) ent.result = t.result;
-        else reply.blocks.push({ type: 'tool', name: t.name, result: t.result });
+        if (ent) { ent.result = t.result; if (typeof ent.at === 'number') ent.end = Date.now(); }
+        else reply.blocks.push({ type: 'tool', name: t.name, result: t.result, at: Date.now() });
       }
     };
     const reply = { role: 'assistant', content: '', blocks: [], streaming: true, at: new Date().toISOString(), model: CS.state.settings.model || '默认模型' };
