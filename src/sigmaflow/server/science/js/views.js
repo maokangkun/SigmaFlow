@@ -230,20 +230,33 @@
   V.topbar = () => `<div class="topbar"><div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div></div>`;
   // 上下文用量圆环 + 详情浮层(位于模型选择按钮左侧, 点击圆环展开)
     // 标题栏右侧 usage 行: 图标+数值(开始时间/耗时/消息/工具调用 + 输入↓/输出↑/缓存②/上下文表盘), 右对齐贴水平线
-  // 标题栏右侧消息轨迹热力图: 4行方格子, 消息按列内自上而下 / 列间从左往右递增,
-  // 整体贴最右生长, 超出 usage 行左侧的旧列因 overflow 被裁剪 (窗口滑动效果)
+  // 标题栏右侧消息轨迹热力图: 4行方格子, 按聊天气泡可见块一一对应(思考/每个工具/回复各一格),
+  // 列内自上而下 / 列间从左往右递增, 整体贴最右生长, 超出 usage 行左侧的旧列因 overflow 被裁剪
   V.runTrack = () => {
     const run = CS.currentRun();
     const all = run?.messages || [];
-    const msgs = all.filter(m => (m.content || '').trim() || m.tools?.length || m.asks?.length || (m.reasoning || '').trim() || m.streaming);
-    if (!msgs.length) return '';
+    // 消息 → 可见块展开: 用户/压缩摘要条各占一格, 助手拆 思考+每工具(含ask)+文本回复
+    const blocks = [];
+    all.forEach(m => {
+      if (m.role === 'user') { blocks.push({ k: 'user', txt: m.content }); return; }
+      if (/^\[Conversation compressed/.test(m.content || '')) { blocks.push({ k: 'system', txt: '压缩摘要' }); return; }
+      if (m.role !== 'assistant') { blocks.push({ k: 'system', txt: m.content }); return; }
+      const n0 = blocks.length;
+      if ((m.reasoning || '').trim()) blocks.push({ k: 'think', txt: m.reasoning });
+      (m.tools || []).forEach(t => blocks.push({ k: 'tool', txt: (t.name || '工具') + ' ' + (typeof t.result === 'string' ? t.result : '') }));
+      (m.asks || []).forEach(() => blocks.push({ k: 'tool', txt: 'ask 提问' }));
+      if ((m.content || '').trim()) blocks.push({ k: 'reply', txt: m.content });
+      if (blocks.length === n0 && m.streaming) blocks.push({ k: 'think', txt: '生成中…' });
+    });
+    if (!blocks.length) return '';
     const MAX_COLS = 60;
-    const start = Math.max(0, msgs.length - MAX_COLS * 4);
-    const shown = msgs.slice(start);
+    const start = Math.max(0, blocks.length - MAX_COLS * 4);
+    const shown = blocks.slice(start);
     const cols = [];
     for (let idx = 0; idx < shown.length; idx += 4) cols.push(shown.slice(idx, idx + 4));
-    const cell = (m, gi) => `<span class="tr-cell tr-${CS.msgKind(m)}" title="#${start + gi + 1} ${m.role === 'user' ? '用户' : '助手'} · ${e((m.content || m.reasoning || '工具调用').replace(/\s+/g, ' ').slice(0, 80))}"></span>`;
-    return `<div class="run-track" aria-hidden="true">${cols.map(c => `<span class="tr-col">${c.map(cell).join('')}</span>`).join('')}</div>`;
+    const name = { user: '用户', think: '思考', tool: '工具', reply: '回复', system: '系统' };
+    const cell = (b, gi) => `<span class="tr-cell tr-${b.k}" title="#${start + gi + 1} ${name[b.k]} · ${e(String(b.txt || '').replace(/\s+/g, ' ').slice(0, 80))}"></span>`;
+    return `<div class="run-track" aria-hidden="true" data-blocks="${blocks.length}">${cols.map(c => `<span class="tr-col">${c.map(cell).join('')}</span>`).join('')}</div>`;
   };
 
   V.runUsage = () => {
