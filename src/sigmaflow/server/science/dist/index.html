@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="c9a7db1c">
+<meta name="build" content="47ba540e">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -954,10 +954,9 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .run-usage .ru-item.clickable:hover{background:var(--accent-bg)}
 .run-usage .ru-item.clickable:hover .icon{color:var(--accent)}
 /* 会话 Trace 页(route=trace, 主区视图; 侧栏保留): 参考 admin 后台 trace 页(统计条 + 逐条消息时间线 + 行展开详情) */
-.trace-page{max-width:1180px;margin:0 auto;padding-top:10px;padding-bottom:46px}
-/* trace 页顶部返回行: 不随页面容器居中, 固定贴主区左缘, 视觉上紧邻侧栏 */
-.trace-topbar{display:flex;align-items:center;flex:0 0 auto;height:44px;padding:6px 0 0 40px}
-.trace-topbar .icon-btn{width:34px;height:34px}
+.trace-page{max-width:1180px;margin:0 auto;padding-top:6px;padding-bottom:46px}
+/* trace 页顶部返回行: 不随页面容器居中, 固定贴主区左缘, 视觉上紧邻侧栏; 上下间距保持紧凑 */
+.trace-topbar{display:flex;align-items:center;flex:0 0 auto;height:34px;padding:2px 0 0 14px}
 .trace-head{margin:0 0 14px}
 .trace-head h1{margin:0;font-size:21px;letter-spacing:-.4px}
 .trace-head p{margin:4px 0 0}
