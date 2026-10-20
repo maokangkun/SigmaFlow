@@ -2517,60 +2517,35 @@ class ScienceAPI:
                                     chat_queue.put_nowait, ("done", None)
                                 )
                                 # 服务端兑底存档: 前端断线(关闭/刷新)期间 agent 在后台跑完时,
-                                # 把结果直接落进会话存储, 用户重连回放即可看到, 不会被丢掉
+                                # 把结果直接落进会话存储, 用户重连回放即可看到, 不会被丢掉。
+                                # 走 store 的 archive_assistant_row: 与前端同步共用互斥锁,
+                                # 避免读旧内容整体覆写吞掉并发追加
                                 try:
-                                    _rid = str(data.get("runId") or "")
-                                    _base = list(
-                                        (
-                                            self.project_store.conversations.get(_rid)
-                                            or {}
-                                        ).get("content")
-                                        or []
+                                    _now_ms = int(time.time() * 1000)
+                                    self.project_store.archive_assistant_row(
+                                        str(data.get("runId") or ""),
+                                        {
+                                            "role": "assistant",
+                                            "content": _clip("".join(content), 20000),
+                                            "at": time.strftime(
+                                                "%Y-%m-%dT%H:%M:%S.000Z",
+                                                time.gmtime(_now_ms / 1000.0),
+                                            ),
+                                            "tokens": stats.get("completion_tokens")
+                                            or 0,
+                                            "promptTokens": stats.get("prompt_tokens")
+                                            or 0,
+                                            "contextTokens": stats.get(
+                                                "last_prompt_tokens"
+                                            )
+                                            or 0,
+                                            "cacheTokens": stats.get(
+                                                "cache_read_tokens"
+                                            )
+                                            or 0,
+                                            "model": model_name,
+                                        },
                                     )
-                                    _joined = "".join(content)
-                                    _last = _base[-1] if _base else None
-                                    _dup = (
-                                        isinstance(_last, dict)
-                                        and _last.get("role") == "assistant"
-                                        and str(_last.get("content") or "")[:200]
-                                        == _joined[:200]
-                                    )
-                                    if not _dup and (
-                                        _joined or stats.get("completion_tokens")
-                                    ):
-                                        _now_ms = int(time.time() * 1000)
-                                        _base.append(
-                                            {
-                                                "role": "assistant",
-                                                "content": _clip(_joined, 20000),
-                                                "at": time.strftime(
-                                                    "%Y-%m-%dT%H:%M:%S.000Z",
-                                                    time.gmtime(_now_ms / 1000.0),
-                                                ),
-                                                "tokens": stats.get("completion_tokens")
-                                                or 0,
-                                                "promptTokens": stats.get(
-                                                    "prompt_tokens"
-                                                )
-                                                or 0,
-                                                "contextTokens": stats.get(
-                                                    "last_prompt_tokens"
-                                                )
-                                                or 0,
-                                                "cacheTokens": stats.get(
-                                                    "cache_read_tokens"
-                                                )
-                                                or 0,
-                                                "model": model_name,
-                                            }
-                                        )
-                                        self.project_store.conversations[_rid][
-                                            "content"
-                                        ] = _base[-200:]
-                                        self.project_store.conversations[_rid][
-                                            "updatedAt"
-                                        ] = _now_ms
-                                        self.project_store._save()
                                 except Exception:
                                     pass
                             except Exception as err:
@@ -2912,6 +2887,10 @@ class ScienceProjectStore:
         self.path = self.storage_dir / "projects.json"
         self.projects: Dict[str, dict] = {}
         self.conversations: Dict[str, dict] = {}
+        # 会话内容互斥写锁: conversation.save(前端同步,HTTP to_thread)与
+        # WS 后台归档(stream_chat worker 线程)是并发的两路写者,
+        # 不加锁时"读旧内容→整体覆写"会互相吞掉对方的追加。
+        self._lock = threading.Lock()
         self._load()
 
     def _load(self):
@@ -3030,6 +3009,11 @@ class ScienceProjectStore:
         return convs
 
     def upsert_conversation(self, payload: ConversationIn) -> dict:
+        # 全程持锁: read-modify-write 必须与归档/删除路径互斥
+        with self._lock:
+            return self._upsert_conversation_locked(payload)
+
+    def _upsert_conversation_locked(self, payload: ConversationIn) -> dict:
         now = int(time.time() * 1000)
         if (
             payload.id
@@ -3177,21 +3161,54 @@ class ScienceProjectStore:
         return self._public_conversation(conv)
 
     def delete_conversation(self, conversation_id: str) -> bool:
-        if conversation_id not in self.conversations:
-            return False
-        self.conversations.pop(conversation_id, None)
-        self._save()
-        return True
+        with self._lock:
+            if conversation_id not in self.conversations:
+                return False
+            self.conversations.pop(conversation_id, None)
+            self._save()
+            return True
 
     def set_title(self, conversation_id: str, title: str) -> dict | None:
         """LLM 生成的会话标题落地(dsh session-title-llm 思路: 失败保留兜底)。"""
-        conv = self.conversations.get(conversation_id)
-        if conv is None:
-            return None
-        conv["title"] = _clip(title, 300)
-        conv["updatedAt"] = int(time.time() * 1000)
-        self._save()
-        return self._public_conversation(conv)
+        with self._lock:
+            conv = self.conversations.get(conversation_id)
+            if conv is None:
+                return None
+            conv["title"] = _clip(title, 300)
+            conv["updatedAt"] = int(time.time() * 1000)
+            self._save()
+            return self._public_conversation(conv)
+
+    def archive_assistant_row(self, conversation_id: str, row: dict) -> bool:
+        """WS 后台归档兑底(edb5ce0): 前端断线期间 agent 跑完后追加结果行。
+
+        与 upsert_conversation 走同一把互斥锁并在锁内重建基线, 保证与
+        前端同步路径串行化——不再有"读到旧 content 后整体覆写"的丢失窗口。
+        去重口径与原实现一致: 尾条同为 assistant 且前 200 字符相同视为重复。
+        返回是否实际写入。
+        """
+        if not conversation_id or not isinstance(row, dict):
+            return False
+        with self._lock:
+            conv = self.conversations.get(conversation_id)
+            if conv is None:
+                return False
+            base = list(conv.get("content") or [])
+            content = str(row.get("content") or "")
+            if not content and not row.get("tokens"):
+                return False
+            last = base[-1] if base else None
+            if (
+                isinstance(last, dict)
+                and last.get("role") == "assistant"
+                and str(last.get("content") or "")[:200] == content[:200]
+            ):
+                return False
+            base.append(row)
+            conv["content"] = base[-200:]
+            conv["updatedAt"] = int(time.time() * 1000)
+            self._save()
+            return True
 
 
 def _append_jsonl(path: Path, record: dict) -> None:

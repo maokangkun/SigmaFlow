@@ -1,4 +1,3 @@
-import logging
 import re
 import json
 import time
@@ -637,14 +636,6 @@ class Agent:
                             info["prompt_tokens"] += usage.prompt_tokens or 0
                             info["completion_tokens"] += usage.completion_tokens or 0
                             info["cache_read_tokens"] += _usage_cache_read(usage)
-                            # 每轮调用诊断: 观察网关在循环内对 cache 字段的逐轮返回
-                            logging.getLogger("sigmaflow.agent").info(
-                                "per-call usage: prompt=%s cached=%s",
-                                usage.prompt_tokens,
-                                usage.prompt_tokens_details.cached_tokens
-                                if getattr(usage, "prompt_tokens_details", None)
-                                else None,
-                            )
                             # 最后一轮当次 prompt: 反映单次请求的真实窗口占用(累计值是多轮求和)
                             info["last_prompt_tokens"] = usage.prompt_tokens or 0
                             msg = _DeltaMsg()
