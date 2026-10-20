@@ -13,5 +13,9 @@ for(const match of [...html.matchAll(/<script src="([^"]+)"><\/script>/g)]){
   html=html.replace(match[0],()=>`<script>\n/* ${match[1]} */\n${code.replace(/<\/script/gi,'<\\/script')}\n</script>`);
 }
 await fs.mkdir(path.join(root,'dist'),{recursive:true});
+// 版本搬戳: 前端页面展示构建号, 便于确认浏览器加载的是新 bundle（SPA 不刷新永远跑旧代码）
+const crypto=await import('node:crypto');
+const shortHash=crypto.createHash('md5').update(html).digest('hex').slice(0,8);
+html=html.replace(/<head>/i,()=>`<head>\n<meta name="build" content="${shortHash}">`);
 await fs.writeFile(path.join(root,'dist/index.html'),html);
-console.log(`Standalone build: dist/index.html (${(Buffer.byteLength(html)/1024).toFixed(1)} KB)`);
+console.log(`Standalone build: dist/index.html (${(Buffer.byteLength(html)/1024).toFixed(1)} KB) build=${shortHash}`);

@@ -71,10 +71,13 @@
     const payload = { modelId: CS.state.settings.modelId, projectId: run?.projectId ?? CS.state.projectId, runId: CS.state.currentRunId, messages, planMode: !!CS.ui.planMode };
     if (await CS.api.ws.connect()) {
       const data = await CS.api.ws.chat(payload, onDelta, onThink, onTool, onRetry);
-      return { content: data.content, tokens: data.tokens || 0, promptTokens: data.promptTokens || 0 };
+      // 透传 contextTokens/cacheTokens: 标题栏 usage 行与存档回放的数据源头
+      return { content: data.content, tokens: data.tokens || 0, promptTokens: data.promptTokens || 0,
+        contextTokens: data.contextTokens || 0, cacheTokens: data.cacheTokens || 0 };
     }
     const data = await CS.api.request('/chat', { method: 'POST', timeout: 600000, body: JSON.stringify(payload) });
-    return { content: data.content, tokens: data.tokens || 0, promptTokens: data.promptTokens || 0, compaction: data.compaction };
+    return { content: data.content, tokens: data.tokens || 0, promptTokens: data.promptTokens || 0,
+      contextTokens: data.contextTokens || 0, cacheTokens: data.cacheTokens || 0, compaction: data.compaction };
   };
   CS.api.friendlyError = error => /fetch/i.test(error.message)
     ? '无法连接服务器：请确认 sigmaflow serve 已启动、接口地址与页面同源（如 /api），并已重启到最新代码。'
