@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="47f1f152">
+<meta name="build" content="4a3dff27">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -994,6 +994,9 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 
 /* 聊天/trace 主列铺满主区: 解除 .page 与宽屏 media 给出的 max-width, 供 flex width:100% 生效(置于所有 media 之后以确保覆盖) */
 .chat-page,.trace-page{max-width:none}
+
+/* 分割线与第一条消息的间距: title 的 margin-bottom 在 flex 布局链里失效, 用 conversation 顶衬补足 */
+.chat-page .conversation{padding-top:26px}
 
 </style>
 </head>
