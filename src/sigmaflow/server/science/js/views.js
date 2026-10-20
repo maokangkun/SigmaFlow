@@ -229,11 +229,13 @@
   };
   V.topbar = () => `<div class="topbar"><div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div></div>`;
   // 上下文用量圆环 + 详情浮层(位于模型选择按钮左侧, 点击圆环展开)
-    // 标题栏右侧 usage 行: 图标+数值(输入↓/输出↑/缓存②/上下文表盘), 右对齐贴水平线; 缓存网关不出时显 0
+    // 标题栏右侧 usage 行: 图标+数值(开始时间/耗时/消息/工具调用 + 输入↓/输出↑/缓存②/上下文表盘), 右对齐贴水平线
   V.runUsage = () => {
     const u = CS.chatUsage();
-    const item = (ic, val, tip) => `<span class="ru-item" title="${tip}">${i(ic, '', 13)}<b>${CS.knum(val)}</b></span>`;
-    return `<div class="run-usage mono">${item('up', u.tin, '累计输入 token')}${item('arrowdown', u.tout, '累计输出 token')}${item('database', u.tinCache, '累计缓存读取(模型/网关不支持缓存时为 0, glm-5.3-flash 无缓存上报)')}${`<span class="ru-item" title="上下文占用 / 模型窗口">${i('gauge', '', 13)}<b>${u.pct}% / ${CS.knum(u.win)}</b></span>`}</div>`;
+    const meta = CS.chatMeta();
+    const item = (ic, val, tip, raw) => `<span class="ru-item" title="${tip}">${i(ic, '', 13)}<b>${raw ? val : CS.knum(val)}</b></span>`;
+    const startTxt = meta.start !== null ? new Date(meta.start).toLocaleString('zh-CN', { hour12: false }) : '—';
+    return `<div class="run-usage mono">${item('calendar', CS.fmtDT(meta.start), '会话开始: ' + startTxt, true)}${item('clock', CS.fmtDur(meta.elapsed), '会话总耗时 (首末消息间隔)', true)}${item('message', meta.msgs, '消息总数 (含用户与助手)')}${item('wrench', meta.tools, '工具调用次数 (含 ask)')}${item('up', u.tin, '累计输入 token')}${item('arrowdown', u.tout, '累计输出 token')}${item('database', u.tinCache, '累计缓存读取(模型/网关不支持缓存时为 0, glm-5.3-flash 无缓存上报)')}${`<span class="ru-item" title="上下文占用 / 模型窗口">${i('gauge', '', 13)}<b>${u.pct}% / ${CS.knum(u.win)}</b></span>`}</div>`;
   };
 
 V.ctxRing = () => {

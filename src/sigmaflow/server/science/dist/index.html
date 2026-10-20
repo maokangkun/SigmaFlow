@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="9321786f">
+<meta name="build" content="76d17e12">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -980,6 +980,8 @@ CS.icons = {
   check: '<path d="m5 12 4 4L19 6"/>',
   checkcircle: '<circle cx="12" cy="12" r="9"/><path d="m7 12 3 3 7-7"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M8 14h3M8 17h8"/>',
+  wrench: '<path d="M14.7 6.3a4.5 4.5 0 0 0-6 6L3 18l3 3 5.7-5.7a4.5 4.5 0 0 0 6-6L14 12l-2-2Z"/>',
   play: '<path d="m8 4 12 8-12 8V4Z"/>',
   thumbup: '<path d="M7 10v10.2a.8.8 0 0 1-.8.8H3.8a.8.8 0 0 1-.8-.8V10a.8.8 0 0 1 .8-.8h2.4a.8.8 0 0 1 .8.8Zm2 10.2h9.4a2 2 0 0 0 2-1.7l1.2-7.4a1.5 1.5 0 0 0-1.5-1.75h-4.4l.9-4.2A2 2 0 0 0 14.3 2L9 8.3v11.9Z"/>',
   thumbdown: '<path d="M7 14V3.8a.8.8 0 0 0-.8-.8H3.8a.8.8 0 0 0-.8.8V14a.8.8 0 0 0 .8.8h2.4a.8.8 0 0 0 .8-.8Zm2-10.2h9.4a2 2 0 0 1 2 1.7l1.2 7.4a1.5 1.5 0 0 1-1.5 1.75h-4.4l.9 4.2A2 2 0 0 1 14.3 22L9 15.7V3.8Z"/>',
@@ -1162,6 +1164,41 @@ CS.chatUsage = () => {
   msgs.forEach(m => { if (m.role === 'assistant') { tin += m.promptTokens || 0; tout += m.tokens || 0; tcache += m.cacheTokens || 0; } });
   const ctx = CS.contextUsage();
   return { tin, tout, tinCache: tcache, pct: ctx.pct, win: ctx.window };
+};
+// 会话元数据: 开始时间 / 总耗时 / 消息数 / 工具调用次数(含 ask 卡)
+CS.chatMeta = () => {
+  const run = CS.currentRun();
+  const msgs = run?.messages || [];
+  let start = null, end = null, tools = 0;
+  msgs.forEach(m => {
+    const t = m.at ? Date.parse(m.at) : NaN;
+    if (!isNaN(t)) { if (start === null || t < start) start = t; if (end === null || t > end) end = t; }
+    if (m.role === 'assistant') tools += (m.tools?.length || 0) + (m.asks?.length || 0);
+  });
+  if (start === null) {
+    const c = run?.createdAt ? Date.parse(run.createdAt) : NaN;
+    if (!isNaN(c)) { start = c; end = c; }
+  }
+  return { start, end, elapsed: start !== null ? Math.max(0, (end || start) - start) : 0, msgs: msgs.length, tools };
+};
+// 时长紧凑展示: 45秒 / 12分 / 1时23分 / 2天4时
+CS.fmtDur = ms => {
+  const s = Math.max(0, Math.round((ms || 0) / 1000));
+  if (s < 60) return s + '秒';
+  const m = Math.floor(s / 60), sec = s % 60;
+  if (m < 60) return sec ? m + '分' + sec + '秒' : m + '分';
+  const h = Math.floor(m / 60), mm = m % 60;
+  if (h < 24) return h + '时' + String(mm).padStart(2, '0') + '分';
+  const d = Math.floor(h / 24), hh = h % 24;
+  return d + '天' + hh + '时';
+};
+// 日期时间紧凑展示: 10-20 14:02; 跨年时带上年份 25-12-03 14:02
+CS.fmtDT = ts => {
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return '—';
+  const p = n => String(n).padStart(2, '0');
+  const base = p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  return d.getFullYear() === new Date().getFullYear() ? base : String(d.getFullYear() % 100) + '-' + base;
 };
 // token 数值的紧凑展示: ~850 / ~1.7K / ~67.7K / ~131K; 到 M 用 M 单位(~1M / ~1.2M), 不到的才用 K
 CS.kfmt = n => {
@@ -4638,11 +4675,13 @@ CS.audio = (function () {
   };
   V.topbar = () => `<div class="topbar"><div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div></div>`;
   // 上下文用量圆环 + 详情浮层(位于模型选择按钮左侧, 点击圆环展开)
-    // 标题栏右侧 usage 行: 图标+数值(输入↓/输出↑/缓存②/上下文表盘), 右对齐贴水平线; 缓存网关不出时显 0
+    // 标题栏右侧 usage 行: 图标+数值(开始时间/耗时/消息/工具调用 + 输入↓/输出↑/缓存②/上下文表盘), 右对齐贴水平线
   V.runUsage = () => {
     const u = CS.chatUsage();
-    const item = (ic, val, tip) => `<span class="ru-item" title="${tip}">${i(ic, '', 13)}<b>${CS.knum(val)}</b></span>`;
-    return `<div class="run-usage mono">${item('up', u.tin, '累计输入 token')}${item('arrowdown', u.tout, '累计输出 token')}${item('database', u.tinCache, '累计缓存读取(模型/网关不支持缓存时为 0, glm-5.3-flash 无缓存上报)')}${`<span class="ru-item" title="上下文占用 / 模型窗口">${i('gauge', '', 13)}<b>${u.pct}% / ${CS.knum(u.win)}</b></span>`}</div>`;
+    const meta = CS.chatMeta();
+    const item = (ic, val, tip, raw) => `<span class="ru-item" title="${tip}">${i(ic, '', 13)}<b>${raw ? val : CS.knum(val)}</b></span>`;
+    const startTxt = meta.start !== null ? new Date(meta.start).toLocaleString('zh-CN', { hour12: false }) : '—';
+    return `<div class="run-usage mono">${item('calendar', CS.fmtDT(meta.start), '会话开始: ' + startTxt, true)}${item('clock', CS.fmtDur(meta.elapsed), '会话总耗时 (首末消息间隔)', true)}${item('message', meta.msgs, '消息总数 (含用户与助手)')}${item('wrench', meta.tools, '工具调用次数 (含 ask)')}${item('up', u.tin, '累计输入 token')}${item('arrowdown', u.tout, '累计输出 token')}${item('database', u.tinCache, '累计缓存读取(模型/网关不支持缓存时为 0, glm-5.3-flash 无缓存上报)')}${`<span class="ru-item" title="上下文占用 / 模型窗口">${i('gauge', '', 13)}<b>${u.pct}% / ${CS.knum(u.win)}</b></span>`}</div>`;
   };
 
 V.ctxRing = () => {

@@ -62,6 +62,41 @@ CS.chatUsage = () => {
   const ctx = CS.contextUsage();
   return { tin, tout, tinCache: tcache, pct: ctx.pct, win: ctx.window };
 };
+// 会话元数据: 开始时间 / 总耗时 / 消息数 / 工具调用次数(含 ask 卡)
+CS.chatMeta = () => {
+  const run = CS.currentRun();
+  const msgs = run?.messages || [];
+  let start = null, end = null, tools = 0;
+  msgs.forEach(m => {
+    const t = m.at ? Date.parse(m.at) : NaN;
+    if (!isNaN(t)) { if (start === null || t < start) start = t; if (end === null || t > end) end = t; }
+    if (m.role === 'assistant') tools += (m.tools?.length || 0) + (m.asks?.length || 0);
+  });
+  if (start === null) {
+    const c = run?.createdAt ? Date.parse(run.createdAt) : NaN;
+    if (!isNaN(c)) { start = c; end = c; }
+  }
+  return { start, end, elapsed: start !== null ? Math.max(0, (end || start) - start) : 0, msgs: msgs.length, tools };
+};
+// 时长紧凑展示: 45秒 / 12分 / 1时23分 / 2天4时
+CS.fmtDur = ms => {
+  const s = Math.max(0, Math.round((ms || 0) / 1000));
+  if (s < 60) return s + '秒';
+  const m = Math.floor(s / 60), sec = s % 60;
+  if (m < 60) return sec ? m + '分' + sec + '秒' : m + '分';
+  const h = Math.floor(m / 60), mm = m % 60;
+  if (h < 24) return h + '时' + String(mm).padStart(2, '0') + '分';
+  const d = Math.floor(h / 24), hh = h % 24;
+  return d + '天' + hh + '时';
+};
+// 日期时间紧凑展示: 10-20 14:02; 跨年时带上年份 25-12-03 14:02
+CS.fmtDT = ts => {
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return '—';
+  const p = n => String(n).padStart(2, '0');
+  const base = p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  return d.getFullYear() === new Date().getFullYear() ? base : String(d.getFullYear() % 100) + '-' + base;
+};
 // token 数值的紧凑展示: ~850 / ~1.7K / ~67.7K / ~131K; 到 M 用 M 单位(~1M / ~1.2M), 不到的才用 K
 CS.kfmt = n => {
   n = Math.round(n || 0);
