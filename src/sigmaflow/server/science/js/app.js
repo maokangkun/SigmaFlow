@@ -662,10 +662,15 @@
   // ---- @file 引用(dsh file-reference 思路的轻量版) ----
   // 输入 @ 弹出项目目录补全菜单(独立 DOM, 不进 render 流, 避免重渲染丢焦点);
   // 发送时把 @路径 解析成文件内容附加进当轮上下文, 仅发送侧注入不回显。
-  CS.fileRef = { open: false, items: [], active: 0, start: 0, token: '', query: '' };
+  CS.fileRef = { open: false, items: [], active: 0, start: 0, token: '', query: '', dir: '', mode: 'text' };
+  // 文件引用的项目归属: 会话页跟随会话项目(与发送侧 refContext 一致), 其它页面用全局关联项目
+  const _fsProjectId = () => {
+    const run = CS.ui.route === 'chat' ? CS.currentRun() : null;
+    return (run && run.projectId) || CS.state.projectId;
+  };
   const _fsTreeCache = {};
-  const _fsListDir = async path => {
-    const pid = CS.state.projectId;
+  const _fsListDir = async (path, pidOverride) => {
+    const pid = pidOverride || _fsProjectId();
     if (!pid) return [];
     const key = pid + '|' + (path || '');
     const hit = _fsTreeCache[key];
@@ -681,7 +686,7 @@
   const _closeFileRef = () => { CS.fileRef.open = false; const m = document.getElementById('fileref-menu'); if (m) m.remove(); };
   const _updateFileRefMenu = async () => {
     const ta = document.getElementById('composer-text');
-    if (!ta || !CS.state.projectId) { _closeFileRef(); return; }
+    if (!ta || !_fsProjectId()) { _closeFileRef(); return; }
     const pos = ta.selectionStart ?? ta.value.length;
     const before = ta.value.slice(0, pos);
     const m = before.match(/@([\w./-]*)$/);
@@ -693,7 +698,7 @@
     const frag = slash >= 0 ? token.slice(slash + 1) : token;
     const entries = await _fsListDir(dir);
     const items = entries.filter(x => x.name.toLowerCase().startsWith(frag.toLowerCase())).slice(0, 8);
-    Object.assign(CS.fileRef, { open: items.length > 0, items, active: 0, start, token: '@' + token, query: token, dir });
+    Object.assign(CS.fileRef, { open: items.length > 0, mode: 'text', items, active: 0, start, token: '@' + token, query: token, dir });
     _renderFileRefMenu();
   };
   const _renderFileRefMenu = () => {
@@ -702,17 +707,46 @@
     let el = document.getElementById('fileref-menu');
     if (!fr.open || !ta) { if (el) el.remove(); return; }
     if (!el) { el = document.createElement('div'); el.id = 'fileref-menu'; el.className = 'fileref-menu'; document.body.appendChild(el); }
-    const r = ta.getBoundingClientRect();
-    el.style.left = Math.max(8, r.left) + 'px';
-    el.style.top = Math.max(8, r.top - Math.min(320, 40 + fr.items.length * 36)) + 'px';
-    el.style.minWidth = Math.max(240, Math.min(430, r.width * 0.6)) + 'px';
-    el.innerHTML = '<div class="fileref-head">引用项目文件 · ↑↓ 选择 · Enter 确认</div>' + fr.items.map((it, idx) =>
+    // btn 模式: 锚定工具条「文件」按钮; text 模式: 锚定输入框
+    const btnMode = fr.mode === 'btn';
+    const anchor = btnMode ? (document.querySelector('[aria-label="添加文件附件"]') || ta) : ta;
+    // btn 模式在目录非空时首行给「返回上级」(不占 items 索引)
+    const upRow = btnMode && fr.dir ? `<button type="button" class="fileref-item fileref-up" data-action="pick-fileref" data-up="1" data-path="${e(fr.dir)}" data-isdir="1">${i('back', '', 14)}<span class="fileref-name">.. 返回上级</span></button>` : '';
+    const body = fr.items.length ? fr.items.map((it, idx) =>
       `<button type="button" class="fileref-item${idx === fr.active ? ' active' : ''}" data-action="pick-fileref" data-path="${e(it.path)}" data-isdir="${it.type === 'dir' ? 1 : ''}">${i(it.type === 'dir' ? 'folder' : 'file', '', 14)}<span class="fileref-name">${e(it.name)}</span>${it.type === 'dir' ? '<span class="tiny muted">目录</span>' : ''}</button>`
-    ).join('');
+    ).join('') : '<div class="fileref-empty">空目录</div>';
+    const head = btnMode
+      ? '<div class="fileref-head">引用项目文件 · 当前 ' + e(fr.dir || '项目根目录') + ' · ↑↓ 选择 · Enter 确认</div>'
+      : '<div class="fileref-head">引用项目文件 · ↑↓ 选择 · Enter 确认</div>';
+    el.innerHTML = head + upRow + body;
+    // 定位: 先渲染出实际高度再放在锚点上方, 留 8px 间隙防止压住按钮/输入框
+    const r = anchor.getBoundingClientRect();
+    el.style.left = Math.max(8, r.left) + 'px';
+    el.style.top = Math.max(8, r.top - el.offsetHeight - 8) + 'px';
+    el.style.minWidth = Math.max(240, Math.min(430, r.width * 0.6)) + 'px';
   };
-  const _applyFileRefPick = (path, isDir) => {
+  const _applyFileRefPick = async (path, isDir, up) => {
     const ta = document.getElementById('composer-text'); const fr = CS.fileRef;
     if (!ta) return;
+    // btn 模式: 目录切换浏览, 文件则把 @路径 插进输入框光标处
+    if (fr.mode === 'btn') {
+      if (isDir) {
+        const dir = up ? (path ? path.split('/').slice(0, -1).join('/') : '') : path;
+        Object.assign(fr, { dir, items: await _fsListDir(dir), active: 0 });
+        _renderFileRefMenu();
+        return;
+      }
+      _closeFileRef();
+      const pos = ta.selectionStart ?? ta.value.length;
+      const insert = '@' + path + ' ';
+      ta.value = ta.value.slice(0, pos) + insert + ta.value.slice(pos);
+      CS.ui.composer = ta.value;
+      const send = document.querySelector('.send-button');
+      if (send) send.disabled = !ta.value.trim();
+      try { ta.setSelectionRange(pos + insert.length, pos + insert.length); } catch {}
+      ta.focus();
+      return;
+    }
     const insert = isDir ? '@' + path + '/' : '@' + path + ' ';
     ta.value = ta.value.slice(0, fr.start) + insert + ta.value.slice(fr.start + fr.token.length);
     CS.ui.composer = ta.value;
@@ -1313,7 +1347,7 @@
     },
     'refine-plan': () => { document.getElementById('composer-text')?.focus(); },
     'pick-fileref': (id, el) => {
-      _applyFileRefPick(el.dataset.path || '', el.dataset.isdir === '1');
+      _applyFileRefPick(el.dataset.path || '', el.dataset.isdir === '1', el.dataset.up === '1');
     },
     'rate-message': (id, el) => {
       // 消息反馈(dsh message-feedback 思路): 只落日志永不进模型上下文
@@ -1920,7 +1954,16 @@
     'demo-start': () => openNewTask('请使用 PBMC 演示数据，展示从质量检查、细胞图谱到表达特征和分析记录的完整过程。执行前先让我确认计划。','singlecell',['ds-pbmc','ds-meta'].filter(id=>CS.state.datasets.some(d=>d.id===id))),
     'literature-plan': () => openNewTask('围绕单细胞 RNA-seq 数据分析，整理一份可追溯的文献阅读清单。','literature'),
     'close-modal': () => CS.closeModal(),
-    'add-attachment': () => chooseFiles('attachment'),
+    // 「文件」按钮: 与输入 @ 同效, 弹项目文件引用浮层(选择后把 @路径 插入输入框);
+    // 再点一次或 Esc 或点击其它区域关闭
+    'add-attachment': async () => {
+      const fr = CS.fileRef;
+      if (fr.open && fr.mode === 'btn') { _closeFileRef(); return; }
+      if (!CS.state.projectId) { CS.toast('先关联项目后再引用文件，或直接在输入框输入 @ 引用。', 'error'); return; }
+      const items = await _fsListDir('');
+      Object.assign(fr, { open: true, mode: 'btn', items, active: 0, dir: '', token: '', start: 0, query: '' });
+      _renderFileRefMenu();
+    },
     'import-data': () => { uploadContext='data'; CS.showModal('import'); },
     'pick-files': () => chooseFiles(uploadContext),
     'preview-csv-import': () => chooseFiles('preview'),
@@ -2031,7 +2074,7 @@
       CS.navigate(nav.dataset.nav); return;
     }
     if (event.target.classList.contains('modal-backdrop')) { CS.closeModal(); return; }
-    if (CS.fileRef.open && !event.target.closest?.('#fileref-menu') && event.target.id !== 'composer-text') _closeFileRef();
+    if (CS.fileRef.open && !event.target.closest?.('#fileref-menu') && event.target.id !== 'composer-text' && !event.target.closest?.('[data-action="add-attachment"]')) _closeFileRef();
     const target=event.target.closest('[data-action]'); if (!target || target.disabled) return;
     const action=actions[target.dataset.action];
     if (action) { event.preventDefault(); try { await action(target.dataset.id,target); } catch(error) { console.error(error); CS.toast(error.message || '操作失败，请重试。','error'); } }
@@ -2215,10 +2258,10 @@
   document.addEventListener('keydown',event=>{
     // Ctrl+` 全局开关终端面板, 与 VSCode 惯例一致; 未登录时无终端可用
     if(event.ctrlKey && event.code==='Backquote'){if(CS.state.me?.mode==='multi'&&!(CS.state.me.user&&(CS.state.me.user.name)))return;event.preventDefault();CS.ui.terminal.open=!CS.ui.terminal.open;CS.render();if(CS.ui.terminal.open)setTimeout(()=>CS.agent.pty?.focus(),120);else setTimeout(()=>document.querySelector('.composer-input')?.focus(),80);return;}
-    if(event.key==='Escape'){if(CS.ui.modal)CS.closeModal();else if(CS.ui.userMenu){CS.ui.userMenu=false;CS.render();}else if(CS.ui.modelMenu){CS.ui.modelMenu=false;CS.render();}else if(CS.ui.contextMenu){CS.ui.contextMenu=false;CS.render();}else if(CS.ui.mobileSidebar){CS.ui.mobileSidebar=false;CS.render();}return;}
+    if(event.key==='Escape'){if(CS.ui.modal)CS.closeModal();else if(CS.fileRef.open){event.preventDefault();_closeFileRef();}else if(CS.ui.userMenu){CS.ui.userMenu=false;CS.render();}else if(CS.ui.modelMenu){CS.ui.modelMenu=false;CS.render();}else if(CS.ui.contextMenu){CS.ui.contextMenu=false;CS.render();}else if(CS.ui.mobileSidebar){CS.ui.mobileSidebar=false;CS.render();}return;}
     if(event.altKey && event.key.toLowerCase()==='n'){event.preventDefault();CS.state.currentRunId=null;CS.ui.composer='';CS.ui.attachments=[];CS.save();CS.navigate('home');return;}
     // @file 补全菜单: 打开时接管方向键/Enter/Tab/Esc, 不触发发送
-    if(CS.fileRef.open && (event.target.id==='composer-text')) {
+    if(CS.fileRef.open && (event.target.id==='composer-text' || CS.fileRef.mode==='btn')) {
       const fr = CS.fileRef;
       if(event.key==='ArrowDown'){event.preventDefault();fr.active=Math.min(fr.items.length-1,fr.active+1);_renderFileRefMenu();return;}
       if(event.key==='ArrowUp'){event.preventDefault();fr.active=Math.max(0,fr.active-1);_renderFileRefMenu();return;}
