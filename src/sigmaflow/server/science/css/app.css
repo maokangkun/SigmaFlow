@@ -569,7 +569,12 @@ html[data-motion="reduced"] #anchor-tip{display:none}
    流内占位撑开标题行; width:0+min-width:100% 使自身不参与 stack 宽度, 实宽恒等于 usage 行宽 */
 .run-track{width:0;min-width:100%;margin:0 0 6px;display:flex;justify-content:flex-end;gap:2px;overflow:hidden}
 .run-track .tr-col{display:flex;flex-direction:column;gap:2px}
-.run-track .tr-cell{width:6px;height:6px;border-radius:1.5px;background:var(--tr-user)}
+.run-track .tr-cell{width:6px;height:6px;border-radius:1.5px;background:var(--tr-user);cursor:pointer}
+.run-track .tr-cell[role="button"]:hover{transform:scale(1.5);box-shadow:0 0 0 1.5px var(--faint)}
+/* 轨迹点击跳转后的消息高亮, 1.8s 渐隐 */
+@keyframes msg-flash{0%{background:color-mix(in srgb, var(--accent) 16%, transparent)}70%{background:color-mix(in srgb, var(--accent) 10%, transparent)}100%{background:transparent}}
+.msg-block.msg-flash{animation:msg-flash 1.8s ease-out;border-radius:10px}
+.compact-card.msg-flash{animation:msg-flash 1.8s ease-out}
 .run-track .tr-user{background:var(--tr-user)}
 .run-track .tr-think{background:var(--tr-think)}
 .run-track .tr-tool{background:var(--tr-tool)}

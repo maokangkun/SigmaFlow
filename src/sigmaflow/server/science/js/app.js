@@ -1424,6 +1424,18 @@
       CS.render();
     },
     'jump-latest': () => { CS.ui.canJumpLatest = false; CS.render(); scrollToLatest(); },
+    // 轨迹热力图方块点击: 平滑滚动到对应消息并高亮一瞬
+    'track-jump': id => {
+      const mi = parseInt(id, 10);
+      if (isNaN(mi)) return;
+      const target = document.querySelector('.conversation [data-mi="' + mi + '"]');
+      if (!target) { CS.toast('该消息不在当前视图中。', 'error'); return; }
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.classList.remove('msg-flash');
+      void target.offsetWidth;
+      target.classList.add('msg-flash');
+      setTimeout(() => target.classList.remove('msg-flash'), 1800);
+    },
     'open-conversation': id => {
       if (!CS.state.runs.some(r => r.id === id) && !CS.ui.conversations.some(c => c.id === id)) { CS.toast('该会话不存在。', 'error'); return; }
       CS.expandProject((CS.ui.conversations.find(c => c.id === id) || {}).projectId);
