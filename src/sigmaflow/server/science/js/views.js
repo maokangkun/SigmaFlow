@@ -342,24 +342,23 @@
     const { msgs, kindOf, prev } = _traceCtx();
     if (!msgs.length) return '';
     const KIND = { user: '用户', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误' };
-    // 会话时间轴: 以最早消息为原点, 总跨 = 末消息时间 + 该轮耗时(生成中的实时外延)
+    // 运行耗时占比时间轴: 分母 = 各条消息运行耗时之和(流式实时计入), 消息间空闲时段不占条, 段连续堆叠
     const times = msgs.map(m => { const t = Date.parse(m.at || ''); return isNaN(t) ? null : t; });
-    const t0 = Math.min(...times.filter(t => t != null));
-    let t1 = t0;
     const rows = msgs.map((m, idx) => {
       const t = times[idx];
-      const dur = m.role === 'assistant' && m.elapsed > 0 && !m.streaming ? m.elapsed : 0;
-      if (t != null) t1 = Math.max(t1, t + (m.streaming ? Date.now() - t : dur));
+      const dur = m.role === 'assistant' ? (m.streaming ? Math.max(0, Date.now() - (t || Date.now())) : (m.elapsed > 0 ? m.elapsed : 0)) : 0;
       return { m, idx, t, dur };
     });
-    const span = Math.max(1, t1 - t0);
+    const totalRun = Math.max(1, rows.reduce((s, r) => s + r.dur, 0));
+    let cum = 0;
     const open = CS.ui.traceOpen instanceof Set ? CS.ui.traceOpen : new Set();
     return rows.map(({ m, idx, t, dur }) => {
       const kind = kindOf(m);
       const streaming = !!m.streaming;
-      const off = t == null ? 0 : Math.min(99, Math.round(((t - t0) / span) * 1000) / 10);
-      // 质数钟点: 每条至少 0.8% 可见; 用户消息是瞬时点(无耗时)
-      const segW = dur > 0 ? Math.max(1.2, Math.round((dur / span) * 1000) / 10) : 1;
+      // 占比: 起点 = 前面各行运行时长累计 / 总运行时长; 每条至少 1.2% 可见; 用户消息是瞬时点不占运行时长
+      const off = Math.min(99, Math.round((cum / totalRun) * 1000) / 10);
+      const segW = dur > 0 ? Math.max(1.2, Math.round((dur / totalRun) * 1000) / 10) : 1;
+      cum += dur;
       const tok = m.tokens ? `${CS.num(m.promptTokens || 0)}→${CS.num(m.tokens)}` : '';
       const nTools = kind === 'reply' ? (m.tools?.length || 0) + (m.asks?.length || 0) : 0;
       let blocks = [];
