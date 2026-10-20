@@ -575,6 +575,8 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .run-track .tr-tool{background:var(--tr-tool)}
 .run-track .tr-reply{background:var(--tr-reply)}
 .run-track .tr-system{background:var(--tr-system)}
+/* 回合分隔占位格: 轻描边空心, 表达用户回合开始且打断列顶巧合 */
+.run-track .tr-break{background:transparent;box-shadow:inset 0 0 0 1px var(--line)}
 /* 运行中消息的方块呼吸动效; 减少动态效果时全局 animation 已被禁用 */
 @keyframes tr-pulse{0%,100%{opacity:.55;transform:scale(.82)}50%{opacity:1;transform:scale(1.06)}}
 .run-track .tr-live{animation:tr-pulse 1.15s ease-in-out infinite}

@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="91999389">
+<meta name="build" content="1a5e174f">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -930,6 +930,8 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .run-track .tr-tool{background:var(--tr-tool)}
 .run-track .tr-reply{background:var(--tr-reply)}
 .run-track .tr-system{background:var(--tr-system)}
+/* 回合分隔占位格: 轻描边空心, 表达用户回合开始且打断列顶巧合 */
+.run-track .tr-break{background:transparent;box-shadow:inset 0 0 0 1px var(--line)}
 /* 运行中消息的方块呼吸动效; 减少动态效果时全局 animation 已被禁用 */
 @keyframes tr-pulse{0%,100%{opacity:.55;transform:scale(.82)}50%{opacity:1;transform:scale(1.06)}}
 .run-track .tr-live{animation:tr-pulse 1.15s ease-in-out infinite}
@@ -4732,23 +4734,52 @@ CS.audio = (function () {
     const blocks = [];
     all.forEach(m => {
       const live = !!m.streaming;
+      // 用户消息前放入"回合分隔"占位格: 打破回合长度恰好整除 4 时用户块恒列顶的巧合
+      if (m.role === 'user' && blocks.length) blocks.push({ k: 'break', txt: '', live: false });
       if (m.role === 'user') { blocks.push({ k: 'user', txt: m.content, live }); return; }
       if (/^\[Conversation compressed/.test(m.content || '')) { blocks.push({ k: 'system', txt: '压缩摘要', live }); return; }
       if (m.role !== 'assistant') { blocks.push({ k: 'system', txt: m.content, live }); return; }
       const n0 = blocks.length;
+      // 活跃块 = 流式消息里最后一个仍在生长的块: 文本流式 / think 在尾部 / 工具未出结果 / ask 未答。
+      // 只有它会呼吸, 已完成段(如思考完毕进入工具执行)不再闪烁
+      let liveIdx = -1;
+      if (live) {
+        const arr = Array.isArray(m.blocks) && m.blocks.length ? m.blocks : null;
+        if (arr) {
+          const last = arr[arr.length - 1];
+          if (last && typeof last === 'object') {
+            const active = last.type === 'text' || last.type === 'think' ||
+              (last.type === 'tool' && last.result == null) || (last.type === 'ask' && !last.answered);
+            if (active) liveIdx = arr.length - 1;
+          }
+        } else {
+          // 旧格式合并展开时的活跃段: 有 reasoning 合并时思考在最前, 但文本才是流式生长尾部 → 标 reply 格
+          liveIdx = blocks.length + ((m.reasoning || '').trim() ? 0 : 0);  // 占位, 下面重算
+          liveIdx = -1;
+          const tl = (m.tools || []).length;
+          const tk = (m.reasoning || '').trim() ? 1 : 0;
+          const as = (m.asks || []).length;
+          const hasReply = (m.content || '').trim() ? 1 : 0;
+          // 顺序 think/tools/asks/text: 最后一个未完成的工具或尚在文本
+          if (hasReply) liveIdx = n0 + tk + tl + as;           // 文本生长中
+          else if (as) liveIdx = n0 + tk + tl;                  // ask 等待
+          else if (tl) liveIdx = n0 + tk + tl - 1;              // 最后一个工具(合并视图无 result 细分)
+        }
+      }
       if (Array.isArray(m.blocks) && m.blocks.length) {
-        m.blocks.forEach(b => {
+        m.blocks.forEach((b, bi) => {
           if (!b || typeof b !== 'object') return;
-          if (b.type === 'think' && (b.text || '').trim()) blocks.push({ k: 'think', txt: b.text, live });
-          else if (b.type === 'tool') blocks.push({ k: 'tool', txt: (b.name || '工具') + ' ' + (typeof b.result === 'string' ? b.result : ''), live });
-          else if (b.type === 'ask') blocks.push({ k: 'tool', txt: 'ask 提问', live });
-          else if (b.type === 'text' && (b.text || '').trim()) blocks.push({ k: 'reply', txt: b.text, live });
+          const on = live && bi === liveIdx;
+          if (b.type === 'think' && (b.text || '').trim()) blocks.push({ k: 'think', txt: b.text, live: on });
+          else if (b.type === 'tool') blocks.push({ k: 'tool', txt: (b.name || '工具') + ' ' + (typeof b.result === 'string' ? b.result : ''), live: on });
+          else if (b.type === 'ask') blocks.push({ k: 'tool', txt: 'ask 提问', live: on });
+          else if (b.type === 'text' && (b.text || '').trim()) blocks.push({ k: 'reply', txt: b.text, live: on });
         });
       } else {
-        if ((m.reasoning || '').trim()) blocks.push({ k: 'think', txt: m.reasoning, live });
-        (m.tools || []).forEach(t => blocks.push({ k: 'tool', txt: (t.name || '工具') + ' ' + (typeof t.result === 'string' ? t.result : ''), live }));
-        (m.asks || []).forEach(() => blocks.push({ k: 'tool', txt: 'ask 提问', live }));
-        if ((m.content || '').trim()) blocks.push({ k: 'reply', txt: m.content, live });
+        if ((m.reasoning || '').trim()) blocks.push({ k: 'think', txt: m.reasoning, live: false });
+        (m.tools || []).forEach((t, ti) => blocks.push({ k: 'tool', txt: (t.name || '工具') + ' ' + (typeof t.result === 'string' ? t.result : ''), live: live && n0 + ((m.reasoning || '').trim() ? 1 : 0) + ti === liveIdx }));
+        (m.asks || []).forEach(() => blocks.push({ k: 'tool', txt: 'ask 提问', live: false }));
+        if ((m.content || '').trim()) blocks.push({ k: 'reply', txt: m.content, live: live && liveIdx === n0 + ((m.reasoning || '').trim() ? 1 : 0) + (m.tools || []).length + (m.asks || []).length });
       }
       if (blocks.length === n0 && live) blocks.push({ k: 'think', txt: '生成中…', live: true });
     });
@@ -4759,7 +4790,7 @@ CS.audio = (function () {
     const cols = [];
     for (let idx = 0; idx < shown.length; idx += 4) cols.push(shown.slice(idx, idx + 4));
     const name = { user: '用户', think: '思考', tool: '工具', reply: '回复', system: '系统' };
-    const cell = (b, gi) => `<span class="tr-cell tr-${b.k}${b.live ? ' tr-live' : ''}" title="#${start + gi + 1} ${name[b.k]}${b.live ? ' · 生成中' : ''} · ${e(String(b.txt || '').replace(/\s+/g, ' ').slice(0, 80))}"></span>`;
+    const cell = (b, gi) => b.k === 'break' ? `<span class="tr-cell tr-break" title="用户回合开始"></span>` : `<span class="tr-cell tr-${b.k}${b.live ? ' tr-live' : ''}" title="#${start + gi + 1} ${name[b.k]}${b.live ? ' · 生成中' : ''} · ${e(String(b.txt || '').replace(/\s+/g, ' ').slice(0, 80))}"></span>`;
     return `<div class="run-track" aria-hidden="true" data-blocks="${blocks.length}">${cols.map(c => `<span class="tr-col">${c.map(cell).join('')}</span>`).join('')}</div>`;
   };
 
