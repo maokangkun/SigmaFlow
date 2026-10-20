@@ -612,7 +612,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .trace-list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:auto;margin-left:-5px}
 .trace-row{border-bottom:1px solid var(--line-soft)}
 .trace-row:last-child{border-bottom:0}
-.trace-main{display:grid;grid-template-columns:26px 60px minmax(180px,1fr) 30px 104px 66px 186px;align-items:center;gap:10px;width:100%;padding:8px 13px;background:none;border:0;text-align:left;font-size:11px;color:var(--ink);cursor:pointer;transition:background .12s}
+.trace-main{display:grid;grid-template-columns:26px max-content minmax(180px,1fr) 30px 104px 66px 186px;align-items:center;gap:10px;width:100%;padding:8px 13px;background:none;border:0;text-align:left;font-size:11px;color:var(--ink);cursor:pointer;transition:background .12s}
 .trace-main:hover,.trace-row.open .trace-main{background:var(--accent-bg)}
 .trace-idx{color:var(--faint);font-size:10px}
 .trace-main .trace-kind{justify-self:start}
