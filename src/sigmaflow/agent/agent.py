@@ -8,7 +8,7 @@ import base64
 import random
 import traceback
 import threading
-from typing import Any
+from typing import Any, Dict
 import concurrent.futures
 from rich import print
 from openai import OpenAI
@@ -85,6 +85,36 @@ def _usage_cache_read(usage) -> int:
     return 0
 
 
+def _shared_openai_client(base_url: str, api_key: str) -> OpenAI:
+    """Reuse one OpenAI client (and its HTTP pool) per (base_url, api_key).
+
+    每次请求新建 client 会每次重新建 TCP 连接, 网关侧按连接做负载均衡,
+    换实例 = 原前缀缓存丢失(实测: 同 client 连发稳定命中 8704, 每次新建则必丢)。
+    共享连接池并把 keepalive 拉长到 5 分钟, 跨请求钉住同一网关实例。
+    """
+    key = (base_url, api_key)
+    client = _SHARED_OPENAI_CLIENTS.get(key)
+    if client is None:
+        import httpx
+
+        http_sdk = httpx.Client(
+            timeout=90.0,
+            limits=httpx.Limits(max_keepalive_connections=16, keepalive_expiry=300.0),
+        )
+        client = OpenAI(
+            base_url=base_url,
+            api_key=api_key,
+            http_client=http_sdk,
+            timeout=90.0,
+            max_retries=0,  # 不用 SDK 内置重试; 统一由 agent 循环重试三次
+        )
+        _SHARED_OPENAI_CLIENTS[key] = client
+    return client
+
+
+_SHARED_OPENAI_CLIENTS: Dict[tuple, OpenAI] = {}
+
+
 class Agent:
     def __init__(
         self,
@@ -136,8 +166,9 @@ class Agent:
                     if not available_tools or t["name"] in available_tools
                 ]
             case "openai":
-                self.client = OpenAI(
-                    base_url=base_url or OPENAI_BASE_URL, api_key=api_key or API_KEY
+                # 共享连接池: 同 base/key 复用同连接, 钉住网关实例保住前缀缓存
+                self.client = _shared_openai_client(
+                    base_url or OPENAI_BASE_URL, api_key or API_KEY
                 )
                 tools = self._trans_anthropic_tools_to_openai(self.tools)
                 self.tools = [
