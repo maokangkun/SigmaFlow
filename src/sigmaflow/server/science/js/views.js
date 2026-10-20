@@ -407,8 +407,27 @@
           ...(m.contextTokens != null ? [['上下文占用', CS.kfmt(m.contextTokens)]] : []),
         ] : []),
       ];
-      const isOpen = open.has(idx);
-      const detail = isOpen ? `<div class="trace-detail"><div class="trace-props">${props.map(([k, v]) => `<span class="tpair"><span class="tk">${e(k)}</span><span class="tv mono">${e(v)}</span></span>`).join('')}</div>${blocks.length ? `<div class="trace-blocks">${blocks.map((b, ri) => { const ms = segs && segs[ri] ? segs[ri].ms : 0; return `<span class="tb-item"><span class="tk-${b.k}">${KIND[b.k]}</span><span class="tb-txt" title="${prev(b.t, 240)}">${prev(b.t, 110)}</span>${ms > 0 ? `<span class="tb-dur mono">${CS.elapsedMs(ms)}</span>` : ''}</span>`; }).join('')}</div>` : ''}</div>` : '';
+    const isOpen = open.has(idx);
+    // 块行完整原文: 新管线直接用原始块对象(含工具入参/出参), 旧数据从展示文本兕底
+    const blockOpen = CS.ui.traceBlockOpen instanceof Set ? CS.ui.traceBlockOpen : new Set();
+    const rawB = Array.isArray(m.blocks) && m.blocks.length ? m.blocks.filter(b => b && (b.type === 'tool' || b.type === 'ask' || (b.text || '').trim())) : null;
+    const bFull = b => {
+      if (!b) return '';
+      if (b.type === 'tool') {
+        let args = '';
+        try { args = typeof b.args === 'string' ? b.args : JSON.stringify(b.args ?? {}, null, 2); } catch { args = String(b.args ?? ''); }
+        const input = args && args !== '{}' ? `输入：\n${args}` : '';
+        const out = b.result == null ? '(执行中)' : String(b.result);
+        return [input, out ? `输出：\n${out}` : ''].filter(Boolean).join('\n\n');
+      }
+      if (b.type === 'ask') {
+        const q = (b.questions || []).join('\n');
+        const a = b.result || (Array.isArray(b.answers) ? b.answers.join('\n') : '') || (b.answered ? '(已答复)' : '未答复');
+        return `问题：\n${q}\n\n答复：\n${a}`;
+      }
+      return b.text || '';
+    };
+      const detail = isOpen ? `<div class="trace-detail"><div class="trace-props">${props.map(([k, v]) => `<span class="tpair"><span class="tk">${e(k)}</span><span class="tv mono">${e(v)}</span></span>`).join('')}</div>${blocks.length ? `<div class="trace-blocks">${blocks.map((b, ri) => { const ms = segs && segs[ri] ? segs[ri].ms : 0; const raw = rawB ? rawB[ri] : (b.t ? { type: 'text', text: b.t } : null); const bkey = idx + ':' + ri; const bOpen = blockOpen.has(bkey); return `<span class="tb-item clickable${bOpen ? ' open' : ''}" role="button" data-action="toggle-trace-block" data-id="${bkey}" aria-expanded="${bOpen}" title="点击展开完整输入/输出"><span class="tk-${b.k}">${KIND[b.k]}</span><span class="tb-txt" title="${prev(b.t, 240)}">${prev(b.t, 110)}</span>${ms > 0 ? `<span class="tb-dur mono">${CS.elapsedMs(ms)}</span>` : ''}</span>${bOpen ? `<span class="tb-body"><pre>${e(bFull(raw))}</pre></span>` : ''}`; }).join('')}</div>` : ''}</div>` : '';
       return `<div class="trace-row${isOpen ? ' open' : ''}"><button type="button" class="trace-main" data-action="toggle-trace-row" data-id="${idx}" aria-expanded="${isOpen}"><span class="trace-idx mono">#${idx + 1}</span><span class="trace-kind tk-${kind}">${KIND[kind]}${kind === 'reply' && streaming ? ' · 生成中' : ''}</span><span class="trace-preview" title="${prev(m.content, 140)}">${prev(m.content)}</span><span class="trace-tools mono">${nTools || ''}</span><span class="trace-tok mono">${tok}</span><span class="trace-dur mono">${dur > 0 ? CS.elapsedMs(dur) : ''}</span><span class="trace-bar">${barHtml}</span></button>${detail}</div>`;
     }).join('');
   };

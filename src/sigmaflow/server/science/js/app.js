@@ -1461,6 +1461,8 @@
     // 轨迹热力图方块点击: 平滑滚动到对应消息并高亮一瞬
     'open-trace': () => CS.navigate('trace'),
     'toggle-trace-row': id => { const s = CS.ui.traceOpen instanceof Set ? CS.ui.traceOpen : (CS.ui.traceOpen = new Set()); const n = Number(id); s.has(n) ? s.delete(n) : s.add(n); CS.render(); },
+    // 时间线块行展开: 查看单个块的完整输入/输出; 多行可同时展开, 键为 行索引:块序号
+    'toggle-trace-block': id => { const s = CS.ui.traceBlockOpen instanceof Set ? CS.ui.traceBlockOpen : (CS.ui.traceBlockOpen = new Set()); s.has(id) ? s.delete(id) : s.add(id); CS.render(); },
     'track-jump': id => {
       const mi = parseInt(id, 10);
       if (isNaN(mi)) return;

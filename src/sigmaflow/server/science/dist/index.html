@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="1c8140df">
+<meta name="build" content="0f711554">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -996,6 +996,11 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .tb-item{display:flex;align-items:center;gap:9px;min-height:21px}
 /* 块行耗时: 右缘对齐主行耗时列(距行右 209px = 主行右衬 13 + 时间条列 186 + 列距 10; 详情自身右衬 14 由 padding 消化) */
 .tb-dur{margin-left:auto;font-size:10px;color:var(--muted);white-space:nowrap;padding-right:195px}
+/* 块行可点击展开: 护栏背景 + 展开后的完整输入/输出块 */
+.tb-item.clickable{cursor:pointer;border-radius:6px;padding:2px 4px;margin:0 -4px;transition:background .12s}
+.tb-item.clickable:hover,.tb-item.open{background:color-mix(in srgb,var(--accent-bg) 55%,transparent)}
+.tb-body{display:block;margin:0 0 7px 44px}
+.tb-body pre{margin:0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:color-mix(in srgb,var(--accent-bg) 30%,transparent);font-size:10.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto;color:var(--ink)}
 .tb-item .tk-user,.tb-item .tk-reply,.tb-item .tk-think,.tb-item .tk-tool,.tb-item .tk-system,.tb-item .tk-error{flex-shrink:0;width:44px;padding:2px 0;text-align:center;font-size:9px;font-weight:570}
 .tb-txt{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
@@ -4962,8 +4967,27 @@ CS.audio = (function () {
           ...(m.contextTokens != null ? [['上下文占用', CS.kfmt(m.contextTokens)]] : []),
         ] : []),
       ];
-      const isOpen = open.has(idx);
-      const detail = isOpen ? `<div class="trace-detail"><div class="trace-props">${props.map(([k, v]) => `<span class="tpair"><span class="tk">${e(k)}</span><span class="tv mono">${e(v)}</span></span>`).join('')}</div>${blocks.length ? `<div class="trace-blocks">${blocks.map((b, ri) => { const ms = segs && segs[ri] ? segs[ri].ms : 0; return `<span class="tb-item"><span class="tk-${b.k}">${KIND[b.k]}</span><span class="tb-txt" title="${prev(b.t, 240)}">${prev(b.t, 110)}</span>${ms > 0 ? `<span class="tb-dur mono">${CS.elapsedMs(ms)}</span>` : ''}</span>`; }).join('')}</div>` : ''}</div>` : '';
+    const isOpen = open.has(idx);
+    // 块行完整原文: 新管线直接用原始块对象(含工具入参/出参), 旧数据从展示文本兕底
+    const blockOpen = CS.ui.traceBlockOpen instanceof Set ? CS.ui.traceBlockOpen : new Set();
+    const rawB = Array.isArray(m.blocks) && m.blocks.length ? m.blocks.filter(b => b && (b.type === 'tool' || b.type === 'ask' || (b.text || '').trim())) : null;
+    const bFull = b => {
+      if (!b) return '';
+      if (b.type === 'tool') {
+        let args = '';
+        try { args = typeof b.args === 'string' ? b.args : JSON.stringify(b.args ?? {}, null, 2); } catch { args = String(b.args ?? ''); }
+        const input = args && args !== '{}' ? `输入：\n${args}` : '';
+        const out = b.result == null ? '(执行中)' : String(b.result);
+        return [input, out ? `输出：\n${out}` : ''].filter(Boolean).join('\n\n');
+      }
+      if (b.type === 'ask') {
+        const q = (b.questions || []).join('\n');
+        const a = b.result || (Array.isArray(b.answers) ? b.answers.join('\n') : '') || (b.answered ? '(已答复)' : '未答复');
+        return `问题：\n${q}\n\n答复：\n${a}`;
+      }
+      return b.text || '';
+    };
+      const detail = isOpen ? `<div class="trace-detail"><div class="trace-props">${props.map(([k, v]) => `<span class="tpair"><span class="tk">${e(k)}</span><span class="tv mono">${e(v)}</span></span>`).join('')}</div>${blocks.length ? `<div class="trace-blocks">${blocks.map((b, ri) => { const ms = segs && segs[ri] ? segs[ri].ms : 0; const raw = rawB ? rawB[ri] : (b.t ? { type: 'text', text: b.t } : null); const bkey = idx + ':' + ri; const bOpen = blockOpen.has(bkey); return `<span class="tb-item clickable${bOpen ? ' open' : ''}" role="button" data-action="toggle-trace-block" data-id="${bkey}" aria-expanded="${bOpen}" title="点击展开完整输入/输出"><span class="tk-${b.k}">${KIND[b.k]}</span><span class="tb-txt" title="${prev(b.t, 240)}">${prev(b.t, 110)}</span>${ms > 0 ? `<span class="tb-dur mono">${CS.elapsedMs(ms)}</span>` : ''}</span>${bOpen ? `<span class="tb-body"><pre>${e(bFull(raw))}</pre></span>` : ''}`; }).join('')}</div>` : ''}</div>` : '';
       return `<div class="trace-row${isOpen ? ' open' : ''}"><button type="button" class="trace-main" data-action="toggle-trace-row" data-id="${idx}" aria-expanded="${isOpen}"><span class="trace-idx mono">#${idx + 1}</span><span class="trace-kind tk-${kind}">${KIND[kind]}${kind === 'reply' && streaming ? ' · 生成中' : ''}</span><span class="trace-preview" title="${prev(m.content, 140)}">${prev(m.content)}</span><span class="trace-tools mono">${nTools || ''}</span><span class="trace-tok mono">${tok}</span><span class="trace-dur mono">${dur > 0 ? CS.elapsedMs(dur) : ''}</span><span class="trace-bar">${barHtml}</span></button>${detail}</div>`;
     }).join('');
   };
@@ -6865,6 +6889,8 @@ V.ctxRing = () => {
     // 轨迹热力图方块点击: 平滑滚动到对应消息并高亮一瞬
     'open-trace': () => CS.navigate('trace'),
     'toggle-trace-row': id => { const s = CS.ui.traceOpen instanceof Set ? CS.ui.traceOpen : (CS.ui.traceOpen = new Set()); const n = Number(id); s.has(n) ? s.delete(n) : s.add(n); CS.render(); },
+    // 时间线块行展开: 查看单个块的完整输入/输出; 多行可同时展开, 键为 行索引:块序号
+    'toggle-trace-block': id => { const s = CS.ui.traceBlockOpen instanceof Set ? CS.ui.traceBlockOpen : (CS.ui.traceBlockOpen = new Set()); s.has(id) ? s.delete(id) : s.add(id); CS.render(); },
     'track-jump': id => {
       const mi = parseInt(id, 10);
       if (isNaN(mi)) return;
