@@ -579,9 +579,9 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 @keyframes tr-pulse{0%,100%{opacity:.55;transform:scale(.82)}50%{opacity:1;transform:scale(1.06)}}
 .run-track .tr-live{animation:tr-pulse 1.15s ease-in-out infinite}
 /* 轨迹配色方案: 马卡龙(默认柔和粉彩) / 经典 / 素雅单色, 设置页可切换 */
-:root{--tr-user:#8cc7a1;--tr-think:#9ab8e0;--tr-tool:#f0b37e;--tr-reply:#ef9fb8;--tr-system:#b9b3c9}
-:root[data-trackpalette="classic"]{--tr-user:var(--green);--tr-think:var(--blue);--tr-tool:var(--amber);--tr-reply:var(--accent);--tr-system:var(--faint)}
-:root[data-trackpalette="mono"]{--tr-user:#5c6672;--tr-think:#8a93a3;--tr-tool:#a9b1bd;--tr-reply:#c8ced7;--tr-system:#e2e5ea}
+:root{--tr-user:#35b26a;--tr-think:#3d5fc4;--tr-tool:#f5a623;--tr-reply:#e0447f;--tr-system:#9aa1ab}
+:root[data-trackpalette="classic"]{--tr-user:#3aa463;--tr-think:var(--blue);--tr-tool:var(--amber);--tr-reply:#d1568f;--tr-system:#6e7480}
+:root[data-trackpalette="mono"]{--tr-user:#5c6672;--tr-think:#8a93a3;--tr-tool:#a9b1bd;--tr-reply:#cdd3dc;--tr-system:#eef1f5}
 @media(max-width:800px){.run-track{max-width:340px}}
 .run-usage .ru-item{display:inline-flex;align-items:center;gap:4px}
 .run-usage .ru-item .icon{color:var(--faint)}
