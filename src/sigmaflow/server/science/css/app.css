@@ -249,6 +249,8 @@ html:has(.auth-page){scrollbar-gutter:auto}
 .term-view .tk-cmt{color:#75715e;font-style:italic}
 .term-view .term-runmsg{padding:4px 14px 12px;font-size:10.5px;color:var(--t-accent)}
 /* 终端主题下拉(通用设置) */
+.setting-input-inline{height:38px;width:96px;max-width:96px;padding:0 10px;background:var(--surface);border:1px solid var(--line);border-radius:10px;font-size:12px;color:var(--ink);text-align:right}
+.setting-input-inline:focus{border-color:var(--accent);outline:none}
 .terminal-theme-select{height:38px;width:190px;max-width:190px;flex-shrink:0;padding:0 34px 0 13px;background:var(--surface);border:1px solid var(--line);border-radius:10px;font-size:12px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;appearance:none;scrollbar-width:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23808b9f' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='m5 9 7 7 7-7'/></svg>");background-repeat:no-repeat;background-position:right 12px center;cursor:pointer}
 .terminal-theme-select:focus-visible{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px #7775b61f}
 /* 硬件状态栏首次加载占位: 骨架行各条 flex 拉满(与输入框同缘), shimmer 滑过亮块, 数据到达后整块替换消失 */

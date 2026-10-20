@@ -1201,7 +1201,7 @@ class Agent:
                             {
                                 "kind": "result",
                                 "name": func,
-                                "result": str(output)[:20000],
+                                "result": str(output)[:30000],
                             }
                         )
                     except Exception:

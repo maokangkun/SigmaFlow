@@ -111,6 +111,23 @@ RUN_TTL_MS = 3_600_000  # evict runs older than 1h once nobody is watching
 TICK_SECONDS = 0.7
 
 
+def _tool_result_limit() -> int:
+    """工具结果与块内容的入库截断上限: 前端设置页可调, 存放在 science 数据目录的 settings.json。"""
+    try:
+        d = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
+            os.path.expanduser("~"), ".sigmaflow", "science"
+        )
+        path = os.path.join(d, "settings.json")
+        data = json.loads(Path(path).read_text(encoding="utf-8")) if os.path.exists(path) else {}
+        v = int(data.get("toolResultLimit") or 30000)
+    except Exception:
+        v = 30000
+    return max(2000, min(v, 30000))
+
+class ToolLimitIn(BaseModel):
+    limit: int = 30000
+
+
 class StepSpec(BaseModel):
     title: str = ""
     description: str = ""
@@ -1040,6 +1057,28 @@ class ScienceAPI:
         """Register routes for this domain (order preserved)."""
 
         # ------------------------------------------------------- auth API
+
+        @auth_router.get("/tool-result-limit")
+        async def get_tool_result_limit():
+            """查询工具结果入库截断上限(设置页展示)。"""
+            return {"limit": _tool_result_limit()}
+
+        @auth_router.post("/tool-result-limit")
+        async def set_tool_result_limit(payload: ToolLimitIn):
+            """写回工具结果入库截断上限; 即时生效, 无需重启。"""
+            v = max(2000, min(int(payload.limit or 30000), 30000))
+            d = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
+                os.path.expanduser("~"), ".sigmaflow", "science"
+            )
+            path = Path(d) / "settings.json"
+            try:
+                data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+            except Exception:
+                data = {}
+            data["toolResultLimit"] = v
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            return {"limit": v}
 
         @auth_router.get("/me")
         async def auth_me(request: Request):
@@ -3071,7 +3110,7 @@ class ScienceProjectStore:
                                 "args": t.get("args")
                                 if isinstance(t.get("args"), (dict, list))
                                 else {},
-                                "result": _clip(str(t.get("result", "")), 20000),
+                                "result": _clip(str(t.get("result", "")), _tool_result_limit()),
                             }
                         )
                     if saved_tools:
@@ -3105,7 +3144,7 @@ class ScienceProjectStore:
                                     if isinstance(b.get("a", b.get("args")), dict)
                                     else {},
                                     "r": _clip(
-                                        str(b.get("r", b.get("result", ""))), 20000
+                                        str(b.get("r", b.get("result", ""))), _tool_result_limit()
                                     ),
                                 }
                             )
@@ -3119,7 +3158,7 @@ class ScienceProjectStore:
                                     else [],
                                     "ok": bool(b.get("ok", b.get("answered"))),
                                     "r": _clip(
-                                        str(b.get("r", b.get("result", ""))), 20000
+                                        str(b.get("r", b.get("result", ""))), _tool_result_limit()
                                     ),
                                     "ans": b.get("ans", b.get("answers"))
                                     if isinstance(b.get("ans", b.get("answers")), list)
@@ -3212,7 +3251,7 @@ class ScienceProjectStore:
                                 "id": _clip(str(a.get("id", "")), 64),
                                 "questions": questions[:20],
                                 "answered": bool(a.get("answered")),
-                                "result": _clip(str(a.get("result", "")), 20000),
+                                "result": _clip(str(a.get("result", "")), _tool_result_limit()),
                                 **({"answers": answers} if answers else {}),
                             }
                         )
