@@ -399,8 +399,19 @@
       const run = { id, kind: 'chat', title: meta.title || data.title || '会话', projectId: data.projectId, prompt: '', datasetIds: [], config: {},
               messages: data.content.map(m => {
                 const msg = { role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) };
+                // 新格式: 存档带压缩块时间线 {t,x}/{t,n,a,r}/{t,ask…}, 解压回内存块结构
+                if (msg.role === 'assistant' && Array.isArray(m.blocks) && m.blocks.length) {
+                  msg.blocks = m.blocks.map(b => {
+                    if (!b || typeof b !== 'object') return null;
+                    if (b.t === 'think') return { type: 'think', text: b.x || '' };
+                    if (b.t === 'tool') return { type: 'tool', name: b.n || '工具', args: b.a && typeof b.a === 'object' ? b.a : {}, result: b.r || '' };
+                    if (b.t === 'ask') return { type: 'ask', id: b.id, questions: Array.isArray(b.qs) ? b.qs : [], answered: !!b.ok, result: b.r || '', answers: Array.isArray(b.ans) ? b.ans : null, stale: !b.ok };
+                    if (b.t === 'text') return { type: 'text', text: b.x || '' };
+                    return null;
+                  }).filter(Boolean);
+                }
                 // 旧格式记录压平了时间线, 加载时重建为 think/tool/text 块以便按时间线展示
-                if (msg.role === 'assistant' && (msg.reasoning || msg.tools?.length || msg.asks?.length || msg.deliverables?.length)) {
+                if (msg.role === 'assistant' && !msg.blocks && (msg.reasoning || msg.tools?.length || msg.asks?.length || msg.deliverables?.length)) {
                   const blocks = [];
                   if (msg.reasoning) blocks.push({ type: 'think', text: msg.reasoning });
                   for (const t of msg.tools || []) blocks.push({ type: 'tool', name: t.name, args: t.args, result: t.result });
@@ -626,11 +637,22 @@
   // 会话内容同步到服务端（供其他浏览器打开）; 失败后延迟重试一次
   const syncConversation = async (run, retry = true) => {
     const conv = CS.ui.conversations.find(c => c.id === run.id);
+    // 块级时间线持久化: 压缩格式 {t,x}/{t,n,a,r}/{t,ask…}, 加载时交错的思考/工具/文本原样重放
+    const savedBlocks = m => {
+      const out = [];
+      (m.blocks || []).forEach(b => {
+        if (b.type === 'think') out.push({ t: 'think', x: b.text || '' });
+        else if (b.type === 'tool') out.push({ t: 'tool', n: b.name || '工具', a: b.args && typeof b.args === 'object' ? b.args : {}, r: b.result == null ? '' : String(b.result) });
+        else if (b.type === 'ask') out.push({ t: 'ask', id: b.id, qs: Array.isArray(b.questions) ? b.questions : [], ok: !!b.answered, r: b.result || '', ans: Array.isArray(b.answers) ? b.answers : null });
+        else if (b.type === 'text') out.push({ t: 'text', x: b.text || '' });
+      });
+      return out;
+    };
     const payload = {
       id: run.id, title: run.title, projectId: run.projectId,
       pinned: !!conv?.pinned, archived: !!conv?.archived,
       content: run.messages.filter(m => m.role === 'user' || m.role === 'assistant')
-        .map(m => ({ role: m.role, content: m.content, at: m.at, ...(m.model ? { model: m.model } : {}), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed, ...(m.contextTokens ? { contextTokens: m.contextTokens } : {}), ...(m.cacheTokens ? { cacheTokens: m.cacheTokens } : {}) } : {}) })),
+        .map(m => { const sb = m.role === 'assistant' ? savedBlocks(m) : []; return { role: m.role, content: m.content, at: m.at, ...(m.model ? { model: m.model } : {}), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(sb.length ? { blocks: sb } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed, ...(m.contextTokens ? { contextTokens: m.contextTokens } : {}), ...(m.cacheTokens ? { cacheTokens: m.cacheTokens } : {}) } : {}) }; }),
     };
     try { await CS.api.modelCall('conversation.save', 'POST', '/conversations', payload); }
     catch { if (retry) setTimeout(() => syncConversation(run, false), 3000); }

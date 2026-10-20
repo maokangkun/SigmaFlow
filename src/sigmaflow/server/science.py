@@ -3076,6 +3076,67 @@ class ScienceProjectStore:
                         )
                     if saved_tools:
                         item["tools"] = saved_tools
+                # 块级时间线(前端流式的交错结构): think/tool/ask/text 原始顺序持久化,
+                # 加载时按此重放, 让轨迹热力图与压缩前的多段思考一一对应
+                raw_blocks = msg.get("blocks")
+                if isinstance(raw_blocks, list):
+                    saved_blocks: list[dict[str, Any]] = []
+                    for b in raw_blocks:
+                        if not isinstance(b, dict):
+                            continue
+                        _t = str(b.get("t") or b.get("type") or "")[:16]
+                        if _t == "think":
+                            saved_blocks.append(
+                                {
+                                    "t": "think",
+                                    "x": _clip(
+                                        str(b.get("x", b.get("text", ""))), 20000
+                                    ),
+                                }
+                            )
+                        elif _t == "tool":
+                            saved_blocks.append(
+                                {
+                                    "t": "tool",
+                                    "n": _clip(
+                                        str(b.get("n", b.get("name", "工具"))), 200
+                                    ),
+                                    "a": b.get("a", b.get("args"))
+                                    if isinstance(b.get("a", b.get("args")), dict)
+                                    else {},
+                                    "r": _clip(
+                                        str(b.get("r", b.get("result", ""))), 5000
+                                    ),
+                                }
+                            )
+                        elif _t == "ask":
+                            saved_blocks.append(
+                                {
+                                    "t": "ask",
+                                    "id": _clip(str(b.get("id", "")), 64),
+                                    "qs": b.get("qs", b.get("questions"))
+                                    if isinstance(b.get("qs", b.get("questions")), list)
+                                    else [],
+                                    "ok": bool(b.get("ok", b.get("answered"))),
+                                    "r": _clip(
+                                        str(b.get("r", b.get("result", ""))), 5000
+                                    ),
+                                    "ans": b.get("ans", b.get("answers"))
+                                    if isinstance(b.get("ans", b.get("answers")), list)
+                                    else None,
+                                }
+                            )
+                        elif _t == "text":
+                            saved_blocks.append(
+                                {
+                                    "t": "text",
+                                    "x": _clip(
+                                        str(b.get("x", b.get("text", ""))), 20000
+                                    ),
+                                }
+                            )
+                    if saved_blocks:
+                        item["blocks"] = saved_blocks
                 deliverables = msg.get("deliverables")
                 if isinstance(deliverables, list):
                     # 本轮产出文件(dsh deliverables 思路): edit/write 的参数位置记录

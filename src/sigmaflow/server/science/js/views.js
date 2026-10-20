@@ -235,17 +235,28 @@
   V.runTrack = () => {
     const run = CS.currentRun();
     const all = run?.messages || [];
-    // 消息 → 可见块展开: 用户/压缩摘要条各占一格, 助手拆 思考+每工具(含ask)+文本回复
+    // 消息 → 可见块展开: 优先用交错的 blocks 时间线(多段思考/工具/文本一一对应),
+    // 旧存档无 blocks 时退回 reasoning/tools 合并展开
     const blocks = [];
     all.forEach(m => {
       if (m.role === 'user') { blocks.push({ k: 'user', txt: m.content }); return; }
       if (/^\[Conversation compressed/.test(m.content || '')) { blocks.push({ k: 'system', txt: '压缩摘要' }); return; }
       if (m.role !== 'assistant') { blocks.push({ k: 'system', txt: m.content }); return; }
       const n0 = blocks.length;
-      if ((m.reasoning || '').trim()) blocks.push({ k: 'think', txt: m.reasoning });
-      (m.tools || []).forEach(t => blocks.push({ k: 'tool', txt: (t.name || '工具') + ' ' + (typeof t.result === 'string' ? t.result : '') }));
-      (m.asks || []).forEach(() => blocks.push({ k: 'tool', txt: 'ask 提问' }));
-      if ((m.content || '').trim()) blocks.push({ k: 'reply', txt: m.content });
+      if (Array.isArray(m.blocks) && m.blocks.length) {
+        m.blocks.forEach(b => {
+          if (!b || typeof b !== 'object') return;
+          if (b.type === 'think' && (b.text || '').trim()) blocks.push({ k: 'think', txt: b.text });
+          else if (b.type === 'tool') blocks.push({ k: 'tool', txt: (b.name || '工具') + ' ' + (typeof b.result === 'string' ? b.result : '') });
+          else if (b.type === 'ask') blocks.push({ k: 'tool', txt: 'ask 提问' });
+          else if (b.type === 'text' && (b.text || '').trim()) blocks.push({ k: 'reply', txt: b.text });
+        });
+      } else {
+        if ((m.reasoning || '').trim()) blocks.push({ k: 'think', txt: m.reasoning });
+        (m.tools || []).forEach(t => blocks.push({ k: 'tool', txt: (t.name || '工具') + ' ' + (typeof t.result === 'string' ? t.result : '') }));
+        (m.asks || []).forEach(() => blocks.push({ k: 'tool', txt: 'ask 提问' }));
+        if ((m.content || '').trim()) blocks.push({ k: 'reply', txt: m.content });
+      }
       if (blocks.length === n0 && m.streaming) blocks.push({ k: 'think', txt: '生成中…' });
     });
     if (!blocks.length) return '';
