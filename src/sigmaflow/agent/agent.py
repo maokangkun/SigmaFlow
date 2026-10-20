@@ -134,10 +134,13 @@ class Agent:
         on_delta=None,
         on_tool=None,
         on_retry=None,
+        on_usage=None,
     ):
         self.on_retry = on_retry  # 重试回调: 每次可重试失败后调用 on_retry({"attempt", "total", "error"})
         self.on_delta = on_delta  # 流式回调: 每收到一段增量文本时调用 on_delta(text)
         self.on_tool = on_tool  # 工具事件回调: on_tool({"kind": "call"|"result", "name": ..., ...})
+        # 每轮模型调用后推送累计 usage, 前端流式期间即可更新输入 token
+        self.on_usage = on_usage
         self.method = method
         self.model = model
         self.system = system
@@ -1265,6 +1268,17 @@ class Agent:
                 else:
                     info["used_tools"].append((func, inp, output))
 
+            if getattr(self, "on_usage", None):
+                try:
+                    self.on_usage(
+                        {
+                            "promptTokens": info.get("prompt_tokens", 0),
+                            "completionTokens": info.get("completion_tokens", 0),
+                            "cacheTokens": info.get("cache_read_tokens", 0),
+                        }
+                    )
+                except Exception:
+                    pass
             cur_turn += 1
             if cur_turn == max_turn - 1:
                 console.print(

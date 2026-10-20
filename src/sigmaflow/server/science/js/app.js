@@ -856,7 +856,15 @@
         CS.ui.thinkingText = reply.reasoning;
         const now = Date.now();
         if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock && CS.state.settings.autoScroll !== false; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
-      }, toolEvent, retryEvent);
+      }, toolEvent, retryEvent, usage => {
+        // 每轮模型调用后的累计 usage: 流式期间即时更新输入与缓存计数
+        if (usage.promptTokens) {
+          reply.promptTokens = usage.promptTokens;
+          const now = Date.now();
+          if (now - _chatRenderAt > 120) { _chatRenderAt = now; CS.render(); }
+        }
+        if (usage.cacheTokens != null) reply.cacheTokens = usage.cacheTokens;
+      });
       // HTTP 降级路径: 服务端在响应里带回压缩元数据, 复用插卡逻辑保持契约一致
       if (done.compaction && done.compaction.text) toolEvent(done.compaction);
       // 正文以流式时间线为准(保留各轮文本); 服务端最终内容仅在本地没收到任何文本时兑底

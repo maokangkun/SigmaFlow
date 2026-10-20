@@ -2509,6 +2509,9 @@ class ScienceAPI:
                                     stats,
                                     chat_workdir,
                                     bool(data.get("planMode")),
+                                    lambda u: loop.call_soon_threadsafe(
+                                        chat_queue.put_nowait, ("usage", u)
+                                    ),
                                 )
                                 loop.call_soon_threadsafe(
                                     chat_queue.put_nowait, ("done", None)
@@ -2581,6 +2584,16 @@ class ScienceAPI:
                                         "event": "chat.retry",
                                         "requestId": request_id,
                                         "data": {"retry": value},
+                                    },
+                                )
+                            elif kind == "usage":
+                                # 每轮模型调用后的累计 usage: 流式期间前端即时更新输入/缓存计数
+                                event, message = (
+                                    "chat.usage",
+                                    {
+                                        "event": "chat.usage",
+                                        "requestId": request_id,
+                                        "data": value or {},
                                     },
                                 )
                             elif kind == "done":
@@ -3191,6 +3204,7 @@ def _run_agent_chat(
     stats: dict | None = None,
     workdir: Optional[str] = None,
     plan_mode: bool = False,
+    on_usage=None,
 ) -> str:
     """Run a chat through the SigmaFlow agent/agent.Agent stack.
 
@@ -3281,6 +3295,7 @@ def _run_agent_chat(
         or (lambda piece, think=None: None),
         on_tool=on_tool,
         on_retry=on_retry,
+        on_usage=on_usage,
     )
     agent.client.timeout = 90
     agent.client.max_retries = 0  # 不用 SDK 内置重试; 统一由 agent 循环重试三次
@@ -3587,6 +3602,7 @@ def _stream_agent_chat(
     stats: dict | None = None,
     workdir: Optional[str] = None,
     plan_mode: bool = False,
+    on_usage=None,
 ):
     """Streaming chat. Runs synchronously on the caller's worker thread
     (the WS handler invokes it via asyncio.to_thread); on_delta is called
@@ -3604,6 +3620,7 @@ def _stream_agent_chat(
         stats=stats,
         workdir=workdir,
         plan_mode=plan_mode,
+        on_usage=on_usage,
     )
 
 
