@@ -90,6 +90,8 @@
     const inspectorScroll = document.querySelector('.inspector')?.scrollTop || 0;
     document.documentElement.dataset.contrast = CS.state.settings.contrast ? 'high' : 'normal';
     document.documentElement.dataset.motion = CS.state.settings.reducedMotion ? 'reduced' : 'normal';
+    // 消息轨迹配色方案: 挂在根元素上, CSS 变量按方案重定义
+    document.documentElement.dataset.trackpalette = ['macaron', 'classic', 'mono'].includes(CS.state.settings.trackPalette) ? CS.state.settings.trackPalette : 'macaron';
     const bootRes = CS.state.me;
     // 多用户门禁: 未登录一律停留在登录页; 已登录访问登录页则回主页
     if (CS.ui.route === 'auth') {
@@ -2072,6 +2074,12 @@
   document.addEventListener('change', event => {
     if (event.target?.classList?.contains?.('sound-volume-input') || event.target?.classList?.contains?.('ui-scale-input')) CS.save();
     // 终端主题切换: 持久化到 settings, 重渲染后所有终端卡立即换肤
+    // 消息轨迹配色切换: 持久化到 settings, 根元素 data 属性换肤
+    if (event.target?.classList?.contains?.('track-palette-select')) {
+      const _pv = String(event.target.value || 'macaron').replace(/[^a-z0-9-]/gi, '').toLowerCase();
+      CS.state.settings.trackPalette = ['macaron', 'classic', 'mono'].includes(_pv) ? _pv : 'macaron';
+      CS.save(); CS.render(); CS.toast('消息轨迹配色已切换。');
+    }
     if (event.target?.classList?.contains?.('terminal-theme-select')) {
       CS.state.settings.terminalTheme = String(event.target.value || 'monokai').replace(/[^a-z0-9-]/gi, '').toLowerCase();
       CS.save(); CS.render(); CS.toast('终端主题已切换。');

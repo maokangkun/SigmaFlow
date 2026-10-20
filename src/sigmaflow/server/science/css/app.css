@@ -569,12 +569,19 @@ html[data-motion="reduced"] #anchor-tip{display:none}
    流内占位撑开标题行; width:0+min-width:100% 使自身不参与 stack 宽度, 实宽恒等于 usage 行宽 */
 .run-track{width:0;min-width:100%;margin:0 0 6px;display:flex;justify-content:flex-end;gap:2px;overflow:hidden}
 .run-track .tr-col{display:flex;flex-direction:column;gap:2px}
-.run-track .tr-cell{width:6px;height:6px;border-radius:1.5px;background:var(--faint)}
-.run-track .tr-user{background:var(--green)}
-.run-track .tr-think{background:var(--blue)}
-.run-track .tr-tool{background:var(--amber)}
-.run-track .tr-reply{background:var(--accent)}
-.run-track .tr-system{background:var(--faint)}
+.run-track .tr-cell{width:6px;height:6px;border-radius:1.5px;background:var(--tr-user)}
+.run-track .tr-user{background:var(--tr-user)}
+.run-track .tr-think{background:var(--tr-think)}
+.run-track .tr-tool{background:var(--tr-tool)}
+.run-track .tr-reply{background:var(--tr-reply)}
+.run-track .tr-system{background:var(--tr-system)}
+/* 运行中消息的方块呼吸动效; 减少动态效果时全局 animation 已被禁用 */
+@keyframes tr-pulse{0%,100%{opacity:.55;transform:scale(.82)}50%{opacity:1;transform:scale(1.06)}}
+.run-track .tr-live{animation:tr-pulse 1.15s ease-in-out infinite}
+/* 轨迹配色方案: 马卡龙(默认柔和粉彩) / 经典 / 素雅单色, 设置页可切换 */
+:root{--tr-user:#8cc7a1;--tr-think:#9ab8e0;--tr-tool:#f0b37e;--tr-reply:#ef9fb8;--tr-system:#b9b3c9}
+:root[data-trackpalette="classic"]{--tr-user:var(--green);--tr-think:var(--blue);--tr-tool:var(--amber);--tr-reply:var(--accent);--tr-system:var(--faint)}
+:root[data-trackpalette="mono"]{--tr-user:#5c6672;--tr-think:#8a93a3;--tr-tool:#a9b1bd;--tr-reply:#c8ced7;--tr-system:#e2e5ea}
 @media(max-width:800px){.run-track{max-width:340px}}
 .run-usage .ru-item{display:inline-flex;align-items:center;gap:4px}
 .run-usage .ru-item .icon{color:var(--faint)}
