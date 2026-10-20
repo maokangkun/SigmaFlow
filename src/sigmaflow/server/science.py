@@ -3071,7 +3071,7 @@ class ScienceProjectStore:
                                 "args": t.get("args")
                                 if isinstance(t.get("args"), (dict, list))
                                 else {},
-                                "result": _clip(str(t.get("result", "")), 5000),
+                                "result": _clip(str(t.get("result", "")), 20000),
                             }
                         )
                     if saved_tools:
@@ -3105,7 +3105,7 @@ class ScienceProjectStore:
                                     if isinstance(b.get("a", b.get("args")), dict)
                                     else {},
                                     "r": _clip(
-                                        str(b.get("r", b.get("result", ""))), 5000
+                                        str(b.get("r", b.get("result", ""))), 20000
                                     ),
                                 }
                             )
@@ -3119,7 +3119,7 @@ class ScienceProjectStore:
                                     else [],
                                     "ok": bool(b.get("ok", b.get("answered"))),
                                     "r": _clip(
-                                        str(b.get("r", b.get("result", ""))), 5000
+                                        str(b.get("r", b.get("result", ""))), 20000
                                     ),
                                     "ans": b.get("ans", b.get("answers"))
                                     if isinstance(b.get("ans", b.get("answers")), list)
@@ -3212,7 +3212,7 @@ class ScienceProjectStore:
                                 "id": _clip(str(a.get("id", "")), 64),
                                 "questions": questions[:20],
                                 "answered": bool(a.get("answered")),
-                                "result": _clip(str(a.get("result", "")), 5000),
+                                "result": _clip(str(a.get("result", "")), 20000),
                                 **({"answers": answers} if answers else {}),
                             }
                         )
