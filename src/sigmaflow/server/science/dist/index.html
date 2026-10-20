@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="3cf3cad8">
+<meta name="build" content="037d5abe">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -954,12 +954,13 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .run-usage .ru-item.clickable:hover{background:var(--accent-bg)}
 .run-usage .ru-item.clickable:hover .icon{color:var(--accent)}
 /* 会话 Trace 页(route=trace, 主区视图; 侧栏保留): 参考 admin 后台 trace 页(统计条 + 逐条消息时间线 + 行展开详情) */
-.trace-page{width:100%;padding:44px 50px 46px}
-/* trace 页顶部返回行: 不随页面容器居中, 固定贴主区左缘, 视觉上紧邻侧栏; 上下间距保持紧凑 */
-.trace-topbar{position:absolute;top:10px;left:14px;z-index:5;display:flex;align-items:center;height:34px}
-.trace-head{margin:0 0 14px}
-.trace-head h1{margin:0;font-size:21px;letter-spacing:-.4px}
-.trace-head p{margin:4px 0 0}
+.trace-page{width:100%;padding:22px 50px 46px}
+.trace-head{margin:0 0 14px;min-width:0}
+/* 返回按钮与标题同一行: 行高与按钮同高, h1 行高对中心; 副行缩进与标题左缘齐 */
+.trace-back{width:32px;height:32px;flex-shrink:0}
+.trace-head-row{display:flex;align-items:center;gap:13px;height:32px}
+.trace-head-row h1{margin:0;font-size:20px;letter-spacing:-.4px;line-height:32px}
+.trace-sub{margin:3px 0 0 45px}
 .trace-stats{display:flex;gap:17px;align-items:center;flex-wrap:wrap;margin:0 0 13px}
 .trace-stats>span{display:inline-flex;align-items:center;gap:4px}
 .trace-stats b{font-weight:600;color:var(--ink-strong)}
@@ -4941,11 +4942,12 @@ CS.audio = (function () {
       return `<div class="trace-row${isOpen ? ' open' : ''}"><button type="button" class="trace-main" data-action="toggle-trace-row" data-id="${idx}" aria-expanded="${isOpen}"><span class="trace-idx mono">#${idx + 1}</span><span class="trace-kind tk-${kind}">${KIND[kind]}${kind === 'reply' && streaming ? ' · 生成中' : ''}</span><span class="trace-preview" title="${prev(m.content, 140)}">${prev(m.content)}</span><span class="trace-tools mono">${nTools || ''}</span><span class="trace-tok mono">${tok}</span><span class="trace-dur mono">${dur > 0 ? CS.elapsedMs(dur) : ''}</span><span class="trace-bar"><span class="trace-seg seg-${kind}" style="left:${off}%;width:${segW}%"></span></span></button>${detail}</div>`;
     }).join('');
   };
-  // trace 页面: 主区视图替换聊天视图, 侧栏保留; 返回按钮在 topbar 左侧(贴近侧栏), 页头只留标题与会话信息
+  // trace 页面: 主区视图替换聊天视图, 侧栏保留; 返回按钮与标题同一行(页内流), 无会话时给出空态并引导返回
   V.trace = () => {
     const { run, msgs } = _traceCtx();
-    if (!run || !msgs.length) return `<section class="page trace-page"><div class="trace-head"><div><h1>会话 Trace</h1></div></div>${H.notice(run ? '当前会话还没有消息。' : '没有打开的会话，请先回到聊天页选择会话。')}</section>`;
-    return `<section class="page trace-page"><div class="trace-head"><div><h1>会话 Trace</h1><p class="small muted text-clip" title="${e(run.title || '')}">${e(run.title || '未命名会话')} <span class="faint">·</span> <span class="mono">${e(run.id || '')}</span></p></div></div>${V.traceStats()}<div class="trace-list" role="table">${V.traceRows()}</div></section>`;
+    const back = `<button type="button" class="icon-btn trace-back" data-action="back-to-chat" aria-label="返回会话" title="返回会话（返回原聊天页）">${i('arrowleft', '', 15)}</button>`;
+    if (!run || !msgs.length) return `<section class="page trace-page"><div class="trace-head"><div class="trace-head-row">${back}<h1>会话 Trace</h1></div></div>${H.notice(run ? '当前会话还没有消息。' : '没有打开的会话，请先回到聊天页选择会话。')}</section>`;
+    return `<section class="page trace-page"><div class="trace-head"><div class="trace-head-row">${back}<h1>会话 Trace</h1></div><p class="small muted trace-sub text-clip" title="${e(run.title || '')}">${e(run.title || '未命名会话')} <span class="faint">·</span> <span class="mono">${e(run.id || '')}</span></p></div>${V.traceStats()}<div class="trace-list" role="table">${V.traceRows()}</div></section>`;
   };
 
 V.ctxRing = () => {
@@ -5490,7 +5492,7 @@ V.ctxRing = () => {
       syncFavicon();
       return;
     }
-    document.getElementById('app').innerHTML = `<div class="app-shell">${fullscreen ? '' : CS.views.sidebar()}<main id="main" class="main-shell ${fullscreen ? 'main-fullscreen' : ''}" tabindex="-1"><header class="topbar ${fullscreen ? 'topbar-fullscreen' : 'topbar-menu'}"${fullscreen ? ' style="height:auto;align-items:flex-start"' : ''}>${fullscreen ? `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:12px;"><button type="button" class="text-button" data-nav="home">${i('arrowleft','',14)}<span>返回工作空间</span></button></div><div class="topbar-status"></div>` : `<div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div>`}</header><div class="main-cols">${CS.ui.route === 'trace' ? `<div class="trace-topbar"><button type="button" class="icon-btn" data-action="back-to-chat" aria-label="返回会话" title="返回会话（返回原聊天页）">${i('arrowleft','',15)}</button></div>` : ''}${page()}${typeof CS.views.terminalDrawer === 'function' ? CS.views.terminalDrawer() : ''}</div></main></div>`;
+    document.getElementById('app').innerHTML = `<div class="app-shell">${fullscreen ? '' : CS.views.sidebar()}<main id="main" class="main-shell ${fullscreen ? 'main-fullscreen' : ''}" tabindex="-1"><header class="topbar ${fullscreen ? 'topbar-fullscreen' : 'topbar-menu'}"${fullscreen ? ' style="height:auto;align-items:flex-start"' : ''}>${fullscreen ? `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:12px;"><button type="button" class="text-button" data-nav="home">${i('arrowleft','',14)}<span>返回工作空间</span></button></div><div class="topbar-status"></div>` : `<div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div>`}</header><div class="main-cols">${page()}${typeof CS.views.terminalDrawer === 'function' ? CS.views.terminalDrawer() : ''}</div></main></div>`;
     const sidebar = document.querySelector('.sidebar-scroll'); if (sidebar) sidebar.scrollTop = sidebarScroll;
     const conversation = document.querySelector('.conversation'); if (conversation) conversation.scrollTop = conversationScroll;
     const inspector = document.querySelector('.inspector'); if (inspector) inspector.scrollTop = inspectorScroll;

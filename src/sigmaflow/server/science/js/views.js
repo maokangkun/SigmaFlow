@@ -397,11 +397,12 @@
       return `<div class="trace-row${isOpen ? ' open' : ''}"><button type="button" class="trace-main" data-action="toggle-trace-row" data-id="${idx}" aria-expanded="${isOpen}"><span class="trace-idx mono">#${idx + 1}</span><span class="trace-kind tk-${kind}">${KIND[kind]}${kind === 'reply' && streaming ? ' · 生成中' : ''}</span><span class="trace-preview" title="${prev(m.content, 140)}">${prev(m.content)}</span><span class="trace-tools mono">${nTools || ''}</span><span class="trace-tok mono">${tok}</span><span class="trace-dur mono">${dur > 0 ? CS.elapsedMs(dur) : ''}</span><span class="trace-bar"><span class="trace-seg seg-${kind}" style="left:${off}%;width:${segW}%"></span></span></button>${detail}</div>`;
     }).join('');
   };
-  // trace 页面: 主区视图替换聊天视图, 侧栏保留; 返回按钮在 topbar 左侧(贴近侧栏), 页头只留标题与会话信息
+  // trace 页面: 主区视图替换聊天视图, 侧栏保留; 返回按钮与标题同一行(页内流), 无会话时给出空态并引导返回
   V.trace = () => {
     const { run, msgs } = _traceCtx();
-    if (!run || !msgs.length) return `<section class="page trace-page"><div class="trace-head"><div><h1>会话 Trace</h1></div></div>${H.notice(run ? '当前会话还没有消息。' : '没有打开的会话，请先回到聊天页选择会话。')}</section>`;
-    return `<section class="page trace-page"><div class="trace-head"><div><h1>会话 Trace</h1><p class="small muted text-clip" title="${e(run.title || '')}">${e(run.title || '未命名会话')} <span class="faint">·</span> <span class="mono">${e(run.id || '')}</span></p></div></div>${V.traceStats()}<div class="trace-list" role="table">${V.traceRows()}</div></section>`;
+    const back = `<button type="button" class="icon-btn trace-back" data-action="back-to-chat" aria-label="返回会话" title="返回会话（返回原聊天页）">${i('arrowleft', '', 15)}</button>`;
+    if (!run || !msgs.length) return `<section class="page trace-page"><div class="trace-head"><div class="trace-head-row">${back}<h1>会话 Trace</h1></div></div>${H.notice(run ? '当前会话还没有消息。' : '没有打开的会话，请先回到聊天页选择会话。')}</section>`;
+    return `<section class="page trace-page"><div class="trace-head"><div class="trace-head-row">${back}<h1>会话 Trace</h1></div><p class="small muted trace-sub text-clip" title="${e(run.title || '')}">${e(run.title || '未命名会话')} <span class="faint">·</span> <span class="mono">${e(run.id || '')}</span></p></div>${V.traceStats()}<div class="trace-list" role="table">${V.traceRows()}</div></section>`;
   };
 
 V.ctxRing = () => {

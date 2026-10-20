@@ -599,12 +599,13 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .run-usage .ru-item.clickable:hover{background:var(--accent-bg)}
 .run-usage .ru-item.clickable:hover .icon{color:var(--accent)}
 /* 会话 Trace 页(route=trace, 主区视图; 侧栏保留): 参考 admin 后台 trace 页(统计条 + 逐条消息时间线 + 行展开详情) */
-.trace-page{width:100%;padding:44px 50px 46px}
-/* trace 页顶部返回行: 不随页面容器居中, 固定贴主区左缘, 视觉上紧邻侧栏; 上下间距保持紧凑 */
-.trace-topbar{position:absolute;top:10px;left:14px;z-index:5;display:flex;align-items:center;height:34px}
-.trace-head{margin:0 0 14px}
-.trace-head h1{margin:0;font-size:21px;letter-spacing:-.4px}
-.trace-head p{margin:4px 0 0}
+.trace-page{width:100%;padding:22px 50px 46px}
+.trace-head{margin:0 0 14px;min-width:0}
+/* 返回按钮与标题同一行: 行高与按钮同高, h1 行高对中心; 副行缩进与标题左缘齐 */
+.trace-back{width:32px;height:32px;flex-shrink:0}
+.trace-head-row{display:flex;align-items:center;gap:13px;height:32px}
+.trace-head-row h1{margin:0;font-size:20px;letter-spacing:-.4px;line-height:32px}
+.trace-sub{margin:3px 0 0 45px}
 .trace-stats{display:flex;gap:17px;align-items:center;flex-wrap:wrap;margin:0 0 13px}
 .trace-stats>span{display:inline-flex;align-items:center;gap:4px}
 .trace-stats b{font-weight:600;color:var(--ink-strong)}
