@@ -124,11 +124,11 @@ html:has(.auth-page){scrollbar-gutter:auto}
 .chat-page:has(.chat-main-chat) .chat-layout{max-width:none}
 .chat-page:has(.chat-main-chat) .chat-main{width:100%;max-width:none;margin:0;display:flex;flex-direction:column}
 .chat-page:has(.chat-main-chat) .chat-title,
-.chat-page:has(.chat-main-chat) .chat-composer{width:100%;max-width:850px;min-width:0;margin-left:auto;margin-right:auto}
-.chat-page:has(.chat-main-chat) .conversation{padding-inline:max(24px,calc((100% - 850px)/2))}
+.chat-page:has(.chat-main-chat) .chat-composer{width:100%;max-width:none;min-width:0}
+.chat-page:has(.chat-main-chat) .conversation{padding-inline:24px}
 /* 修复: flex 列父级中 margin:auto 会让 .chat-layout 收缩为内容宽, 必须显式满宽 */
 .chat-page .chat-layout{width:100%;margin-left:auto;margin-right:auto}
-.chat-main-chat{width:100%;max-width:850px;margin:auto}
+.chat-main-chat{width:100%;max-width:none}
 .chat-title-compact{padding-bottom:10px;margin-bottom:14px}
 .chat-title-compact h1{font-size:18px}
 .message-meta-row{display:flex;align-items:center;height:20px;gap:8px;opacity:.75;line-height:20px;margin-top:10px}
