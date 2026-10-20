@@ -1095,6 +1095,11 @@
       const empty = rows.length ? '' : H.notice(isTools ? '当前没有启用的工具。可在设置的 Agent 工具里开启。' : '当前没有启用的技能。可在设置的 Agent 技能里开启。');
       body = `<p class="small muted mb-20">${isTools ? '当前对话 Agent 可调用的工具, 与设置页“Agent 工具”的启用状态一致; 禁用的工具不会发给模型、也不占用上下文。' : '当前对话 Agent 可用的技能; 技能清单作为系统提示词的一部分自动附加, 禁用的技能不进入会话、不占用上下文。'}</p>${empty}<div class="session-list">${list}</div>`;
       footer = `${H.btn(isTools ? 'open-tool-settings' : 'open-skill-settings','打开设置','settings','flat')}${H.btn('close-modal','关闭','','flat')}`;
+    } else if (modal.type === 'trace') {
+      // 会话 Trace: 参考 admin 后台 trace 页的消息级时间线, 在会话页内以弹窗展示
+      title = '会话 Trace'; wide = true; modal.cls = 'trace';
+      body = `<div class="trace-modal-sub small muted">${e(CS.currentRun()?.title || '未命名会话')} · ${e(CS.currentRun()?.id || '')}</div>${CS.traceBody()}`;
+      footer = H.btn('close-modal', '关闭', '', 'flat');
     } else if (modal.type === 'project') {
       const p = modal.project || {}; title = p.id ? '编辑研究项目' : '新的研究，从这里开始';
       body = `<form id="project-form" data-form="project"><div class="field"><label for="project-name">项目名称</label><input id="project-name" name="name" value="${e(p.name || '')}" placeholder="例如 immune_cell_atlas" maxlength="60" required autocomplete="off"></div><div class="field"><label for="project-dir">项目目录</label><div class="dir-row"><input id="project-dir" value="${e(CS.ui.modal.pickedDir || p.dir || '')}" placeholder="选择文件夹，或输入名称后使用默认路径" readonly autocomplete="off"><button type="button" class="btn small-btn" data-action="browse-dir">浏览</button></div><div id="dir-listing"></div><span class="hint">选择文件夹后以其名称作为项目名；只填名称时使用默认路径下的同名文件夹。</span></div><div class="field"><label for="project-description">项目描述</label><textarea id="project-description" name="description" placeholder="这个项目希望回答什么问题？" rows="3" maxlength="240">${e(p.description || '')}</textarea></div><div class="field"><label for="project-tags">标签</label><input id="project-tags" name="tags" value="${e((p.tags || []).join(', '))}" placeholder="单细胞, 文献, 方法" maxlength="100"><span class="hint">用英文或中文逗号分隔，最多 5 个标签。</span></div></form>`;
@@ -1121,7 +1126,7 @@
       title = '合成细胞详情';
       body = `<div class="row mb-20">${H.tile('cells')}<div><h3>${e(p.id)}</h3><span class="small muted">${e(g.name)} · 合成数据点</span></div></div><div class="info-pairs"><span>分组</span><span>${e(g.name)}</span><span>显示坐标 X</span><span>${p.x.toFixed(2)}</span><span>显示坐标 Y</span><span>${p.y.toFixed(2)}</span><span>数据来源</span><span>synthetic-ui-fixture</span></div><div class="mt-20">${H.notice('坐标是用于界面展示的二维随机点，不是实际降维计算结果。')}</div>`;
     }
-    document.getElementById('modal-root').innerHTML = `<div class="modal-backdrop"><section class="modal ${wide ? 'wide' : ''}" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><h2 id="modal-title">${e(title)}</h2>${H.iconBtn('close-modal', 'x', '关闭对话框')}</header><div class="modal-body">${body}</div>${footer ? `<footer class="modal-footer">${footer}</footer>` : ''}</section></div>`;
+    document.getElementById('modal-root').innerHTML = `<div class="modal-backdrop"><section class="modal ${wide ? 'wide' : ''} ${modal.cls || ''}" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="modal-head"><h2 id="modal-title">${e(title)}</h2>${H.iconBtn('close-modal', 'x', '关闭对话框')}</header><div class="modal-body">${body}</div>${footer ? `<footer class="modal-footer">${footer}</footer>` : ''}</section></div>`;
   };
 
   const previewDataset = async id => {
@@ -1459,6 +1464,8 @@
     },
     'jump-latest': () => { CS.ui.canJumpLatest = false; CS.render(); scrollToLatest(); },
     // 轨迹热力图方块点击: 平滑滚动到对应消息并高亮一瞬
+    'open-trace': () => { if (!CS.currentRun()) return; CS.showModal('trace', {}); },
+    'toggle-trace-row': id => { const mo = CS.ui.modal; if (mo?.type !== 'trace') return; const s = mo.traceOpen instanceof Set ? mo.traceOpen : (mo.traceOpen = new Set()); const n = Number(id); s.has(n) ? s.delete(n) : s.add(n); CS.renderModal(); },
     'track-jump': id => {
       const mi = parseInt(id, 10);
       if (isNaN(mi)) return;

@@ -594,3 +594,40 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .run-usage .ru-item{display:inline-flex;align-items:center;gap:4px}
 .run-usage .ru-item .icon{color:var(--faint)}
 .run-usage .ru-item b{font-weight:500;color:var(--muted)}
+/* 可点击项(消息数 → 会话 Trace): padding 提供悬停体感, 等量负 margin 保证 usage 行各点位坐标不变 */
+.run-usage .ru-item.clickable{cursor:pointer;border-radius:7px;padding:2px 5px;margin:-2px -5px}
+.run-usage .ru-item.clickable:hover{background:var(--accent-bg)}
+.run-usage .ru-item.clickable:hover .icon{color:var(--accent)}
+/* 会话 Trace 弹窗: 参考 admin 后台 trace 页(统计条 + 逐条消息时间线 + 行展开详情) */
+.modal.wide.trace{width:1080px;max-width:97vw}
+.trace-modal-sub{margin:-4px 0 13px}
+.trace-stats{display:flex;gap:17px;align-items:center;flex-wrap:wrap;margin:0 0 13px}
+.trace-stats>span{display:inline-flex;align-items:center;gap:4px}
+.trace-stats b{font-weight:600;color:var(--ink-strong)}
+.trace-list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:auto;max-height:calc(88vh - 230px);min-height:0}
+.trace-row{border-bottom:1px solid var(--line-soft)}
+.trace-row:last-child{border-bottom:0}
+.trace-main{display:grid;grid-template-columns:38px 88px minmax(180px,1fr) 30px 104px 66px 186px;align-items:center;gap:10px;width:100%;padding:8px 13px;background:none;border:0;text-align:left;font-size:11px;color:var(--ink);cursor:pointer;transition:background .12s}
+.trace-main:hover,.trace-row.open .trace-main{background:var(--accent-bg)}
+.trace-idx{color:var(--faint);font-size:10px}
+.trace-kind{font-size:9.5px;font-weight:570;padding:3px 8px;border-radius:999px;white-space:nowrap;text-align:center}
+.tk-user{background:color-mix(in srgb,var(--tr-user) 14%,transparent);color:var(--tr-user)}
+.tk-reply{background:color-mix(in srgb,var(--tr-reply) 13%,transparent);color:var(--tr-reply)}
+.tk-think{background:color-mix(in srgb,var(--tr-think) 13%,transparent);color:var(--tr-think)}
+.tk-tool{background:color-mix(in srgb,var(--tr-tool) 16%,transparent);color:var(--tr-tool)}
+.tk-system{background:color-mix(in srgb,var(--tr-system) 18%,transparent);color:var(--muted)}
+.tk-error{background:color-mix(in srgb,var(--tr-error) 13%,transparent);color:var(--tr-error)}
+.trace-preview{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+.trace-tools,.trace-tok,.trace-dur{font-size:10px;color:var(--muted);text-align:right;white-space:nowrap}
+.trace-bar{position:relative;height:8px;background:var(--line-soft);border-radius:5px;overflow:hidden}
+.trace-seg{position:absolute;top:1px;bottom:1px;border-radius:4px;min-width:2px}
+.seg-user{background:var(--tr-user)}.seg-reply{background:var(--tr-reply)}.seg-error{background:var(--tr-error)}.seg-system{background:var(--tr-system)}
+.trace-detail{padding:2px 14px 13px 61px;border-top:1px dashed var(--line-soft);background:color-mix(in srgb,var(--accent-bg) 45%,transparent)}
+.trace-props{display:flex;flex-wrap:wrap;gap:7px 20px;padding:10px 0 8px}
+.tpair{display:inline-flex;align-items:baseline;gap:7px}
+.tpair .tk{font-size:10px;color:var(--faint)}
+.tpair .tv{font-size:10.5px;color:var(--ink-strong)}
+.trace-blocks{display:flex;flex-direction:column;gap:5px;max-height:210px;overflow:auto;padding:2px 0 4px}
+.tb-item{display:flex;align-items:center;gap:9px;min-height:21px}
+.tb-item .tk-user,.tb-item .tk-reply,.tb-item .tk-think,.tb-item .tk-tool,.tb-item .tk-system,.tb-item .tk-error{flex-shrink:0;width:44px;padding:2px 0;text-align:center;font-size:9px;font-weight:570}
+.tb-txt{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

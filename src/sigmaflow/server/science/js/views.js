@@ -314,8 +314,80 @@
     const startTxt = meta.start !== null ? new Date(meta.start).toLocaleString('zh-CN', { hour12: false }) : '—';
     const proj = CS.currentRun() ? CS.state.projects.find(p => p.id === CS.currentRun().projectId) : null;
     const pdir = proj?.dir || '';
-    const row = `${pdir ? item('folder', CS.tpath(pdir), '项目目录: ' + pdir, true) : ''}${item('calendar', CS.fmtDT(meta.start), '会话开始: ' + startTxt, true)}${item('clock', CS.fmtDur(meta.elapsed), '累计生成耗时 (每轮回复耗时之和, 不含轮间空闲)', true)}${item('message', meta.msgs, '消息总数 (含用户与助手)')}${item('wrench', meta.tools, '工具调用次数 (含 ask)')}${item('up', u.tin, '累计输入 token')}${item('arrowdown', u.tout, '累计输出 token')}${item('database', u.tinCache, '累计缓存读取(模型/网关不支持缓存时为 0, glm-5.3-flash 无缓存上报)')}${`<span class="ru-item" title="上下文占用 / 模型窗口">${i('gauge', '', 13)}<b>${u.pct}% / ${CS.knum(u.win)}</b></span>`}`;
+    // 消息项可点击: 打开会话 Trace 弹窗(逐条消息的耗时 / 调用 / token 明细), 设计参考 admin 后台 trace 页
+    const row = `${pdir ? item('folder', CS.tpath(pdir), '项目目录: ' + pdir, true) : ''}${item('calendar', CS.fmtDT(meta.start), '会话开始: ' + startTxt, true)}${item('clock', CS.fmtDur(meta.elapsed), '累计生成耗时 (每轮回复耗时之和, 不含轮间空闲)', true)}${`<span class="ru-item clickable" role="button" data-action="open-trace" title="消息总数 (含用户与助手) · 点击查看会话 Trace">${i('message', '', 13)}<b>${meta.msgs}</b></span>`}${item('wrench', meta.tools, '工具调用次数 (含 ask)')}${item('up', u.tin, '累计输入 token')}${item('arrowdown', u.tout, '累计输出 token')}${item('database', u.tinCache, '累计缓存读取(模型/网关不支持缓存时为 0, glm-5.3-flash 无缓存上报)')}${`<span class="ru-item" title="上下文占用 / 模型窗口">${i('gauge', '', 13)}<b>${u.pct}% / ${CS.knum(u.win)}</b></span>`}`;
     return `<div class="run-usage-stack">${V.runTrack()}<div class="run-usage mono">${row}</div></div>`;
+  };
+
+  // 会话 Trace 弹窗(参考后台 trace 页的时间线 + 行展开详情): 每条消息一行, 相对会话时间轴画耗时条, 行点击展开属性与块序列
+  // 弹窗体在 app.js 的 renderModal 里调用, 经 CS.traceBody 桥接(V 是本模块私有命名空间)
+  CS.traceBody = () => V.traceModal();
+  V.traceModal = () => {
+    const run = CS.currentRun();
+    const msgs = run?.messages || [];
+    if (!msgs.length) return H.notice('当前会话还没有消息。');
+    const kindOf = m => m.role === 'user' ? 'user' : m.error ? 'error' : /^\[Conversation compressed/.test(m.content || '') || (m.role !== 'assistant' && m.role !== 'user') ? 'system' : 'reply';
+    const KIND = { user: '用户', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误' };
+    const prev = (s, n = 70) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return e(t.slice(0, n)) + (t.length > n ? '…' : ''); };
+    let tools = 0, tin = 0, tout = 0, tcache = 0;
+    msgs.forEach(m => {
+      if (m.role === 'assistant') { tin += m.promptTokens || 0; tout += m.tokens || 0; tcache += m.cacheTokens || 0; tools += (m.tools?.length || 0) + (m.asks?.length || 0); }
+    });
+    // 会话时间轴: 以最早消息为原点, 总跨 = 末消息时间 + 该轮耗时(生成中的实时外延)
+    const times = msgs.map(m => { const t = Date.parse(m.at || ''); return isNaN(t) ? null : t; });
+    const t0 = Math.min(...times.filter(t => t != null));
+    let t1 = t0;
+    const rows = msgs.map((m, idx) => {
+      const t = times[idx];
+      const dur = m.role === 'assistant' && m.elapsed > 0 && !m.streaming ? m.elapsed : 0;
+      if (t != null) t1 = Math.max(t1, t + (m.streaming ? Date.now() - t : dur));
+      return { m, idx, t, dur };
+    });
+    const span = Math.max(1, t1 - t0);
+    const open = CS.ui.modal.traceOpen instanceof Set ? CS.ui.modal.traceOpen : new Set();
+    const rowsHtml = rows.map(({ m, idx, t, dur }) => {
+      const kind = kindOf(m);
+      const streaming = !!m.streaming;
+      const off = t == null ? 0 : Math.min(99, Math.round(((t - t0) / span) * 1000) / 10);
+      // 质数钟点: 每条至少 0.8% 可见; 用户消息是瞬时点(无耗时)
+      const segW = dur > 0 ? Math.max(1.2, Math.round((dur / span) * 1000) / 10) : 1;
+      const tok = m.tokens ? `${CS.num(m.promptTokens || 0)}→${CS.num(m.tokens)}` : '';
+      const nTools = kind === 'reply' ? (m.tools?.length || 0) + (m.asks?.length || 0) : 0;
+      let blocks = [];
+      if (kind === 'user') blocks = [{ k: 'user', t: m.content }];
+      else if (kind === 'error') blocks = [{ k: 'error', t: typeof m.error === 'object' ? (m.error.message || '出错了') : String(m.error || '出错了') }];
+      else if (kind === 'system') blocks = [{ k: 'system', t: m.content }];
+      else {
+        if (Array.isArray(m.blocks) && m.blocks.length) m.blocks.forEach(b => {
+          if (!b || typeof b !== 'object') return;
+          if (b.type === 'think' && (b.text || '').trim()) blocks.push({ k: 'think', t: b.text });
+          else if (b.type === 'tool') blocks.push({ k: 'tool', t: (b.name || '工具') + (typeof b.result === 'string' && b.result ? ' → ' + b.result : ' (执行中)') });
+          else if (b.type === 'ask') blocks.push({ k: 'tool', t: 'ask 提问' });
+          else if (b.type === 'text' && (b.text || '').trim()) blocks.push({ k: 'reply', t: b.text });
+        });
+        else {
+          if ((m.reasoning || '').trim()) blocks.push({ k: 'think', t: m.reasoning });
+          (m.tools || []).forEach(x => blocks.push({ k: 'tool', t: (x.name || '工具') + (typeof x.result === 'string' && x.result ? ' → ' + x.result : '') }));
+          if ((m.asks || []).length) blocks.push({ k: 'tool', t: `ask 提问 ×${m.asks.length}` });
+          if ((m.content || '').trim()) blocks.push({ k: 'reply', t: m.content });
+        }
+      }
+      const props = [
+        ['时间', CS.datetime(m.at)],
+        ...(m.model ? [['模型', m.model]] : []),
+        ...(kind === 'reply' || kind === 'error' ? [
+          ['耗时', streaming ? '生成中' : m.elapsed > 0 ? CS.elapsedMs(m.elapsed) : '—'],
+          ['输入 token', CS.num(m.promptTokens || 0)],
+          ...(m.cacheTokens != null ? [['缓存读取', CS.num(m.cacheTokens)]] : []),
+          ['输出 token', CS.num(m.tokens || 0)],
+          ...(m.contextTokens != null ? [['上下文占用', CS.kfmt(m.contextTokens)]] : []),
+        ] : []),
+      ];
+      const isOpen = open.has(idx);
+      const detail = isOpen ? `<div class="trace-detail"><div class="trace-props">${props.map(([k, v]) => `<span class="tpair"><span class="tk">${e(k)}</span><span class="tv mono">${e(v)}</span></span>`).join('')}</div>${blocks.length ? `<div class="trace-blocks">${blocks.map(b => `<span class="tb-item"><span class="tk-${b.k}">${KIND[b.k]}</span><span class="tb-txt" title="${prev(b.t, 240)}">${prev(b.t, 110)}</span></span>`).join('')}</div>` : ''}</div>` : '';
+      return `<div class="trace-row${isOpen ? ' open' : ''}"><button type="button" class="trace-main" data-action="toggle-trace-row" data-id="${idx}" aria-expanded="${isOpen}"><span class="trace-idx mono">#${idx + 1}</span><span class="trace-kind tk-${kind}">${KIND[kind]}${kind === 'reply' && streaming ? ' · 生成中' : ''}</span><span class="trace-preview" title="${prev(m.content, 140)}">${prev(m.content)}</span><span class="trace-tools mono">${nTools || ''}</span><span class="trace-tok mono">${tok}</span><span class="trace-dur mono">${dur > 0 ? CS.elapsedMs(dur) : ''}</span><span class="trace-bar"><span class="trace-seg seg-${kind}" style="left:${off}%;width:${segW}%"></span></span></button>${detail}</div>`;
+    }).join('');
+    return `<div class="trace-stats mono"><span><b>${msgs.length}</b> 条消息</span><span><b>${tools}</b> 次工具调用</span><span>输入 <b>${CS.num(tin)}</b></span><span>输出 <b>${CS.num(tout)}</b></span><span>缓存 <b>${CS.num(tcache)}</b></span><span class="tiny faint">点击任意一行展开该条消息的耗时与调用细节</span></div><div class="trace-list" role="table">${rowsHtml}</div>`;
   };
 
 V.ctxRing = () => {
