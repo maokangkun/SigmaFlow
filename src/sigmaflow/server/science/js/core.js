@@ -109,6 +109,12 @@ CS.fmtDT = ts => {
   const base = p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
   return d.getFullYear() === new Date().getFullYear() ? base : String(d.getFullYear() % 100) + '-' + base;
 };
+// 路径紧凑展示: 保留尾段(目录名在尾部更有辨识度), 超长时用前省略号
+CS.tpath = (s, max = 20) => {
+  s = (s || '').trim();
+  if (!s || s.length <= max) return s;
+  return '…' + s.slice(-(max - 1));
+};
 // token 数值的紧凑展示: ~850 / ~1.7K / ~67.7K / ~131K; 到 M 用 M 单位(~1M / ~1.2M), 不到的才用 K
 CS.kfmt = n => {
   n = Math.round(n || 0);
