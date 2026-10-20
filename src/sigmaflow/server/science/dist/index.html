@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="1a5e174f">
+<meta name="build" content="5eb46ec4">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -930,15 +930,14 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .run-track .tr-tool{background:var(--tr-tool)}
 .run-track .tr-reply{background:var(--tr-reply)}
 .run-track .tr-system{background:var(--tr-system)}
-/* 回合分隔占位格: 轻描边空心, 表达用户回合开始且打断列顶巧合 */
-.run-track .tr-break{background:transparent;box-shadow:inset 0 0 0 1px var(--line)}
+.run-track .tr-error{background:var(--tr-error)}
 /* 运行中消息的方块呼吸动效; 减少动态效果时全局 animation 已被禁用 */
 @keyframes tr-pulse{0%,100%{opacity:.55;transform:scale(.82)}50%{opacity:1;transform:scale(1.06)}}
 .run-track .tr-live{animation:tr-pulse 1.15s ease-in-out infinite}
 /* 轨迹配色方案: 马卡龙(默认柔和粉彩) / 经典 / 素雅单色, 设置页可切换 */
-:root{--tr-user:#35b26a;--tr-think:#3d5fc4;--tr-tool:#f5a623;--tr-reply:#e0447f;--tr-system:#9aa1ab}
-:root[data-trackpalette="classic"]{--tr-user:#3aa463;--tr-think:var(--blue);--tr-tool:var(--amber);--tr-reply:#d1568f;--tr-system:#6e7480}
-:root[data-trackpalette="mono"]{--tr-user:#5c6672;--tr-think:#8a93a3;--tr-tool:#a9b1bd;--tr-reply:#cdd3dc;--tr-system:#eef1f5}
+:root{--tr-user:#35b26a;--tr-think:#3d5fc4;--tr-tool:#f5a623;--tr-reply:#8f4fd6;--tr-system:#9aa1ab;--tr-error:#e03b3b}
+:root[data-trackpalette="classic"]{--tr-user:#3aa463;--tr-think:var(--blue);--tr-tool:var(--amber);--tr-reply:#d1568f;--tr-system:#6e7480;--tr-error:#e03b3b}
+:root[data-trackpalette="mono"]{--tr-user:#5c6672;--tr-think:#8a93a3;--tr-tool:#a9b1bd;--tr-reply:#cdd3dc;--tr-system:#eef1f5;--tr-error:#b8452f}
 @media(max-width:800px){.run-track{max-width:340px}}
 .run-usage .ru-item{display:inline-flex;align-items:center;gap:4px}
 .run-usage .ru-item .icon{color:var(--faint)}
@@ -4734,11 +4733,11 @@ CS.audio = (function () {
     const blocks = [];
     all.forEach(m => {
       const live = !!m.streaming;
-      // 用户消息前放入"回合分隔"占位格: 打破回合长度恰好整除 4 时用户块恒列顶的巧合
-      if (m.role === 'user' && blocks.length) blocks.push({ k: 'break', txt: '', live: false });
       if (m.role === 'user') { blocks.push({ k: 'user', txt: m.content, live }); return; }
       if (/^\[Conversation compressed/.test(m.content || '')) { blocks.push({ k: 'system', txt: '压缩摘要', live }); return; }
       if (m.role !== 'assistant') { blocks.push({ k: 'system', txt: m.content, live }); return; }
+      // 出错的消息单独一格红色, 不展开其内部块(错误时后续块无意义)
+      if (m.error) { blocks.push({ k: 'error', txt: typeof m.error === 'string' ? m.error : '出错了', live }); return; }
       const n0 = blocks.length;
       // 活跃块 = 流式消息里最后一个仍在生长的块: 文本流式 / think 在尾部 / 工具未出结果 / ask 未答。
       // 只有它会呼吸, 已完成段(如思考完毕进入工具执行)不再闪烁
@@ -4787,10 +4786,17 @@ CS.audio = (function () {
     const MAX_COLS = 60;
     const start = Math.max(0, blocks.length - MAX_COLS * 4);
     const shown = blocks.slice(start);
+    // 列内自上而下 4 格一列; 每轮用户消息强制新起一列(回合从列首开始)
     const cols = [];
-    for (let idx = 0; idx < shown.length; idx += 4) cols.push(shown.slice(idx, idx + 4));
-    const name = { user: '用户', think: '思考', tool: '工具', reply: '回复', system: '系统' };
-    const cell = (b, gi) => b.k === 'break' ? `<span class="tr-cell tr-break" title="用户回合开始"></span>` : `<span class="tr-cell tr-${b.k}${b.live ? ' tr-live' : ''}" title="#${start + gi + 1} ${name[b.k]}${b.live ? ' · 生成中' : ''} · ${e(String(b.txt || '').replace(/\s+/g, ' ').slice(0, 80))}"></span>`;
+    let cur = [];
+    shown.forEach(b => {
+      if (b.k === 'user' && cur.length) { cols.push(cur); cur = []; }
+      else if (cur.length >= 4) { cols.push(cur); cur = []; }
+      cur.push(b);
+    });
+    if (cur.length) cols.push(cur);
+    const name = { user: '用户', think: '思考', tool: '工具', reply: '回复', system: '系统', error: '错误' };
+    const cell = (b, gi) => `<span class="tr-cell tr-${b.k}${b.live ? ' tr-live' : ''}" title="#${start + gi + 1} ${name[b.k]}${b.live ? ' · 生成中' : ''} · ${e(String(b.txt || '').replace(/\s+/g, ' ').slice(0, 80))}"></span>`;
     return `<div class="run-track" aria-hidden="true" data-blocks="${blocks.length}">${cols.map(c => `<span class="tr-col">${c.map(cell).join('')}</span>`).join('')}</div>`;
   };
 

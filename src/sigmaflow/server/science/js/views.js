@@ -240,11 +240,11 @@
     const blocks = [];
     all.forEach(m => {
       const live = !!m.streaming;
-      // 用户消息前放入"回合分隔"占位格: 打破回合长度恰好整除 4 时用户块恒列顶的巧合
-      if (m.role === 'user' && blocks.length) blocks.push({ k: 'break', txt: '', live: false });
       if (m.role === 'user') { blocks.push({ k: 'user', txt: m.content, live }); return; }
       if (/^\[Conversation compressed/.test(m.content || '')) { blocks.push({ k: 'system', txt: '压缩摘要', live }); return; }
       if (m.role !== 'assistant') { blocks.push({ k: 'system', txt: m.content, live }); return; }
+      // 出错的消息单独一格红色, 不展开其内部块(错误时后续块无意义)
+      if (m.error) { blocks.push({ k: 'error', txt: typeof m.error === 'string' ? m.error : '出错了', live }); return; }
       const n0 = blocks.length;
       // 活跃块 = 流式消息里最后一个仍在生长的块: 文本流式 / think 在尾部 / 工具未出结果 / ask 未答。
       // 只有它会呼吸, 已完成段(如思考完毕进入工具执行)不再闪烁
@@ -293,10 +293,17 @@
     const MAX_COLS = 60;
     const start = Math.max(0, blocks.length - MAX_COLS * 4);
     const shown = blocks.slice(start);
+    // 列内自上而下 4 格一列; 每轮用户消息强制新起一列(回合从列首开始)
     const cols = [];
-    for (let idx = 0; idx < shown.length; idx += 4) cols.push(shown.slice(idx, idx + 4));
-    const name = { user: '用户', think: '思考', tool: '工具', reply: '回复', system: '系统' };
-    const cell = (b, gi) => b.k === 'break' ? `<span class="tr-cell tr-break" title="用户回合开始"></span>` : `<span class="tr-cell tr-${b.k}${b.live ? ' tr-live' : ''}" title="#${start + gi + 1} ${name[b.k]}${b.live ? ' · 生成中' : ''} · ${e(String(b.txt || '').replace(/\s+/g, ' ').slice(0, 80))}"></span>`;
+    let cur = [];
+    shown.forEach(b => {
+      if (b.k === 'user' && cur.length) { cols.push(cur); cur = []; }
+      else if (cur.length >= 4) { cols.push(cur); cur = []; }
+      cur.push(b);
+    });
+    if (cur.length) cols.push(cur);
+    const name = { user: '用户', think: '思考', tool: '工具', reply: '回复', system: '系统', error: '错误' };
+    const cell = (b, gi) => `<span class="tr-cell tr-${b.k}${b.live ? ' tr-live' : ''}" title="#${start + gi + 1} ${name[b.k]}${b.live ? ' · 生成中' : ''} · ${e(String(b.txt || '').replace(/\s+/g, ' ').slice(0, 80))}"></span>`;
     return `<div class="run-track" aria-hidden="true" data-blocks="${blocks.length}">${cols.map(c => `<span class="tr-col">${c.map(cell).join('')}</span>`).join('')}</div>`;
   };
 
