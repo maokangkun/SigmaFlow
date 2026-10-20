@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="32a23704">
+<meta name="build" content="c5af1146">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -981,7 +981,11 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .trace-preview{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
 .trace-tools,.trace-tok,.trace-dur{font-size:10px;color:var(--muted);text-align:right;white-space:nowrap}
 .trace-bar{position:relative;height:8px;background:var(--line-soft);border-radius:5px;overflow:hidden}
-.trace-seg{position:absolute;top:1px;bottom:1px;border-radius:4px;min-width:2px}
+.trace-seg{position:absolute;top:1px;bottom:1px;border-radius:0;min-width:2px}
+/* 分段条: 中间段直角, 仅首段左圆/尾段右圆; 单段行保持两端的圆角 */
+.trace-bar>.trace-seg:first-child{border-radius:4px 0 0 4px}
+.trace-bar>.trace-seg:last-child{border-radius:0 4px 4px 0}
+.trace-bar>.trace-seg:first-child:last-child{border-radius:4px}
 .seg-user{background:var(--tr-user)}.seg-think{background:var(--tr-think)}.seg-tool{background:var(--tr-tool)}.seg-reply{background:var(--tr-reply)}.seg-error{background:var(--tr-error)}.seg-system{background:var(--tr-system)}
 .trace-detail{padding:2px 14px 13px 49px;border-top:1px dashed var(--line-soft);background:color-mix(in srgb,var(--accent-bg) 45%,transparent)}
 .trace-props{display:flex;flex-wrap:wrap;gap:7px 20px;padding:10px 0 8px}
