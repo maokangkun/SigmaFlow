@@ -1472,7 +1472,22 @@
     // 时间线块行展开: 查看单个块的完整输入/输出; 多行可同时展开, 键为 行索引:块序号
     'toggle-trace-block': id => { const s = CS.ui.traceBlockOpen instanceof Set ? CS.ui.traceBlockOpen : (CS.ui.traceBlockOpen = new Set()); s.has(id) ? s.delete(id) : s.add(id); CS.render(); },
     // 输入框折叠开关: 左上触发角收起为右下角方块, 点方块展开还原
-    'composer-fold': () => { CS.ui.composerCollapsed = !CS.ui.composerCollapsed; CS.render(); },
+    'composer-fold': () => {
+      const el = document.querySelector('.chat-composer');
+      const from = el ? el.getBoundingClientRect() : null;
+      CS.ui.composerCollapsed = !CS.ui.composerCollapsed;
+      CS.render();
+      // FLIP: 渲染替换后从旧盒尺寸/位置平滑回到新位, 收起与展开都动
+      const el2 = document.querySelector('.chat-composer');
+      if (!el2 || !from || CS.state.settings.reducedMotion) return;
+      const to = el2.getBoundingClientRect();
+      const sx = to.width ? from.width / to.width : 1;
+      const sy = to.height ? from.height / to.height : 1;
+      el2.animate([
+        { transformOrigin: '100% 100%', transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${sx}, ${sy})` },
+        { transformOrigin: '100% 100%', transform: 'none' }
+      ], { duration: 300, easing: 'cubic-bezier(.33,1,.68,1)' });
+    },
     // 工具结果入库上限: 即时写回服务端 settings.json, 无需重启
     'save-tool-limit': () => { const el = document.getElementById('tool-limit-input'); const v = parseInt(el?.value, 10); if (!Number.isFinite(v) || v < 2000 || v > 30000) { CS.toast('请输入 2000–30000 之间的字数', 'error'); return; } CS.api.request('/tool-result-limit', { method: 'POST', body: JSON.stringify({ limit: v }) }).then(d => { CS.ui.toolLimit = d.limit; CS.toast('已保存，新会话起生效', 'ok'); CS.render(); }).catch(e => CS.toast('保存失败：' + CS.api.friendlyError(e), 'error')); },
     'reset-tool-limit': () => { CS.api.request('/tool-result-limit', { method: 'POST', body: JSON.stringify({ limit: 30000 }) }).then(d => { CS.ui.toolLimit = d.limit; CS.toast('已恢复默认 30000', 'ok'); CS.render(); }).catch(e => CS.toast('保存失败：' + CS.api.friendlyError(e), 'error')); },
