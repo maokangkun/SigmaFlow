@@ -1501,6 +1501,18 @@
         { width: TW, height: TH, offset: 1, easing: 'cubic-bezier(.3,.7,.4,1)' }
       ];
       el2.animate(frames, { duration: 2000, easing: 'linear' });
+      // 工具条/发送区按钮依次浮现: 每个按钮的延迟与其右缘到卡片右缘的距离成比例, 即宽度推进到能容纳该按钮时才显示
+      if (!collapsing) {
+        const grow = to.width - from.width;
+        [...el2.querySelectorAll('.composer-toolbar .composer-tools > *, .composer-toolbar .composer-submit > *')].forEach(btn => {
+          const r = btn.getBoundingClientRect();
+          const delay = Math.max(0, Math.min(1900, ((to.right - r.right) / (grow || 1)) * 2000));
+          btn.animate([
+            { opacity: '0', transform: 'translateY(6px)' },
+            { opacity: '1', transform: 'none' }
+          ], { duration: 240, delay, easing: 'ease-out', fill: 'backwards' });
+        });
+      }
       // 展开过程中隐藏「回到底部」按钮: 先置 hidden, 动画结束后按原状态恢复(不改 ui 状态、不触发额外 render)
       if (!collapsing) {
         const jl = document.querySelector('.jump-latest');
