@@ -310,7 +310,7 @@
   V.runUsage = () => {
     const u = CS.chatUsage();
     const meta = CS.chatMeta();
-    const item = (ic, val, tip, raw) => `<span class="ru-item" title="${tip}">${i(ic, '', 13)}<b>${raw ? val : CS.knum(val)}</b></span>`;
+    const item = (ic, val, tip, raw) => `<span class="ru-item" title="${e(tip)}">${i(ic, '', 13)}<b>${raw ? val : CS.knum(val)}</b></span>`;
     const startTxt = meta.start !== null ? new Date(meta.start).toLocaleString('zh-CN', { hour12: false }) : '—';
     const proj = CS.currentRun() ? CS.state.projects.find(p => p.id === CS.currentRun().projectId) : null;
     const pdir = proj?.dir || '';

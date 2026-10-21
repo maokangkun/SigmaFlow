@@ -111,18 +111,37 @@ RUN_TTL_MS = 3_600_000  # evict runs older than 1h once nobody is watching
 TICK_SECONDS = 0.7
 
 
+_TOOL_LIMIT_CACHE: dict = {}
+
+
 def _tool_result_limit() -> int:
-    """工具结果与块内容的入库截断上限: 前端设置页可调, 存放在 science 数据目录的 settings.json。"""
+    """工具结果与块内容的入库截断上限: 前端设置页可调, 存放在 science 数据目录的 settings.json。
+
+    会话持久化时每个工具结果/块都会调用一次; 按 settings.json 的
+    mtime+size 缓存, 避免 upsert_conversation 内反复做文件 IO。
+    """
+    d = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
+        os.path.expanduser("~"), ".sigmaflow", "science"
+    )
+    path = os.path.join(d, "settings.json")
     try:
-        d = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
-            os.path.expanduser("~"), ".sigmaflow", "science"
-        )
-        path = os.path.join(d, "settings.json")
-        data = json.loads(Path(path).read_text(encoding="utf-8")) if os.path.exists(path) else {}
+        st = os.stat(path)
+        key = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        key = None
+    if key is not None and _TOOL_LIMIT_CACHE.get("key") == key:
+        return _TOOL_LIMIT_CACHE["value"]
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8")) if key else {}
         v = int(data.get("toolResultLimit") or 30000)
     except Exception:
         v = 30000
-    return max(2000, min(v, 30000))
+    v = max(2000, min(v, 30000))
+    if key is not None:
+        _TOOL_LIMIT_CACHE["key"] = key
+        _TOOL_LIMIT_CACHE["value"] = v
+    return v
+
 
 class ToolLimitIn(BaseModel):
     limit: int = 30000
@@ -1058,28 +1077,6 @@ class ScienceAPI:
 
         # ------------------------------------------------------- auth API
 
-        @auth_router.get("/tool-result-limit")
-        async def get_tool_result_limit():
-            """查询工具结果入库截断上限(设置页展示)。"""
-            return {"limit": _tool_result_limit()}
-
-        @auth_router.post("/tool-result-limit")
-        async def set_tool_result_limit(payload: ToolLimitIn):
-            """写回工具结果入库截断上限; 即时生效, 无需重启。"""
-            v = max(2000, min(int(payload.limit or 30000), 30000))
-            d = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
-                os.path.expanduser("~"), ".sigmaflow", "science"
-            )
-            path = Path(d) / "settings.json"
-            try:
-                data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-            except Exception:
-                data = {}
-            data["toolResultLimit"] = v
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-            return {"limit": v}
-
         @auth_router.get("/me")
         async def auth_me(request: Request):
             if not _multi_user():
@@ -1652,6 +1649,35 @@ class ScienceAPI:
         @router.get("/compaction")
         async def get_compaction():
             return {"compaction": await asyncio.to_thread(_effective_compaction)}
+
+        @router.get("/tool-result-limit")
+        async def get_tool_result_limit():
+            """查询工具结果入库截断上限(设置页展示)。"""
+            return {"limit": await asyncio.to_thread(_tool_result_limit)}
+
+        @router.post("/tool-result-limit")
+        async def set_tool_result_limit(payload: ToolLimitIn, request: Request):
+            """写回工具结果入库截断上限; 即时生效, 无需重启。"""
+            _check_origin(request)
+            v = max(2000, min(int(payload.limit or 30000), 30000))
+            d = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
+                os.path.expanduser("~"), ".sigmaflow", "science"
+            )
+            path = Path(d) / "settings.json"
+            try:
+                data = (
+                    json.loads(path.read_text(encoding="utf-8"))
+                    if path.exists()
+                    else {}
+                )
+            except Exception:
+                data = {}
+            data["toolResultLimit"] = v
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            return {"limit": v}
 
         @router.post("/compaction")
         async def save_compaction(payload: CompactionIn, request: Request):
@@ -3110,7 +3136,9 @@ class ScienceProjectStore:
                                 "args": t.get("args")
                                 if isinstance(t.get("args"), (dict, list))
                                 else {},
-                                "result": _clip(str(t.get("result", "")), _tool_result_limit()),
+                                "result": _clip(
+                                    str(t.get("result", "")), _tool_result_limit()
+                                ),
                             }
                         )
                     if saved_tools:
@@ -3144,7 +3172,8 @@ class ScienceProjectStore:
                                     if isinstance(b.get("a", b.get("args")), dict)
                                     else {},
                                     "r": _clip(
-                                        str(b.get("r", b.get("result", ""))), _tool_result_limit()
+                                        str(b.get("r", b.get("result", ""))),
+                                        _tool_result_limit(),
                                     ),
                                 }
                             )
@@ -3158,7 +3187,8 @@ class ScienceProjectStore:
                                     else [],
                                     "ok": bool(b.get("ok", b.get("answered"))),
                                     "r": _clip(
-                                        str(b.get("r", b.get("result", ""))), _tool_result_limit()
+                                        str(b.get("r", b.get("result", ""))),
+                                        _tool_result_limit(),
                                     ),
                                     "ans": b.get("ans", b.get("answers"))
                                     if isinstance(b.get("ans", b.get("answers")), list)
@@ -3251,7 +3281,9 @@ class ScienceProjectStore:
                                 "id": _clip(str(a.get("id", "")), 64),
                                 "questions": questions[:20],
                                 "answered": bool(a.get("answered")),
-                                "result": _clip(str(a.get("result", "")), _tool_result_limit()),
+                                "result": _clip(
+                                    str(a.get("result", "")), _tool_result_limit()
+                                ),
                                 **({"answers": answers} if answers else {}),
                             }
                         )

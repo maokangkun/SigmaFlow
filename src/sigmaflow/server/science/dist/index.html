@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="413e783d">
+<meta name="build" content="d7b9f424">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -4872,7 +4872,7 @@ CS.audio = (function () {
   V.runUsage = () => {
     const u = CS.chatUsage();
     const meta = CS.chatMeta();
-    const item = (ic, val, tip, raw) => `<span class="ru-item" title="${tip}">${i(ic, '', 13)}<b>${raw ? val : CS.knum(val)}</b></span>`;
+    const item = (ic, val, tip, raw) => `<span class="ru-item" title="${e(tip)}">${i(ic, '', 13)}<b>${raw ? val : CS.knum(val)}</b></span>`;
     const startTxt = meta.start !== null ? new Date(meta.start).toLocaleString('zh-CN', { hour12: false }) : '—';
     const proj = CS.currentRun() ? CS.state.projects.find(p => p.id === CS.currentRun().projectId) : null;
     const pdir = proj?.dir || '';
@@ -5924,7 +5924,7 @@ V.ctxRing = () => {
   // 工具结果入库上限: 设置页展示与保存 ( science 数据目录 settings.json )
   CS.loadToolLimit = async () => {
     if (CS.ui.toolLimit != null) return;
-    try { const d = await CS.api.request('/auth/tool-result-limit'); CS.ui.toolLimit = d.limit ?? 30000; CS.render(); } catch { /* 拿不到保持空占位, 保存时用默认 */ }
+    try { const d = await CS.api.request('/tool-result-limit'); CS.ui.toolLimit = d.limit ?? 30000; CS.render(); } catch { /* 拿不到保持空占位, 保存时用默认 */ }
   };
   CS.loadAgentTools = async () => {
     if (CS.ui.agentTools) return;
@@ -6899,8 +6899,8 @@ V.ctxRing = () => {
     // 时间线块行展开: 查看单个块的完整输入/输出; 多行可同时展开, 键为 行索引:块序号
     'toggle-trace-block': id => { const s = CS.ui.traceBlockOpen instanceof Set ? CS.ui.traceBlockOpen : (CS.ui.traceBlockOpen = new Set()); s.has(id) ? s.delete(id) : s.add(id); CS.render(); },
     // 工具结果入库上限: 即时写回服务端 settings.json, 无需重启
-    'save-tool-limit': () => { const el = document.getElementById('tool-limit-input'); const v = parseInt(el?.value, 10); if (!Number.isFinite(v) || v < 2000 || v > 30000) { CS.toast('请输入 2000–30000 之间的字数', 'error'); return; } CS.api.request('/auth/tool-result-limit', { method: 'POST', body: JSON.stringify({ limit: v }) }).then(d => { CS.ui.toolLimit = d.limit; CS.toast('已保存，新会话起生效', 'ok'); CS.render(); }).catch(e => CS.toast('保存失败：' + CS.api.friendlyError(e), 'error')); },
-    'reset-tool-limit': () => { CS.api.request('/auth/tool-result-limit', { method: 'POST', body: JSON.stringify({ limit: 30000 }) }).then(d => { CS.ui.toolLimit = d.limit; CS.toast('已恢复默认 30000', 'ok'); CS.render(); }).catch(e => CS.toast('保存失败：' + CS.api.friendlyError(e), 'error')); },
+    'save-tool-limit': () => { const el = document.getElementById('tool-limit-input'); const v = parseInt(el?.value, 10); if (!Number.isFinite(v) || v < 2000 || v > 30000) { CS.toast('请输入 2000–30000 之间的字数', 'error'); return; } CS.api.request('/tool-result-limit', { method: 'POST', body: JSON.stringify({ limit: v }) }).then(d => { CS.ui.toolLimit = d.limit; CS.toast('已保存，新会话起生效', 'ok'); CS.render(); }).catch(e => CS.toast('保存失败：' + CS.api.friendlyError(e), 'error')); },
+    'reset-tool-limit': () => { CS.api.request('/tool-result-limit', { method: 'POST', body: JSON.stringify({ limit: 30000 }) }).then(d => { CS.ui.toolLimit = d.limit; CS.toast('已恢复默认 30000', 'ok'); CS.render(); }).catch(e => CS.toast('保存失败：' + CS.api.friendlyError(e), 'error')); },
     'track-jump': id => {
       const mi = parseInt(id, 10);
       if (isNaN(mi)) return;
