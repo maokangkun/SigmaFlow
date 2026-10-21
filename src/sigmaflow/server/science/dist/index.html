@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="7e8a01fb">
+<meta name="build" content="0ab9a62f">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -6943,15 +6943,19 @@ V.ctxRing = () => {
     'composer-fold': () => {
       const el = document.querySelector('.chat-composer');
       const from = el ? el.getBoundingClientRect() : null;
+      const collapsing = !CS.state.settings.composerCollapsed;
+      // 折叠前消息区贴近底部时, 折叠让高度变大后跟随滚到新底部, 避免下方留白
+      const cv0 = document.querySelector('.conversation');
+      const nearBottom = cv0 ? cv0.scrollHeight - cv0.scrollTop - cv0.clientHeight < 90 : false;
       CS.state.settings.composerCollapsed = !CS.state.settings.composerCollapsed;
       CS.save();
       CS.render();
+      if (collapsing && nearBottom) setTimeout(() => { const cv = document.querySelector('.conversation'); if (cv) cv.scrollTop = cv.scrollHeight; }, 40);
       // FLIP: 渲染替换后从旧盒尺寸/位置平滑回弹到新位, 收起与展开都动
       const el2 = document.querySelector('.chat-composer');
       if (!el2 || !from || CS.state.settings.reducedMotion) return;
       const to = el2.getBoundingClientRect();
       // 苹果风三段动效: 直接动 width/height 数值(无 scale 变形), 反向次序展开
-      const collapsing = CS.state.settings.composerCollapsed;
       const easeOut = 'cubic-bezier(.22,.61,.36,1)', spring = 'cubic-bezier(.2,1.4,.4,1)';
       const FW = from.width + 'px', FH = from.height + 'px', TW = to.width + 'px', TH = to.height + 'px';
       // 落定段直接用 spring 缓动收尾, 不做像素级过冲(避免收尾尺寸抖动)
