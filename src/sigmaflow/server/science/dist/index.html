@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="0a74243a">
+<meta name="build" content="c53c0c9d">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -606,6 +606,17 @@ html:has(.auth-page){scrollbar-gutter:auto}
 /* 终端主题下拉(通用设置) */
 .setting-input-inline{height:38px;width:96px;max-width:96px;padding:0 10px;background:var(--surface);border:1px solid var(--line);border-radius:10px;font-size:12px;color:var(--ink);text-align:right}
 .setting-input-inline:focus{border-color:var(--accent);outline:none}
+/* 远程会话加载中的骨架占位: 页面壳先行, 消息区用呼吸灰条占位 */
+.chat-skl{display:flex;flex-direction:column;gap:16px;max-width:850px;margin:0 auto}
+.skl-row{display:flex;gap:10px;align-items:flex-start}
+.skl-row.right{flex-direction:row-reverse}
+.skl-avatar{width:26px;height:26px;border-radius:9px;background:var(--line-soft);animation:skl-pulse 1.3s ease-in-out infinite;flex-shrink:0}
+.skl-circle{width:26px;height:26px;border-radius:50%;background:var(--line-soft);animation:skl-pulse 1.3s ease-in-out infinite;flex-shrink:0}
+.skl-body{display:flex;flex-direction:column;gap:6px;max-width:58%}
+.skl-line{height:11px;border-radius:6px;background:var(--line-soft);animation:skl-pulse 1.3s ease-in-out infinite}
+.skl-line.wide{width:72%}
+.skl-line.thin{height:8px;opacity:.7}
+@keyframes skl-pulse{0%,100%{opacity:.5}50%{opacity:1}}
 .terminal-theme-select{height:38px;width:190px;max-width:190px;flex-shrink:0;padding:0 34px 0 13px;background:var(--surface);border:1px solid var(--line);border-radius:10px;font-size:12px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;appearance:none;scrollbar-width:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23808b9f' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='m5 9 7 7 7-7'/></svg>");background-repeat:no-repeat;background-position:right 12px center;cursor:pointer}
 .terminal-theme-select:focus-visible{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px #7775b61f}
 /* 硬件状态栏首次加载占位: 骨架行各条 flex 拉满(与输入框同缘), shimmer 滑过亮块, 数据到达后整块替换消失 */
@@ -5061,7 +5072,16 @@ V.ctxRing = () => {
   </div></div><div class="home-bottom"><span>FROM DATA TO DISCOVERY</span><span>·</span><button class="text-button" data-nav="help">使用指南 ${i('arrow','',12)}</button></div></section>`;
 
   V.chat = () => {
-    const run = CS.currentRun(); if (!run) return `<section class="page">${empty('message','开始一个新的科研任务','先在首页描述研究问题，或选择一条演示工作流。')}<div class="center">${btn('go-home','开始对话','plus','primary')}</div></section>`;
+    const run = CS.currentRun();
+    if (!run) {
+      // 正在从服务端拉取会话内容: 先渲染页面壳(标题/输入区)与占位动画, 数据到达后重渲染替换, 不再闪现空态提示
+      if (CS.state.currentRunId && CS.ui.loadingRunId === CS.state.currentRunId) {
+        const meta = CS.ui.conversations.find(c => c.id === CS.state.currentRunId) || {};
+        const rows = Array.from({ length: 6 }, (_, i) => i % 3 === 1 ? `<div class="skl-row right"><div class="skl-circle"></div><div class="skl-body"><div class="skl-line" style="width:52%"></div><div class="skl-line" style="width:30%"></div></div></div>` : `<div class="skl-row"><div class="skl-avatar"></div><div class="skl-body"><div class="skl-line wide"></div><div class="skl-line" style="width:${62 - i * 4}%"></div><div class="skl-line thin" style="width:${40 + i * 2}%"></div></div></div>`).join('');
+        return `<section class="page chat-page"><div class="chat-title"><div><h1>${e(meta.title || '会话')}</h1></div></div><div class="conversation chat-skl">${rows}</div>${V.composer(false)}</section>`;
+      }
+      return `<section class="page">${empty('message','开始一个新的科研任务','先在首页描述研究问题，或选择一条演示工作流。')}<div class="center">${btn('go-home','开始对话','plus','primary')}</div></section>`;
+    }
     if (run.kind === 'chat') {
       // 压缩摘要卡(pi CompactionEntry): 点击头部折叠/展开
       const V_COMPACT = (m, idxOf) => {
@@ -5826,6 +5846,7 @@ V.ctxRing = () => {
 
   const loadRemoteConversation = async id => {
     const fetchContent = () => CS.api.modelCall('conversation.content', 'GET', `/conversations/${encodeURIComponent(id)}/content`);
+    CS.ui.loadingRunId = id;
     try {
       let data;
       try { data = await fetchContent(); }
@@ -5866,6 +5887,7 @@ V.ctxRing = () => {
       CS.render();
       CS.toast('已从服务端加载该会话内容。');
     } catch (error) { CS.toast('加载会话内容失败：' + CS.api.friendlyError(error), 'error'); }
+    finally { if (CS.ui.loadingRunId === id) { CS.ui.loadingRunId = null; CS.render(); } }
   };
   const startChat = prompt => {
     const run = {

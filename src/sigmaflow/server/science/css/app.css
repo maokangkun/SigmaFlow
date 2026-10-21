@@ -251,6 +251,17 @@ html:has(.auth-page){scrollbar-gutter:auto}
 /* 终端主题下拉(通用设置) */
 .setting-input-inline{height:38px;width:96px;max-width:96px;padding:0 10px;background:var(--surface);border:1px solid var(--line);border-radius:10px;font-size:12px;color:var(--ink);text-align:right}
 .setting-input-inline:focus{border-color:var(--accent);outline:none}
+/* 远程会话加载中的骨架占位: 页面壳先行, 消息区用呼吸灰条占位 */
+.chat-skl{display:flex;flex-direction:column;gap:16px;max-width:850px;margin:0 auto}
+.skl-row{display:flex;gap:10px;align-items:flex-start}
+.skl-row.right{flex-direction:row-reverse}
+.skl-avatar{width:26px;height:26px;border-radius:9px;background:var(--line-soft);animation:skl-pulse 1.3s ease-in-out infinite;flex-shrink:0}
+.skl-circle{width:26px;height:26px;border-radius:50%;background:var(--line-soft);animation:skl-pulse 1.3s ease-in-out infinite;flex-shrink:0}
+.skl-body{display:flex;flex-direction:column;gap:6px;max-width:58%}
+.skl-line{height:11px;border-radius:6px;background:var(--line-soft);animation:skl-pulse 1.3s ease-in-out infinite}
+.skl-line.wide{width:72%}
+.skl-line.thin{height:8px;opacity:.7}
+@keyframes skl-pulse{0%,100%{opacity:.5}50%{opacity:1}}
 .terminal-theme-select{height:38px;width:190px;max-width:190px;flex-shrink:0;padding:0 34px 0 13px;background:var(--surface);border:1px solid var(--line);border-radius:10px;font-size:12px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;appearance:none;scrollbar-width:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23808b9f' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='m5 9 7 7 7-7'/></svg>");background-repeat:no-repeat;background-position:right 12px center;cursor:pointer}
 .terminal-theme-select:focus-visible{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px #7775b61f}
 /* 硬件状态栏首次加载占位: 骨架行各条 flex 拉满(与输入框同缘), shimmer 滑过亮块, 数据到达后整块替换消失 */

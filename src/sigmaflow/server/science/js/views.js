@@ -497,7 +497,16 @@ V.ctxRing = () => {
   </div></div><div class="home-bottom"><span>FROM DATA TO DISCOVERY</span><span>·</span><button class="text-button" data-nav="help">使用指南 ${i('arrow','',12)}</button></div></section>`;
 
   V.chat = () => {
-    const run = CS.currentRun(); if (!run) return `<section class="page">${empty('message','开始一个新的科研任务','先在首页描述研究问题，或选择一条演示工作流。')}<div class="center">${btn('go-home','开始对话','plus','primary')}</div></section>`;
+    const run = CS.currentRun();
+    if (!run) {
+      // 正在从服务端拉取会话内容: 先渲染页面壳(标题/输入区)与占位动画, 数据到达后重渲染替换, 不再闪现空态提示
+      if (CS.state.currentRunId && CS.ui.loadingRunId === CS.state.currentRunId) {
+        const meta = CS.ui.conversations.find(c => c.id === CS.state.currentRunId) || {};
+        const rows = Array.from({ length: 6 }, (_, i) => i % 3 === 1 ? `<div class="skl-row right"><div class="skl-circle"></div><div class="skl-body"><div class="skl-line" style="width:52%"></div><div class="skl-line" style="width:30%"></div></div></div>` : `<div class="skl-row"><div class="skl-avatar"></div><div class="skl-body"><div class="skl-line wide"></div><div class="skl-line" style="width:${62 - i * 4}%"></div><div class="skl-line thin" style="width:${40 + i * 2}%"></div></div></div>`).join('');
+        return `<section class="page chat-page"><div class="chat-title"><div><h1>${e(meta.title || '会话')}</h1></div></div><div class="conversation chat-skl">${rows}</div>${V.composer(false)}</section>`;
+      }
+      return `<section class="page">${empty('message','开始一个新的科研任务','先在首页描述研究问题，或选择一条演示工作流。')}<div class="center">${btn('go-home','开始对话','plus','primary')}</div></section>`;
+    }
     if (run.kind === 'chat') {
       // 压缩摘要卡(pi CompactionEntry): 点击头部折叠/展开
       const V_COMPACT = (m, idxOf) => {

@@ -393,6 +393,7 @@
 
   const loadRemoteConversation = async id => {
     const fetchContent = () => CS.api.modelCall('conversation.content', 'GET', `/conversations/${encodeURIComponent(id)}/content`);
+    CS.ui.loadingRunId = id;
     try {
       let data;
       try { data = await fetchContent(); }
@@ -433,6 +434,7 @@
       CS.render();
       CS.toast('已从服务端加载该会话内容。');
     } catch (error) { CS.toast('加载会话内容失败：' + CS.api.friendlyError(error), 'error'); }
+    finally { if (CS.ui.loadingRunId === id) { CS.ui.loadingRunId = null; CS.render(); } }
   };
   const startChat = prompt => {
     const run = {
