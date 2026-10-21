@@ -1471,6 +1471,8 @@
     'toggle-trace-row': id => { const s = CS.ui.traceOpen instanceof Set ? CS.ui.traceOpen : (CS.ui.traceOpen = new Set()); const n = Number(id); s.has(n) ? s.delete(n) : s.add(n); CS.render(); },
     // 时间线块行展开: 查看单个块的完整输入/输出; 多行可同时展开, 键为 行索引:块序号
     'toggle-trace-block': id => { const s = CS.ui.traceBlockOpen instanceof Set ? CS.ui.traceBlockOpen : (CS.ui.traceBlockOpen = new Set()); s.has(id) ? s.delete(id) : s.add(id); CS.render(); },
+    // 输入框折叠开关: 左上触发角收起为右下角方块, 点方块展开还原
+    'composer-fold': () => { CS.ui.composerCollapsed = !CS.ui.composerCollapsed; CS.render(); },
     // 工具结果入库上限: 即时写回服务端 settings.json, 无需重启
     'save-tool-limit': () => { const el = document.getElementById('tool-limit-input'); const v = parseInt(el?.value, 10); if (!Number.isFinite(v) || v < 2000 || v > 30000) { CS.toast('请输入 2000–30000 之间的字数', 'error'); return; } CS.api.request('/tool-result-limit', { method: 'POST', body: JSON.stringify({ limit: v }) }).then(d => { CS.ui.toolLimit = d.limit; CS.toast('已保存，新会话起生效', 'ok'); CS.render(); }).catch(e => CS.toast('保存失败：' + CS.api.friendlyError(e), 'error')); },
     'reset-tool-limit': () => { CS.api.request('/tool-result-limit', { method: 'POST', body: JSON.stringify({ limit: 30000 }) }).then(d => { CS.ui.toolLimit = d.limit; CS.toast('已恢复默认 30000', 'ok'); CS.render(); }).catch(e => CS.toast('保存失败：' + CS.api.friendlyError(e), 'error')); },
