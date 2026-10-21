@@ -1505,7 +1505,14 @@
       if (!collapsing) {
         const jl = document.querySelector('.jump-latest');
         if (jl) jl.hidden = true;
-        setTimeout(() => { const j2 = document.querySelector('.jump-latest'); if (j2) j2.hidden = !CS.ui.canJumpLatest; }, 2050);
+        const ta = document.querySelector('#composer-text');
+        if (ta) ta.classList.add('ph-hold');
+        setTimeout(() => {
+          const j2 = document.querySelector('.jump-latest');
+          if (j2) j2.hidden = !CS.ui.canJumpLatest;
+          const t2 = document.querySelector('#composer-text');
+          if (t2) t2.classList.remove('ph-hold');
+        }, 2050);
       }
     },
     'track-jump': id => {
