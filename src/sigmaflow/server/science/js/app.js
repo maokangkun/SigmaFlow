@@ -1479,6 +1479,10 @@
       // 折叠前消息区贴近底部时, 折叠让高度变大后跟随滚到新底部, 避免下方留白
       const cv0 = document.querySelector('.conversation');
       const nearBottom = cv0 ? cv0.scrollHeight - cv0.scrollTop - cv0.clientHeight < 90 : false;
+      // 卡体高度 = 输入卡本身(不含下方 23px 硬件信息条与间隙): 收缩动画的目标高度
+      const form0 = el?.querySelector('.composer');
+      const cardH = (form0 && form0.getBoundingClientRect().height > 0) ? form0.getBoundingClientRect().height : (CS.ui.composerCardH || ((from?.height || 154) - 28));
+      if (collapsing) CS.ui.composerCardH = cardH;
       CS.state.settings.composerCollapsed = !CS.state.settings.composerCollapsed;
       CS.save();
       CS.render();
@@ -1488,17 +1492,17 @@
       if (!el2 || !from || CS.state.settings.reducedMotion) return;
       const to = el2.getBoundingClientRect();
       // 苹果风三段动效: 直接动 width/height 数值(无 scale 变形), 反向次序展开
-      const easeOut = 'cubic-bezier(.22,.61,.36,1)', spring = 'cubic-bezier(.2,1.4,.4,1)', heightIn = 'cubic-bezier(.45,.05,.55,.95)';
-      const FW = from.width + 'px', FH = from.height + 'px', TW = to.width + 'px', TH = to.height + 'px';
-      // 落定段直接用 spring 缓动收尾, 不做像素级过冲(避免收尾尺寸抖动)
+      const easeOut = 'cubic-bezier(.22,.61,.36,1)', spring = 'cubic-bezier(.2,1.4,.4,1)';
+      const FW = from.width + 'px', FH = from.height + 'px', TW = to.width + 'px', TH = to.height + 'px', CH = cardH + 'px';
       const frames = collapsing ? [
         { width: FW, height: FH, offset: 0, easing: easeOut },
-        { width: TW, height: FH, offset: 0.45, easing: easeOut },
-        { width: TW, height: TH, offset: 1, easing: heightIn }
+        { width: TW, height: CH, offset: 0.45, easing: easeOut },
+        { width: TW, height: TH, offset: 1, easing: spring }
       ] : [
         { width: FW, height: FH, offset: 0, easing: easeOut },
-        { width: FW, height: TH, offset: 0.9, easing: heightIn },
-        { width: TW, height: TH, offset: 1, easing: 'cubic-bezier(.3,.7,.4,1)' }
+        { width: FW, height: CH, offset: 0.42, easing: easeOut },
+        { width: TW, height: CH, offset: 0.88, easing: easeOut },
+        { width: TW, height: FH, offset: 1, easing: 'cubic-bezier(.3,.7,.4,1)' }
       ];
       el2.animate(frames, { duration: 2000, easing: 'linear' });
       // 工具条/发送区按钮依次浮现: 每个按钮的延迟与其右缘到卡片右缘的距离成比例, 即宽度推进到能容纳该按钮时才显示
@@ -1513,7 +1517,7 @@
           ], { duration: 240, delay, easing: 'ease-out', fill: 'backwards' });
         });
       }
-      // 展开过程中隐藏「回到底部」按钮: 先置 hidden, 动画结束后按原状态恢复(不改 ui 状态、不触发额外 render)
+      // 展开过程中隐藏「回到底部」按钮与占位提示词: 动画落定后恢复/淡入(不改 ui 状态、不触发额外 render)
       if (!collapsing) {
         const jl = document.querySelector('.jump-latest');
         if (jl) jl.hidden = true;
