@@ -1496,7 +1496,7 @@
       const FW = from.width + 'px', FH = from.height + 'px', TW = to.width + 'px', TH = to.height + 'px';
       // 落定段直接用 spring 缓动收尾, 不做像素级过冲(避免收尾尺寸抖动)
       const frames = collapsing ? [
-        { width: FW, height: FH, offset: 0, easing: easeOut },
+        { width: FW, height: cardH + 'px', offset: 0, easing: easeOut },
         { width: TW, height: cardH + 'px', offset: 0.45, easing: easeOut },
         { width: TW, height: TH, offset: 1, easing: spring }
       ] : [

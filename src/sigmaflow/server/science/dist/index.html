@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="b496b0f3">
+<meta name="build" content="ced5c486">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -6970,7 +6970,7 @@ V.ctxRing = () => {
       const FW = from.width + 'px', FH = from.height + 'px', TW = to.width + 'px', TH = to.height + 'px';
       // 落定段直接用 spring 缓动收尾, 不做像素级过冲(避免收尾尺寸抖动)
       const frames = collapsing ? [
-        { width: FW, height: FH, offset: 0, easing: easeOut },
+        { width: FW, height: cardH + 'px', offset: 0, easing: easeOut },
         { width: TW, height: cardH + 'px', offset: 0.45, easing: easeOut },
         { width: TW, height: TH, offset: 1, easing: spring }
       ] : [
