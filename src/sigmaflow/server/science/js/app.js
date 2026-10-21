@@ -1483,20 +1483,21 @@
       const to = el2.getBoundingClientRect();
       const sx = to.width ? from.width / to.width : 1;
       const sy = to.height ? from.height / to.height : 1;
-      // 苹果风三段动效: 先收宽度、再收高度、最后滑定右下方块, 各段带缓出与轻微过冲回弹
+      // 苹果风三段动效: 直接动 width/height 数值(无 scale 变形), 先收宽、再收高、轻微过冲回弹
       const collapsing = CS.ui.composerCollapsed;
-      const dx = from.left - to.left, dy = from.top - to.top;
       const easeOut = 'cubic-bezier(.22,.61,.36,1)', spring = 'cubic-bezier(.2,1.4,.4,1)';
+      const FW = from.width + 'px', FH = from.height + 'px', TW = to.width + 'px', TH = to.height + 'px';
       const frames = collapsing ? [
-        { transformOrigin: '100% 100%', transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`, offset: 0, easing: easeOut },
-        { transformOrigin: '100% 100%', transform: `translate(0px, ${dy}px) scale(1, ${sy})`, offset: 0.42, easing: easeOut },
-        { transformOrigin: '100% 100%', transform: 'scale(1.04, .96)', offset: 0.8, easing: spring },
-        { transformOrigin: '100% 100%', transform: 'scale(1, 1)', offset: 1 }
+        { width: FW, height: FH, offset: 0, easing: easeOut },
+        { width: TW, height: FH, offset: 0.42, easing: easeOut },
+        { width: TW, height: TH, offset: 0.78, easing: spring },
+        { width: `calc(${TW} + 5px)`, height: `calc(${TH} - 3px)`, offset: 0.9, easing: 'cubic-bezier(.3,.7,.4,1)' },
+        { width: TW, height: TH, offset: 1 }
       ] : [
-        { transformOrigin: '100% 100%', transform: 'scale(1, 1)', offset: 0, easing: easeOut },
-        { transformOrigin: '100% 100%', transform: 'scale(1.04, .96)', offset: 0.22, easing: easeOut },
-        { transformOrigin: '100% 100%', transform: `translate(0px, ${dy}px) scale(1, ${sy})`, offset: 0.58, easing: easeOut },
-        { transformOrigin: '100% 100%', transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`, offset: 1 }
+        { width: TW, height: TH, offset: 0, easing: easeOut },
+        { width: TW, height: FH, offset: 0.34, easing: easeOut },
+        { width: FW, height: FH, offset: 0.86, easing: 'cubic-bezier(.3,.7,.4,1)' },
+        { width: FW, height: FH, offset: 1 }
       ];
       el2.animate(frames, { duration: collapsing ? 620 : 520, easing: 'linear' });
     },
