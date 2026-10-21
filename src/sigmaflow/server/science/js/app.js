@@ -1494,11 +1494,11 @@
         { width: TW, height: TH, offset: 1 }
       ] : [
         { width: FW, height: FH, offset: 0, easing: easeOut },
-        { width: FW, height: TH, offset: 0.38, easing: easeOut },
-        { width: TW, height: TH, offset: 0.86, easing: 'cubic-bezier(.3,.7,.4,1)' },
+        { width: FW, height: `calc(${TH} + 6px)`, offset: 0.34, easing: easeOut },
+        { width: `calc(${TW} + 6px)`, height: `calc(${TH} + 6px)`, offset: 0.62, easing: easeOut },
         { width: TW, height: TH, offset: 1 }
       ];
-      el2.animate(frames, { duration: collapsing ? 840 : 720, easing: 'linear' });
+      el2.animate(frames, { duration: 2000, easing: 'linear' });
     },
     'track-jump': id => {
       const mi = parseInt(id, 10);
