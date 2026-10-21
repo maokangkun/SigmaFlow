@@ -1501,6 +1501,12 @@
         { width: TW, height: TH, offset: 1, easing: 'cubic-bezier(.3,.7,.4,1)' }
       ];
       el2.animate(frames, { duration: 2000, easing: 'linear' });
+      // 展开过程中隐藏「回到底部」按钮: 先置 hidden, 动画结束后按原状态恢复(不改 ui 状态、不触发额外 render)
+      if (!collapsing) {
+        const jl = document.querySelector('.jump-latest');
+        if (jl) jl.hidden = true;
+        setTimeout(() => { const j2 = document.querySelector('.jump-latest'); if (j2) j2.hidden = !CS.ui.canJumpLatest; }, 2050);
+      }
     },
     'track-jump': id => {
       const mi = parseInt(id, 10);
