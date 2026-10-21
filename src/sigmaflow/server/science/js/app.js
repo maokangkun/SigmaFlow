@@ -1475,35 +1475,31 @@
     'composer-fold': () => {
       const el = document.querySelector('.chat-composer');
       const from = el ? el.getBoundingClientRect() : null;
-      CS.ui.composerCollapsed = !CS.ui.composerCollapsed;
+      CS.state.settings.composerCollapsed = !CS.state.settings.composerCollapsed;
+      CS.save();
       CS.render();
-      // FLIP: 渲染替换后从旧盒尺寸/位置平滑回到新位, 收起与展开都动
+      // FLIP: 渲染替换后从旧盒尺寸/位置平滑回弹到新位, 收起与展开都动
       const el2 = document.querySelector('.chat-composer');
       if (!el2 || !from || CS.state.settings.reducedMotion) return;
       const to = el2.getBoundingClientRect();
-      const sx = to.width ? from.width / to.width : 1;
-      const sy = to.height ? from.height / to.height : 1;
-      // 苹果风三段动效: 直接动 width/height 数值(无 scale 变形), 先收宽、再收高、轻微过冲回弹
-      const collapsing = CS.ui.composerCollapsed;
+      // 苹果风三段动效: 直接动 width/height 数值(无 scale 变形), 反向次序展开
+      const collapsing = CS.state.settings.composerCollapsed;
       const easeOut = 'cubic-bezier(.22,.61,.36,1)', spring = 'cubic-bezier(.2,1.4,.4,1)';
       const FW = from.width + 'px', FH = from.height + 'px', TW = to.width + 'px', TH = to.height + 'px';
       const frames = collapsing ? [
         { width: FW, height: FH, offset: 0, easing: easeOut },
-        { width: TW, height: FH, offset: 0.42, easing: easeOut },
-        { width: TW, height: TH, offset: 0.78, easing: spring },
-        { width: `calc(${TW} + 5px)`, height: `calc(${TH} - 3px)`, offset: 0.9, easing: 'cubic-bezier(.3,.7,.4,1)' },
+        { width: TW, height: FH, offset: 0.44, easing: easeOut },
+        { width: TW, height: TH, offset: 0.76, easing: spring },
+        { width: `calc(${TW} + 6px)`, height: `calc(${TH} - 4px)`, offset: 0.9, easing: 'cubic-bezier(.3,.7,.4,1)' },
         { width: TW, height: TH, offset: 1 }
       ] : [
-        { width: TW, height: TH, offset: 0, easing: easeOut },
-        { width: TW, height: FH, offset: 0.34, easing: easeOut },
-        { width: FW, height: FH, offset: 0.86, easing: 'cubic-bezier(.3,.7,.4,1)' },
-        { width: FW, height: FH, offset: 1 }
+        { width: FW, height: FH, offset: 0, easing: easeOut },
+        { width: FW, height: TH, offset: 0.38, easing: easeOut },
+        { width: TW, height: TH, offset: 0.86, easing: 'cubic-bezier(.3,.7,.4,1)' },
+        { width: TW, height: TH, offset: 1 }
       ];
-      el2.animate(frames, { duration: collapsing ? 620 : 520, easing: 'linear' });
+      el2.animate(frames, { duration: collapsing ? 840 : 720, easing: 'linear' });
     },
-    // 工具结果入库上限: 即时写回服务端 settings.json, 无需重启
-    'save-tool-limit': () => { const el = document.getElementById('tool-limit-input'); const v = parseInt(el?.value, 10); if (!Number.isFinite(v) || v < 2000 || v > 30000) { CS.toast('请输入 2000–30000 之间的字数', 'error'); return; } CS.api.request('/tool-result-limit', { method: 'POST', body: JSON.stringify({ limit: v }) }).then(d => { CS.ui.toolLimit = d.limit; CS.toast('已保存，新会话起生效', 'ok'); CS.render(); }).catch(e => CS.toast('保存失败：' + CS.api.friendlyError(e), 'error')); },
-    'reset-tool-limit': () => { CS.api.request('/tool-result-limit', { method: 'POST', body: JSON.stringify({ limit: 30000 }) }).then(d => { CS.ui.toolLimit = d.limit; CS.toast('已恢复默认 30000', 'ok'); CS.render(); }).catch(e => CS.toast('保存失败：' + CS.api.friendlyError(e), 'error')); },
     'track-jump': id => {
       const mi = parseInt(id, 10);
       if (isNaN(mi)) return;

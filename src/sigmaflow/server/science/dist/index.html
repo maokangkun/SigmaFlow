@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="0aaeb2a8">
+<meta name="build" content="1e54b2ff">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -391,11 +391,11 @@ html:has(.auth-page){scrollbar-gutter:auto}
 .composer-fold{position:absolute;top:9px;right:24px;width:22px;height:22px;border:1px solid var(--line);border-radius:8px;background:color-mix(in srgb,var(--surface) 88%,transparent);color:var(--muted);display:flex;align-items:center;justify-content:center;padding:0;opacity:0;transition:opacity .18s ease,transform .18s ease;cursor:pointer;z-index:5;box-shadow:0 2px 8px color-mix(in srgb,#000 9%,transparent);backdrop-filter:blur(3px)}
 .composer-fold:hover,.composer-fold:focus-visible{opacity:1;transform:scale(1.08);color:var(--ink);border-color:var(--faint)}
 .composer-fold:active{transform:scale(.96)}
-.chat-composer.composer-collapsed{margin:10px 24px 12px auto;width:64px;min-width:64px;flex-shrink:0;height:64px;align-self:flex-end}
+.chat-composer.composer-collapsed{margin:10px 24px 12px auto;width:52px;min-width:52px;flex-shrink:0;height:52px;align-self:flex-end}
 .chat-composer.composer-collapsed .composer,.chat-composer.composer-collapsed .sys-stats,.chat-composer.composer-collapsed .jump-latest{display:none}
 /* 850 阅读列变体的 composer 宽度规则权重更高, 折叠态需更具体的规则压过它 */
-.chat-page:has(.chat-main-chat) .chat-composer.composer-collapsed{margin:10px 24px 12px auto;width:64px;min-width:64px;flex-shrink:0;height:64px;align-self:flex-end}
-.chat-composer .composer-expand{width:100%;height:100%;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);background:var(--surface);border-radius:16px;color:var(--muted);cursor:pointer}
+.chat-page:has(.chat-main-chat) .chat-composer.composer-collapsed{margin:10px 24px 12px auto;width:52px;min-width:52px;flex-shrink:0;height:52px;align-self:flex-end}
+.chat-composer .composer-expand{width:100%;height:100%;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);background:var(--surface);border-radius:14px;color:var(--tr-think);cursor:pointer}
 .chat-composer .composer-expand:hover{border-color:var(--faint);color:var(--ink)}
 .chat-composer .composer-expand .icon{transform:rotate(90deg)}.chat-composer .composer{border-radius:15px;padding:15px 17px 13px;box-shadow:4px 4px 16px #dce0e78a,-3px -3px 10px #ffffffbf}.chat-composer .composer textarea{height:56px;min-height:44px;font-size:12px}.chat-composer .composer textarea::placeholder{font-size:12px}.chat-composer .composer-hint{font-size:9px;margin-top:9px}.inspector{position:sticky;top:25px;display:flex;flex-direction:column;gap:19px}.inspector .panel{box-shadow:var(--shadow-small)}.inspector .panel-pad{padding:19px}.inspector h3{font-size:12px}.inspector .section-label{font-size:10px;color:var(--faint);margin:20px 0 8px}.inspector-file{display:flex;align-items:center;gap:9px;margin:11px 0;font-size:10px}.inspector-file .icon{width:15px;height:15px;color:var(--muted)}.inspector-file>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.info-pairs{display:grid;grid-template-columns:1fr auto;gap:10px;font-size:10px}.info-pairs span:nth-child(odd){color:var(--muted)}.inspector .notice{font-size:10px;padding:12px}.inspector-resource{display:flex;align-items:center;justify-content:space-between;padding:10px 0;font-size:10px;border-bottom:1px solid var(--line-soft)}.inspector-resource:last-child{border-bottom:none}.spinner{width:13px;height:13px;border:1.5px solid #ccc9df;border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;display:inline-block;flex-shrink:0}
 /* Data / projects / search and tabs */
@@ -5071,8 +5071,8 @@ V.ctxRing = () => {
     return `<div class="term-wrap" style="width:${width}px"><span class="term-resizer" title="拖动调整宽度" aria-hidden="true"></span><aside class="term-panel" role="dialog" aria-label="项目终端"><header class="term-head"><div class="row grow" style="min-width:0">${i('terminal','',15)}<strong>${e(project ? project.name : '终端')}</strong><span class="tiny mono term-sub" style="overflow:hidden;text-overflow:ellipsis" title="${e(project?.dir || '')}">${e(project?.dir ? project.dir : '交互式 PTY 终端')}</span></div>${iconBtn('term-clear','trash','清屏')}${iconBtn('term-close','x','关闭终端')}</header>${project ? '<div class="term-xhost" id="term-xhost"></div>' : '<div class="term-empty small muted">请先在输入框选择项目再打开终端。</div>'}</aside></div>`;
   };
   V.composer = (home = false) => {
-    const foldBtn = home ? '' : CS.ui.composerCollapsed ? `<button type="button" class="composer-expand" data-action="composer-fold" aria-label="展开输入框" title="展开输入框">${i('minimize2', '', 17)}</button>` : `<button type="button" class="composer-fold" data-action="composer-fold" aria-label="收起输入框" title="收起输入框，腾出空间浏览会话">${i('minimize2', '', 12)}</button>`;
-    const wrap = home ? 'composer-home' : 'chat-composer' + (CS.ui.composerCollapsed && !home ? ' composer-collapsed' : '');
+    const foldBtn = home ? '' : CS.state.settings.composerCollapsed ? `<button type="button" class="composer-expand" data-action="composer-fold" aria-label="展开输入框" title="展开输入框">${i('dna', '', 20)}</button>` : `<button type="button" class="composer-fold" data-action="composer-fold" aria-label="收起输入框" title="收起输入框，腾出空间浏览会话">${i('minimize2', '', 12)}</button>`;
+    const wrap = home ? 'composer-home' : 'chat-composer' + (CS.state.settings.composerCollapsed && !home ? ' composer-collapsed' : '');
     return `<div class="${wrap}">${foldBtn}${!home ? `<button type="button" class="jump-latest" data-action="jump-latest" title="跳到最新消息"${CS.ui.canJumpLatest ? '' : ' hidden'}>${i('down', '', 14)}</button>` : ''}${home ? `<div class="composer-project"><button type="button" class="model-select-btn project-select-btn" data-action="toggle-project-menu" aria-haspopup="listbox" aria-expanded="${!!CS.ui.projectMenu}">${CS.state.projectId ? `<span class="project-icon" data-action="clear-project" title="取消项目关联">${i('folder','',13)}${i('x','',13)}</span>` : i('folder','',13)}<span>${e(CS.state.projects.find(p => p.id === CS.state.projectId)?.name || '选择项目')}</span>${i('down','',13)}</button>${CS.ui.projectMenu ? `<div class="model-menu dd-down" role="menu">${CS.state.projects.filter(p => !p.archived).map(p => `<button type="button" class="model-menu-item" role="menuitem" data-action="pick-project" data-id="${e(p.id)}"><span>${e(p.name)}</span>${CS.state.projectId === p.id ? i('check','',13) : ''}</button>`).join('')}<div class="menu-divider"></div><button type="button" class="model-menu-item" data-action="new-project">${i('plus','',14)}<span>新建项目</span></button><button type="button" class="model-menu-item" data-action="connect-project">${i('external','',14)}<span>连接远程项目</span></button></div>` : ''}</div>` : ''}<form class="composer" data-form="composer">
     ${CS.ui.attachments.length ? `<div class="attachment-list">${CS.ui.attachments.map(id => { const d = CS.state.datasets.find(x => x.id === id); return d ? `<span class="attachment">${i('file')}<span>${e(d.name)}</span>${iconBtn('remove-attachment','x','移除附件',`data-id="${e(id)}"`)}</span>` : ''; }).join('')}</div>` : ''}
     <textarea id="composer-text" aria-label="研究问题" placeholder="${home ? '描述你的科研问题…' : '继续提问，或调整分析计划…'}" rows="3" maxlength="6000">${e(CS.ui.composer)}</textarea>
@@ -6943,35 +6943,31 @@ V.ctxRing = () => {
     'composer-fold': () => {
       const el = document.querySelector('.chat-composer');
       const from = el ? el.getBoundingClientRect() : null;
-      CS.ui.composerCollapsed = !CS.ui.composerCollapsed;
+      CS.state.settings.composerCollapsed = !CS.state.settings.composerCollapsed;
+      CS.save();
       CS.render();
-      // FLIP: 渲染替换后从旧盒尺寸/位置平滑回到新位, 收起与展开都动
+      // FLIP: 渲染替换后从旧盒尺寸/位置平滑回弹到新位, 收起与展开都动
       const el2 = document.querySelector('.chat-composer');
       if (!el2 || !from || CS.state.settings.reducedMotion) return;
       const to = el2.getBoundingClientRect();
-      const sx = to.width ? from.width / to.width : 1;
-      const sy = to.height ? from.height / to.height : 1;
-      // 苹果风三段动效: 直接动 width/height 数值(无 scale 变形), 先收宽、再收高、轻微过冲回弹
-      const collapsing = CS.ui.composerCollapsed;
+      // 苹果风三段动效: 直接动 width/height 数值(无 scale 变形), 反向次序展开
+      const collapsing = CS.state.settings.composerCollapsed;
       const easeOut = 'cubic-bezier(.22,.61,.36,1)', spring = 'cubic-bezier(.2,1.4,.4,1)';
       const FW = from.width + 'px', FH = from.height + 'px', TW = to.width + 'px', TH = to.height + 'px';
       const frames = collapsing ? [
         { width: FW, height: FH, offset: 0, easing: easeOut },
-        { width: TW, height: FH, offset: 0.42, easing: easeOut },
-        { width: TW, height: TH, offset: 0.78, easing: spring },
-        { width: `calc(${TW} + 5px)`, height: `calc(${TH} - 3px)`, offset: 0.9, easing: 'cubic-bezier(.3,.7,.4,1)' },
+        { width: TW, height: FH, offset: 0.44, easing: easeOut },
+        { width: TW, height: TH, offset: 0.76, easing: spring },
+        { width: `calc(${TW} + 6px)`, height: `calc(${TH} - 4px)`, offset: 0.9, easing: 'cubic-bezier(.3,.7,.4,1)' },
         { width: TW, height: TH, offset: 1 }
       ] : [
-        { width: TW, height: TH, offset: 0, easing: easeOut },
-        { width: TW, height: FH, offset: 0.34, easing: easeOut },
-        { width: FW, height: FH, offset: 0.86, easing: 'cubic-bezier(.3,.7,.4,1)' },
-        { width: FW, height: FH, offset: 1 }
+        { width: FW, height: FH, offset: 0, easing: easeOut },
+        { width: FW, height: TH, offset: 0.38, easing: easeOut },
+        { width: TW, height: TH, offset: 0.86, easing: 'cubic-bezier(.3,.7,.4,1)' },
+        { width: TW, height: TH, offset: 1 }
       ];
-      el2.animate(frames, { duration: collapsing ? 620 : 520, easing: 'linear' });
+      el2.animate(frames, { duration: collapsing ? 840 : 720, easing: 'linear' });
     },
-    // 工具结果入库上限: 即时写回服务端 settings.json, 无需重启
-    'save-tool-limit': () => { const el = document.getElementById('tool-limit-input'); const v = parseInt(el?.value, 10); if (!Number.isFinite(v) || v < 2000 || v > 30000) { CS.toast('请输入 2000–30000 之间的字数', 'error'); return; } CS.api.request('/tool-result-limit', { method: 'POST', body: JSON.stringify({ limit: v }) }).then(d => { CS.ui.toolLimit = d.limit; CS.toast('已保存，新会话起生效', 'ok'); CS.render(); }).catch(e => CS.toast('保存失败：' + CS.api.friendlyError(e), 'error')); },
-    'reset-tool-limit': () => { CS.api.request('/tool-result-limit', { method: 'POST', body: JSON.stringify({ limit: 30000 }) }).then(d => { CS.ui.toolLimit = d.limit; CS.toast('已恢复默认 30000', 'ok'); CS.render(); }).catch(e => CS.toast('保存失败：' + CS.api.friendlyError(e), 'error')); },
     'track-jump': id => {
       const mi = parseInt(id, 10);
       if (isNaN(mi)) return;
