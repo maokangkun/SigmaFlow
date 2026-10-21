@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="d7b9f424">
+<meta name="build" content="869b0604">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -5438,12 +5438,13 @@ V.ctxRing = () => {
     const value = location.hash.replace(/^#\/?/, '').split('?')[0];
     const [seg, id] = value.split('/');
     if (seg === 'chat' && id) return { route: 'chat', id };
+    if (seg === 'trace') return { route: 'trace', id: id || null };
     return { route: allowedRoutes.includes(value) ? value : 'home', id: null };
   };
   const readRoute = () => parseHash().route;
   const applyRoute = () => {
     const { route, id } = parseHash();
-    if (route === 'chat' && id && CS.state.currentRunId !== id) {
+    if ((route === 'chat' || route === 'trace') && id && CS.state.currentRunId !== id) {
       CS.state.currentRunId = id;
       const run = CS.state.runs.find(r => r.id === id);
       if (run?.projectId) CS.state.projectId = run.projectId;
@@ -5455,7 +5456,7 @@ V.ctxRing = () => {
     CS.ui.mobileSidebar = false;
     CS.ui.userMenu = false;
     if (!allowedRoutes.includes(route)) route = 'home';
-    const id = route === 'chat' ? (runId || CS.state.currentRunId || null) : null;
+    const id = route === 'chat' || route === 'trace' ? (runId || CS.state.currentRunId || null) : null;
     const hash = '#/' + route + (id ? '/' + id : '');
     if (location.hash === hash) CS.render();
     else location.hash = hash;

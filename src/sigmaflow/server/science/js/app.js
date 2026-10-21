@@ -8,12 +8,13 @@
     const value = location.hash.replace(/^#\/?/, '').split('?')[0];
     const [seg, id] = value.split('/');
     if (seg === 'chat' && id) return { route: 'chat', id };
+    if (seg === 'trace') return { route: 'trace', id: id || null };
     return { route: allowedRoutes.includes(value) ? value : 'home', id: null };
   };
   const readRoute = () => parseHash().route;
   const applyRoute = () => {
     const { route, id } = parseHash();
-    if (route === 'chat' && id && CS.state.currentRunId !== id) {
+    if ((route === 'chat' || route === 'trace') && id && CS.state.currentRunId !== id) {
       CS.state.currentRunId = id;
       const run = CS.state.runs.find(r => r.id === id);
       if (run?.projectId) CS.state.projectId = run.projectId;
@@ -25,7 +26,7 @@
     CS.ui.mobileSidebar = false;
     CS.ui.userMenu = false;
     if (!allowedRoutes.includes(route)) route = 'home';
-    const id = route === 'chat' ? (runId || CS.state.currentRunId || null) : null;
+    const id = route === 'chat' || route === 'trace' ? (runId || CS.state.currentRunId || null) : null;
     const hash = '#/' + route + (id ? '/' + id : '');
     if (location.hash === hash) CS.render();
     else location.hash = hash;
