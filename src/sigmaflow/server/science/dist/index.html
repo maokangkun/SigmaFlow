@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="ba1f87d3">
+<meta name="build" content="0f07d84e">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -519,7 +519,28 @@ html:has(.auth-page){scrollbar-gutter:auto}
 .message-actions{display:inline-flex;align-items:center;gap:2px}
 .message-actions .icon-btn{height:auto;width:auto;padding:2px;border-radius:5px;color:var(--faint)}
 .message-actions .icon-btn:hover{color:var(--ink);background:var(--inset)}
-.md-body{line-height:1.7}
+.md-body{line-height:1.8}
+.md-body p{margin:0 0 10px}
+.md-body :is(h1,h2,h3,h4,h5,h6){color:var(--ink-strong);font-weight:620;letter-spacing:-.1px}
+.md-body h1{font-size:15px;margin:16px 0 8px}
+.md-body h2{font-size:13.5px;margin:17px 0 8px}
+.md-body h3{font-size:12.5px;margin:15px 0 6px}
+.md-body :is(h4,h5,h6){font-size:12px;margin:12px 0 5px}
+.md-body :is(h1,h2,h3,h4,h5,h6)+p{margin-top:0}
+.md-body :is(ul.md-list,ol.md-list,pre.md-code)~:is(h1,h2,h3,h4,h5,h6),
+.md-body :is(table,hr)~:is(h1,h2,h3,h4,h5,h6){margin-top:17px}
+.md-body :is(h1,h2,h3,h4,h5,h6):first-child{margin-top:0}
+.md-body ul.md-list li::marker{color:var(--faint)}
+.md-body li>ul,.md-body li>ol{margin:3px 0 6px;padding-left:18px}
+.md-body hr{margin:13px 0;border:0;border-top:1px solid var(--line-soft)}
+.md-body blockquote p{margin-bottom:4px}
+.md-body img{max-width:100%;border-radius:10px;border:1px solid var(--line-soft);margin:6px 0}
+.md-body a{text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:2px}
+.md-body a:hover{color:var(--ink-strong)}
+.md-body strong{font-weight:620}
+.md-body code{overflow-wrap:anywhere}
+.md-body>:first-child{margin-top:0}
+.md-body>:last-child{margin-bottom:0}
 .md-body p{margin:0 0 10px}
 .md-body p:last-child{margin-bottom:0}
 .md-body ul.md-list,.md-body ol.md-list{margin:6px 0 10px;padding-left:22px}
@@ -529,7 +550,7 @@ html:has(.auth-page){scrollbar-gutter:auto}
 .md-body pre.md-code code{background:none;padding:0}
 .md-body h3,.md-body h4,.md-body h5,.md-body h6{margin:12px 0 6px}
 .md-body blockquote{margin:8px 0;padding:4px 14px;border-left:3px solid var(--line);color:var(--muted)}
-.md-body table{display:block;width:fit-content;max-width:100%;overflow-x:auto;background:var(--bg);border:1px solid var(--line-soft);border-radius:10px;margin:8px 0;font-size:11.5px}
+.md-body table{display:block;width:fit-content;max-width:100%;overflow-x:auto;background:var(--bg);border:1px solid var(--line-soft);border-radius:10px;margin:8px 0 9px;font-size:11.5px}
 .md-body table th,.md-body table td{padding:7px 10px;white-space:normal;overflow-wrap:anywhere;font-size:11.5px}
 .md-body table th{background:var(--inset)}
 
