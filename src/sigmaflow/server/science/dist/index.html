@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="a59454d5">
+<meta name="build" content="7e8a01fb">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -395,7 +395,7 @@ html:has(.auth-page){scrollbar-gutter:auto}
 .chat-composer.composer-collapsed .composer,.chat-composer.composer-collapsed .sys-stats,.chat-composer.composer-collapsed .jump-latest{display:none}
 /* 850 阅读列变体的 composer 宽度规则权重更高, 折叠态需更具体的规则压过它 */
 .chat-page:has(.chat-main-chat) .chat-composer.composer-collapsed{margin:8px 24px 10px auto;width:44px;min-width:44px;flex-shrink:0;height:44px;align-self:flex-end}
-.chat-composer .composer-expand{width:100%;height:100%;display:flex;align-items:center;justify-content:center;border:none;background:var(--surface);border-radius:12px;color:var(--tr-think);cursor:pointer;box-shadow:0 2px 10px color-mix(in srgb,#000 7%,transparent)}
+.chat-composer .composer-expand{width:100%;height:100%;display:flex;align-items:center;justify-content:center;border:none;background:var(--surface);border-radius:12px;color:color-mix(in srgb,var(--tr-think) 42%,#ffffff);cursor:pointer;box-shadow:0 2px 10px color-mix(in srgb,#000 7%,transparent)}
 .chat-composer .composer-expand:hover{border-color:var(--faint);color:var(--ink)}
 .chat-composer .composer{border-radius:15px;padding:15px 17px 13px;box-shadow:4px 4px 16px #dce0e78a,-3px -3px 10px #ffffffbf}.chat-composer .composer textarea{height:56px;min-height:44px;font-size:12px}.chat-composer .composer textarea::placeholder{font-size:12px}.chat-composer .composer-hint{font-size:9px;margin-top:9px}.inspector{position:sticky;top:25px;display:flex;flex-direction:column;gap:19px}.inspector .panel{box-shadow:var(--shadow-small)}.inspector .panel-pad{padding:19px}.inspector h3{font-size:12px}.inspector .section-label{font-size:10px;color:var(--faint);margin:20px 0 8px}.inspector-file{display:flex;align-items:center;gap:9px;margin:11px 0;font-size:10px}.inspector-file .icon{width:15px;height:15px;color:var(--muted)}.inspector-file>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.info-pairs{display:grid;grid-template-columns:1fr auto;gap:10px;font-size:10px}.info-pairs span:nth-child(odd){color:var(--muted)}.inspector .notice{font-size:10px;padding:12px}.inspector-resource{display:flex;align-items:center;justify-content:space-between;padding:10px 0;font-size:10px;border-bottom:1px solid var(--line-soft)}.inspector-resource:last-child{border-bottom:none}.spinner{width:13px;height:13px;border:1.5px solid #ccc9df;border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;display:inline-block;flex-shrink:0}
 /* Data / projects / search and tabs */
@@ -6954,17 +6954,15 @@ V.ctxRing = () => {
       const collapsing = CS.state.settings.composerCollapsed;
       const easeOut = 'cubic-bezier(.22,.61,.36,1)', spring = 'cubic-bezier(.2,1.4,.4,1)';
       const FW = from.width + 'px', FH = from.height + 'px', TW = to.width + 'px', TH = to.height + 'px';
+      // 落定段直接用 spring 缓动收尾, 不做像素级过冲(避免收尾尺寸抖动)
       const frames = collapsing ? [
         { width: FW, height: FH, offset: 0, easing: easeOut },
-        { width: TW, height: FH, offset: 0.44, easing: easeOut },
-        { width: TW, height: TH, offset: 0.76, easing: spring },
-        { width: `calc(${TW} + 6px)`, height: `calc(${TH} - 4px)`, offset: 0.9, easing: 'cubic-bezier(.3,.7,.4,1)' },
-        { width: TW, height: TH, offset: 1 }
+        { width: TW, height: FH, offset: 0.45, easing: easeOut },
+        { width: TW, height: TH, offset: 1, easing: spring }
       ] : [
         { width: FW, height: FH, offset: 0, easing: easeOut },
-        { width: FW, height: `calc(${TH} + 6px)`, offset: 0.34, easing: easeOut },
-        { width: `calc(${TW} + 6px)`, height: `calc(${TH} + 6px)`, offset: 0.62, easing: easeOut },
-        { width: TW, height: TH, offset: 1 }
+        { width: FW, height: TH, offset: 0.42, easing: easeOut },
+        { width: TW, height: TH, offset: 1, easing: 'cubic-bezier(.3,.7,.4,1)' }
       ];
       el2.animate(frames, { duration: 2000, easing: 'linear' });
     },

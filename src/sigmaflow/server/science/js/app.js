@@ -1486,17 +1486,15 @@
       const collapsing = CS.state.settings.composerCollapsed;
       const easeOut = 'cubic-bezier(.22,.61,.36,1)', spring = 'cubic-bezier(.2,1.4,.4,1)';
       const FW = from.width + 'px', FH = from.height + 'px', TW = to.width + 'px', TH = to.height + 'px';
+      // 落定段直接用 spring 缓动收尾, 不做像素级过冲(避免收尾尺寸抖动)
       const frames = collapsing ? [
         { width: FW, height: FH, offset: 0, easing: easeOut },
-        { width: TW, height: FH, offset: 0.44, easing: easeOut },
-        { width: TW, height: TH, offset: 0.76, easing: spring },
-        { width: `calc(${TW} + 6px)`, height: `calc(${TH} - 4px)`, offset: 0.9, easing: 'cubic-bezier(.3,.7,.4,1)' },
-        { width: TW, height: TH, offset: 1 }
+        { width: TW, height: FH, offset: 0.45, easing: easeOut },
+        { width: TW, height: TH, offset: 1, easing: spring }
       ] : [
         { width: FW, height: FH, offset: 0, easing: easeOut },
-        { width: FW, height: `calc(${TH} + 6px)`, offset: 0.34, easing: easeOut },
-        { width: `calc(${TW} + 6px)`, height: `calc(${TH} + 6px)`, offset: 0.62, easing: easeOut },
-        { width: TW, height: TH, offset: 1 }
+        { width: FW, height: TH, offset: 0.42, easing: easeOut },
+        { width: TW, height: TH, offset: 1, easing: 'cubic-bezier(.3,.7,.4,1)' }
       ];
       el2.animate(frames, { duration: 2000, easing: 'linear' });
     },
