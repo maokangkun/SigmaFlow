@@ -335,6 +335,11 @@ html:has(.auth-page){scrollbar-gutter:auto}
 .tool-head code{color:var(--ink-strong);font-size:11.5px;font-weight:600}
 .tool-args{color:var(--faint);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
 .tool-status{font-size:11px;color:var(--accent)}
+.think-root[data-state=err] .think-leading,.think-root[data-state=err] .think-title{color:var(--red)}
+.think-root[data-state=err] .think-separator{background:linear-gradient(90deg,var(--red) 0%,transparent 100%)}
+.tool-item.tool-err .tool-head code{color:var(--red)}
+.tool-item.tool-err .tool-result{color:var(--red);background:var(--red-bg);border-radius:7px;padding:6px 9px}
+.tool-item.tool-err .tool-head:after{content:"报错";flex:none;margin-left:auto;font-size:10px;font-weight:520;color:var(--red);background:var(--red-bg);border-radius:5px;padding:1px 7px}
 .tool-result{margin:4px 0 0;padding:8px 10px;background:var(--bg);border-radius:8px;font-size:11.5px;line-height:17px;color:var(--muted);white-space:pre-wrap;word-break:break-word;max-height:220px;overflow-y:auto;font-family:var(--mono)}/* 上下文用量圆环与详情浮层(composer 模型按钮左侧) */
 .ctx-use{position:relative;display:inline-flex;align-items:center}
 .ctx-ring-btn{display:inline-flex;align-items:center;gap:6px;background:var(--bg);border:0;box-shadow:var(--shadow-small);border-radius:9px;padding:8px 10px;min-height:32px;cursor:pointer;color:var(--muted);font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}

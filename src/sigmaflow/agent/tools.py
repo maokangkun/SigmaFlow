@@ -889,10 +889,15 @@ class Compactor:
 
 # -- TaskManager: CRUD with dependency graph, persisted as JSON files --
 class TaskManager:
+    # 单把锁串行化所有读写: 曾出现过并发 create 同时取到同一 _next_id、并行 write_text
+    # 相互截断, 造成任务文件里出现「两个 JSON 尾部重叠拼接」的损坏记录
+    _lock = threading.Lock()
+
     def __init__(self, tasks_dir: Path):
         self.dir = tasks_dir
         self.dir.mkdir(exist_ok=True)
-        self._next_id = self._max_id() + 1
+        with TaskManager._lock:
+            self._next_id = self._max_id() + 1
 
     def _max_id(self) -> int:
         ids = [int(f.stem.split("_")[1]) for f in self.dir.glob("task_*.json")]
@@ -902,30 +907,52 @@ class TaskManager:
         path = self.dir / f"task_{task_id}.json"
         if not path.exists():
             raise ValueError(f"Task {task_id} not found")
-        return json.loads(path.read_text())
+        raw = path.read_text()
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            # 兼容历史损坏文件: 提取首个完整 JSON 对象并原子重写回去
+            obj, _end = json.JSONDecoder().raw_decode(raw.lstrip())
+            print(f"{' ' * 12}repaired corrupted task file: {path.name}")
+            self._save(dict(obj))
+            return obj
 
     def _save(self, task: dict):
+        # 原子写: 先落临时文件再 rename, 避免写一半被并发读/进程中断截断
         path = self.dir / f"task_{task['id']}.json"
-        path.write_text(json.dumps(task, indent=2, ensure_ascii=False))
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(task, indent=2, ensure_ascii=False))
+        tmp.replace(path)
 
     def create(self, subject: str, description: str = "") -> str:
-        task = {
-            "id": self._next_id,
-            "subject": subject,
-            "description": description,
-            "status": "pending",
-            "blockedBy": [],
-            "blocks": [],
-            "owner": "",
-        }
-        self._save(task)
-        self._next_id += 1
-        return json.dumps(task, indent=2, ensure_ascii=False)
+        with TaskManager._lock:
+            task = {
+                "id": self._next_id,
+                "subject": subject,
+                "description": description,
+                "status": "pending",
+                "blockedBy": [],
+                "blocks": [],
+                "owner": "",
+            }
+            self._save(task)
+            self._next_id += 1
+            return json.dumps(task, indent=2, ensure_ascii=False)
 
     def get(self, task_id: int) -> str:
         return json.dumps(self._load(task_id), indent=2, ensure_ascii=False)
 
     def update(
+        self,
+        task_id: int,
+        status: Optional[str] = None,
+        add_blocked_by: Optional[list] = None,
+        add_blocks: Optional[list] = None,
+    ) -> str:
+        with TaskManager._lock:
+            return self._update_locked(task_id, status, add_blocked_by, add_blocks)
+
+    def _update_locked(
         self,
         task_id: int,
         status: Optional[str] = None,
@@ -959,15 +986,22 @@ class TaskManager:
     def _clear_dependency(self, completed_id: int):
         """Remove completed_id from all other tasks' blockedBy lists."""
         for f in self.dir.glob("task_*.json"):
-            task = json.loads(f.read_text())
+            try:
+                task = self._load(int(f.stem.split("_")[1]))
+            except (ValueError, json.JSONDecodeError):
+                continue  # 无法解析的文件跳过, 不让整个列表视图崩溃
             if completed_id in task.get("blockedBy", []):
                 task["blockedBy"].remove(completed_id)
                 self._save(task)
 
     def list_all(self) -> str:
-        tasks = []
-        for f in sorted(self.dir.glob("task_*.json")):
-            tasks.append(json.loads(f.read_text()))
+        with TaskManager._lock:
+            tasks = []
+            for f in sorted(self.dir.glob("task_*.json")):
+                try:
+                    tasks.append(self._load(int(f.stem.split("_")[1])))
+                except (ValueError, json.JSONDecodeError):
+                    continue  # 无法解析的文件跳过, 不让整个列表视图崩溃
         if not tasks:
             return "No tasks."
         lines = []
