@@ -1483,10 +1483,22 @@
       const to = el2.getBoundingClientRect();
       const sx = to.width ? from.width / to.width : 1;
       const sy = to.height ? from.height / to.height : 1;
-      el2.animate([
-        { transformOrigin: '100% 100%', transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${sx}, ${sy})` },
-        { transformOrigin: '100% 100%', transform: 'none' }
-      ], { duration: 300, easing: 'cubic-bezier(.33,1,.68,1)' });
+      // 苹果风三段动效: 先收宽度、再收高度、最后滑定右下方块, 各段带缓出与轻微过冲回弹
+      const collapsing = CS.ui.composerCollapsed;
+      const dx = from.left - to.left, dy = from.top - to.top;
+      const easeOut = 'cubic-bezier(.22,.61,.36,1)', spring = 'cubic-bezier(.2,1.4,.4,1)';
+      const frames = collapsing ? [
+        { transformOrigin: '100% 100%', transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`, offset: 0, easing: easeOut },
+        { transformOrigin: '100% 100%', transform: `translate(0px, ${dy}px) scale(1, ${sy})`, offset: 0.42, easing: easeOut },
+        { transformOrigin: '100% 100%', transform: 'scale(1.04, .96)', offset: 0.8, easing: spring },
+        { transformOrigin: '100% 100%', transform: 'scale(1, 1)', offset: 1 }
+      ] : [
+        { transformOrigin: '100% 100%', transform: 'scale(1, 1)', offset: 0, easing: easeOut },
+        { transformOrigin: '100% 100%', transform: 'scale(1.04, .96)', offset: 0.22, easing: easeOut },
+        { transformOrigin: '100% 100%', transform: `translate(0px, ${dy}px) scale(1, ${sy})`, offset: 0.58, easing: easeOut },
+        { transformOrigin: '100% 100%', transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`, offset: 1 }
+      ];
+      el2.animate(frames, { duration: collapsing ? 620 : 520, easing: 'linear' });
     },
     // 工具结果入库上限: 即时写回服务端 settings.json, 无需重启
     'save-tool-limit': () => { const el = document.getElementById('tool-limit-input'); const v = parseInt(el?.value, 10); if (!Number.isFinite(v) || v < 2000 || v > 30000) { CS.toast('请输入 2000–30000 之间的字数', 'error'); return; } CS.api.request('/tool-result-limit', { method: 'POST', body: JSON.stringify({ limit: v }) }).then(d => { CS.ui.toolLimit = d.limit; CS.toast('已保存，新会话起生效', 'ok'); CS.render(); }).catch(e => CS.toast('保存失败：' + CS.api.friendlyError(e), 'error')); },

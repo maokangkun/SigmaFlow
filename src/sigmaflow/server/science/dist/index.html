@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="830793e3">
+<meta name="build" content="1fb88a39">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -388,7 +388,7 @@ html:has(.auth-page){scrollbar-gutter:auto}
 /* Chat / Agent timeline */
 .chat-page{width:100%;padding:9px 26px 28px;min-height:calc(100vh - 75px)}.chat-layout{display:grid;grid-template-columns:minmax(0,1fr) 255px;gap:30px;align-items:start}.chat-layout.no-inspector{grid-template-columns:minmax(0,1fr);width:100%}.chat-main{min-width:0}.chat-title{display:flex;justify-content:space-between;align-items:flex-end;padding:0 0 23px;border-bottom:1px solid var(--line);margin-bottom:26px}.chat-title>div:first-child{min-width:0;overflow:hidden;flex:1 1 auto;padding-top:12px}.chat-title>*:not(:first-child){flex-shrink:0}.chat-title h1{font-size:19px;letter-spacing:-.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative;top:-11px}.chat-title .small{margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.conversation{display:flex;flex-direction:column;gap:25px}.user-message{background:#e9eaf1;padding:16px 20px;border-radius:14px 14px 4px 14px;max-width:86%;align-self:flex-end;font-size:12px;line-height:1.9;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}.message-meta{color:var(--faint);font-size:10px}.agent-message{display:flex;gap:13px;align-items:flex-start}.agent-avatar{width:30px;height:32px;flex-shrink:0;border-radius:10px;color:var(--accent);display:flex;align-items:center;justify-content:center;background:var(--surface);box-shadow:var(--shadow-small)}.agent-body{flex:1;min-width:0;font-size:12px;line-height:1.95}.agent-name{font-size:12px;font-weight:600;color:var(--ink-strong);margin:1px 0 8px}.agent-intro{color:var(--ink)}.run-card{margin-top:19px;border-radius:14px;background:var(--surface);border:1px solid #fff;box-shadow:var(--shadow);overflow:hidden}.run-card-title{padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line-soft)}.run-card-title strong{font-size:12px;font-weight:600}.run-card-title .icon{color:var(--accent)}.run-progress{height:3px;background:var(--inset);overflow:hidden}.run-progress>span{height:100%;display:block;background:var(--accent);transition:width .4s}.step-list{padding:18px 22px 10px;list-style:none;margin:0}.step{position:relative;padding-left:33px;padding-bottom:18px;min-height:68px}.step:not(:last-child)::before{content:'';position:absolute;left:10px;top:24px;bottom:0;width:1px;background:var(--line)}.step-bullet{position:absolute;top:2px;left:0;width:21px;height:21px;border-radius:50%;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--faint);font-size:10px}.step-bullet .icon{width:12px;height:12px}.step.complete .step-bullet{border-color:transparent;background:var(--green-bg);color:var(--green)}.step.running .step-bullet{background:var(--accent-bg);border-color:#cdcae0;color:var(--accent)}.step-title{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:11px;font-weight:550}.step-description{font-size:10px;color:var(--muted);margin-top:2px;line-height:1.7}.step-progress-mini{display:flex;align-items:center;gap:8px;font-size:9px;font-weight:400;color:var(--faint)}.step-progress-mini .track{height:3px;width:60px;background:var(--inset);border-radius:3px}.step-progress-mini .track>span{display:block;height:100%;background:var(--accent);border-radius:3px}.step-log-toggle{display:inline-flex;align-items:center;gap:5px;font-size:9px;color:var(--faint);padding:3px 0;background:transparent}.step-log-toggle .icon{width:10px;height:10px}.step-log{background:var(--inset);padding:9px 11px;border-radius:7px;margin-top:4px;font-size:10px;font-family:var(--mono);color:var(--muted);overflow-wrap:anywhere}.run-actions{padding:15px 20px;border-top:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;gap:12px}.run-actions .btn{font-size:10px;min-height:32px}.run-note{font-size:9px;color:var(--faint);max-width:250px}.result-file{margin-top:13px;padding:13px 16px;display:flex;align-items:center;gap:13px;background:var(--surface);border-radius:11px;border:1px solid var(--line)}.result-file strong{font-size:11px}.result-file .sub{font-size:10px;color:var(--muted)}.chat-composer{position:sticky;bottom:17px;margin-top:28px;z-index:2}
 /* 输入框折叠: 左上悬浮触发角 + 折叠后的右下角圆角正方形(点它展开) */
-.composer-fold{position:absolute;top:-7px;left:-7px;width:20px;height:20px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--muted);display:flex;align-items:center;justify-content:center;padding:0;opacity:0;transition:opacity .18s ease,transform .18s ease;cursor:pointer;z-index:5;box-shadow:0 2px 8px color-mix(in srgb,#000 9%,transparent)}
+.composer-fold{position:absolute;top:9px;right:12px;width:22px;height:22px;border:1px solid var(--line);border-radius:8px;background:color-mix(in srgb,var(--surface) 88%,transparent);color:var(--muted);display:flex;align-items:center;justify-content:center;padding:0;opacity:0;transition:opacity .18s ease,transform .18s ease;cursor:pointer;z-index:5;box-shadow:0 2px 8px color-mix(in srgb,#000 9%,transparent);backdrop-filter:blur(3px)}
 .composer-fold:hover,.composer-fold:focus-visible{opacity:1;transform:scale(1.08);color:var(--ink);border-color:var(--faint)}
 .composer-fold:active{transform:scale(.96)}
 .chat-composer.composer-collapsed{margin:10px 24px 12px auto;width:64px;min-width:64px;flex-shrink:0;height:64px;align-self:flex-end}
@@ -6951,10 +6951,22 @@ V.ctxRing = () => {
       const to = el2.getBoundingClientRect();
       const sx = to.width ? from.width / to.width : 1;
       const sy = to.height ? from.height / to.height : 1;
-      el2.animate([
-        { transformOrigin: '100% 100%', transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${sx}, ${sy})` },
-        { transformOrigin: '100% 100%', transform: 'none' }
-      ], { duration: 300, easing: 'cubic-bezier(.33,1,.68,1)' });
+      // 苹果风三段动效: 先收宽度、再收高度、最后滑定右下方块, 各段带缓出与轻微过冲回弹
+      const collapsing = CS.ui.composerCollapsed;
+      const dx = from.left - to.left, dy = from.top - to.top;
+      const easeOut = 'cubic-bezier(.22,.61,.36,1)', spring = 'cubic-bezier(.2,1.4,.4,1)';
+      const frames = collapsing ? [
+        { transformOrigin: '100% 100%', transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`, offset: 0, easing: easeOut },
+        { transformOrigin: '100% 100%', transform: `translate(0px, ${dy}px) scale(1, ${sy})`, offset: 0.42, easing: easeOut },
+        { transformOrigin: '100% 100%', transform: 'scale(1.04, .96)', offset: 0.8, easing: spring },
+        { transformOrigin: '100% 100%', transform: 'scale(1, 1)', offset: 1 }
+      ] : [
+        { transformOrigin: '100% 100%', transform: 'scale(1, 1)', offset: 0, easing: easeOut },
+        { transformOrigin: '100% 100%', transform: 'scale(1.04, .96)', offset: 0.22, easing: easeOut },
+        { transformOrigin: '100% 100%', transform: `translate(0px, ${dy}px) scale(1, ${sy})`, offset: 0.58, easing: easeOut },
+        { transformOrigin: '100% 100%', transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`, offset: 1 }
+      ];
+      el2.animate(frames, { duration: collapsing ? 620 : 520, easing: 'linear' });
     },
     // 工具结果入库上限: 即时写回服务端 settings.json, 无需重启
     'save-tool-limit': () => { const el = document.getElementById('tool-limit-input'); const v = parseInt(el?.value, 10); if (!Number.isFinite(v) || v < 2000 || v > 30000) { CS.toast('请输入 2000–30000 之间的字数', 'error'); return; } CS.api.request('/tool-result-limit', { method: 'POST', body: JSON.stringify({ limit: v }) }).then(d => { CS.ui.toolLimit = d.limit; CS.toast('已保存，新会话起生效', 'ok'); CS.render(); }).catch(e => CS.toast('保存失败：' + CS.api.friendlyError(e), 'error')); },
