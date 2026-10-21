@@ -260,7 +260,7 @@
           }
         } else {
           // 旧格式合并展开时的活跃段: 有 reasoning 合并时思考在最前, 但文本才是流式生长尾部 → 标 reply 格
-          liveIdx = blocks.length + ((m.reasoning || '').trim() ? 0 : 0);  // 占位, 下面重算
+          // 先置 -1 作为兑底, 下方按 think/tools/asks/text 顺序重算
           liveIdx = -1;
           const tl = (m.tools || []).length;
           const tk = (m.reasoning || '').trim() ? 1 : 0;
@@ -304,7 +304,8 @@
     if (cur.length) cols.push(cur);
     const name = { user: '用户', think: '思考', tool: '工具', reply: '回复', system: '系统', error: '错误' };
     const cell = (b, gi) => `<span role="button" class="tr-cell tr-${b.k}${b.live ? ' tr-live' : ''}" data-action="track-jump" data-id="${b.mi}" title="#${start + gi + 1} ${name[b.k]}${b.live ? ' · 生成中' : ''} · ${e(String(b.txt || '').replace(/\s+/g, ' ').slice(0, 80))} · 点击跳转到该消息"></span>`;
-    return `<div class="run-track" aria-hidden="true" data-blocks="${blocks.length}">${cols.map(c => `<span class="tr-col">${c.map(cell).join('')}</span>`).join('')}</div>`;
+    // 超长会话被截掉头部时加渐隐类, 在左缘用 mask 提示“还有更早的”
+    return `<div class="run-track${start ? ' tr-trunc' : ''}" aria-hidden="true"${start ? ` title="还有更早的 ${start} 条消息未展示"` : ''} data-blocks="${blocks.length}">${cols.map(c => `<span class="tr-col">${c.map(cell).join('')}</span>`).join('')}</div>`;
   };
 
   V.runUsage = () => {
