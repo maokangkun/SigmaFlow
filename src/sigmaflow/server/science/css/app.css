@@ -293,13 +293,14 @@ html:has(.auth-page){scrollbar-gutter:auto}
 .setting-input-inline{height:38px;width:96px;max-width:96px;padding:0 10px;background:var(--surface);border:1px solid var(--line);border-radius:10px;font-size:12px;color:var(--ink);text-align:right}
 .setting-input-inline:focus{border-color:var(--accent);outline:none}
 /* 远程会话加载中的骨架占位: 页面壳先行, 消息区用呼吸灰条占位 */
-.chat-skl{display:flex;flex-direction:column;gap:16px;max-width:850px;margin:0 auto}
+.chat-skl{display:flex;flex-direction:column;gap:16px;width:100%;max-width:850px}
 .skl-row{display:flex;gap:10px;align-items:flex-start}
 .skl-row.right{flex-direction:row-reverse}
 .skl-avatar{width:26px;height:26px;border-radius:9px;background:var(--line-soft);animation:skl-pulse 1.3s ease-in-out infinite;flex-shrink:0}
 .skl-circle{width:26px;height:26px;border-radius:50%;background:var(--line-soft);animation:skl-pulse 1.3s ease-in-out infinite;flex-shrink:0}
-.skl-body{display:flex;flex-direction:column;gap:6px;max-width:58%}
-.skl-line{height:11px;border-radius:6px;background:var(--line-soft);animation:skl-pulse 1.3s ease-in-out infinite}
+.skl-body{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0;max-width:58%}
+.skl-row.right .skl-body{margin-right:auto}
+.skl-line{width:64%;height:11px;border-radius:6px;background:var(--line-soft);animation:skl-pulse 1.3s ease-in-out infinite}
 .skl-line.wide{width:72%}
 .skl-line.thin{height:8px;opacity:.7}
 @keyframes skl-pulse{0%,100%{opacity:.5}50%{opacity:1}}

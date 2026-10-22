@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="cbe18036">
+<meta name="build" content="1f68a597">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -648,13 +648,14 @@ html:has(.auth-page){scrollbar-gutter:auto}
 .setting-input-inline{height:38px;width:96px;max-width:96px;padding:0 10px;background:var(--surface);border:1px solid var(--line);border-radius:10px;font-size:12px;color:var(--ink);text-align:right}
 .setting-input-inline:focus{border-color:var(--accent);outline:none}
 /* 远程会话加载中的骨架占位: 页面壳先行, 消息区用呼吸灰条占位 */
-.chat-skl{display:flex;flex-direction:column;gap:16px;max-width:850px;margin:0 auto}
+.chat-skl{display:flex;flex-direction:column;gap:16px;width:100%;max-width:850px}
 .skl-row{display:flex;gap:10px;align-items:flex-start}
 .skl-row.right{flex-direction:row-reverse}
 .skl-avatar{width:26px;height:26px;border-radius:9px;background:var(--line-soft);animation:skl-pulse 1.3s ease-in-out infinite;flex-shrink:0}
 .skl-circle{width:26px;height:26px;border-radius:50%;background:var(--line-soft);animation:skl-pulse 1.3s ease-in-out infinite;flex-shrink:0}
-.skl-body{display:flex;flex-direction:column;gap:6px;max-width:58%}
-.skl-line{height:11px;border-radius:6px;background:var(--line-soft);animation:skl-pulse 1.3s ease-in-out infinite}
+.skl-body{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0;max-width:58%}
+.skl-row.right .skl-body{margin-right:auto}
+.skl-line{width:64%;height:11px;border-radius:6px;background:var(--line-soft);animation:skl-pulse 1.3s ease-in-out infinite}
 .skl-line.wide{width:72%}
 .skl-line.thin{height:8px;opacity:.7}
 @keyframes skl-pulse{0%,100%{opacity:.5}50%{opacity:1}}
@@ -5136,7 +5137,7 @@ V.ctxRing = () => {
       if (CS.state.currentRunId && CS.ui.loadingRunId === CS.state.currentRunId) {
         const meta = CS.ui.conversations.find(c => c.id === CS.state.currentRunId) || {};
         const rows = Array.from({ length: 6 }, (_, i) => i % 3 === 1 ? `<div class="skl-row right"><div class="skl-circle"></div><div class="skl-body"><div class="skl-line" style="width:52%"></div><div class="skl-line" style="width:30%"></div></div></div>` : `<div class="skl-row"><div class="skl-avatar"></div><div class="skl-body"><div class="skl-line wide"></div><div class="skl-line" style="width:${62 - i * 4}%"></div><div class="skl-line thin" style="width:${40 + i * 2}%"></div></div></div>`).join('');
-        return `<section class="page chat-page"><div class="chat-title"><div><h1>${e(meta.title || '会话')}</h1></div></div><div class="conversation chat-skl">${rows}</div>${V.composer(false)}</section>`;
+        return `<section class="page chat-page"><div class="chat-layout no-inspector"><div class="chat-main chat-main-chat"><header class="chat-title chat-title-compact"><div><h1>${e(meta.title || '会话')}</h1></div></header><div class="conversation chat-skl">${rows}</div>${V.composer(false)}</div></div></section>`;
       }
       return `<section class="page">${empty('message','开始一个新的科研任务','先在首页描述研究问题，或选择一条演示工作流。')}<div class="center">${btn('go-home','开始对话','plus','primary')}</div></section>`;
     }
