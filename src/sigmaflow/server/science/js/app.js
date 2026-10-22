@@ -1197,6 +1197,11 @@
       box.innerHTML = `<div class="dir-list"><div class="dir-list-head"><span class="dir-list-path" title="${e(d.path)}">${'\u2066'}${e(d.path)}${'\u2069'}</span>`
         + (d.parent ? `<button type="button" class="text-button muted small" data-action="dir-parent">上一级</button>` : '')
         + `<button type="button" class="text-button muted small" data-action="dir-cancel">收起</button></div>`
+      box.innerHTML = `<div class="dir-list"><div class="dir-list-head"><span class="dir-list-path" title="${e(d.path)}">${'\u2066'}${e(d.path)}${'\u2069'}</span>`
+        + (d.parent ? `<button type="button" class="text-button muted small" data-action="dir-parent">上一级</button>` : '')
+        + `<button type="button" class="text-button muted small" data-action="dir-cancel">收起</button></div>`
+        + `<div class="menu-divider"></div>`
+        + `<div class="dir-new-row"><input id="dir-new-name" placeholder="新建文件夹…" maxlength="120" autocomplete="off"><button type="button" class="btn small-btn" data-action="dir-create">新建</button></div>`
         + `<div class="menu-divider"></div>`
         + (d.error ? `<div class="dir-empty">${e(d.error)}</div>` : '')
         + (d.dirs.length ? `<div class="dir-list-body">${d.dirs.map(x => `<button type="button" class="dir-item" data-action="dir-navigate" data-id="${e(x.path)}">${i('folder','',14)}<span>${e(x.name)}</span></button>`).join('')}</div>` : (d.error ? '' : '<div class="dir-empty">此目录下没有子文件夹</div>'))
@@ -2002,6 +2007,21 @@
       if (box?.dataset.parent) _loadDirListing(box.dataset.parent);
     },
     'dir-cancel': () => { document.getElementById('dir-listing').innerHTML = ''; },
+    // 新建文件夹: 在当前浏览目录下创建, 成功后进入新目录(用户可直接点「选择此文件夹」)
+    'dir-create': async () => {
+      const box = document.getElementById('dir-listing');
+      const input = document.getElementById('dir-new-name');
+      const name = (input?.value || '').trim();
+      if (!name) { CS.toast('请输入文件夹名称。', 'error'); return; }
+      const btn = box?.querySelector('[data-action="dir-create"]');
+      if (btn) btn.disabled = true;
+      try {
+        const d = await CS.api.request('/fs/mkdir', { method: 'POST', body: JSON.stringify({ path: box.dataset.path || '', name }) });
+        CS.toast('已创建文件夹 ' + (d.created || name) + '。');
+        const created = (d.dirs || []).find(x => x.name === d.created);
+        await _loadDirListing(created ? created.path : d.path);
+      } catch (err) { CS.toast(CS.api.friendlyError(err), 'error'); }
+    },
     'dir-pick': dirPath => {
       const modal = CS.ui.modal;
       modal.pickedDir = dirPath;

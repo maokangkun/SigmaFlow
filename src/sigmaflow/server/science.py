@@ -1487,6 +1487,47 @@ class ScienceAPI:
                 "error": error,
             }
 
+        @router.post("/fs/mkdir")
+        async def create_dir(payload: FsMkdirIn, request: Request):
+            """项目目录浏览弹层里的「新建文件夹」: 只允许在项目根下创建, 名字做防逃逸校验."""
+            _check_origin(request)
+            root = os.environ.get("SIGMAFLOW_PROJECTS_DIR") or os.path.expanduser("~")
+            base = (
+                os.path.realpath(os.path.expanduser(payload.path))
+                if payload.path
+                else os.path.realpath(root)
+            )
+            if not base.startswith(os.path.realpath(root)):
+                raise HTTPException(status_code=400, detail="只能在项目根目录范围内新建文件夹")
+            name = _clip(payload.name, 120).strip().strip("/")
+            if not name or name in (".", ".."):
+                raise HTTPException(status_code=400, detail="文件夹名称无效")
+            if "/" in name or "\\" in name:
+                raise HTTPException(status_code=400, detail="文件夹名称不能包含路径分隔符")
+            target = os.path.join(base, name)
+            try:
+                os.makedirs(target, exist_ok=False)
+            except FileExistsError:
+                raise HTTPException(status_code=400, detail="同名文件夹已存在")
+            except OSError as err:
+                raise HTTPException(status_code=400, detail=f"创建失败：{err}")
+            dirs, error = [], ""
+            try:
+                for entry in os.scandir(base):
+                    if entry.is_dir() and not entry.name.startswith("."):
+                        dirs.append({"name": entry.name, "path": entry.path})
+            except OSError:
+                error = "目录不存在或不可访问"
+            dirs.sort(key=lambda d: d["name"].lower())
+            return {
+                "root": root,
+                "path": base,
+                "parent": os.path.dirname(base.rstrip("/")) or "/",
+                "dirs": dirs,
+                "created": name,
+                "error": error,
+            }
+
         @router.post("/projects")
         async def save_project(payload: ProjectIn, request: Request):
             _check_origin(request)
@@ -2922,6 +2963,11 @@ class _FsUploadIn(BaseModel):
     projectId: str = ""
     name: str = Field(min_length=1, max_length=200)
     dataBase64: str = Field(min_length=4, max_length=46_000_000)
+
+
+class FsMkdirIn(BaseModel):
+    path: str = Field(default="", max_length=2000)
+    name: str = Field(default="", max_length=120)
 
 
 class ChatIn(BaseModel):

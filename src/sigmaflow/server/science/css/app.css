@@ -299,6 +299,7 @@ html:has(.auth-page){scrollbar-gutter:auto}
 .skl-avatar{width:26px;height:26px;border-radius:9px;background:var(--line-soft);animation:skl-pulse 1.3s ease-in-out infinite;flex-shrink:0}
 .skl-circle{width:26px;height:26px;border-radius:50%;background:var(--line-soft);animation:skl-pulse 1.3s ease-in-out infinite;flex-shrink:0}
 .skl-body{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0;max-width:58%}
+.dir-new-row{display:flex;gap:8px;align-items:center;padding:0 4px}.dir-new-row input{flex:1;min-width:0;height:34px;padding:0 10px;font-size:12px}.dir-new-row .btn{flex-shrink:0}
 .skl-row.right .skl-body{margin-right:auto}
 .skl-line{width:64%;height:11px;border-radius:6px;background:var(--line-soft);animation:skl-pulse 1.3s ease-in-out infinite}
 .skl-line.wide{width:72%}
