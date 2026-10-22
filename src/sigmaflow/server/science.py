@@ -1489,7 +1489,8 @@ class ScienceAPI:
 
         @router.post("/fs/mkdir")
         async def create_dir(payload: FsMkdirIn, request: Request):
-            """项目目录浏览弹层里的「新建文件夹」: 只允许在项目根下创建, 名字做防逃逸校验."""
+            """项目目录浏览弹层里的「新建文件夹」: 浏览可达的任意目录下均可创建,
+            名字仍做单段校验(禁止分隔符与点项), 目标父目录必须真实存在."""
             _check_origin(request)
             root = os.environ.get("SIGMAFLOW_PROJECTS_DIR") or os.path.expanduser("~")
             base = (
@@ -1497,8 +1498,8 @@ class ScienceAPI:
                 if payload.path
                 else os.path.realpath(root)
             )
-            if not base.startswith(os.path.realpath(root)):
-                raise HTTPException(status_code=400, detail="只能在项目根目录范围内新建文件夹")
+            if not os.path.isdir(base):
+                raise HTTPException(status_code=400, detail="目标目录不存在或不可访问")
             name = _clip(payload.name, 120).strip().strip("/")
             if not name or name in (".", ".."):
                 raise HTTPException(status_code=400, detail="文件夹名称无效")
