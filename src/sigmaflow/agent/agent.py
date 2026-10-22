@@ -33,6 +33,10 @@ from .conf import *
 _TIMEOUT_HIT = object()
 
 
+class _ToolError(str):
+    """标记工具调用失败的错误文本; str 子类, 发给模型仍是普通字符串."""
+
+
 def _call_with_timeout(fn, seconds, label):
     """Run fn under a cooperative wall-clock limit (dsh tool-call-timeout-policy style).
 
@@ -968,7 +972,9 @@ class Agent:
                                         "block": block,
                                         "func": func,
                                         "inp": None,
-                                        "output": "Error: Failed to parse function arguments as JSON.",
+                                        "output": _ToolError(
+                                            "Failed to parse function arguments as JSON."
+                                        ),
                                         "task": False,
                                     }
                                 )
@@ -1038,7 +1044,7 @@ class Agent:
                                 else "(no summary)"
                             )
                         except Exception as sub_err:
-                            sub_out = f"Error: subagent failed: {type(sub_err).__name__}: {str(sub_err)[:300]}"
+                            sub_out = _ToolError(f"subagent failed: {type(sub_err).__name__}: {str(sub_err)[:300]}")
                         # 子代理改过的文件并入父会话的产出清单(dsh deliverables 思路)
                         _dl = info.setdefault("deliverables", [])
                         for d in sub_info.get("deliverables") or []:
@@ -1048,7 +1054,7 @@ class Agent:
                         return sub_out
                     handler = TOOL_HANDLERS.get(func)
                     if handler is None:
-                        return f"Error: unknown tool {func}"
+                        return _ToolError(f"unknown tool {func}")
                     # ask 类工具需要把问题卡片推给前端并阻塞等待回答,
                     # 通过 _notify 注入本会话的 on_tool 回调(允许被用户重命名, 认 __ask_tool__ 标记)
                     if getattr(handler, "__ask_tool__", False):
@@ -1068,15 +1074,15 @@ class Agent:
                     out = _call_with_timeout(_run_handler, int(timeout), func)
                     if out is _TIMEOUT_HIT:
                         # 结构化超时错误: 让模型知道该换路, 而不是拿到裸异常
-                        return (
-                            f"Error: Tool {func} did not finish within {int(timeout)}s "
+                        return _ToolError(
+                            f"Tool {func} did not finish within {int(timeout)}s "
                             "(timeout). The call was abandoned and may still be running "
                             "in the background. Try a different approach or split the work; "
                             "do not repeat this exact call."
                         )
                     return str(out)
                 except Exception as tool_err:
-                    return "Error: " + (f"{type(tool_err).__name__}: {tool_err}")[:400]
+                    return _ToolError(f"{type(tool_err).__name__}: {tool_err}")[:400]
 
             # 渐进式重复守卫(dsh repeat-tool-reminder 思路): 同一工具+完全相同参数
             # 第 2/3 次仍放行(合法场景: 改完代码重跑同一条测试), 但在结果后附提醒;
@@ -1202,6 +1208,7 @@ class Agent:
                                 "kind": "result",
                                 "name": func,
                                 "result": str(output)[:30000],
+                                "isError": isinstance(output, _ToolError),
                             }
                         )
                     except Exception:

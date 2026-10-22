@@ -408,7 +408,7 @@
                   msg.blocks = m.blocks.map(b => {
                     if (!b || typeof b !== 'object') return null;
                     if (b.t === 'think') return { type: 'think', text: b.x || '' };
-                    if (b.t === 'tool') return { type: 'tool', name: b.n || '工具', args: b.a && typeof b.a === 'object' ? b.a : {}, result: b.r || '' };
+                    if (b.t === 'tool') return { type: 'tool', name: b.n || '工具', args: b.a && typeof b.a === 'object' ? b.a : {}, result: b.r || '', isError: !!b.e };
                     if (b.t === 'ask') return { type: 'ask', id: b.id, questions: Array.isArray(b.qs) ? b.qs : [], answered: !!b.ok, result: b.r || '', answers: Array.isArray(b.ans) ? b.ans : null, stale: !b.ok };
                     if (b.t === 'text') return { type: 'text', text: b.x || '' };
                     return null;
@@ -652,7 +652,7 @@
       const out = [];
       (m.blocks || []).forEach(b => {
         if (b.type === 'think') out.push({ t: 'think', x: b.text || '' });
-        else if (b.type === 'tool') out.push({ t: 'tool', n: b.name || '工具', a: b.args && typeof b.args === 'object' ? b.args : {}, r: b.result == null ? '' : String(b.result) });
+        else if (b.type === 'tool') out.push({ t: 'tool', n: b.name || '工具', a: b.args && typeof b.args === 'object' ? b.args : {}, r: b.result == null ? '' : String(b.result), ...(b.isError ? { e: true } : {}) });
         else if (b.type === 'ask') out.push({ t: 'ask', id: b.id, qs: Array.isArray(b.questions) ? b.questions : [], ok: !!b.answered, r: b.result || '', ans: Array.isArray(b.answers) ? b.answers : null });
         else if (b.type === 'text') out.push({ t: 'text', x: b.text || '' });
       });
@@ -795,7 +795,7 @@
     const mirror = () => {
       reply.content = reply.blocks.filter(b => b.type === 'text').map(b => b.text).join('');
       reply.reasoning = reply.blocks.filter(b => b.type === 'think').map(b => b.text).join('');
-      reply.tools = reply.blocks.filter(b => b.type === 'tool').map(b => ({ name: b.name, args: b.args, result: b.result }));
+      reply.tools = reply.blocks.filter(b => b.type === 'tool').map(b => ({ name: b.name, args: b.args, result: b.result, isError: !!b.isError }));
       reply.asks = reply.blocks.filter(b => b.type === 'ask').map(b => ({ id: b.id, questions: b.questions, answered: !!b.answered, result: b.result || '', ...(b.answers ? { answers: b.answers } : {}) }));
       reply.deliverables = reply.blocks.filter(b => b.type === 'deliverables').flatMap(b => b.files || []);
     };
@@ -844,8 +844,8 @@
           if (ab) { ab.answered = true; if (!ab.result) ab.result = t.result; ab.end = Date.now(); return; }
         }
         const ent = [...reply.blocks].reverse().find(b => b.type === 'tool' && b.name === t.name && b.result == null);
-        if (ent) { ent.result = t.result; if (typeof ent.at === 'number') ent.end = Date.now(); }
-        else reply.blocks.push({ type: 'tool', name: t.name, result: t.result, at: Date.now() });
+        if (ent) { ent.result = t.result; ent.isError = !!t.isError; if (typeof ent.at === 'number') ent.end = Date.now(); }
+        else reply.blocks.push({ type: 'tool', name: t.name, result: t.result, isError: !!t.isError, at: Date.now() });
       }
     };
     const reply = { role: 'assistant', content: '', blocks: [], streaming: true, at: new Date().toISOString(), model: CS.state.settings.model || '默认模型' };

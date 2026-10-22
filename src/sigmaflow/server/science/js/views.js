@@ -95,8 +95,14 @@
   V.hlJSON = text => text.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])).replace(/("(?:\\.|[^"\\])*")(\s*:)|("(?:\\.|[^"\\])*")|\b(true|false|null)\b|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g, (m, key, colon, str, kw, num) => key ? `<span class="j-key">${key}</span>${colon}` : str ? `<span class="j-str">${str}</span>` : kw ? `<span class="j-kw">${kw}</span>` : num ? `<span class="j-num">${num}</span>` : m);
   // unified diff → GitHub 风格双行号 HTML; 仅在结果长得像 diff 时由工具卡调用
   V.isUnifiedDiff = text => /^--- .+$/m.test(text) && /^\+\+\+ .+$/m.test(text) && /@@ -\d+/.test(text);
-  // 工具调用是否报错: 以 Error:/Traceback 开头, 或 JSON 体里带 error/status:error 标记
-  V.toolIsErr = res => { const s2 = String(res ?? '').trim(); return /^Error[:\s]|^Traceback|^\{"error"|^\{"status"\s*:\s*"error"/.test(s2); };
+  // 工具调用是否报错: 以服务端 isError 标记为准; 老存档无标记时才退回文本启发式,
+  // 且启发式要求 Error: 紧跟大写词(如 Error: ValueError) —— 纯文本恰好以 Error: 开头(grep 摘录)不误报
+  V.toolIsErr = res => {
+    if (res && typeof res === 'object') return !!res.isError;
+    const s2 = String(res ?? '').trim();
+    if (/^Traceback|^\{"error"|^\{"status"\s*:\s*"error"/.test(s2)) return true;
+    return /^Error:\s*[A-Z]/.test(s2);
+  };
   const TE_THEMES = [['monokai', 'Monokai Dark'], ['dracula', 'Dracula'], ['solarized-dark', 'Solarized Dark'], ['one-dark', 'One Dark'], ['nord', 'Nord'], ['github-dark', 'GitHub Dark']];
   const bashCmd = args => String((args && typeof args === 'object' ? (args.command ?? args.cmd ?? '') : (args ?? '')) || '').trim();
   const BASH_CMDS = new Set(['cd','ls','cp','mv','rm','mkdir','rmdir','cat','echo','printf','grep','sed','awk','git','pip','pip3','npm','npx','yarn','curl','wget','python','python3','conda','tar','find','chmod','chown','du','df','head','tail','sort','uniq','wc','ln','touch','bash','sh','source','export','env','which','ps','top','kill','docker','rsync','ssh','scp','apt','apt-get','brew','make','cmake','jq','xargs','tee','history','clear','uname','ip','ping','date','sleep','test','sudo','md5sum','sha256sum','base64','openssl']);

@@ -3162,21 +3162,22 @@ class ScienceProjectStore:
                                 }
                             )
                         elif _t == "tool":
-                            saved_blocks.append(
-                                {
-                                    "t": "tool",
-                                    "n": _clip(
-                                        str(b.get("n", b.get("name", "工具"))), 200
-                                    ),
-                                    "a": b.get("a", b.get("args"))
-                                    if isinstance(b.get("a", b.get("args")), dict)
-                                    else {},
-                                    "r": _clip(
-                                        str(b.get("r", b.get("result", ""))),
-                                        _tool_result_limit(),
-                                    ),
-                                }
-                            )
+                            saved: dict[str, Any] = {
+                                "t": "tool",
+                                "n": _clip(
+                                    str(b.get("n", b.get("name", "工具"))), 200
+                                ),
+                                "a": b.get("a", b.get("args"))
+                                if isinstance(b.get("a", b.get("args")), dict)
+                                else {},
+                                "r": _clip(
+                                    str(b.get("r", b.get("result", ""))),
+                                    _tool_result_limit(),
+                                ),
+                            }
+                            if b.get("isError"):
+                                saved["e"] = True
+                            saved_blocks.append(saved)
                         elif _t == "ask":
                             saved_blocks.append(
                                 {
