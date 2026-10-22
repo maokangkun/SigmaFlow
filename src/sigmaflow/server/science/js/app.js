@@ -496,8 +496,13 @@
   // Agent 工具设置: 进入设置页时懒加载; 保存或恢复后刷新上下文圆环
   // 工具结果入库上限: 设置页展示与保存 ( science 数据目录 settings.json )
   CS.loadToolLimit = async () => {
-    if (CS.ui.toolLimit != null) return;
-    try { const d = await CS.api.request('/tool-result-limit'); CS.ui.toolLimit = d.limit ?? 30000; CS.render(); } catch { /* 拿不到保持空占位, 保存时用默认 */ }
+    if (CS.ui.toolLimit == null) {
+      try { const d = await CS.api.request('/tool-result-limit'); CS.ui.toolLimit = d.limit ?? 30000; } catch { /* 拿不到保持空占位, 保存时用默认 */ }
+    }
+    if (CS.ui.turnBudget == null) {
+      try { const d = await CS.api.request('/turn-budget'); CS.ui.turnBudget = d.limit ?? 100; } catch { /* 同上 */ }
+    }
+    CS.render();
   };
   CS.loadAgentTools = async () => {
     if (CS.ui.agentTools) return;
@@ -2008,6 +2013,29 @@
     },
     'dir-cancel': () => { document.getElementById('dir-listing').innerHTML = ''; },
     // 新建文件夹: 在当前浏览目录下创建, 成功后进入新目录(用户可直接点「选择此文件夹」)
+    // 设置页: 工具结果入库上限 / 单次回复轮次预算 (science settings.json, 即时生效)
+    'save-tool-limit': async () => {
+      const el = document.getElementById('tool-limit-input');
+      const v = parseInt((el?.value || '').trim(), 10);
+      if (!Number.isFinite(v)) { CS.toast('请输入有效数字。', 'error'); return; }
+      try { const d = await CS.api.request('/tool-result-limit', { method: 'POST', body: JSON.stringify({ limit: v }) }); CS.ui.toolLimit = d.limit; CS.toast('已保存工具结果入库上限。'); CS.render(); }
+      catch (err) { CS.toast(CS.api.friendlyError(err), 'error'); }
+    },
+    'reset-tool-limit': async () => {
+      try { const d = await CS.api.request('/tool-result-limit', { method: 'POST', body: JSON.stringify({ limit: 30000 }) }); CS.ui.toolLimit = d.limit; CS.render(); CS.toast('已恢复默认 30000。'); }
+      catch (error) { CS.toast(CS.api.friendlyError(error), 'error'); }
+    },
+    'save-turn-budget': async () => {
+      const el = document.getElementById('turn-budget-input');
+      const v = parseInt((el?.value || '').trim(), 10);
+      if (!Number.isFinite(v) || v < 10) { CS.toast('请输入不小于 10 的轮数。', 'error'); return; }
+      try { const d = await CS.api.request('/turn-budget', { method: 'POST', body: JSON.stringify({ limit: v }) }); CS.ui.turnBudget = d.limit; CS.render(); CS.toast('已保存，下一次回复生效。'); }
+      catch (err) { CS.toast(CS.api.friendlyError(err), 'error'); }
+    },
+    'reset-turn-budget': async () => {
+      try { const d = await CS.api.request('/turn-budget', { method: 'POST', body: JSON.stringify({ limit: 100 }) }); CS.ui.turnBudget = d.limit; CS.render(); CS.toast('已恢复默认 100 轮。'); }
+      catch (err) { CS.toast(CS.api.friendlyError(err), 'error'); }
+    },
     'dir-create': async () => {
       const box = document.getElementById('dir-listing');
       const input = document.getElementById('dir-new-name');

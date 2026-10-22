@@ -112,6 +112,35 @@ TICK_SECONDS = 0.7
 
 
 _TOOL_LIMIT_CACHE: dict = {}
+_TURN_BUDGET_CACHE: dict = {}
+
+
+def _turn_budget() -> int:
+    """单次回复的工具轮次上限: 前端设置页可调(存 settings.json 的 turnBudget), 默认 100。
+
+    分析型任务一轮一个工具, 预算不足会被截停; 读取时实时查盘(与 toolResultLimit 同样的
+    mtime 缓存策略), 设置变更即时生效。"""
+    d = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
+        os.path.expanduser("~"), ".sigmaflow", "science"
+    )
+    path = os.path.join(d, "settings.json")
+    try:
+        st = os.stat(path)
+        key = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        key = None
+    if key is not None and _TURN_BUDGET_CACHE.get("key") == key:
+        return _TURN_BUDGET_CACHE["value"]
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8")) if key else {}
+        v = int(data.get("turnBudget") or 100)
+    except Exception:
+        v = 100
+    v = max(10, min(v, 400))
+    if key is not None:
+        _TURN_BUDGET_CACHE["key"] = key
+        _TURN_BUDGET_CACHE["value"] = v
+    return v
 
 
 def _tool_result_limit() -> int:
@@ -145,6 +174,10 @@ def _tool_result_limit() -> int:
 
 class ToolLimitIn(BaseModel):
     limit: int = 30000
+
+
+class TurnBudgetIn(BaseModel):
+    limit: int = 100
 
 
 class StepSpec(BaseModel):
@@ -1715,6 +1748,35 @@ class ScienceAPI:
             except Exception:
                 data = {}
             data["toolResultLimit"] = v
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            return {"limit": v}
+
+        @router.get("/turn-budget")
+        async def get_turn_budget():
+            """查询单次回复工具轮次上限(设置页展示)。"""
+            return {"limit": await asyncio.to_thread(_turn_budget)}
+
+        @router.post("/turn-budget")
+        async def set_turn_budget(payload: TurnBudgetIn, request: Request):
+            """写回工具轮次上限; 即时生效, 无需重启。"""
+            _check_origin(request)
+            v = max(10, min(int(payload.limit or 100), 400))
+            d = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
+                os.path.expanduser("~"), ".sigmaflow", "science"
+            )
+            path = Path(d) / "settings.json"
+            try:
+                data = (
+                    json.loads(path.read_text(encoding="utf-8"))
+                    if path.exists()
+                    else {}
+                )
+            except Exception:
+                data = {}
+            data["turnBudget"] = v
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(
                 json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -3543,10 +3605,10 @@ def _run_agent_chat(
     )
     # 仅保留 user/assistant 两类角色, 其余消息直接丢弃
     # 轮次上限按助手消息数加预留余量, 防止无限循环
-    # 轮次预算: 助手消息数 + 余量。分析型会话一轮一个工具(sleep 30 的长命令更甚),
-    # 17 轮的余量在长任务首条消息就会打满, 导出"模型没有返回内容"的困惑报错;
-    # 余量提到 80, 并保留 max_turn-1 的 finalize 提示兜底无限循环
-    max_turn = max(1, sum(1 for m in convo if m["role"] == "assistant") + 80)
+    # 轮次预算: 助手消息数 + 余量(设置页 turnBudget 可调, 默认 100)。
+    # 分析型会话一轮一个工具(sleep 30 的长命令更甚), 余量不足会在长任务首条消息打满,
+    # 导出"模型没有返回内容"的困惑报错; 保留 max_turn-1 的 finalize 提示兜底无限循环
+    max_turn = max(1, sum(1 for m in convo if m["role"] == "assistant") + _turn_budget())
     system, sub_system = _effective_system_prompts()
     sub_system = (
         re.sub(
