@@ -15,6 +15,17 @@ from rich import print
 from pathlib import Path
 from collections import defaultdict
 from .conf import *
+from .harness import (
+    GOAL,
+    memory_list as _harness_memory_list,
+    memory_read as _harness_memory_read,
+    memory_save as _harness_memory_save,
+    run_cancel_cron as _harness_cancel_cron,
+    run_list_crons as _harness_list_crons,
+    run_schedule_cron as _harness_schedule_cron,
+    spawn_teammate as _harness_spawn_teammate,
+    list_teammates as _harness_list_teammates,
+)
 from .sciverse_api import SCIVERSE_TOOL_HANDLERS, SCIVERSE_TOOLS
 
 # -- Tools --
@@ -1552,6 +1563,32 @@ setattr(run_ask, "__ask_tool__", True)  # 标记 ask 工具, 供 agent 侧识别
 
 TOOL_HANDLERS = {
     "bash": lambda **kw: run_bash(kw.get("command", "")),
+    "memory_save": lambda **kw: _harness_memory_save(
+        kw.get("name", ""),
+        kw.get("type", "project"),
+        kw.get("description", ""),
+        kw.get("body", ""),
+    ),
+    "memory_list": lambda **kw: _harness_memory_list(),
+    "memory_read": lambda **kw: _harness_memory_read(kw.get("filename", "")),
+    "schedule_cron": lambda **kw: _harness_schedule_cron(
+        kw.get("cron", ""),
+        kw.get("prompt", ""),
+        kw.get("recurring", True),
+        kw.get("durable", True),
+    ),
+    "list_crons": lambda **kw: _harness_list_crons(),
+    "cancel_cron": lambda **kw: _harness_cancel_cron(kw.get("job_id", "")),
+    "goal_set": lambda **kw: GOAL.set_goal(kw.get("condition", "")),
+    "goal_status": lambda **kw: GOAL.status(),
+    "goal_clear": lambda **kw: GOAL.clear(),
+    "spawn_teammate": lambda **kw: _harness_spawn_teammate(
+        kw.get("name", ""),
+        kw.get("role", ""),
+        kw.get("prompt", ""),
+        str(kw.get("task_id", "") or ""),
+    ),
+    "list_teammates": lambda **kw: _harness_list_teammates(),
     "grep": lambda **kw: run_grep(kw.get("tool", ""), kw.get("args", "")),
     "read": lambda **kw: run_read(
         kw.get("path", ""), offset=kw.get("offset"), limit=kw.get("limit")

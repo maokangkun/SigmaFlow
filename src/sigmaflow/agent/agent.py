@@ -26,6 +26,7 @@ from .tools import (
     get_session_workdir,
     set_session_workdir,
 )
+from .harness import GOAL
 from .utils import KnightRiderStatus, extract_json
 from .conf import *
 
@@ -844,6 +845,25 @@ class Agent:
                                     "Max tokens reached, output may be incomplete"
                                 )
 
+                            # s17 goal stop hook: 模型停止调工具不等于目标达成,
+                            # 有活跃 goal 时先让独立评估器判定, 未达成则注入提示继续下一轮
+                            _goal_action, _goal_reason = GOAL.evaluate_after_turn(
+                                messages, background_running=not BG.is_finished
+                            )
+                            if _goal_action in ("block", "error"):
+                                _goal_msg = {
+                                    "role": "user",
+                                    "content": (
+                                        "[Goal still active]\n"
+                                        f"Condition: {GOAL.active['condition'] if GOAL.active else ''}\n"
+                                        f"Evaluator: {_goal_action}: {_goal_reason}\n"
+                                        "Continue working and surface the missing evidence."
+                                    ),
+                                }
+                                messages.append(_goal_msg)
+                                info["messages"].append(_goal_msg)
+                                continue
+
                             break
                 case "openai":
                     if (
@@ -913,6 +933,24 @@ class Agent:
                                 info["error"] = (
                                     "Max tokens reached, output may be incomplete"
                                 )
+
+                            # s17 goal stop hook: 同 anthropic 分支, 无工具调用时先问独立评估
+                            _goal_action, _goal_reason = GOAL.evaluate_after_turn(
+                                messages, background_running=not BG.is_finished
+                            )
+                            if _goal_action in ("block", "error"):
+                                _goal_msg = {
+                                    "role": "user",
+                                    "content": (
+                                        "[Goal still active]\n"
+                                        f"Condition: {GOAL.active['condition'] if GOAL.active else ''}\n"
+                                        f"Evaluator: {_goal_action}: {_goal_reason}\n"
+                                        "Continue working and surface the missing evidence."
+                                    ),
+                                }
+                                messages.append(_goal_msg)
+                                info["messages"].append(_goal_msg)
+                                continue
 
                             break
                     else:
@@ -1044,7 +1082,9 @@ class Agent:
                                 else "(no summary)"
                             )
                         except Exception as sub_err:
-                            sub_out = _ToolError(f"subagent failed: {type(sub_err).__name__}: {str(sub_err)[:300]}")
+                            sub_out = _ToolError(
+                                f"subagent failed: {type(sub_err).__name__}: {str(sub_err)[:300]}"
+                            )
                         # 子代理改过的文件并入父会话的产出清单(dsh deliverables 思路)
                         _dl = info.setdefault("deliverables", [])
                         for d in sub_info.get("deliverables") or []:

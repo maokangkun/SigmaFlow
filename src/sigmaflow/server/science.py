@@ -3164,9 +3164,7 @@ class ScienceProjectStore:
                         elif _t == "tool":
                             saved: dict[str, Any] = {
                                 "t": "tool",
-                                "n": _clip(
-                                    str(b.get("n", b.get("name", "工具"))), 200
-                                ),
+                                "n": _clip(str(b.get("n", b.get("name", "工具"))), 200),
                                 "a": b.get("a", b.get("args"))
                                 if isinstance(b.get("a", b.get("args")), dict)
                                 else {},
@@ -3439,7 +3437,37 @@ def _run_agent_chat(
         for m in messages
         if m.get("role") in ("user", "assistant")
     ]
+    # harness 会话上下文: cron 投递按会话绑定; 队友/goal 评估器用同一模型配置
+    from sigmaflow.agent import harness as _harness
+
+    _harness_run_id = (
+        str(stats.get("runId", "") or "") if isinstance(stats, dict) else ""
+    )
+    _harness.set_session_run_id(_harness_run_id)
+    _harness.set_model_context(base_url, api_key, model_name)
+    # 到期 cron + 队友消息投递: 以 [Scheduled]/[Team events] 用户消息注入本轮开头,
+    # 投递成功即确认(一次性任务移除), 与 lcc 的 at-least-once 语义一致
+    _pre: list = []
+    try:
+        _due = _harness.CRON.due_for(_harness_run_id)
+        if _due:
+            for _job in _due:
+                _pre.append({"role": "user", "content": f"[Scheduled] {_job.prompt}"})
+            _harness.CRON.acknowledge(_due)
+        _lead_inbox = tools_mod.BUS.read_inbox("lead")
+        if _lead_inbox:
+            _event_lines = [
+                f"[{m.get('type', 'message')}|{m.get('from', '?')}] {m.get('content', '')}"
+                for m in _lead_inbox
+            ]
+            _pre.append(
+                {"role": "user", "content": "[Team events]\n" + "\n".join(_event_lines)}
+            )
+    except Exception as _h_err:
+        logging.getLogger("uvicorn.error").info("harness inject skipped: %s", _h_err)
+
     # 压缩契约: 界面保留全部历史, 但最后一处压缩摘要卡之前的内容不再发送,
+    # 由卡内摘要开场(pi CompactionEntry 语义); 旧卡内容已随迭代并入最新摘要
     # 由卡内摘要开场(pi CompactionEntry 语义); 旧卡内容已随迭代并入最新摘要
     marker = getattr(
         _agent_tools_module(), "_COMPACT_MARKER", "[Conversation compressed"
@@ -3456,6 +3484,9 @@ def _run_agent_chat(
         if card_idx >= 0
         else raw
     )
+    # harness 注入的投递消息([Scheduled]/[Team events])插在对话最前, 先于压缩卡
+    if _pre:
+        convo = [*_pre, *convo]
     logging.getLogger("uvicorn.error").info(
         "contract: raw=%d card_idx=%d convo=%d est=%d",
         len(raw),
@@ -3492,6 +3523,21 @@ def _run_agent_chat(
         )
     if plan_mode:
         bound_system = bound_system + _PLAN_MODE_PROMPT
+    # s09 记忆注入: 索引常驻 + 与当前请求关键词相关的记录(零模型调用, 纯词法召回)
+    try:
+        _last_user = next(
+            (
+                str(m.get("content", ""))
+                for m in reversed(convo)
+                if m.get("role") == "user"
+            ),
+            "",
+        )
+        _memory_block = _harness.memory_recall_for(_last_user)
+        if _memory_block:
+            bound_system += f"\n\n# Memory\n{_memory_block}"
+    except Exception as _mem_err:
+        logging.getLogger("uvicorn.error").info("memory recall skipped: %s", _mem_err)
     agent = Agent(
         method="openai",
         model=model_name,

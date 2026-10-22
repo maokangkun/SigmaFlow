@@ -129,10 +129,11 @@ AVAILABLE_GREP_TOOLS = [tool for tool in GREP_TOOL_CANDIDATES if shutil.which(to
 
 SYSTEM = f"""You are a team lead and coding agent at {WORKDIR}.
 Use `task` tools to plan and track work. Use run_job for long-running commands; check_job to inspect and kill_job to stop them. Spawn teammates and communicate via inboxes.
-"""
-SUBAGENT_SYSTEM = f"""You are a coding subagent at {WORKDIR}. Complete the given task, then summarize your findings.
+Save durable user preferences, feedback and project facts with `memory_save` so later sessions can recall them. Schedule future work with `schedule_cron`. For 'keep working until X holds' requests, set a `goal_set` condition instead of relying on a single pass.
 """
 
+SUBAGENT_SYSTEM = f"""You are a coding subagent at {WORKDIR}. Complete the given task, then summarize your findings.
+"""
 
 CHILD_TOOLS = [
     {
@@ -345,6 +346,114 @@ CHILD_TOOLS = [
     },
 ]
 TOOLS = CHILD_TOOLS + [
+    {
+        "name": "memory_save",
+        "description": (
+            "Save a durable, reusable memory for future sessions (user preference, "
+            "repeated feedback, stable project fact, or external reference). "
+            "Do NOT store temporary session/task state."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Short unique memory name"},
+                "type": {
+                    "type": "string",
+                    "enum": ["user", "feedback", "project", "reference"],
+                    "description": "Memory type",
+                },
+                "description": {"type": "string", "description": "One-line summary"},
+                "body": {
+                    "type": "string",
+                    "description": "Full memory content in Markdown",
+                },
+            },
+            "required": ["name", "type", "description", "body"],
+        },
+    },
+    {
+        "name": "memory_list",
+        "description": "List stored memories with filenames and descriptions.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "memory_read",
+        "description": "Read one memory record by filename (from memory_list).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"filename": {"type": "string"}},
+            "required": ["filename"],
+        },
+    },
+    {
+        "name": "schedule_cron",
+        "description": (
+            "Schedule a prompt with a 5-field cron expression "
+            "(minute hour day month weekday). It is delivered as a [Scheduled] "
+            "message to this conversation when due (or set recurring for repeats)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "cron": {
+                    "type": "string",
+                    "description": "e.g. '0 9 * * *' weekdays at 09:00",
+                },
+                "prompt": {"type": "string"},
+                "recurring": {
+                    "type": "boolean",
+                    "description": "Defaults to true; false = one-shot",
+                },
+                "durable": {
+                    "type": "boolean",
+                    "description": "Survive service restarts. Default true.",
+                },
+            },
+            "required": ["cron", "prompt"],
+        },
+    },
+    {
+        "name": "list_crons",
+        "description": "List scheduled cron jobs.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "cancel_cron",
+        "description": "Cancel a cron job by ID.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"job_id": {"type": "string"}},
+            "required": ["job_id"],
+        },
+    },
+    {
+        "name": "goal_set",
+        "description": (
+            "Set a completion goal for this session. Until an independent evaluator "
+            "confirms the goal is met, stopping is blocked and you are asked to keep "
+            "working. Use for tasks like 'keep fixing until tests pass'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "condition": {
+                    "type": "string",
+                    "description": "Verifiable completion condition, e.g. 'pytest tests/ exits 0 and lint passes'",
+                }
+            },
+            "required": ["condition"],
+        },
+    },
+    {
+        "name": "goal_status",
+        "description": "Show the current goal state and last evaluation reason.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "goal_clear",
+        "description": "Clear the session goal and allow stopping freely.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
     {
         "name": "subagent",
         "description": "Spawn a subagent with fresh context.",
