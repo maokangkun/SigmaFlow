@@ -3543,7 +3543,10 @@ def _run_agent_chat(
     )
     # 仅保留 user/assistant 两类角色, 其余消息直接丢弃
     # 轮次上限按助手消息数加预留余量, 防止无限循环
-    max_turn = max(1, sum(1 for m in convo if m["role"] == "assistant") + 17)
+    # 轮次预算: 助手消息数 + 余量。分析型会话一轮一个工具(sleep 30 的长命令更甚),
+    # 17 轮的余量在长任务首条消息就会打满, 导出"模型没有返回内容"的困惑报错;
+    # 余量提到 80, 并保留 max_turn-1 的 finalize 提示兜底无限循环
+    max_turn = max(1, sum(1 for m in convo if m["role"] == "assistant") + 80)
     system, sub_system = _effective_system_prompts()
     sub_system = (
         re.sub(
@@ -3644,6 +3647,21 @@ def _run_agent_chat(
         tools_mod.set_session_workdir(None)
 
     if not last:
+        # 轮次耗尽的截停(agent 侧已写入轮次上限语义的 error): 生成一段可用的进度回复,
+        # 保留工具轨迹, 前端不再弹出"模型没有返回内容"
+        if isinstance(info, dict) and (info.get("used_tools") or info.get("deliverables")):
+            tool_count = len(info.get("used_tools") or [])
+            files = [d.get("path", "") for d in (info.get("deliverables") or []) if isinstance(d, dict)]
+            note = (
+                "本次回复未产出最终文字: 单次回复的工具轮次预算已用完, 工具执行轨迹已保留。"
+                "可发送『继续』让任务接续执行。"
+            )
+            if files:
+                note += "\n\n本轮产出文件:\n" + "\n".join(f"- {f}" for f in files[:10])
+            logging.getLogger("uvicorn.error").info(
+                "chat truncated at max_turn: tools=%d files=%d", tool_count, len(files)
+            )
+            return note
         raise RuntimeError("模型没有返回内容")
     if isinstance(last, str):
         return last

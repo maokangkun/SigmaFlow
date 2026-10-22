@@ -1325,12 +1325,25 @@ class Agent:
                 m = [
                     {
                         "role": "user",
-                        "content": "[System] Max turn will be reached in the next turn, just finalize the response without calling tools. Stopping to avoid infinite loop.",
+                        "content": (
+                            "[System] Max turn will be reached in the next turn. "
+                            "Do NOT call any more tools in the next response: reply with a "
+                            "final summary of what has been done so far, what remains, and "
+                            "how to continue. Stopping to avoid infinite loop."
+                        ),
                     }
                 ]
                 print(f"{Prompt.User}{m[0]['content']}")
                 messages.extend(m)
                 info["messages"].extend(m)
+
+        # 轮次预算耗尽且模型从未输出正文(长工具链任务被截停): 标记错误为轮次上限语义,
+        # 前端据此给出可理解的提示, 而不是误导性的"模型没有返回内容"
+        if not subagent and cur_turn >= max_turn and not info.get("last_response"):
+            info["error"] = (
+                f"已达单次回复的轮次上限({max_turn}轮): 长任务在预算内未完成, "
+                "工具轨迹已保留, 可发送『继续』接续执行。"
+            )
 
         if not subagent and self.on_tool is not None and info.get("deliverables"):
             # 放在最末尾: 前端块按事件到达顺序排列, 产出文件行要落在最终文本之后
