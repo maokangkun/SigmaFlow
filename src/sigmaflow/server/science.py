@@ -2657,6 +2657,13 @@ class ScienceAPI:
                                     chat_asks.setdefault(request_id, set()).add(
                                         ev["id"]
                                     )
+                                if isinstance(ev, dict) and ev.get("kind") == "progress":
+                                    # 长工具心跳: 单独事件类型, 前端只保活不进块
+                                    loop.call_soon_threadsafe(
+                                        chat_queue.put_nowait,
+                                        ("progress", {"name": ev.get("name"), "elapsed": ev.get("elapsed")}),
+                                    )
+                                    return
                                 loop.call_soon_threadsafe(
                                     chat_queue.put_nowait, ("tool", ev)
                                 )
@@ -2779,6 +2786,16 @@ class ScienceAPI:
                                         "event": "chat.tool",
                                         "requestId": request_id,
                                         "data": {"tool": value},
+                                    },
+                                )
+                            elif kind == "progress":
+                                # 长工具心跳: 前端只重置空闲计时并刷新运行时长
+                                event, message = (
+                                    "chat.progress",
+                                    {
+                                        "event": "chat.progress",
+                                        "requestId": request_id,
+                                        "data": value or {},
                                     },
                                 )
                             elif kind == "retry":

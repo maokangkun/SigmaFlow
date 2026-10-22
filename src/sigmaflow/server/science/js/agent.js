@@ -114,6 +114,7 @@
             const entry = CS.api.ws.pending.get(message.requestId);
             // 长推理场景下生成可持续很久: 每收到新分片就重置空闲计时,
             // 只在连续无活动超过阈值时才判定超时
+            if (message.event === 'chat.progress') { entry.resetTimer && entry.resetTimer(); if (entry.onProgress) entry.onProgress(message.data || {}); return; }
             if (message.event === 'chat.delta' || message.event === 'chat.think' || message.event === 'chat.tool' || message.event === 'chat.usage') {
               // ask 问题卡挂起后进入等待用户回答的静默期, 可能远超常规空闲阈值:
               // 此时暂停空闲计时改用长兜底, 否则用户思考超过阈值会把回复误判为超时,
@@ -161,7 +162,7 @@
         this.socket.send(JSON.stringify({ action, requestId, ...payload }));
       });
     },
-    chat(payload, onDelta, onThink, onTool, onRetry, onUsage) {
+    chat(payload, onDelta, onThink, onTool, onRetry, onUsage, onProgress) {
       if (!this.open()) return Promise.reject(new Error('WebSocket 未连接。'));
       const requestId = String(++this.seq);
       this.activeChats.add(requestId);
@@ -171,7 +172,7 @@
         // 只折断真正卡死的连接
         const idleMs = ws.chatIdleTimeout || 180000;
         const fail = () => { CS.api.ws.pending.delete(requestId); CS.api.ws.activeChats.delete(requestId); reject(new Error('模型响应超时。')); };
-        const entry = { resolve, reject, timer: null, resetTimer: null, onDelta, onThink, onTool, onRetry, onUsage };
+        const entry = { resolve, reject, timer: null, resetTimer: null, onDelta, onThink, onTool, onRetry, onUsage, onProgress };
         entry.timer = setTimeout(fail, idleMs);
         entry.resetTimer = () => { clearTimeout(entry.timer); entry.timer = setTimeout(fail, idleMs); };
         // ask 等待期不计常规空闲: 服务端 ask 超时为 1 小时, 前端以 2 小时兜底防永久挂起

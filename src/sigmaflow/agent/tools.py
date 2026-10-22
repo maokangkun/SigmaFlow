@@ -60,19 +60,32 @@ def run_bash(command: str) -> str:
     dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
     if any(d in command for d in dangerous):
         return "Error: Dangerous command blocked"
+    proc = subprocess.Popen(
+        command,
+        shell=True,
+        cwd=get_session_workdir(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
     try:
-        r = subprocess.run(
-            command,
-            shell=True,
-            cwd=get_session_workdir(),
-            capture_output=True,
-            text=True,
-            timeout=CMD_TIMEOUT,
-        )
-        out = (r.stdout + r.stderr).strip()
-        return out or "(no output)"
+        out, err = proc.communicate(timeout=CMD_TIMEOUT)
+        out = (out or "") + (err or "")
+        return out.strip() or "(no output)"
     except subprocess.TimeoutExpired:
-        return f"Error: Timeout ({CMD_TIMEOUT}s)"
+        # 超时不杀进程: 收养为后台 job 继续跑, 把决定权交给模型 ——
+        # 继续等(sleep 后 check_job)或放弃(继续其它工作), 会话循环不中断(lcc s11 思路)
+        task_id = str(uuid.uuid4())[:8]
+        BG.adopt(task_id, proc, command, CMD_TIMEOUT, get_session_workdir())
+        return (
+            f"Error: Timeout — the command has been running for {CMD_TIMEOUT}s and is "
+            f"STILL RUNNING in the background as job {task_id} (it was NOT killed; "
+            "its output will be captured). You decide: (a) to keep waiting, call bash "
+            f"with something like `sleep 120` then check_job with job_id {task_id}, "
+            "and repeat as needed; (b) to stop waiting, just continue with other work "
+            "and check_job later; (c) to abandon it, call kill_job with job_id "
+            f"{task_id}. Do NOT re-run the same command — it is already running."
+        )
     except Exception as e:
         return f"Error: {e}"
 
@@ -1051,6 +1064,55 @@ class BackgroundManager:
         )
         thread.start()
         return f"Background job {task_id} started: {command[:80]}"
+
+    def adopt(self, task_id: str, proc, command: str, waited: int, workdir=None) -> str:
+        """收养一个已超时的前台进程: 进程不杀, 继续跑完; 模型可 check_job 轮询。
+
+        bash 工具超时时调用 —— 与杀进程相比, 长任务(如 metagenomic 组装)的
+        已有进度不会丢失, 由模型决定继续等待还是放弃。"""
+        self.tasks[task_id] = {
+            "status": "running",
+            "result": None,
+            "command": command,
+            "proc": proc,
+        }
+        thread = threading.Thread(
+            target=self._adopt_execute,
+            args=(task_id,),
+            daemon=True,
+        )
+        thread.start()
+        return task_id
+
+    def _adopt_execute(self, task_id: str):
+        """收养进程的等待线程: 不设 timeout(前台等待已耗尽预算, 这里无限期),
+        完成后走与 _execute 相同的登记/通知路径。"""
+        entry = self.tasks.get(task_id) or {}
+        proc = entry.get("proc")
+        if proc is None:
+            self.tasks[task_id]["status"] = "error"
+            self.tasks[task_id]["result"] = "Error: adopted job lost its process handle"
+            return
+        status, output = "completed", ""
+        try:
+            out, err = proc.communicate()
+            output = ((out or "") + (err or "")).strip()[:50000] or "(no output)"
+            if proc.returncode != 0:
+                status = "error"
+            with self._lock:
+                if self.tasks[task_id].get("status") == "killed":
+                    status = "killed"
+        except Exception as e:
+            output = f"Error: {e}"
+            status = "error"
+        killed = self.tasks[task_id].get("status") == "killed"
+        if not killed:
+            self.tasks[task_id]["status"] = status
+            self.tasks[task_id]["result"] = output
+            with self._lock:
+                self._notification_queue.append(
+                    {"task_id": task_id, "status": status, "result": output[:300]}
+                )
 
     def _execute(self, task_id: str, command: str, workdir=None):
         """Thread target: run subprocess, capture output, push to queue.

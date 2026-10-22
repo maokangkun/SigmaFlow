@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="003f90a2">
+<meta name="build" content="d30d67ab">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1826,6 +1826,7 @@ CS.markdown = text => {
             const entry = CS.api.ws.pending.get(message.requestId);
             // 长推理场景下生成可持续很久: 每收到新分片就重置空闲计时,
             // 只在连续无活动超过阈值时才判定超时
+            if (message.event === 'chat.progress') { entry.resetTimer && entry.resetTimer(); if (entry.onProgress) entry.onProgress(message.data || {}); return; }
             if (message.event === 'chat.delta' || message.event === 'chat.think' || message.event === 'chat.tool' || message.event === 'chat.usage') {
               // ask 问题卡挂起后进入等待用户回答的静默期, 可能远超常规空闲阈值:
               // 此时暂停空闲计时改用长兜底, 否则用户思考超过阈值会把回复误判为超时,
@@ -1873,7 +1874,7 @@ CS.markdown = text => {
         this.socket.send(JSON.stringify({ action, requestId, ...payload }));
       });
     },
-    chat(payload, onDelta, onThink, onTool, onRetry, onUsage) {
+    chat(payload, onDelta, onThink, onTool, onRetry, onUsage, onProgress) {
       if (!this.open()) return Promise.reject(new Error('WebSocket 未连接。'));
       const requestId = String(++this.seq);
       this.activeChats.add(requestId);
@@ -1883,7 +1884,7 @@ CS.markdown = text => {
         // 只折断真正卡死的连接
         const idleMs = ws.chatIdleTimeout || 180000;
         const fail = () => { CS.api.ws.pending.delete(requestId); CS.api.ws.activeChats.delete(requestId); reject(new Error('模型响应超时。')); };
-        const entry = { resolve, reject, timer: null, resetTimer: null, onDelta, onThink, onTool, onRetry, onUsage };
+        const entry = { resolve, reject, timer: null, resetTimer: null, onDelta, onThink, onTool, onRetry, onUsage, onProgress };
         entry.timer = setTimeout(fail, idleMs);
         entry.resetTimer = () => { clearTimeout(entry.timer); entry.timer = setTimeout(fail, idleMs); };
         // ask 等待期不计常规空闲: 服务端 ask 超时为 1 小时, 前端以 2 小时兜底防永久挂起
@@ -6448,6 +6449,19 @@ V.ctxRing = () => {
           if (now - _chatRenderAt > 120) { _chatRenderAt = now; CS.render(); }
         }
         if (usage.cacheTokens != null) reply.cacheTokens = usage.cacheTokens;
+      }, progress => {
+        // 长工具心跳: 保活为主; 在正在运行的工具卡标题行内联更新「已运行 Xs」(直接 DOM, 不触发 render)
+        const running = [...reply.blocks].reverse().find(b => b.type === 'tool' && b.result == null);
+        if (!running) return;
+        const sec = Math.max(1, Math.round(Number(progress.elapsed) || 0));
+        const titleEl = document.querySelector('.think-root.tool-root[data-state="running"] .think-title');
+        if (titleEl && !titleEl.querySelector('.tool-heartbeat')) {
+          const span = document.createElement('span');
+          span.className = 'tool-heartbeat';
+          titleEl.appendChild(span);
+        }
+        const span = document.querySelector('.think-root.tool-root[data-state="running"] .tool-heartbeat');
+        if (span) span.textContent = ` 已运行 ${sec}s`;
       });
       // HTTP 降级路径: 服务端在响应里带回压缩元数据, 复用插卡逻辑保持契约一致
       if (done.compaction && done.compaction.text) toolEvent(done.compaction);

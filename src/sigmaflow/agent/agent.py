@@ -1175,6 +1175,9 @@ class Agent:
 
             needs_wd = {"bash", "grep", "read", "write", "edit"}
 
+            # 长工具执行心跳: bash 等 360s 内无任何 WS 事件时, 前端 180s 空闲计时
+            # 会误杀会话("模型响应超时")。看门狗线程每 45s 发一次 progress 事件,
+            # 前端 resetTimer 保持连接; 事件对模型不可见, 纯展示层保活。
             def _tool_exec_cwd(c):
                 # 工具的工作目录存在 thread-local 上, 并行线程需要重新绑定
                 if c["func"] in needs_wd:
@@ -1183,6 +1186,36 @@ class Agent:
                     except Exception:
                         pass
                 return _tool_exec(c)
+
+            def _with_heartbeat(c):
+                """执行工具并每 45s 发一次 progress 心跳, 结果返回后停止。"""
+                if self.on_tool is None:
+                    return _tool_exec_cwd(c)
+                done = {"v": False}
+                started = time.time()
+
+                def beat():
+                    while not done["v"]:
+                        time.sleep(45)
+                        if done["v"]:
+                            break
+                        try:
+                            self.on_tool(
+                                {
+                                    "kind": "progress",
+                                    "name": c["func"],
+                                    "elapsed": int(time.time() - started),
+                                }
+                            )
+                        except Exception:
+                            return
+
+                heartbeat = threading.Thread(target=beat, daemon=True)
+                heartbeat.start()
+                try:
+                    return _tool_exec_cwd(c)
+                finally:
+                    done["v"] = True
 
             runnable = [c for c in calls if c["output"] is None]
 
@@ -1202,13 +1235,13 @@ class Agent:
                 with concurrent.futures.ThreadPoolExecutor(
                     max_workers=min(4, len(runnable))
                 ) as pool:
-                    outs = list(pool.map(_tool_exec_cwd, runnable))
+                    outs = list(pool.map(_with_heartbeat, runnable))
                 for c, o in zip(runnable, outs):
                     c["output"] = _note(c, o)
             else:
                 for c in runnable:
                     c["output"] = _note(
-                        c, _tool_exec(c) if c["task"] else _tool_exec_cwd(c)
+                        c, _with_heartbeat(c) if not c["task"] else _tool_exec(c)
                     )
 
             results = []

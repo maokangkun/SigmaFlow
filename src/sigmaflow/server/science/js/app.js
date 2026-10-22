@@ -935,6 +935,19 @@
           if (now - _chatRenderAt > 120) { _chatRenderAt = now; CS.render(); }
         }
         if (usage.cacheTokens != null) reply.cacheTokens = usage.cacheTokens;
+      }, progress => {
+        // 长工具心跳: 保活为主; 在正在运行的工具卡标题行内联更新「已运行 Xs」(直接 DOM, 不触发 render)
+        const running = [...reply.blocks].reverse().find(b => b.type === 'tool' && b.result == null);
+        if (!running) return;
+        const sec = Math.max(1, Math.round(Number(progress.elapsed) || 0));
+        const titleEl = document.querySelector('.think-root.tool-root[data-state="running"] .think-title');
+        if (titleEl && !titleEl.querySelector('.tool-heartbeat')) {
+          const span = document.createElement('span');
+          span.className = 'tool-heartbeat';
+          titleEl.appendChild(span);
+        }
+        const span = document.querySelector('.think-root.tool-root[data-state="running"] .tool-heartbeat');
+        if (span) span.textContent = ` 已运行 ${sec}s`;
       });
       // HTTP 降级路径: 服务端在响应里带回压缩元数据, 复用插卡逻辑保持契约一致
       if (done.compaction && done.compaction.text) toolEvent(done.compaction);
