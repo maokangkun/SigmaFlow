@@ -263,6 +263,10 @@ class Agent:
         # (模型需要当前时间时可自行调用 bash 等工具获取)
         if not subagent:
             self.system = self._system_base
+            # goal 评估器随主 Agent 配置: 否则 _client 恒 None, evaluate_after_turn
+            # 每轮走 error 分支且不计入 consecutive_blocks, goal_set 后循环注入
+            # "继续工作" 直到烧完轮次预算(goal 工具的 schema 与提示词一直在暴露)
+            GOAL.configure(self.client, self.model)
         if self.method == "openai" and messages[0]["role"] != "system":
             messages.insert(
                 0,

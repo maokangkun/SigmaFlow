@@ -520,22 +520,28 @@ def set_session_run_id(run_id: str):
 _team_lock = threading.Lock()
 _teammate_threads: dict = {}
 _active_teammates: dict = {}
-# 服务端在会话开始时注入当前模型配置; 队友线程据此构建自己的 Agent
-_MODEL_CONTEXT: dict = {}
-_MODEL_CTX_LOCK = threading.Lock()
+# 服务端在每轮会话线程注入当前模型配置; 队友线程据此构建自己的 Agent。
+# 用 ContextVar 而非模块级 dict: asyncio.to_thread 会复制上下文, 每个并发
+# 会话拿到自己的配置副本 —— 全局 dict 会被并发会话互相覆盖, 后启动的队友
+# 可能拿到别的会话的模型配置。spawn 时在会话线程上捕获, 显式传给队友线程。
+_MODEL_CTX_VAR: contextvars.ContextVar = contextvars.ContextVar(
+    "sigmaflow_model_ctx", default={}
+)
 
 
 def set_model_context(base_url: str, api_key: str, model_name: str, system: str = ""):
-    with _MODEL_CTX_LOCK:
-        _MODEL_CONTEXT.clear()
-        _MODEL_CONTEXT.update(
-            {
-                "base_url": base_url,
-                "api_key": api_key,
-                "model": model_name,
-                "system": system,
-            }
-        )
+    _MODEL_CTX_VAR.set(
+        {
+            "base_url": base_url,
+            "api_key": api_key,
+            "model": model_name,
+            "system": system,
+        }
+    )
+
+
+def get_model_context() -> dict:
+    return dict(_MODEL_CTX_VAR.get() or {})
 
 
 def spawn_teammate(name: str, role: str, prompt: str, task_id: str = "") -> str:
@@ -548,9 +554,11 @@ def spawn_teammate(name: str, role: str, prompt: str, task_id: str = "") -> str:
         if any(existing.lower() == str(name).lower() for existing in _active_teammates):
             return f"Error: teammate '{name}' already exists"
         _active_teammates[name] = "working"
+    # 在会话线程上捕获模型配置(线程不继承 ContextVar), 显式传给队友线程
+    ctx = get_model_context()
     thread = threading.Thread(
         target=_teammate_main,
-        args=(str(name), str(role), str(prompt), str(task_id or "")),
+        args=(str(name), str(role), str(prompt), str(task_id or ""), ctx),
         name=f"sigmaflow-teammate-{name}",
         daemon=True,
     )
@@ -563,11 +571,11 @@ def spawn_teammate(name: str, role: str, prompt: str, task_id: str = "") -> str:
     )
 
 
-def _teammate_main(name: str, role: str, prompt: str, task_id: str):
+def _teammate_main(name: str, role: str, prompt: str, task_id: str, ctx: dict):
     try:
         from .agent import Agent
 
-        ctx = dict(_MODEL_CONTEXT)
+        ctx = dict(ctx or {})
         if not ctx.get("base_url"):
             with _team_lock:
                 _active_teammates[name] = "error"
@@ -759,6 +767,15 @@ class GoalController:
             with self._lock:
                 if self.active:
                     self.active["last_reason"] = f"{type(error).__name__}: {error}"
+                    # 评估器故障也计入收敛上限: error 分支若不计数, 配置缺 client
+                    # 或网关持续 5xx 时主循环每轮都注入 "继续工作" 直到轮次预算耗尽
+                    self.consecutive_blocks += 1
+                    if self.consecutive_blocks > self.block_cap:
+                        self.active = None
+                        return (
+                            "limit",
+                            f"goal evaluator failed {self.block_cap} turns in a row; goal released",
+                        )
             return "error", f"goal evaluation failed: {type(error).__name__}: {error}"
         with self._lock:
             if not self.active:
