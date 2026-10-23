@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="fea92149">
+<meta name="build" content="72751d36">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -4875,8 +4875,11 @@ CS.audio = (function () {
       if (m.role === 'user') { blocks.push({ k: 'user', txt: m.content, live, mi }); return; }
       if (/^\[Conversation compressed/.test(m.content || '')) { blocks.push({ k: 'system', txt: '压缩摘要', live, mi }); return; }
       if (m.role !== 'assistant') { blocks.push({ k: 'system', txt: m.content, live, mi }); return; }
-      // 出错的消息单独一格红色, 不展开其内部块(错误时后续块无意义)
-      if (m.error) { blocks.push({ k: 'error', txt: typeof m.error === 'string' ? m.error : '出错了', live, mi }); return; }
+      // 出错的消息: 中断前已执行的思考/工具块是有效历史, 有块轨迹时照常展开,
+      // 末尾补一格红色标错; 无块轨迹才压缩成单格红色
+      const errMsg = typeof m.error === 'string' ? m.error : ((m.error && m.error.message) || '出错了');
+      const hasTimeline = Array.isArray(m.blocks) && m.blocks.length > 0;
+      if (m.error && !hasTimeline) { blocks.push({ k: 'error', txt: errMsg, live, mi }); return; }
       const n0 = blocks.length;
       // 活跃块 = 流式消息里最后一个仍在生长的块: 文本流式 / think 在尾部 / 工具未出结果 / ask 未答。
       // 只有它会呼吸, 已完成段(如思考完毕进入工具执行)不再闪烁
@@ -4919,6 +4922,7 @@ CS.audio = (function () {
         (m.asks || []).forEach(() => blocks.push({ k: 'tool', txt: 'ask 提问', live: false, mi }));
         if ((m.content || '').trim()) blocks.push({ k: 'reply', txt: m.content, live: live && liveIdx === n0 + ((m.reasoning || '').trim() ? 1 : 0) + (m.tools || []).length + (m.asks || []).length, mi });
       }
+      if (m.error) blocks.push({ k: 'error', txt: errMsg, live, mi });  // 有块轨迹的错误消息: 块之后标一格红
       if (blocks.length === n0 && live) blocks.push({ k: 'think', txt: '生成中…', live: true, mi });
     });
     if (!blocks.length) return '';
@@ -5009,10 +5013,14 @@ CS.audio = (function () {
       const barHtml = segs ? (() => { let picum = 0; return segs.map(s => { const l = Math.round((off + (picum / 100) * segW) * 10) / 10; const w = Math.max(0.9, Math.round((s.share / 100) * segW * 10) / 10); picum += s.share; return `<span class="trace-seg seg-${s.k}" style="left:${l}%;width:${w}%"></span>`; }).join(''); })() : `<span class="trace-seg seg-${kind}" style="left:${off}%;width:${segW}%"></span>`;
       cum += dur;
       const tok = m.tokens ? `${CS.num(m.promptTokens || 0)}→${CS.num(m.tokens)}` : '';
-      const nTools = kind === 'reply' ? (m.tools?.length || 0) + (m.asks?.length || 0) : 0;
+      const nTools = kind === 'reply' ? (m.tools?.length || 0) + (m.asks?.length || 0)
+        : kind === 'error' && Array.isArray(m.blocks) ? m.blocks.filter(b => b && (b.type === 'tool' || b.type === 'ask')).length : 0;
       let blocks = [];
+      const errText = typeof m.error === 'object' ? (m.error.message || '出错了') : String(m.error || '出错了');
+      // 出错消息带块轨迹时不能只列一行错误: 先展开已执行的思考/工具块, 末尾补错误条目
+      const errHasTimeline = kind === 'error' && Array.isArray(m.blocks) && m.blocks.length > 0;
       if (kind === 'user') blocks = [{ k: 'user', t: m.content }];
-      else if (kind === 'error') blocks = [{ k: 'error', t: typeof m.error === 'object' ? (m.error.message || '出错了') : String(m.error || '出错了') }];
+      else if (kind === 'error' && !errHasTimeline) blocks = [{ k: 'error', t: errText }];
       else if (kind === 'system') blocks = [{ k: 'system', t: m.content }];
       else {
         if (Array.isArray(m.blocks) && m.blocks.length) m.blocks.forEach(b => {
@@ -5029,6 +5037,7 @@ CS.audio = (function () {
           if ((m.content || '').trim()) blocks.push({ k: 'reply', t: m.content });
         }
       }
+      if (errHasTimeline) blocks.push({ k: 'error', t: errText });  // 有块轨迹的错误消息在块之后补错误条目
       const props = [
         ['时间', CS.datetime(m.at)],
         ...(m.model ? [['模型', m.model]] : []),
@@ -5061,7 +5070,7 @@ CS.audio = (function () {
       return b.text || '';
     };
       const detail = isOpen ? `<div class="trace-detail"><div class="trace-props">${props.map(([k, v]) => `<span class="tpair"><span class="tk">${e(k)}</span><span class="tv mono">${e(v)}</span></span>`).join('')}</div>${blocks.length ? `<div class="trace-blocks">${blocks.map((b, ri) => { const ms = segs && segs[ri] ? segs[ri].ms : 0; const raw = rawB ? rawB[ri] : (b.t ? { type: 'text', text: b.t } : null); const bkey = idx + ':' + ri; const bOpen = blockOpen.has(bkey); return `<span class="tb-item clickable${bOpen ? ' open' : ''}" role="button" data-action="toggle-trace-block" data-id="${bkey}" aria-expanded="${bOpen}" title="点击展开完整输入/输出"><span class="tk-${b.k}">${KIND[b.k]}</span><span class="tb-txt" title="${prev(b.t, 240)}">${prev(b.t, 110)}</span>${ms > 0 ? `<span class="tb-dur mono">${CS.elapsedMs(ms)}</span>` : ''}</span>${bOpen ? `<span class="tb-body"><pre>${e(bFull(raw))}</pre></span>` : ''}`; }).join('')}</div>` : ''}</div>` : '';
-      return `<div class="trace-row${isOpen ? ' open' : ''}"><button type="button" class="trace-main" data-action="toggle-trace-row" data-id="${idx}" aria-expanded="${isOpen}"><span class="trace-idx mono">#${idx + 1}</span><span class="trace-kind tk-${kind}">${KIND[kind]}${kind === 'reply' && streaming ? ' · 生成中' : ''}</span><span class="trace-preview" title="${prev(m.content, 140)}">${prev(m.content)}</span><span class="trace-tools mono">${nTools || ''}</span><span class="trace-tok mono">${tok}</span><span class="trace-dur mono">${dur > 0 ? CS.elapsedMs(dur) : ''}</span><span class="trace-bar">${barHtml}</span></button>${detail}</div>`;
+      return `<div class="trace-row${isOpen ? ' open' : ''}"><button type="button" class="trace-main" data-action="toggle-trace-row" data-id="${idx}" aria-expanded="${isOpen}"><span class="trace-idx mono">#${idx + 1}</span><span class="trace-kind tk-${kind}">${KIND[kind]}${kind === 'reply' && streaming ? ' · 生成中' : ''}</span><span class="trace-preview" title="${prev(kind === 'error' && !(m.content || '').trim() ? errText : m.content, 140)}">${prev(kind === 'error' && !(m.content || '').trim() ? errText : m.content)}</span><span class="trace-tools mono">${nTools || ''}</span><span class="trace-tok mono">${tok}</span><span class="trace-dur mono">${dur > 0 ? CS.elapsedMs(dur) : ''}</span><span class="trace-bar">${barHtml}</span></button>${detail}</div>`;
     }).join('');
   };
   // trace 页面: 主区视图替换聊天视图, 侧栏保留; 返回按钮与标题同一行(页内流), 无会话时给出空态并引导返回
