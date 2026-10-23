@@ -1537,7 +1537,9 @@ class ScienceAPI:
             if not name or name in (".", ".."):
                 raise HTTPException(status_code=400, detail="文件夹名称无效")
             if "/" in name or "\\" in name:
-                raise HTTPException(status_code=400, detail="文件夹名称不能包含路径分隔符")
+                raise HTTPException(
+                    status_code=400, detail="文件夹名称不能包含路径分隔符"
+                )
             target = os.path.join(base, name)
             try:
                 os.makedirs(target, exist_ok=False)
@@ -2632,6 +2634,9 @@ class ScienceAPI:
                         content: list = []
                         stats: dict = {}
                         closed = False
+                        # 终态(chat.done/error)是否已由 pump 成功送达前端: 前端收到
+                        # 终态会自行归档完整行, 服务端兑底归档据此让位, 避免双行
+                        terminal_delivered = {"ok": False}
 
                         # 事件元组 (kind, value): delta/think/tool/done/error
                         def work():
@@ -2657,11 +2662,20 @@ class ScienceAPI:
                                     chat_asks.setdefault(request_id, set()).add(
                                         ev["id"]
                                     )
-                                if isinstance(ev, dict) and ev.get("kind") == "progress":
+                                if (
+                                    isinstance(ev, dict)
+                                    and ev.get("kind") == "progress"
+                                ):
                                     # 长工具心跳: 单独事件类型, 前端只保活不进块
                                     loop.call_soon_threadsafe(
                                         chat_queue.put_nowait,
-                                        ("progress", {"name": ev.get("name"), "elapsed": ev.get("elapsed")}),
+                                        (
+                                            "progress",
+                                            {
+                                                "name": ev.get("name"),
+                                                "elapsed": ev.get("elapsed"),
+                                            },
+                                        ),
                                     )
                                     return
                                 loop.call_soon_threadsafe(
@@ -2669,65 +2683,112 @@ class ScienceAPI:
                                 )
 
                             _agent_info_holder = {"info": None}
+                            _except_err = None
                             try:
                                 # _stream_agent_chat 返回 (text, info): info 携工具轨迹,
                                 # 前端断线时兑底归档要用
-                                _final_text, _agent_info_holder["info"] = _stream_agent_chat(
-                                    base_url,
-                                    api_key,
-                                    model_name,
-                                    messages,
-                                    lambda d: loop.call_soon_threadsafe(
-                                        chat_queue.put_nowait, ("delta", d)
-                                    ),
-                                    lambda t: loop.call_soon_threadsafe(
-                                        chat_queue.put_nowait, ("think", t)
-                                    ),
-                                    on_tool_wrap,
-                                    lambda r: loop.call_soon_threadsafe(
-                                        chat_queue.put_nowait, ("retry", r)
-                                    ),
-                                    stats,
-                                    chat_workdir,
-                                    bool(data.get("planMode")),
-                                    lambda u: loop.call_soon_threadsafe(
-                                        chat_queue.put_nowait, ("usage", u)
-                                    ),
+                                _final_text, _agent_info_holder["info"] = (
+                                    _stream_agent_chat(
+                                        base_url,
+                                        api_key,
+                                        model_name,
+                                        messages,
+                                        lambda d: loop.call_soon_threadsafe(
+                                            chat_queue.put_nowait, ("delta", d)
+                                        ),
+                                        lambda t: loop.call_soon_threadsafe(
+                                            chat_queue.put_nowait, ("think", t)
+                                        ),
+                                        on_tool_wrap,
+                                        lambda r: loop.call_soon_threadsafe(
+                                            chat_queue.put_nowait, ("retry", r)
+                                        ),
+                                        stats,
+                                        chat_workdir,
+                                        bool(data.get("planMode")),
+                                        lambda u: loop.call_soon_threadsafe(
+                                            chat_queue.put_nowait, ("usage", u)
+                                        ),
+                                    )
                                 )
-                                _agent_info = _agent_info_holder["info"] if isinstance(_agent_info_holder["info"], dict) else {}
+                                _agent_info = (
+                                    _agent_info_holder["info"]
+                                    if isinstance(_agent_info_holder["info"], dict)
+                                    else {}
+                                )
                                 # 服务端终态(轮次预算耗尽/重试耗尽/Max tokens)不能静默 done:
                                 # 原因要随 error 事件带回前端, 否则用户只看到工具轨迹
                                 # 戛然而止, 不知道循环为什么退出; 无模型正文时
                                 # _run_agent_chat 生成的进度说明作为尾段 delta 补发
                                 # (有正文时正文早已流式送达, 不能重复发)
                                 if _agent_info.get("error"):
-                                    if not _agent_info.get("last_response") and _final_text and _final_text.strip():
+                                    if (
+                                        not _agent_info.get("last_response")
+                                        and _final_text
+                                        and _final_text.strip()
+                                    ):
                                         loop.call_soon_threadsafe(
-                                            chat_queue.put_nowait, ("delta", _final_text)
+                                            chat_queue.put_nowait,
+                                            ("delta", _final_text),
                                         )
                                     loop.call_soon_threadsafe(
-                                        chat_queue.put_nowait, ("error", _agent_info["error"])
+                                        chat_queue.put_nowait,
+                                        ("error", _agent_info["error"]),
                                     )
                                 else:
                                     loop.call_soon_threadsafe(
                                         chat_queue.put_nowait, ("done", None)
                                     )
-                                # 服务端兑底存档: 前端断线(关闭/刷新)期间 agent 在后台跑完时,
-                                # 把结果直接落进会话存储, 用户重连回放即可看到, 不会被丢掉。
-                                # 走 store 的 archive_assistant_row: 与前端同步共用互斥锁,
-                                # 避免读旧内容整体覆写吞掉并发追加
+                            except Exception as err:
+                                loop.call_soon_threadsafe(
+                                    chat_queue.put_nowait, ("error", str(err))
+                                )
+                                _except_err = str(err)
+                            # 终态事件已入队。pump 在线时会把它送达前端, 前端收到
+                            # done/error 后自行归档完整行; 此时服务端再 append 一行就是
+                            # 「前端同步先落、worker 归档后到」的双行竞态, 而尾条查重只拦
+                            # 无块的纯文本行。因此兑底归档只在「前端拿不到终态」时进行:
+                            # 连接断开(pump 死信)或用户主动停止(前端归档停止态)。
+                            # 短等待是给 pump 的投递窗口, 在线时毫秒级置位即返回。
+                            _deadline = time.time() + 1.5
+                            while (
+                                time.time() < _deadline
+                                and not terminal_delivered["ok"]
+                                and not chat_stops.get(request_id)
+                            ):
+                                time.sleep(0.05)
+                            if not terminal_delivered["ok"] and not chat_stops.get(
+                                request_id
+                            ):
+                                # 服务端兑底存档: 前端断线(关闭/刷新)期间 agent 在后台
+                                # 跑完时, 把结果直接落进会话存储, 用户重连回放即可看到。
+                                # 走 store 的 archive_assistant_row: 与前端同步共用互斥
+                                # 锁, 避免读旧内容整体覆写吞掉并发追加
                                 try:
                                     _now_ms = int(time.time() * 1000)
-                                    # 兜底行也要带上工具轨迹(think/tool/text 块), 否则前端断线
-                                    # 重连后只看到一句正文, 中间的工具执行记录全丢
+                                    _fb_info = (
+                                        _agent_info_holder["info"]
+                                        if isinstance(_agent_info_holder["info"], dict)
+                                        else {}
+                                    )
+                                    # 兜底行也要带上思考/工具轨迹块, 否则前端断线重连后
+                                    # 只看到一句正文, 中间的执行记录全丢
                                     self.project_store.archive_assistant_row(
                                         str(data.get("runId") or ""),
                                         {
                                             "role": "assistant",
                                             "content": _clip("".join(content), 20000),
-                                            "blocks": _blocks_from_agent_info(_agent_info) if _agent_info else None,
-                                            # 轮次上限等终态原因一并持久化, 回放时错误块可见
-                                            "error": _agent_info.get("error") or None,
+                                            "blocks": _blocks_from_agent_info(_fb_info)
+                                            if _fb_info
+                                            else None,
+                                            # 截停/异常原因一并持久化, 回放时错误块可见
+                                            "error": _except_err
+                                            or (
+                                                _fb_info.get("error")
+                                                if _fb_info
+                                                else None
+                                            )
+                                            or None,
                                             "at": time.strftime(
                                                 "%Y-%m-%dT%H:%M:%S.000Z",
                                                 time.gmtime(_now_ms / 1000.0),
@@ -2750,10 +2811,6 @@ class ScienceAPI:
                                     )
                                 except Exception:
                                     pass
-                            except Exception as err:
-                                loop.call_soon_threadsafe(
-                                    chat_queue.put_nowait, ("error", str(err))
-                                )
 
                         # to_thread 在默认执行器中运行 work, 不阻塞事件循环
                         worker = asyncio.create_task(asyncio.to_thread(work))
@@ -2879,6 +2936,10 @@ class ScienceAPI:
                                 # 置位 closed 以退出循环并回收工作线程
                                 closed = True
                             if event in ("chat.done", "error"):
+                                # 终态送达成功: 前端收到后会自行归档完整行,
+                                # 置位让工作线程的兑底归档让位, 避免双行入库
+                                if not closed:
+                                    terminal_delivered["ok"] = True
                                 break
                         await worker
                         chat_stops.pop(request_id, None)
@@ -3651,7 +3712,9 @@ def _run_agent_chat(
     # 轮次预算: 助手消息数 + 余量(设置页 turnBudget 可调, 默认 100)。
     # 分析型会话一轮一个工具(sleep 30 的长命令更甚), 余量不足会在长任务首条消息打满,
     # 导出"模型没有返回内容"的困惑报错; 保留 max_turn-1 的 finalize 提示兜底无限循环
-    max_turn = max(1, sum(1 for m in convo if m["role"] == "assistant") + _turn_budget())
+    max_turn = max(
+        1, sum(1 for m in convo if m["role"] == "assistant") + _turn_budget()
+    )
     system, sub_system = _effective_system_prompts()
     sub_system = (
         re.sub(
@@ -3754,9 +3817,15 @@ def _run_agent_chat(
     if not last:
         # 轮次耗尽的截停(agent 侧已写入轮次上限语义的 error): 生成一段可用的进度回复,
         # 保留工具轨迹, 前端不再弹出"模型没有返回内容"
-        if isinstance(info, dict) and (info.get("used_tools") or info.get("deliverables")):
+        if isinstance(info, dict) and (
+            info.get("used_tools") or info.get("deliverables")
+        ):
             tool_count = len(info.get("used_tools") or [])
-            files = [d.get("path", "") for d in (info.get("deliverables") or []) if isinstance(d, dict)]
+            files = [
+                d.get("path", "")
+                for d in (info.get("deliverables") or [])
+                if isinstance(d, dict)
+            ]
             note = (
                 "本次回复未产出最终文字: 单次回复的工具轮次预算已用完, 工具执行轨迹已保留。"
                 "可发送『继续』让任务接续执行。"
@@ -3782,27 +3851,82 @@ def _run_agent_chat(
     return text, (info if isinstance(info, dict) else {})
 
 
+def _think_of_turn(m: dict):
+    """从 info 里一轮 assistant 记录提取思考文本: openai 记 reasoning(_content)
+    字段, anthropic 记 thinking 内容块。无思考返回 None。"""
+    r = m.get("reasoning_content") or m.get("reasoning")
+    if isinstance(r, str) and r.strip():
+        return r.strip()
+    content = m.get("content")
+    if isinstance(content, list):
+        pieces = [
+            str(b.get("thinking") or "")
+            for b in content
+            if isinstance(b, dict) and b.get("type") == "thinking"
+        ]
+        joined = "\n".join(pieces).strip()
+        return joined or None
+    return None
+
+
+def _tool_calls_of_turn(m: dict) -> int:
+    """从一轮 assistant 记录数出本轮的工具调用个数(openai: tool_calls 列表,
+    anthropic: tool_use 内容块)。用于把扁平的 used_tools 切回轮次区间。"""
+    content = m.get("content")
+    if isinstance(content, list):
+        return sum(
+            1 for b in content if isinstance(b, dict) and b.get("type") == "tool_use"
+        )
+    return len(m.get("tool_calls") or [])
+
+
+def _tool_block_of(func, args, output) -> dict:
+    """单个工具块的存档形态, 与前端流式块的 {t,n,a,r} 压缩格式同构。"""
+    return {
+        "t": "tool",
+        "n": _clip(str(func or "工具"), 200),
+        "a": args if isinstance(args, dict) else {},
+        "r": _clip(str(output or ""), _tool_result_limit()),
+    }
 
 
 def _blocks_from_agent_info(info: dict) -> list:
     """把 agent info 的轨迹压成存档块序列(与前端流式块同构), 兜底归档用。
 
-    工具块按 used_tools 的原始顺序; 正文块只在有文本时追加在尾部。
+    思考块按 info["messages"] 的轮次记录还原, 与工具块按「每轮先思考后工具」
+    交错; 工具块内容取自 used_tools(那里有参数与结果, messages 里只有结果);
+    正文块只在有文本时追加在尾部, 末轮思考紧贴正文之前, 与流式渲染顺序一致。
     """
     blocks: list = []
-    for func, args, output in (info.get("used_tools") or [])[:400]:
-        entry = {
-            "t": "tool",
-            "n": _clip(str(func or "工具"), 200),
-            "a": args if isinstance(args, dict) else {},
-            "r": _clip(str(output or ""), _tool_result_limit()),
-        }
-        blocks.append(entry)
+    used = list((info.get("used_tools") or [])[:400])
+
+    turns: list = []
+    for m in info.get("messages") or []:
+        if not isinstance(m, dict) or m.get("role") != "assistant":
+            continue
+        turns.append((_think_of_turn(m), _tool_calls_of_turn(m)))
+
+    idx = 0
+    for think, n_calls in turns:
+        if think:
+            blocks.append({"t": "think", "x": _clip(think, 20000)})
+        take = min(int(n_calls or 0), max(0, len(used) - idx))
+        for func, args, output in used[idx : idx + take]:
+            blocks.append(_tool_block_of(func, args, output))
+        idx += take
+    # 轮次边界与执行序失配时不丢工具: 剩余部分按原序补齐
+    for func, args, output in used[idx:]:
+        blocks.append(_tool_block_of(func, args, output))
+
+    last_reasoning = info.get("last_reasoning")
+    if isinstance(last_reasoning, str) and last_reasoning.strip():
+        blocks.append({"t": "think", "x": _clip(last_reasoning, 20000)})
     last = info.get("last_response")
     text = last if isinstance(last, str) else ""
     if text.strip():
         blocks.append({"t": "text", "x": _clip(text, 20000)})
     return blocks
+
 
 _AGENT_CONTEXT_SIZES: Dict[str, int] = {}
 

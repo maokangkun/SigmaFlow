@@ -469,6 +469,11 @@ class Agent:
 
                             response_text_parts: list[Any] = []
                             tool_calls_acc: list = []
+                            # 思考按轮聚合: reasoning_parts 是跨轮扁平流, 没有轮次边界;
+                            # think_acc 把本轮思考挂到 info 记录上, 兜底归档的块时间线
+                            # 才能按「每轮先思考后工具」交错还原
+                            think_acc: list = []
+                            think_key = None
                             usage = _DeltaUsage()
                             stream_kwargs = {
                                 "stream": True,
@@ -527,6 +532,14 @@ class Agent:
                                 ) or getattr(delta, "reasoning", None)
                                 if think:
                                     _had_content = True
+                                    # 同一条流内来源字段恒定, 以首个 chunk 判定
+                                    if think_key is None:
+                                        think_key = (
+                                            "reasoning_content"
+                                            if getattr(delta, "reasoning_content", None)
+                                            else "reasoning"
+                                        )
+                                    think_acc.append(think)
                                     info.setdefault("reasoning_parts", []).append(think)
                                     try:
                                         self.on_delta(None, think)
@@ -603,6 +616,15 @@ class Agent:
                                         delta, "reasoning_content", None
                                     ) or getattr(delta, "reasoning", None)
                                     if think:
+                                        if think_key is None:
+                                            think_key = (
+                                                "reasoning_content"
+                                                if getattr(
+                                                    delta, "reasoning_content", None
+                                                )
+                                                else "reasoning"
+                                            )
+                                        think_acc.append(think)
                                         info.setdefault("reasoning_parts", []).append(
                                             think
                                         )
@@ -663,6 +685,7 @@ class Agent:
                                 raise ValueError(
                                     "Model returned an empty response (no content, no tool calls)"
                                 )
+                            _think_txt = "".join(think_acc) or None
                             if msg.tool_calls:
                                 # 与非流式分支一致: 工具调用轮的 assistant 消息要写回 messages,
                                 # 供下一轮连同 tool 结果一起发送
@@ -671,7 +694,14 @@ class Agent:
                                     m["content"] = msg.content
                                 m["tool_calls"] = tool_calls_acc
                                 messages.append(m)
-                                info["messages"].append(m)
+                                # 思考只进记录副本, 不改写上行请求形态, 网关兼容零风险
+                                info["messages"].append(
+                                    {**m, think_key: _think_txt}
+                                    if _think_txt and think_key
+                                    else m
+                                )
+                            elif _think_txt:
+                                info["last_reasoning"] = _think_txt
                             response = _DeltaMsg()
                             response.usage = usage
                             response.choices = [_DeltaMsg()]
