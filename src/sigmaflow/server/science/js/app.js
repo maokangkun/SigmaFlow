@@ -1576,16 +1576,21 @@
         }, 2050);
       }
     },
-    'track-jump': id => {
+    'track-jump': (id, el) => {
       const mi = parseInt(id, 10);
       if (isNaN(mi)) return;
       const target = document.querySelector('.conversation [data-mi="' + mi + '"]');
       if (!target) { CS.toast('该消息不在当前视图中。', 'error'); return; }
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      target.classList.remove('msg-flash');
-      void target.offsetWidth;
-      target.classList.add('msg-flash');
-      setTimeout(() => target.classList.remove('msg-flash'), 1800);
+      // 长工具链消息整体可达数千像素高: 滚到消息元素本身(块居中)会落在消息
+      // 正中部的工具块森林里, 末尾的红色错误行不在视口内。点击红色错误格的
+      // 意图是"看哪里出错了", 优先滚到消息内的错误行本身。
+      const isErr = !!(el && el.classList && el.classList.contains('tr-error'));
+      const anchor = (isErr && target.querySelector(':scope .think-root.error-root')) || target;
+      anchor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      anchor.classList.remove('msg-flash');
+      void anchor.offsetWidth;
+      anchor.classList.add('msg-flash');
+      setTimeout(() => anchor.classList.remove('msg-flash'), 1800);
     },
     'open-conversation': id => {
       if (!CS.state.runs.some(r => r.id === id) && !CS.ui.conversations.some(c => c.id === id)) { CS.toast('该会话不存在。', 'error'); return; }
