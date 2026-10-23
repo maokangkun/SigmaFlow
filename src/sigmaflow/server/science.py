@@ -1595,7 +1595,7 @@ class ScienceAPI:
             )
             try:
                 stats: dict = {}
-                content = await asyncio.to_thread(
+                content, _info = await asyncio.to_thread(
                     _run_agent_chat,
                     base_url,
                     api_key,
@@ -2668,8 +2668,11 @@ class ScienceAPI:
                                     chat_queue.put_nowait, ("tool", ev)
                                 )
 
+                            _agent_info_holder = {"info": None}
                             try:
-                                _stream_agent_chat(
+                                # _stream_agent_chat 返回 (text, info): info 携工具轨迹,
+                                # 前端断线时兑底归档要用
+                                _final_text, _agent_info_holder["info"] = _stream_agent_chat(
                                     base_url,
                                     api_key,
                                     model_name,
@@ -2700,11 +2703,14 @@ class ScienceAPI:
                                 # 避免读旧内容整体覆写吞掉并发追加
                                 try:
                                     _now_ms = int(time.time() * 1000)
+                                    # 兜底行也要带上工具轨迹(think/tool/text 块), 否则前端断线
+                                    # 重连后只看到一句正文, 中间的工具执行记录全丢
                                     self.project_store.archive_assistant_row(
                                         str(data.get("runId") or ""),
                                         {
                                             "role": "assistant",
                                             "content": _clip("".join(content), 20000),
+                                            "blocks": _blocks_from_agent_info(_agent_info_holder["info"]) if _agent_info_holder.get("info") else None,
                                             "at": time.strftime(
                                                 "%Y-%m-%dT%H:%M:%S.000Z",
                                                 time.gmtime(_now_ms / 1000.0),
@@ -3455,16 +3461,19 @@ class ScienceProjectStore:
                 return False
             base = list(conv.get("content") or [])
             content = str(row.get("content") or "")
-            if not content and not row.get("tokens"):
+            blocks = row.get("blocks")
+            if not content and not row.get("tokens") and not blocks:
                 return False
             last = base[-1] if base else None
             if (
                 isinstance(last, dict)
                 and last.get("role") == "assistant"
                 and str(last.get("content") or "")[:200] == content[:200]
+                and not last.get("blocks")
             ):
                 return False
-            base.append(row)
+            row_out = {k: v for k, v in row.items() if v is not None}
+            base.append(row_out)
             conv["content"] = base[-200:]
             conv["updatedAt"] = int(time.time() * 1000)
             self._save()
@@ -3740,19 +3749,43 @@ def _run_agent_chat(
             logging.getLogger("uvicorn.error").info(
                 "chat truncated at max_turn: tools=%d files=%d", tool_count, len(files)
             )
-            return note
+            return note, (info if isinstance(info, dict) else {})
         raise RuntimeError("模型没有返回内容")
-    if isinstance(last, str):
-        return last
+    text = last if isinstance(last, str) else None
+    if text is None:
+        choice = getattr(last, "choices", None)
+        if choice:
+            text = choice[0].message.content or ""
+        else:
+            content = getattr(last, "content", None)
+            if isinstance(content, list):
+                text = "".join(getattr(b, "text", "") for b in content)
+            else:
+                text = str(content or "")
+    return text, (info if isinstance(info, dict) else {})
 
-    choice = getattr(last, "choices", None)
-    if choice:
-        return choice[0].message.content or ""
-    content = getattr(last, "content", None)
-    if isinstance(content, list):
-        return "".join(getattr(b, "text", "") for b in content)
-    return str(content or "")
 
+
+
+def _blocks_from_agent_info(info: dict) -> list:
+    """把 agent info 的轨迹压成存档块序列(与前端流式块同构), 兜底归档用。
+
+    工具块按 used_tools 的原始顺序; 正文块只在有文本时追加在尾部。
+    """
+    blocks: list = []
+    for func, args, output in (info.get("used_tools") or [])[:400]:
+        entry = {
+            "t": "tool",
+            "n": _clip(str(func or "工具"), 200),
+            "a": args if isinstance(args, dict) else {},
+            "r": _clip(str(output or ""), _tool_result_limit()),
+        }
+        blocks.append(entry)
+    last = info.get("last_response")
+    text = last if isinstance(last, str) else ""
+    if text.strip():
+        blocks.append({"t": "text", "x": _clip(text, 20000)})
+    return blocks
 
 _AGENT_CONTEXT_SIZES: Dict[str, int] = {}
 
