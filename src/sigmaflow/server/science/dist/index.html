@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="d30d67ab">
+<meta name="build" content="338abd71">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -5526,13 +5526,23 @@ V.ctxRing = () => {
     return { route: allowedRoutes.includes(value) ? value : 'home', id: null };
   };
   const readRoute = () => parseHash().route;
+  // 本次会话已回源刷新过的 run: 避免反复拉取(导航来回点也只拉一次)
+  const refreshedRuns = new Set();
   const applyRoute = () => {
     const { route, id } = parseHash();
-    if ((route === 'chat' || route === 'trace') && id && CS.state.currentRunId !== id) {
-      CS.state.currentRunId = id;
+    if ((route === 'chat' || route === 'trace') && id) {
       const run = CS.state.runs.find(r => r.id === id);
-      if (run?.projectId) CS.state.projectId = run.projectId;
-      if (!run) loadRemoteConversation(id);
+      // 本地 run 含被中断的助手消息(曾因超时/断线被杀): 服务端才有完整轨迹,
+      // 必须回源重拉, 否则刷新后永远停留在中断时刻的截断版。
+      // 刷新前正停在改会话的场景(currentRunId===id)也要触发, 这是 F5 后看到
+      // 截断内容的直接原因
+      const interrupted = run?.messages?.some(m => m.role === 'assistant' && m.error) && !refreshedRuns.has(id);
+      if (CS.state.currentRunId !== id || interrupted) {
+        CS.state.currentRunId = id;
+        if (run?.projectId) CS.state.projectId = run.projectId;
+        if (interrupted) refreshedRuns.add(id);
+        if (!run || interrupted) loadRemoteConversation(id);
+      }
     }
     return route;
   };
@@ -5941,7 +5951,10 @@ V.ctxRing = () => {
                 return msg;
               }),
               steps: [], createdAt: meta.createdAt ? new Date(meta.createdAt).toISOString() : new Date().toISOString(), status: 'complete', progress: 0, transport: 'chat', isDemo: false };
-      CS.state.runs.push(run);
+      // 同 id 旧 run(如被中断的本地截断版)整体替换为服务端全量版, 不留双份
+      const oldIdx = CS.state.runs.findIndex(r => r.id === id);
+      if (oldIdx >= 0) CS.state.runs[oldIdx] = run;
+      else CS.state.runs.push(run);
       if (data.projectId) CS.state.projectId = data.projectId;
       if (CS.state.currentRunId !== id) { CS.state.currentRunId = id; CS.save(); CS.navigate('chat', id); }
       else CS.save();
