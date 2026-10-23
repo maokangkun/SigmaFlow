@@ -2694,9 +2694,24 @@ class ScienceAPI:
                                         chat_queue.put_nowait, ("usage", u)
                                     ),
                                 )
-                                loop.call_soon_threadsafe(
-                                    chat_queue.put_nowait, ("done", None)
-                                )
+                                _agent_info = _agent_info_holder["info"] if isinstance(_agent_info_holder["info"], dict) else {}
+                                # 服务端终态(轮次预算耗尽/重试耗尽/Max tokens)不能静默 done:
+                                # 原因要随 error 事件带回前端, 否则用户只看到工具轨迹
+                                # 戛然而止, 不知道循环为什么退出; 无模型正文时
+                                # _run_agent_chat 生成的进度说明作为尾段 delta 补发
+                                # (有正文时正文早已流式送达, 不能重复发)
+                                if _agent_info.get("error"):
+                                    if not _agent_info.get("last_response") and _final_text and _final_text.strip():
+                                        loop.call_soon_threadsafe(
+                                            chat_queue.put_nowait, ("delta", _final_text)
+                                        )
+                                    loop.call_soon_threadsafe(
+                                        chat_queue.put_nowait, ("error", _agent_info["error"])
+                                    )
+                                else:
+                                    loop.call_soon_threadsafe(
+                                        chat_queue.put_nowait, ("done", None)
+                                    )
                                 # 服务端兑底存档: 前端断线(关闭/刷新)期间 agent 在后台跑完时,
                                 # 把结果直接落进会话存储, 用户重连回放即可看到, 不会被丢掉。
                                 # 走 store 的 archive_assistant_row: 与前端同步共用互斥锁,
@@ -2710,7 +2725,9 @@ class ScienceAPI:
                                         {
                                             "role": "assistant",
                                             "content": _clip("".join(content), 20000),
-                                            "blocks": _blocks_from_agent_info(_agent_info_holder["info"]) if _agent_info_holder.get("info") else None,
+                                            "blocks": _blocks_from_agent_info(_agent_info) if _agent_info else None,
+                                            # 轮次上限等终态原因一并持久化, 回放时错误块可见
+                                            "error": _agent_info.get("error") or None,
                                             "at": time.strftime(
                                                 "%Y-%m-%dT%H:%M:%S.000Z",
                                                 time.gmtime(_now_ms / 1000.0),
