@@ -18,16 +18,17 @@
     const { route, id } = parseHash();
     if ((route === 'chat' || route === 'trace') && id) {
       const run = CS.state.runs.find(r => r.id === id);
-      // 本地 run 含被中断的助手消息(曾因超时/断线被杀): 服务端才有完整轨迹,
-      // 必须回源重拉, 否则刷新后永远停留在中断时刻的截断版。
-      // 刷新前正停在改会话的场景(currentRunId===id)也要触发, 这是 F5 后看到
-      // 截断内容的直接原因
-      const interrupted = run?.messages?.some(m => m.role === 'assistant' && m.error) && !refreshedRuns.has(id);
-      if (CS.state.currentRunId !== id || interrupted) {
+      // 服务端存档是权威, 本地只是缓存(刷新/断线/中断都会让本地落后):
+      // 打开会话时只要没有生成中的消息, 一律回源同步一次(本次会话内只拉一次),
+      // 不再猜测本地数据是否完整 —— 截断版/陈旧版一律被服务端全量版替换。
+      // 刷新前正停在该会话的场景(currentRunId===id)也要触发; 生成中跳过,
+      // 以免吃掉流式中的消息
+      const streaming = run?.messages?.some(m => m.streaming);
+      const needsSync = !streaming && !refreshedRuns.has(id);
+      if (CS.state.currentRunId !== id || needsSync) {
         CS.state.currentRunId = id;
         if (run?.projectId) CS.state.projectId = run.projectId;
-        if (interrupted) refreshedRuns.add(id);
-        if (!run || interrupted) loadRemoteConversation(id);
+        if (needsSync) { refreshedRuns.add(id); loadRemoteConversation(id); }
       }
     }
     return route;
@@ -403,12 +404,14 @@
 
   const loadRemoteConversation = async id => {
     const fetchContent = () => CS.api.modelCall('conversation.content', 'GET', `/conversations/${encodeURIComponent(id)}/content`);
-    CS.ui.loadingRunId = id;
+    const hadLocal = CS.state.runs.some(r => r.id === id);
+    // 首次远程加载(本地无副本)才出骨架; 已有副本时静默换新, 不打断阅读
+    if (!hadLocal) CS.ui.loadingRunId = id;
     try {
       let data;
       try { data = await fetchContent(); }
-      catch (first) { await new Promise(r => setTimeout(r, 800)); data = await fetchContent(); }  // WS抖动重试一次
-      if (!data.content?.length) { CS.toast('该会话在服务端没有同步到消息内容。', 'error'); return; }
+      catch (first) { await new Promise(r => setTimeout(r, 900)); data = await fetchContent(); }  // 冷启动 WS 未就绪抖动重试一次; modelCall 自带 WS→HTTP 兜底
+      if (!data.content?.length) { if (!hadLocal) CS.toast('该会话在服务端没有同步到消息内容。', 'error'); return; }
       const meta = CS.ui.conversations.find(c => c.id === id) || {};
       const run = { id, kind: 'chat', title: meta.title || data.title || '会话', projectId: data.projectId, prompt: '', datasetIds: [], config: {},
               messages: data.content.map(m => {
@@ -437,16 +440,21 @@
                 return msg;
               }),
               steps: [], createdAt: meta.createdAt ? new Date(meta.createdAt).toISOString() : new Date().toISOString(), status: 'complete', progress: 0, transport: 'chat', isDemo: false };
-      // 同 id 旧 run(如被中断的本地截断版)整体替换为服务端全量版, 不留双份
+      // 同 id 旧 run(如被中断的本地截断版)整体替换为服务端全量版, 不留双份;
+      // 用户消息自带的引用上下文(refContext)只存在本地, 按消息序号原样保留
       const oldIdx = CS.state.runs.findIndex(r => r.id === id);
-      if (oldIdx >= 0) CS.state.runs[oldIdx] = run;
+      if (oldIdx >= 0) {
+        const oldMsgs = CS.state.runs[oldIdx].messages || [];
+        oldMsgs.forEach((om, i) => { if (om?.role === 'user' && om.refContext && run.messages[i]?.role === 'user') run.messages[i].refContext = om.refContext; });
+        CS.state.runs[oldIdx] = run;
+      }
       else CS.state.runs.push(run);
       if (data.projectId) CS.state.projectId = data.projectId;
       if (CS.state.currentRunId !== id) { CS.state.currentRunId = id; CS.save(); CS.navigate('chat', id); }
       else CS.save();
       CS.render();
-      CS.toast('已从服务端加载该会话内容。');
-    } catch (error) { CS.toast('加载会话内容失败：' + CS.api.friendlyError(error), 'error'); }
+      if (!hadLocal) CS.toast('已从服务端加载该会话内容。');
+    } catch (error) { if (!hadLocal) CS.toast('加载会话内容失败：' + CS.api.friendlyError(error), 'error'); }
     finally { if (CS.ui.loadingRunId === id) { CS.ui.loadingRunId = null; CS.render(); } }
   };
   const startChat = prompt => {
