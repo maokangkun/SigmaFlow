@@ -1282,6 +1282,7 @@
       CS.toast('请在微信弹窗中扫码确认。');
     },
     'toggle-sidebar': () => { CS.ui.mobileSidebar = !CS.ui.mobileSidebar; CS.render(); },
+    'toggle-sidebar-fold': () => { CS.ui.sidebarFolded = !CS.ui.sidebarFolded; CS.persistFoldBar(); CS.render(); },
     'toggle-user-menu': () => { CS.ui.userMenu = !CS.ui.userMenu; CS.render(); },
     'auth-tab': (id, target) => {
       // 切换登录/注册会重绘表单; 先把已输入的内容存为草稿, 渲染后回填

@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="72751d36">
+<meta name="build" content="263780d8">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1073,6 +1073,29 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 /* 分割线与第一条消息的间距: title 的 margin-bottom 在 flex 布局链里失效, 用 conversation 顶衬补足 */
 .chat-page .conversation{padding-top:26px}
 
+/* 侧栏折叠态: 点击品牌 dna 图标在「完整侧栏」与「图标栏」之间切换(仅桌面生效),
+   折叠时只保留 品牌/主导航/工作区头像 的图标, 项目/会话/文件 等区块隐藏 */
+.brand-logo{display:inline-flex;align-items:center;justify-content:center;padding:2px;margin-left:-5px;border:0;border-radius:8px;background:transparent;cursor:pointer}
+.brand-logo .icon{color:var(--accent);width:23px;height:28px}
+.brand-logo:hover{background:#e8eaf0}
+.brand-title{color:inherit;text-decoration:none}
+@media(min-width:801px){
+  .app-shell:has(aside.sidebar.folded){--sidebar-width:56px}
+  .sidebar.folded{width:56px;padding:16px 9px 12px}
+  .sidebar.folded .brand{margin:0 0 12px;justify-content:center}
+  .sidebar.folded .brand-logo{margin-left:0}
+  .sidebar.folded .brand .brand-title{display:none}
+  .sidebar.folded .nav-list{gap:3px}
+  .sidebar.folded .nav-item{position:relative;justify-content:center;gap:0;padding:6px 0}
+  .sidebar.folded .nav-item>span:not(.nav-count){display:none}
+  .sidebar.folded .nav-item .nav-count{position:absolute;top:-2px;right:6px;margin:0;padding:0 4px;min-width:12px;text-align:center}
+  .sidebar.folded .sidebar-section{display:none}
+  .sidebar.folded .sidebar-bottom{padding-top:8px;margin-top:12px}
+  .sidebar.folded .workspace-chip{justify-content:center;padding:8px 0}
+  .sidebar.folded .workspace-chip .grow,.sidebar.folded .workspace-chip>.icon{display:none}
+  .sidebar.folded .user-menu{left:0;right:auto;width:186px}
+}
+
 </style>
 </head>
 <body>
@@ -1635,6 +1658,8 @@ CS.markdown = text => {
   CS.persistFoldSection = () => { try { localStorage.setItem(key + '.foldProj', CS.ui.projectsCollapsed ? '1' : '0'); } catch {} };
   CS.persistFoldLoose = () => { try { localStorage.setItem(key + '.foldLoose', CS.ui.unassignedCollapsed ? '1' : '0'); } catch {} };
   CS.ui.fsCollapsed = localStorage.getItem(key + '.foldFs') === '1';
+  CS.ui.sidebarFolded = localStorage.getItem(key + '.foldBar') === '1';
+  CS.persistFoldBar = () => { try { localStorage.setItem(key + '.foldBar', CS.ui.sidebarFolded ? '1' : '0'); } catch {} };
   CS.ui.terminal.width = Number(localStorage.getItem(key + '.termW')) || 480;
   CS.persistTermWidth = () => { try { localStorage.setItem(key + '.termW', String(CS.ui.terminal.width)); } catch {} };
   CS.persistFoldFs = () => { try { localStorage.setItem(key + '.foldFs', CS.ui.fsCollapsed ? '1' : '0'); } catch {} };
@@ -4845,9 +4870,9 @@ CS.audio = (function () {
     const nav = [ ['home','message','新对话'], ['literature','book','文献'], ['data','database','数据集'], ['workflows','workflow','工作流'], ['results','chart','分析结果'], ['tools','grid','生物工具'], ['tasks','queue','任务队列'] ];
     const running = CS.state.runs.filter(r => ['running','paused','awaiting','connecting'].includes(r.status)).length;
     const streaming = new Set(CS.state.runs.filter(r => (r.messages || []).some(m => m.streaming)).map(r => r.id));
-    return `${CS.ui.mobileSidebar ? '<button class="sidebar-scrim" aria-label="关闭菜单" data-action="toggle-sidebar"></button>' : ''}<aside class="sidebar ${CS.ui.mobileSidebar ? 'open' : ''}" aria-label="主导航">
-      <a class="brand" href="#/home" aria-label="SigmaFlow Science 首页">${i('dna')}<span>SigmaFlow Science</span></a>
-      <div class="sidebar-scroll"><nav class="nav-list">${nav.map(([route, icon, title]) => `<button type="button" data-nav="${route}" class="nav-item ${active === route || (route === 'home' && (active === 'chat' || active === 'trace')) ? 'active' : ''}" ${active === route ? 'aria-current="page"' : ''}>${i(icon)}<span>${title}</span>${route === 'tasks' && running ? `<span class="nav-count">${running}</span>` : ''}</button>`).join('')}</nav>
+    return `${CS.ui.mobileSidebar ? '<button class="sidebar-scrim" aria-label="关闭菜单" data-action="toggle-sidebar"></button>' : ''}<aside class="sidebar ${CS.ui.mobileSidebar ? 'open' : ''} ${CS.ui.sidebarFolded ? 'folded' : ''}" aria-label="主导航">
+      <div class="brand"><button type="button" class="brand-logo${CS.ui.sidebarFolded ? ' is-folded' : ''}" data-action="toggle-sidebar-fold" aria-label="${CS.ui.sidebarFolded ? '展开侧边栏' : '收起侧边栏'}" title="${CS.ui.sidebarFolded ? '展开侧边栏' : '收起侧边栏，只显示图标'}">${i('dna')}</button><a class="brand-title" href="#/home" aria-label="SigmaFlow Science 首页"><span>SigmaFlow Science</span></a></div>
+      <div class="sidebar-scroll"><nav class="nav-list">${nav.map(([route, icon, title]) => `<button type="button" data-nav="${route}" class="nav-item ${active === route || (route === 'home' && (active === 'chat' || active === 'trace')) ? 'active' : ''}" ${active === route ? 'aria-current="page"' : ''} title="${title}">${i(icon)}<span>${title}</span>${route === 'tasks' && running ? `<span class="nav-count">${running}</span>` : ''}</button>`).join('')}</nav>
       <section class="sidebar-section"><div class="sidebar-section-label"><button type="button" class="text-button muted small ${CS.ui.projectsCollapsed ? 'collapsed' : ''}" data-action="toggle-projects-section" aria-expanded="${!CS.ui.projectsCollapsed}" title="${CS.ui.projectsCollapsed ? '展开项目列表' : '折叠项目列表'}"><span>项目</span></button>${iconBtn('new-project','plus','新建项目')}</div>
         ${CS.ui.projectsCollapsed ? '' : CS.state.projects.filter(p => !p.archived).map(p => { const convs = CS.ui.conversations.filter(c => c.projectId === p.id && !c.archived); return `<div class="project-row"><button type="button" class="project-link ${CS.ui.expandedProjects.has(p.id) ? 'expanded' : ''}" data-action="toggle-project" data-id="${e(p.id)}" title="${e(p.name)}">${i(CS.ui.expandedProjects.has(p.id) ? 'chevron' : 'folder')}<span class="project-name">${e(p.name)}</span><span class="project-actions"><span class="icon-btn" role="button" data-action="edit-project" data-id="${e(p.id)}" title="编辑项目">${i('edit','',14)}</span><span class="icon-btn" role="button" data-action="toggle-project-settings" data-id="${e(p.id)}" title="项目设置">${i('settings','',14)}</span></span>${convs.length ? `<span class="nav-count">${convs.length}</span>` : ''}</button>${CS.ui.projectSettingsMenu === p.id ? `<div class="model-menu project-settings-menu"><button type="button" class="model-menu-item" data-action="edit-project" data-id="${e(p.id)}"><span>编辑项目</span></button><button type="button" class="model-menu-item" data-action="archive-project" data-id="${e(p.id)}"><span>归档项目</span></button><div class="menu-divider"></div><button type="button" class="model-menu-item danger" data-action="delete-project" data-id="${e(p.id)}"><span>删除项目</span></button></div>` : ''}</div>${CS.ui.expandedProjects.has(p.id) ? `<div class="conversation-list">${convs.length ? convs.map(c => `<button type="button" class="conversation-link ${CS.state.currentRunId === c.id ? 'selected' : ''}" data-action="open-conversation" data-id="${e(c.id)}" title="${e(c.title)}">${i('message')}<span class="conversation-title">${e(c.title)}</span>${streaming.has(c.id) ? '<span class="conv-dot" title="生成中"></span>' : ''}<span class="conversation-actions${c.pinned ? ' has-pinned' : ''}"><span class="icon-btn" role="button" data-action="toggle-pin-conversation" data-id="${e(c.id)}" title="${c.pinned ? '取消置顶' : '置顶'}">${i(c.pinned ? 'x' : 'up','',12)}</span><span class="icon-btn" role="button" data-action="archive-conversation" data-id="${e(c.id)}" title="归档">${i('archive','',12)}</span></span></button>`).join('') : '<div class="conversation-empty small muted">暂无会话</div>'}</div>` : ''}`; }).join('')}
         ${CS.ui.projectsCollapsed ? '' : `<button type="button" class="project-link" data-nav="projects">${i('more')}<span>查看全部项目</span></button>`}
@@ -6805,6 +6830,7 @@ V.ctxRing = () => {
       CS.toast('请在微信弹窗中扫码确认。');
     },
     'toggle-sidebar': () => { CS.ui.mobileSidebar = !CS.ui.mobileSidebar; CS.render(); },
+    'toggle-sidebar-fold': () => { CS.ui.sidebarFolded = !CS.ui.sidebarFolded; CS.persistFoldBar(); CS.render(); },
     'toggle-user-menu': () => { CS.ui.userMenu = !CS.ui.userMenu; CS.render(); },
     'auth-tab': (id, target) => {
       // 切换登录/注册会重绘表单; 先把已输入的内容存为草稿, 渲染后回填

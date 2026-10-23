@@ -717,3 +717,26 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 
 /* 分割线与第一条消息的间距: title 的 margin-bottom 在 flex 布局链里失效, 用 conversation 顶衬补足 */
 .chat-page .conversation{padding-top:26px}
+
+/* 侧栏折叠态: 点击品牌 dna 图标在「完整侧栏」与「图标栏」之间切换(仅桌面生效),
+   折叠时只保留 品牌/主导航/工作区头像 的图标, 项目/会话/文件 等区块隐藏 */
+.brand-logo{display:inline-flex;align-items:center;justify-content:center;padding:2px;margin-left:-5px;border:0;border-radius:8px;background:transparent;cursor:pointer}
+.brand-logo .icon{color:var(--accent);width:23px;height:28px}
+.brand-logo:hover{background:#e8eaf0}
+.brand-title{color:inherit;text-decoration:none}
+@media(min-width:801px){
+  .app-shell:has(aside.sidebar.folded){--sidebar-width:56px}
+  .sidebar.folded{width:56px;padding:16px 9px 12px}
+  .sidebar.folded .brand{margin:0 0 12px;justify-content:center}
+  .sidebar.folded .brand-logo{margin-left:0}
+  .sidebar.folded .brand .brand-title{display:none}
+  .sidebar.folded .nav-list{gap:3px}
+  .sidebar.folded .nav-item{position:relative;justify-content:center;gap:0;padding:6px 0}
+  .sidebar.folded .nav-item>span:not(.nav-count){display:none}
+  .sidebar.folded .nav-item .nav-count{position:absolute;top:-2px;right:6px;margin:0;padding:0 4px;min-width:12px;text-align:center}
+  .sidebar.folded .sidebar-section{display:none}
+  .sidebar.folded .sidebar-bottom{padding-top:8px;margin-top:12px}
+  .sidebar.folded .workspace-chip{justify-content:center;padding:8px 0}
+  .sidebar.folded .workspace-chip .grow,.sidebar.folded .workspace-chip>.icon{display:none}
+  .sidebar.folded .user-menu{left:0;right:auto;width:186px}
+}
