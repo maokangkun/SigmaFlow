@@ -740,3 +740,49 @@ html[data-motion="reduced"] #anchor-tip{display:none}
   .sidebar.folded .workspace-chip .grow,.sidebar.folded .workspace-chip>.icon{display:none}
   .sidebar.folded .user-menu{left:0;right:auto;width:186px}
 }
+
+/* ==================== 虚拟细胞页 ==================== */
+/* 左: 模型切换区(上) + 3D 舞台(下); 右: 数据详情 + 对话操作 */
+.cell-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:18px;align-items:start;margin-top:18px}
+.cell-left{display:flex;flex-direction:column;gap:12px;padding:16px}
+.cell-switcher{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.cell-switch-card{display:flex;flex-direction:column;gap:7px;padding:7px 7px 8px;border:1px solid var(--line);border-radius:11px;background:var(--surface);cursor:pointer;text-align:left;transition:border-color .12s}
+.cell-switch-card:hover{border-color:#c9cde0}
+.cell-switch-card.selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-bg)}
+.cell-switch-img{display:block;aspect-ratio:16/10;border-radius:8px;overflow:hidden;background:var(--inset)}
+.cell-switch-img img{width:100%;height:100%;object-fit:cover;display:block}
+.cell-switch-name{display:flex;align-items:center;gap:5px;font-size:11.5px;font-weight:550;color:var(--ink)}
+.cell-switch-name .icon{color:var(--accent);width:13px;height:13px}
+.cell-stage{position:relative;height:min(62vh,560px);border-radius:14px;border:1px solid var(--line-soft);background:radial-gradient(120% 100% at 30% 0%,#f4f6fb 0%,#e9edf6 45%,#e2e7f2 100%);overflow:hidden;flex:1;min-height:380px}
+.cell-stage canvas{display:block;outline:none;touch-action:none}
+.cell-stage-tools{position:absolute;top:10px;right:10px;display:flex;gap:6px;z-index:3}
+.cell-stage-tools .icon-btn{background:#ffffffcc;backdrop-filter:blur(6px);border:1px solid var(--line)}
+.cell-stage-tools .icon-btn.cell-tool-on{color:var(--accent)}
+.cell-stage-hint{position:absolute;top:10px;left:12px;font-size:10.5px;color:var(--faint);z-index:3;background:#ffffffaa;padding:4px 9px;border-radius:8px}
+.cell-load{position:absolute;left:12px;bottom:12px;display:flex;align-items:center;gap:7px;padding:6px 11px;border-radius:9px;background:#ffffffdd;border:1px solid var(--line);font-size:11px;color:var(--muted);z-index:3;max-width:calc(100% - 24px)}
+.cell-load-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1.2s ease-in-out infinite;flex-shrink:0}
+.cell-load.ok .cell-load-dot{animation:none;background:var(--green)}
+.cell-load.hide{display:none}
+.cell-fallback{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;text-align:center;z-index:2}
+.cell-fallback img{max-width:min(420px,86%);max-height:60%;border-radius:12px;border:1px solid var(--line)}
+.cell-fallback p{font-size:12px;color:var(--muted)}
+.cell-right{display:flex;flex-direction:column;gap:16px}
+.cell-detail{padding:20px}
+.cell-detail-head{display:flex;align-items:center;gap:12px}
+.cell-icon-tile{width:38px;height:38px;border-radius:11px;background:linear-gradient(150deg,#8583cc,#625f9e);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.cell-detail-head h2{font-size:16px}
+.cell-desc{margin:12px 0;font-size:12.5px;line-height:1.85;color:var(--muted)}
+.cell-tags{display:flex;flex-wrap:wrap;gap:6px}
+.cell-chip{display:inline-flex;align-items:center;padding:4px 10px;border-radius:8px;background:var(--inset);border:1px solid var(--line-soft);font-size:11px;color:var(--ink)}
+.cell-quick{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.cell-quick-chip{cursor:pointer;background:var(--accent-bg);border-color:transparent;color:var(--ink-strong);text-align:left}
+.cell-quick-chip:hover{background:#e2e0f0}
+.cell-stats{margin:16px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.cell-stats>div{padding:10px 11px;border:1px solid var(--line-soft);border-radius:10px;background:var(--surface)}
+.cell-stats dt{font-size:10px;color:var(--faint);margin-bottom:3px}
+.cell-stats dd{font-size:12px;color:var(--ink-strong);font-weight:550;word-break:break-all}
+.cell-ask-panel{padding:20px}
+.cell-ask-panel h3{font-size:13.5px}
+.cell-ask-panel textarea{width:100%;margin-top:12px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:12.5px;resize:vertical;min-height:76px;background:#fff;font-family:inherit;color:var(--ink)}
+.cell-ask-panel textarea:focus-visible{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
+@media(max-width:1100px){.cell-layout{grid-template-columns:1fr}.cell-stage{height:52vh;min-height:300px}.cell-switch-img{aspect-ratio:16/9}}

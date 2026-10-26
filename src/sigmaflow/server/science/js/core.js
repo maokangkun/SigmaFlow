@@ -383,6 +383,9 @@ CS.markdown = text => {
   CS.persistFoldLoose = () => { try { localStorage.setItem(key + '.foldLoose', CS.ui.unassignedCollapsed ? '1' : '0'); } catch {} };
   CS.ui.fsCollapsed = localStorage.getItem(key + '.foldFs') === '1';
   CS.ui.sidebarFolded = localStorage.getItem(key + '.foldBar') === '1';
+  // 虚拟细胞页状态: 当前模型(4 类, 默认动物)与自动旋转开关(会话内, 不持久化)
+  CS.ui.cellModel = 'animal';
+  CS.ui.cellAutoRotate = true;
   CS.persistFoldBar = () => { try { localStorage.setItem(key + '.foldBar', CS.ui.sidebarFolded ? '1' : '0'); } catch {} };
   CS.ui.terminal.width = Number(localStorage.getItem(key + '.termW')) || 480;
   CS.persistTermWidth = () => { try { localStorage.setItem(key + '.termW', String(CS.ui.terminal.width)); } catch {} };

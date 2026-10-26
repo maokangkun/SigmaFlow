@@ -218,7 +218,7 @@
 
   V.sidebar = () => {
     const active = CS.ui.route;
-    const nav = [ ['home','message','新对话'], ['literature','book','文献'], ['data','database','数据集'], ['workflows','workflow','工作流'], ['results','chart','分析结果'], ['tools','grid','生物工具'], ['tasks','queue','任务队列'] ];
+    const nav = [ ['home','message','新对话'], ['literature','book','文献'], ['data','database','数据集'], ['workflows','workflow','工作流'], ['results','chart','分析结果'], ['tools','grid','生物工具'], ['tasks','queue','任务队列'], ['cell','cells','虚拟细胞'] ];
     const running = CS.state.runs.filter(r => ['running','paused','awaiting','connecting'].includes(r.status)).length;
     const streaming = new Set(CS.state.runs.filter(r => (r.messages || []).some(m => m.streaming)).map(r => r.id));
     return `${CS.ui.mobileSidebar ? '<button class="sidebar-scrim" aria-label="关闭菜单" data-action="toggle-sidebar"></button>' : ''}<aside class="sidebar ${CS.ui.mobileSidebar ? 'open' : ''} ${CS.ui.sidebarFolded ? 'folded' : ''}" aria-label="主导航">
@@ -240,6 +240,67 @@
     // 标题栏右侧 usage 行: 图标+数值(开始时间/耗时/消息/工具调用 + 输入↓/输出↑/缓存②/上下文表盘), 右对齐贴水平线
   // 标题栏右侧消息轨迹热力图: 4行方格子, 按聊天气泡可见块一一对应(思考/每个工具/回复各一格),
   // 列内自上而下 / 列间从左往右递增, 整体贴最右生长, 超出 usage 行左侧的旧列因 overflow 被裁剪
+  // 虚拟细胞: 4 个模型(动物→植物→神经元→病毒, 默认动物), GLB/JPG 资产来自
+  // learningcell 静态部署(/learningcell/...), 3D 内核是 vendor/cell3d.min.js
+  CS.CELL_MODELS = [
+    { key: 'animal', name: '动物细胞', en: 'Animal Cell', icon: 'spark',
+      img: '/learningcell/images/animal-cell.jpg', glb: '/learningcell/models/animal-cell.glb',
+      desc: '真核细胞的典型形态：以细胞核为信息中枢，细胞质中分布线粒体、内质网、高尔基体与溶酶体等膜性细胞器，通过呼吸作用供能，没有细胞壁。',
+      tags: ['细胞核', '线粒体', '内质网', '高尔基体', '溶酶体', '核糖体'],
+      facts: [['直径', '10–100 μm'], ['营养方式', '异养（摄取有机物）'], ['代表组织', '上皮 · 肌肉 · 神经'], ['能量来源', '线粒体氧化磷酸化']],
+      quick: ['动物细胞与植物细胞有哪些关键区别？', '线粒体如何通过氧化磷酸化供能？', '内膜系统的细胞器之间如何协作？'] },
+    { key: 'plant', name: '植物细胞', en: 'Plant Cell', icon: 'leaf',
+      img: '/learningcell/images/plant-cell.jpg', glb: '/learningcell/models/plant-cell.glb',
+      desc: '植物真核细胞外覆纤维素细胞壁，大型中央液泡维持渗透压与膨压，叶绿体通过光合作用把光能转化为化学能，是自养生物的结构基础。',
+      tags: ['细胞壁', '叶绿体', '中央液泡', '细胞核', '内质网'],
+      facts: [['直径', '20–100 μm'], ['营养方式', '自养（光合作用）'], ['代表部位', '叶片 · 根 · 茎'], ['特有结构', '细胞壁 · 叶绿体 · 液泡']],
+      quick: ['叶绿体的光合作用分为哪两个阶段？', '液泡对植物细胞有什么作用？', '细胞壁的纤维素如何维持细胞形态？'] },
+    { key: 'neuron', name: '神经元', en: 'Neuron', icon: 'network',
+      img: '/learningcell/images/neuron.jpg', glb: '/learningcell/models/neuron.glb',
+      desc: '神经系统的结构与功能单元：胞体整合信号，树突接收输入，轴突长距离传导动作电位，髓鞘以跳跃式传导加速信号，突触末梢把信息递给下一个细胞。',
+      tags: ['胞体', '树突', '轴突', '髓鞘', '突触末梢'],
+      facts: [['胞体直径', '4–120 μm'], ['轴突长度', '最长 >1 m'], ['传导速度', '0.5–120 m/s'], ['关键机制', '动作电位 · 突触传递']],
+      quick: ['动作电位的离子机制是什么？', '髓鞘如何让信号传导更快？', '神经元之间如何通过突触传递信息？'] },
+    { key: 'virus', name: '病毒颗粒', en: 'Virus Particle', icon: 'alert',
+      img: '/learningcell/images/virus.jpg', glb: '/learningcell/models/virus-particle.glb',
+      desc: '非细胞生命形态：蛋白质衣壳保护核酸基因组，包膜类病毒借刺突蛋白识别并入侵宿主细胞；自身没有独立代谢系统，必须依赖宿主完成复制。',
+      tags: ['衣壳', '刺突蛋白', '核酸基因组', '包膜'],
+      facts: [['直径', '20–300 nm'], ['基因组', 'DNA 或 RNA'], ['繁殖方式', '依赖宿主细胞'], ['对抗手段', '疫苗 · 抗病毒药物']],
+      quick: ['病毒为什么不被视为完整生命？', '刺突蛋白在病毒入侵中起什么作用？', '抗生素为什么对病毒无效？'] }
+  ];
+  V.cell = () => {
+    const models = CS.CELL_MODELS;
+    const cur = models.find(m => m.key === CS.ui.cellModel) || models[0];
+    return `<section class="page cell-page">${header('VIRTUAL CELL', '虚拟细胞', '在可交互的三维模型中观察微观生命结构，右侧随时向 Agent 深入提问。')}
+    <div class="cell-layout">
+      <div class="panel cell-left">
+        <div class="cell-switcher">${models.map(m => `<button type="button" class="cell-switch-card ${m.key === cur.key ? 'selected' : ''}" data-action="cell-pick" data-id="${m.key}" title="切换到${e(m.name)}"><span class="cell-switch-img"><img src="${m.img}" alt="${e(m.name)}预览" loading="lazy"></span><span class="cell-switch-name">${i(m.icon, '', 13)}${e(m.name)}</span></button>`).join('')}</div>
+        <div class="cell-stage" id="cell-stage">
+          <div class="cell-stage-tools">
+            <button type="button" class="icon-btn ${CS.ui.cellAutoRotate ? 'cell-tool-on' : ''}" data-action="cell-rotate" title="${CS.ui.cellAutoRotate ? '关闭自动旋转' : '开启自动旋转'}" aria-pressed="${CS.ui.cellAutoRotate ? 'true' : 'false'}">${i('refresh', '', 14)}</button>
+            <button type="button" class="icon-btn" data-action="cell-reset-view" title="重置视角">${i('eye', '', 14)}</button>
+          </div>
+          <div class="cell-stage-hint">拖拽旋转 · 滚轮缩放</div>
+          <div class="cell-load" id="cell-load"><span class="cell-load-dot"></span><span id="cell-load-text">正在加载 ${e(cur.name)} 模型…</span></div>
+        </div>
+      </div>
+      <div class="cell-right">
+        <div class="panel cell-detail">
+          <div class="cell-detail-head"><span class="cell-icon-tile">${i('cells', '', 17)}</span><div><h2>${e(cur.name)}</h2><p class="small muted">${e(cur.en)}</p></div></div>
+          <p class="cell-desc">${e(cur.desc)}</p>
+          <div class="cell-tags">${cur.tags.map(t => `<span class="cell-chip">${e(t)}</span>`).join('')}</div>
+          <dl class="cell-stats" id="cell-stats">${cur.facts.map(([k, v]) => `<div><dt>${e(k)}</dt><dd>${e(v)}</dd></div>`).join('')}</dl>
+        </div>
+        <div class="panel cell-ask-panel">
+          <h3>对话操作</h3>
+          <p class="small muted">关于「${e(cur.name)}」的问题将带着结构要点进入新会话，由 Agent 给出可追溯的解释。</p>
+          <div class="cell-quick">${cur.quick.map(q => `<button type="button" class="cell-chip cell-quick-chip" data-action="cell-quick" data-id="${e(q)}">${e(q)}</button>`).join('')}</div>
+          <textarea id="cell-ask-text" rows="3" maxlength="6000" placeholder="例如：${e(cur.quick[0])}"></textarea>
+          <div class="row-between mt-12"><span class="tiny muted">发送后进入新对话页面</span>${btn('cell-ask', '向 Agent 提问', 'up', 'primary small-btn')}</div>
+        </div>
+      </div>
+    </div></section>`;
+  };
   V.runTrack = () => {
     const run = CS.currentRun();
     const all = run?.messages || [];

@@ -183,6 +183,8 @@
     const savedTop = conv ? conv.scrollTop : 0;
     const hadConv = !!conv;
     _origRender();
+    // 虚拟细胞页: 每次渲染后重建 three 场景(innerHTML 整体替换会丢 canvas)
+    if (CS.ui.route === 'cell') CS.mountCellViewer();
     // 工具设置的参数编辑框需要按内容自适应高度, 在每次渲染后同步
     CS.sizeSchemaEditors();
     const el = document.getElementById('sys-stats');
@@ -469,6 +471,134 @@
     CS.ui.composer = ''; CS.ui.attachments = []; CS.ui.expandedLogs.clear();
     CS.navigate('chat', run.id);
     sendChatMessage(run, prompt, run.datasetIds);
+  };
+  // ===== 虚拟细胞 3D 查看器 =====
+  // 内核来自 vendor/cell3d.min.js(window.CellViewer: three + GLTFLoader + DRACOLoader
+  // + OrbitControls + RoomEnvironment); GLB/JPG 由 learningcell 静态部署提供
+  // (/learningcell/..., 与本页面同源), Draco 解码器同源加载。
+  CS.cellViewerDispose = () => {
+    const v = CS._cellViewer;
+    if (!v) return;
+    try { cancelAnimationFrame(v.raf); } catch {}
+    try { v.ro && v.ro.disconnect(); } catch {}
+    try {
+      v.scene && v.scene.traverse(o => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => {
+          Object.values(m).forEach(x => { if (x && x.isTexture) x.dispose(); });
+          m.dispose();
+        });
+      });
+    } catch {}
+    try { v.controls && v.controls.dispose(); } catch {}
+    try { v.renderer.dispose(); v.renderer.forceContextLoss && v.renderer.forceContextLoss(); } catch {}
+    CS._cellViewer = null;
+  };
+  CS.cellViewerReset = () => {
+    const v = CS._cellViewer;
+    if (!v) return;
+    v.controls.target.set(0, 0, 0);
+    if (v.basePos) v.camera.position.copy(v.basePos);
+    v.controls.update();
+  };
+  CS.mountCellViewer = () => {
+    CS.cellViewerDispose();
+    const stage = document.getElementById('cell-stage');
+    if (!stage) return;
+    const CV = window.CellViewer;
+    const model = (CS.CELL_MODELS || []).find(m => m.key === CS.ui.cellModel) || (CS.CELL_MODELS || [])[0];
+    const loadEl = stage.querySelector('.cell-load');
+    const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fallback = msg => {
+      if (loadEl) loadEl.className = 'cell-load';
+      const t = loadEl ? loadEl.querySelector('#cell-load-text') : null;
+      if (t) t.textContent = msg; else if (loadEl) loadEl.textContent = msg;
+      const old = stage.querySelector('.cell-fallback');
+      if (old) old.remove();
+      stage.insertAdjacentHTML('beforeend', `<div class="cell-fallback"><img src="${model ? model.img : ''}" alt="${model ? esc(model.name) : ''} 预览"><p>${esc(msg)}</p><p class="tiny muted">3D 素材由 learningcell 静态站点提供, 请通过 https://(服务器):8888 网关访问。</p></div>`);
+    };
+    if (!CV || !model) { fallback('3D 组件未加载或模型数据缺失。'); return; }
+    const THREE = CV.THREE;
+    const w = Math.max(200, stage.clientWidth), h = Math.max(220, stage.clientHeight);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(w, h);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.domElement.className = 'cell-canvas';
+    stage.appendChild(renderer.domElement);
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, w / h, 0.01, 2000);
+    // PBR 环境(RoomEnvironment 经 PMREM) + 双向柔和补光
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new CV.RoomEnvironment(), 0.04).texture;
+    const key = new THREE.DirectionalLight(0xffffff, 2.0); key.position.set(3, 5, 2); scene.add(key);
+    const rim = new THREE.DirectionalLight(0xbfd4ff, 0.7); rim.position.set(-4, 2, -3); scene.add(rim);
+    const controls = new CV.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.autoRotate = !!CS.ui.cellAutoRotate;
+    controls.autoRotateSpeed = 1.1;
+    const v = { renderer, scene, camera, controls, raf: 0, ro: null, basePos: null };
+    CS._cellViewer = v;
+    const render = () => { v.raf = requestAnimationFrame(render); controls.update(); renderer.render(scene, camera); };
+    render();
+    // 模型加载: Draco 解码器与 GLB 都来自 learningcell 同源静态目录
+    const stats = { meshes: 0, tris: 0, verts: 0, mats: {} };
+    try {
+      const draco = new CV.DRACOLoader();
+      draco.setDecoderPath('/learningcell/draco/');
+      const loader = new CV.GLTFLoader();
+      loader.setDRACOLoader(draco);
+      const loading = document.getElementById('cell-load-text');
+      loader.load(model.glb,
+        gltf => {
+          if (CS._cellViewer !== v) return;  // 渲染期间切走了, 直接丢弃
+          const box = new THREE.Box3().setFromObject(gltf.scene);
+          const size = box.getSize(new THREE.Vector3());
+          const center = box.getCenter(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z) || 1;
+          gltf.scene.position.sub(center);
+          scene.add(gltf.scene);
+          camera.near = Math.max(maxDim / 500, 0.001);
+          camera.far = maxDim * 60;
+          camera.position.set(maxDim * 1.6, maxDim * 0.85, maxDim * 1.9);
+          v.basePos = camera.position.clone();
+          camera.updateProjectionMatrix();
+          controls.minDistance = maxDim * 0.45;
+          controls.maxDistance = maxDim * 8;
+          controls.update();
+          gltf.scene.traverse(o => {
+            if (o.isMesh) {
+              stats.meshes++;
+              const g = o.geometry;
+              if (g && g.attributes && g.attributes.position) {
+                stats.verts += g.attributes.position.count;
+                stats.tris += Math.round((g.index ? g.index.count : g.attributes.position.count) / 3);
+              }
+              const ms = Array.isArray(o.material) ? o.material : [o.material];
+              ms.forEach(mm => { if (mm) stats.mats[mm.uuid] = (mm.name || '材质'); });
+            }
+          });
+          const rows = [['网格 Meshes', String(stats.meshes)], ['三角形 Triangles', stats.tris.toLocaleString('zh-CN')], ['顶点 Vertices', stats.verts.toLocaleString('zh-CN')], ['材质 Materials', String(Object.keys(stats.mats).length)]];
+          const se = document.getElementById('cell-stats');
+          if (se) se.insertAdjacentHTML('beforeend', rows.map(([k, val]) => `<div><dt>${k}</dt><dd>${val}</dd></div>`).join(''));
+          if (loadEl) {
+            loadEl.className = 'cell-load ok';
+            const lt = loadEl.querySelector('#cell-load-text'); if (lt) lt.textContent = '加载完成 · ' + stats.meshes + ' 网格 / ' + stats.tris.toLocaleString('zh-CN') + ' 三角形';
+            setTimeout(() => { if (loadEl.parentNode && loadEl.className === 'cell-load ok') loadEl.className = 'cell-load hide'; }, 2600);
+          }
+        },
+        ev => {
+          if (ev && ev.total && loading) loading.textContent = '正在加载 ' + model.name + ' 模型… ' + Math.round(ev.loaded / ev.total * 100) + '%';
+        },
+        err => fallback('3D 模型加载失败: ' + ((err && (err.message || err.type)) ? String(err.message || err.type).slice(0, 90) : '资源不可达')));
+    } catch (eLoad) { fallback('3D 初始化失败: ' + (eLoad && eLoad.message ? eLoad.message : '未知错误')); }
+    const ro = new ResizeObserver(() => {
+      const nw = Math.max(200, stage.clientWidth), nh = Math.max(220, stage.clientHeight);
+      camera.aspect = nw / nh; camera.updateProjectionMatrix();
+      renderer.setSize(nw, nh);
+    });
+    ro.observe(stage);
+    v.ro = ro;
   };
   let _chatRenderAt = 0;
   const scrollToLatest = () => {
@@ -1283,6 +1413,26 @@
     },
     'toggle-sidebar': () => { CS.ui.mobileSidebar = !CS.ui.mobileSidebar; CS.render(); },
     'toggle-sidebar-fold': () => { CS.ui.sidebarFolded = !CS.ui.sidebarFolded; CS.persistFoldBar(); CS.render(); },
+    // ===== 虚拟细胞 =====
+    'cell-pick': id => {
+      const m = (CS.CELL_MODELS || []).find(x => x.key === id);
+      if (!m) return;
+      if (id === CS.ui.cellModel) return;
+      CS.ui.cellModel = id;
+      CS.render();
+    },
+    'cell-rotate': () => { CS.ui.cellAutoRotate = !CS.ui.cellAutoRotate; if (CS._cellViewer) CS._cellViewer.controls.autoRotate = CS.ui.cellAutoRotate; CS.render(); },
+    'cell-reset-view': () => CS.cellViewerReset(),
+    'cell-quick': id => { const ta = document.getElementById('cell-ask-text'); if (ta) { ta.value = id || ''; ta.focus(); } },
+    'cell-ask': () => {
+      const ta = document.getElementById('cell-ask-text');
+      const q = (ta && ta.value || '').trim();
+      if (!q) { CS.toast('请先输入要询问 Agent 的问题。', 'error'); return; }
+      const m = (CS.CELL_MODELS || []).find(x => x.key === CS.ui.cellModel) || (CS.CELL_MODELS || [])[0];
+      if (!m) return;
+      // 带上模型上下文进入新会话, Agent 回答可追溯
+      startChat(`【虚拟细胞 · ${m.name}】我正在观察${m.name}的三维结构模型(结构要点: ${m.tags.join('、')})。请回答: ${q}`);
+    },
     'toggle-user-menu': () => { CS.ui.userMenu = !CS.ui.userMenu; CS.render(); },
     'auth-tab': (id, target) => {
       // 切换登录/注册会重绘表单; 先把已输入的内容存为草稿, 渲染后回填
