@@ -566,7 +566,6 @@
     io.observe(stage);
     v.io = io;
     // 模型加载: Draco 解码器与 GLB 都来自 learningcell 同源静态目录
-    const stats = { meshes: 0, tris: 0, verts: 0, mats: {} };
     try {
       const draco = new CV.DRACOLoader();
       draco.setDecoderPath('/learningcell/draco/');
@@ -584,32 +583,18 @@
           scene.add(gltf.scene);
           camera.near = Math.max(maxDim / 500, 0.001);
           camera.far = maxDim * 60;
-          camera.position.set(maxDim * 1.6, maxDim * 0.85, maxDim * 1.9);
+          // 拉近的默认机位: 距离约 1.7*maxDim(原 2.56), 模型视觉放大约 1.5 倍
+          camera.position.set(maxDim * 1.05, maxDim * 0.6, maxDim * 1.25);
           v.basePos = camera.position.clone();
           camera.updateProjectionMatrix();
-          controls.minDistance = maxDim * 0.45;
-          controls.maxDistance = maxDim * 8;
+          controls.minDistance = maxDim * 0.5;
+          controls.maxDistance = maxDim * 6;
           controls.update();
-          gltf.scene.traverse(o => {
-            if (o.isMesh) {
-              stats.meshes++;
-              const g = o.geometry;
-              if (g && g.attributes && g.attributes.position) {
-                stats.verts += g.attributes.position.count;
-                stats.tris += Math.round((g.index ? g.index.count : g.attributes.position.count) / 3);
-              }
-              const ms = Array.isArray(o.material) ? o.material : [o.material];
-              ms.forEach(mm => { if (mm) stats.mats[mm.uuid] = (mm.name || '材质'); });
-            }
-          });
-          const rows = [['网格 Meshes', String(stats.meshes)], ['三角形 Triangles', stats.tris.toLocaleString('zh-CN')], ['顶点 Vertices', stats.verts.toLocaleString('zh-CN')], ['材质 Materials', String(Object.keys(stats.mats).length)]];
-          const se = document.getElementById('cell-stats');
-          if (se) se.insertAdjacentHTML('beforeend', rows.map(([k, val]) => `<div><dt>${k}</dt><dd>${val}</dd></div>`).join(''));
           v.needsRender = true;  // 装配完成后立即出首帧
           if (loadEl) {
             loadEl.className = 'cell-load ok';
-            const lt = loadEl.querySelector('#cell-load-text'); if (lt) lt.textContent = '加载完成 · ' + stats.meshes + ' 网格 / ' + stats.tris.toLocaleString('zh-CN') + ' 三角形';
-            setTimeout(() => { if (loadEl.parentNode && loadEl.className === 'cell-load ok') loadEl.className = 'cell-load hide'; }, 2600);
+            const lt = loadEl.querySelector('#cell-load-text'); if (lt) lt.textContent = model.name + ' 模型已就绪';
+            setTimeout(() => { if (loadEl.parentNode && loadEl.className === 'cell-load ok') loadEl.className = 'cell-load hide'; }, 2200);
           }
         },
         ev => {
