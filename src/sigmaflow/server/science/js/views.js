@@ -245,25 +245,21 @@
   CS.CELL_MODELS = [
     { key: 'animal', name: '动物细胞', en: 'Animal Cell', icon: 'spark',
       img: '/learningcell/images/animal-cell.jpg', glb: '/learningcell/models/animal-cell.glb',
-      desc: '真核细胞的典型形态：以细胞核为信息中枢，细胞质中分布线粒体、内质网、高尔基体与溶酶体等膜性细胞器，通过呼吸作用供能，没有细胞壁。',
       tags: ['细胞核', '线粒体', '内质网', '高尔基体', '溶酶体', '核糖体'],
       facts: [['直径', '10–100 μm'], ['营养方式', '异养（摄取有机物）'], ['代表组织', '上皮 · 肌肉 · 神经'], ['能量来源', '线粒体氧化磷酸化']],
       quick: ['动物细胞与植物细胞有哪些关键区别？', '线粒体如何通过氧化磷酸化供能？', '内膜系统的细胞器之间如何协作？'] },
     { key: 'plant', name: '植物细胞', en: 'Plant Cell', icon: 'leaf',
       img: '/learningcell/images/plant-cell.jpg', glb: '/learningcell/models/plant-cell.glb',
-      desc: '植物真核细胞外覆纤维素细胞壁，大型中央液泡维持渗透压与膨压，叶绿体通过光合作用把光能转化为化学能，是自养生物的结构基础。',
       tags: ['细胞壁', '叶绿体', '中央液泡', '细胞核', '内质网'],
       facts: [['直径', '20–100 μm'], ['营养方式', '自养（光合作用）'], ['代表部位', '叶片 · 根 · 茎'], ['特有结构', '细胞壁 · 叶绿体 · 液泡']],
       quick: ['叶绿体的光合作用分为哪两个阶段？', '液泡对植物细胞有什么作用？', '细胞壁的纤维素如何维持细胞形态？'] },
     { key: 'neuron', name: '神经元', en: 'Neuron', icon: 'network',
       img: '/learningcell/images/neuron.jpg', glb: '/learningcell/models/neuron.glb',
-      desc: '神经系统的结构与功能单元：胞体整合信号，树突接收输入，轴突长距离传导动作电位，髓鞘以跳跃式传导加速信号，突触末梢把信息递给下一个细胞。',
       tags: ['胞体', '树突', '轴突', '髓鞘', '突触末梢'],
       facts: [['胞体直径', '4–120 μm'], ['轴突长度', '最长 >1 m'], ['传导速度', '0.5–120 m/s'], ['关键机制', '动作电位 · 突触传递']],
       quick: ['动作电位的离子机制是什么？', '髓鞘如何让信号传导更快？', '神经元之间如何通过突触传递信息？'] },
     { key: 'virus', name: '病毒颗粒', en: 'Virus Particle', icon: 'alert',
       img: '/learningcell/images/virus.jpg', glb: '/learningcell/models/virus-particle.glb',
-      desc: '非细胞生命形态：蛋白质衣壳保护核酸基因组，包膜类病毒借刺突蛋白识别并入侵宿主细胞；自身没有独立代谢系统，必须依赖宿主完成复制。',
       tags: ['衣壳', '刺突蛋白', '核酸基因组', '包膜'],
       facts: [['直径', '20–300 nm'], ['基因组', 'DNA 或 RNA'], ['繁殖方式', '依赖宿主细胞'], ['对抗手段', '疫苗 · 抗病毒药物']],
       quick: ['病毒为什么不被视为完整生命？', '刺突蛋白在病毒入侵中起什么作用？', '抗生素为什么对病毒无效？'] }
@@ -287,7 +283,6 @@
       <div class="cell-right">
         <div class="panel cell-detail">
           <div class="cell-detail-head"><span class="cell-icon-tile">${i('cells', '', 17)}</span><div><h2>${e(cur.name)}</h2><p class="small muted">${e(cur.en)}</p></div></div>
-          <p class="cell-desc">${e(cur.desc)}</p>
           <div class="cell-tags">${cur.tags.map(t => `<span class="cell-chip">${e(t)}</span>`).join('')}</div>
           <dl class="cell-stats" id="cell-stats">${cur.facts.map(([k, v]) => `<div><dt>${e(k)}</dt><dd>${e(v)}</dd></div>`).join('')}</dl>
         </div>
