@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="4139f2c5">
+<meta name="build" content="35d170b3">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1099,11 +1099,11 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 /* ==================== 虚拟细胞页 ==================== */
 /* 左: 模型切换区(上) + 3D 舞台(下); 右: 数据详情 + 对话操作 */
 .cell-page{padding-bottom:22px}
-.cell-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:18px;align-items:start;margin-top:0}
+.cell-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:18px;margin-top:0}
 .cell-col-left{display:flex;flex-direction:column;min-width:0}
 /* 列首页头: 与右栏同起一行, 让详情卡上边缘对齐 VIRTUAL CELL; 收紧与舞台的间距 */
-.cell-col-left .page-header{margin-bottom:14px;justify-content:flex-start}
-.cell-left{display:flex;flex-direction:column;gap:12px;padding:16px}
+.cell-col-left .page-header{margin-bottom:14px;justify-content:flex-start;flex:none}
+.cell-left{display:flex;flex-direction:column;gap:12px;padding:16px;flex:1;min-height:0}
 .cell-switcher{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .cell-switch-card{display:flex;flex-direction:column;gap:7px;padding:7px 7px 8px;border:1px solid var(--line);border-radius:11px;background:var(--surface);cursor:pointer;text-align:left;transition:border-color .12s}
 .cell-switch-card:hover{border-color:#c9cde0}
@@ -1112,7 +1112,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .cell-switch-img img{width:100%;height:100%;object-fit:cover;display:block}
 .cell-switch-name{display:flex;align-items:center;gap:5px;font-size:11.5px;font-weight:550;color:var(--ink)}
 .cell-switch-name .icon{color:var(--accent);width:13px;height:13px}
-.cell-stage{position:relative;height:min(75vh,720px);border-radius:14px;border:1px solid var(--line-soft);background:radial-gradient(120% 100% at 30% 0%,#f4f6fb 0%,#e9edf6 45%,#e2e7f2 100%);overflow:hidden;flex:none;min-height:420px}
+.cell-stage{position:relative;border-radius:14px;border:1px solid var(--line-soft);background:radial-gradient(120% 100% at 30% 0%,#f4f6fb 0%,#e9edf6 45%,#e2e7f2 100%);overflow:hidden;flex:1;min-height:260px}
 .cell-stage canvas{display:block;outline:none;touch-action:none}
 .cell-stage-tools{position:absolute;top:10px;right:10px;display:flex;gap:6px;z-index:3}
 .cell-stage-tools .icon-btn{background:#ffffffcc;backdrop-filter:blur(6px);border:1px solid var(--line)}
@@ -1144,7 +1144,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .cell-ask-panel h3{font-size:13.5px}
 .cell-ask-panel textarea{width:100%;margin-top:12px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:12.5px;resize:vertical;min-height:76px;background:#fff;font-family:inherit;color:var(--ink)}
 .cell-ask-panel textarea:focus-visible{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
-@media(max-width:940px){.cell-layout{grid-template-columns:1fr;gap:14px}.cell-stage{height:min(64vh,560px);min-height:340px}.cell-switch-img{aspect-ratio:16/9}}
+@media(max-width:940px){.cell-layout{grid-template-columns:1fr;gap:14px}.cell-stage{height:min(64vh,560px);min-height:340px;flex:none}.cell-switch-img{aspect-ratio:16/9}}
 
 </style>
 </head>
