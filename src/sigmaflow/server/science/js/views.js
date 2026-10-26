@@ -240,26 +240,26 @@
     // 标题栏右侧 usage 行: 图标+数值(开始时间/耗时/消息/工具调用 + 输入↓/输出↑/缓存②/上下文表盘), 右对齐贴水平线
   // 标题栏右侧消息轨迹热力图: 4行方格子, 按聊天气泡可见块一一对应(思考/每个工具/回复各一格),
   // 列内自上而下 / 列间从左往右递增, 整体贴最右生长, 超出 usage 行左侧的旧列因 overflow 被裁剪
-  // 虚拟细胞: 4 个模型(动物→植物→神经元→病毒, 默认动物), GLB/JPG 资产来自
-  // learningcell 静态部署(/learningcell/...), 3D 内核是 vendor/cell3d.min.js
+  // 虚拟细胞: 4 个模型(动物→植物→神经元→病毒, 默认动物), GLB/JPG 资产在
+  // 本站 assets/cell(build 拷入 dist/cell), 3D 内核与 Draco 解码器都在 js/vendor/
   CS.CELL_MODELS = [
     { key: 'animal', name: '动物细胞', en: 'Animal Cell', icon: 'spark',
-      img: '/learningcell/images/animal-cell.jpg', glb: '/learningcell/models/animal-cell.glb',
+      img: 'cell/images/animal-cell.jpg', glb: 'cell/models/animal-cell.glb',
       tags: ['细胞核', '线粒体', '内质网', '高尔基体', '溶酶体', '核糖体'],
       facts: [['直径', '10–100 μm'], ['营养方式', '异养（摄取有机物）'], ['代表组织', '上皮 · 肌肉 · 神经'], ['能量来源', '线粒体氧化磷酸化']],
       quick: ['动物细胞与植物细胞有哪些关键区别？', '线粒体如何通过氧化磷酸化供能？', '内膜系统的细胞器之间如何协作？'] },
     { key: 'plant', name: '植物细胞', en: 'Plant Cell', icon: 'leaf',
-      img: '/learningcell/images/plant-cell.jpg', glb: '/learningcell/models/plant-cell.glb',
+      img: 'cell/images/plant-cell.jpg', glb: 'cell/models/plant-cell.glb',
       tags: ['细胞壁', '叶绿体', '中央液泡', '细胞核', '内质网'],
       facts: [['直径', '20–100 μm'], ['营养方式', '自养（光合作用）'], ['代表部位', '叶片 · 根 · 茎'], ['特有结构', '细胞壁 · 叶绿体 · 液泡']],
       quick: ['叶绿体的光合作用分为哪两个阶段？', '液泡对植物细胞有什么作用？', '细胞壁的纤维素如何维持细胞形态？'] },
     { key: 'neuron', name: '神经元', en: 'Neuron', icon: 'network',
-      img: '/learningcell/images/neuron.jpg', glb: '/learningcell/models/neuron.glb',
+      img: 'cell/images/neuron.jpg', glb: 'cell/models/neuron.glb',
       tags: ['胞体', '树突', '轴突', '髓鞘', '突触末梢'],
       facts: [['胞体直径', '4–120 μm'], ['轴突长度', '最长 >1 m'], ['传导速度', '0.5–120 m/s'], ['关键机制', '动作电位 · 突触传递']],
       quick: ['动作电位的离子机制是什么？', '髓鞘如何让信号传导更快？', '神经元之间如何通过突触传递信息？'] },
     { key: 'virus', name: '病毒颗粒', en: 'Virus Particle', icon: 'alert',
-      img: '/learningcell/images/virus.jpg', glb: '/learningcell/models/virus-particle.glb',
+      img: 'cell/images/virus.jpg', glb: 'cell/models/virus-particle.glb',
       tags: ['衣壳', '刺突蛋白', '核酸基因组', '包膜'],
       facts: [['直径', '20–300 nm'], ['基因组', 'DNA 或 RNA'], ['繁殖方式', '依赖宿主细胞'], ['对抗手段', '疫苗 · 抗病毒药物']],
       quick: ['病毒为什么不被视为完整生命？', '刺突蛋白在病毒入侵中起什么作用？', '抗生素为什么对病毒无效？'] }

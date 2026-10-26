@@ -175,3 +175,7 @@ cython_debug/
 
 !sigmaflow/server/comfyui/dist
 !sigmaflow/server/website/dist
+
+# science 站点静态资产拷贝产物(build 时从 js/vendor/draco 与 assets/cell 生成, 源已被跟踪)
+src/sigmaflow/server/science/dist/vendor/
+src/sigmaflow/server/science/dist/cell/

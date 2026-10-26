@@ -517,7 +517,7 @@
       if (t) t.textContent = msg; else if (loadEl) loadEl.textContent = msg;
       const old = stage.querySelector('.cell-fallback');
       if (old) old.remove();
-      stage.insertAdjacentHTML('beforeend', `<div class="cell-fallback"><img src="${model ? model.img : ''}" alt="${model ? esc(model.name) : ''} 预览"><p>${esc(msg)}</p><p class="tiny muted">3D 素材由 learningcell 静态站点提供, 请通过 https://(服务器):8888 网关访问。</p></div>`);
+      stage.insertAdjacentHTML('beforeend', `<div class="cell-fallback"><img src="${model ? model.img : ''}" alt="${model ? esc(model.name) : ''} 预览"><p>${esc(msg)}</p><p class="tiny muted">3D 素材位于站点内(dist/cell 与 vendor/draco), 无法访问时请重新执行站点构建。</p></div>`);
     };
     if (!CV || !model) { fallback('3D 组件未加载或模型数据缺失。'); return; }
     const THREE = CV.THREE;
@@ -568,7 +568,9 @@
     // 模型加载: Draco 解码器与 GLB 都来自 learningcell 同源静态目录
     try {
       const draco = new CV.DRACOLoader();
-      draco.setDecoderPath('/learningcell/draco/');
+      // decoder vendor 在 js/vendor/draco(build 后 dist/vendor/draco): 相对路径随页面
+      // 所在部署前缀自适应(caddy /sigmaflow 剥前缀或 4110 直访都成立), 不再跨站加载
+      draco.setDecoderPath('vendor/draco/');
       const loader = new CV.GLTFLoader();
       loader.setDRACOLoader(draco);
       const loading = document.getElementById('cell-load-text');
