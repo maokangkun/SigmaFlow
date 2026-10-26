@@ -481,6 +481,7 @@
     if (!v) return;
     try { cancelAnimationFrame(v.raf); } catch {}
     try { v.ro && v.ro.disconnect(); } catch {}
+    try { v.io && v.io.disconnect(); } catch {}
     try {
       v.scene && v.scene.traverse(o => {
         if (o.geometry) o.geometry.dispose();
@@ -500,6 +501,7 @@
     v.controls.target.set(0, 0, 0);
     if (v.basePos) v.camera.position.copy(v.basePos);
     v.controls.update();
+    v.needsRender = true;
   };
   CS.mountCellViewer = () => {
     CS.cellViewerDispose();
@@ -520,8 +522,11 @@
     if (!CV || !model) { fallback('3D 组件未加载或模型数据缺失。'); return; }
     const THREE = CV.THREE;
     const w = Math.max(200, stage.clientWidth), h = Math.max(220, stage.clientHeight);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    // preserveDrawingBuffer: 让 canvas 像素随时可读(预览图截取/调试计数);
+    // 渲染已是按需模式, 保留后备缓冲的代价可忽略
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    // 像素比封顶 1.5: 百万级三角形模型在 2x 视网膜下逐帧光栅是滚动掉帧的主因
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     renderer.setSize(w, h);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.domElement.className = 'cell-canvas';
@@ -537,10 +542,29 @@
     controls.enableDamping = true;
     controls.autoRotate = !!CS.ui.cellAutoRotate;
     controls.autoRotateSpeed = 1.1;
-    const v = { renderer, scene, camera, controls, raf: 0, ro: null, basePos: null };
+    const v = { renderer, scene, camera, controls, raf: 0, ro: null, io: null, basePos: null, needsRender: true, visible: true, lastPaint: 0 };
     CS._cellViewer = v;
-    const render = () => { v.raf = requestAnimationFrame(render); controls.update(); renderer.render(scene, camera); };
-    render();
+    // 按需渲染: 只有相机变化(拖拽/缩放/自动旋转)才真正 draw; 静止时空转 rAF,
+    // GPU 释放给页面滚动合成; 自动旋转时也限 ~30fps(动画足够顺滑, 负载减半)
+    controls.addEventListener('change', () => { v.needsRender = true; });
+    const render = t => {
+      v.raf = requestAnimationFrame(render);
+      if (!v.visible) return;
+      const moved = controls.update();
+      if (!moved && !v.needsRender) return;
+      if (v.lastPaint && t - v.lastPaint < 31) return;
+      v.lastPaint = t;
+      renderer.render(scene, camera);
+      if (!moved) v.needsRender = false;
+    };
+    render(0);
+    // 舞台滚出视口时整体暂停(含 rAF 的 controls 更新), 回来时补一帧
+    const io = new IntersectionObserver(ents => {
+      v.visible = !!(ents[ents.length - 1] && ents[ents.length - 1].isIntersecting);
+      if (v.visible) v.needsRender = true;
+    }, { threshold: 0.02 });
+    io.observe(stage);
+    v.io = io;
     // 模型加载: Draco 解码器与 GLB 都来自 learningcell 同源静态目录
     const stats = { meshes: 0, tris: 0, verts: 0, mats: {} };
     try {
@@ -581,6 +605,7 @@
           const rows = [['网格 Meshes', String(stats.meshes)], ['三角形 Triangles', stats.tris.toLocaleString('zh-CN')], ['顶点 Vertices', stats.verts.toLocaleString('zh-CN')], ['材质 Materials', String(Object.keys(stats.mats).length)]];
           const se = document.getElementById('cell-stats');
           if (se) se.insertAdjacentHTML('beforeend', rows.map(([k, val]) => `<div><dt>${k}</dt><dd>${val}</dd></div>`).join(''));
+          v.needsRender = true;  // 装配完成后立即出首帧
           if (loadEl) {
             loadEl.className = 'cell-load ok';
             const lt = loadEl.querySelector('#cell-load-text'); if (lt) lt.textContent = '加载完成 · ' + stats.meshes + ' 网格 / ' + stats.tris.toLocaleString('zh-CN') + ' 三角形';
@@ -596,6 +621,7 @@
       const nw = Math.max(200, stage.clientWidth), nh = Math.max(220, stage.clientHeight);
       camera.aspect = nw / nh; camera.updateProjectionMatrix();
       renderer.setSize(nw, nh);
+      v.needsRender = true;
     });
     ro.observe(stage);
     v.ro = ro;

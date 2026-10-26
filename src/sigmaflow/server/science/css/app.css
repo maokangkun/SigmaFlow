@@ -785,4 +785,4 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .cell-ask-panel h3{font-size:13.5px}
 .cell-ask-panel textarea{width:100%;margin-top:12px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:12.5px;resize:vertical;min-height:76px;background:#fff;font-family:inherit;color:var(--ink)}
 .cell-ask-panel textarea:focus-visible{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
-@media(max-width:1100px){.cell-layout{grid-template-columns:1fr}.cell-stage{height:52vh;min-height:300px}.cell-switch-img{aspect-ratio:16/9}}
+@media(max-width:940px){.cell-layout{grid-template-columns:1fr;gap:14px}.cell-stage{height:52vh;min-height:300px}.cell-switch-img{aspect-ratio:16/9}.cell-stats{grid-template-columns:1fr 1fr}}
