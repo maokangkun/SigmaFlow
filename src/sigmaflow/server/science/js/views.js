@@ -267,9 +267,12 @@
   V.cell = () => {
     const models = CS.CELL_MODELS;
     const cur = models.find(m => m.key === CS.ui.cellModel) || models[0];
-    return `<section class="page cell-page">${header('VIRTUAL CELL', '虚拟细胞', '在可交互的三维模型中观察微观生命结构，右侧随时向 Agent 深入提问。')}
+    // 标题并入左列列首: 右侧详情卡与 VIRTUAL CELL 那一行同在 grid 首行, 上边缘对齐
+    return `<section class="page cell-page">
     <div class="cell-layout">
-      <div class="panel cell-left">
+      <div class="cell-col-left">
+        ${header('VIRTUAL CELL', '虚拟细胞', '在可交互的三维模型中观察微观生命结构，右侧随时向 Agent 深入提问。')}
+        <div class="panel cell-left">
         <div class="cell-switcher">${models.map(m => `<button type="button" class="cell-switch-card ${m.key === cur.key ? 'selected' : ''}" data-action="cell-pick" data-id="${m.key}" title="切换到${e(m.name)}"><span class="cell-switch-img"><img src="${m.img}" alt="${e(m.name)}预览" loading="lazy"></span><span class="cell-switch-name">${i(m.icon, '', 13)}${e(m.name)}</span></button>`).join('')}</div>
         <div class="cell-stage" id="cell-stage">
           <div class="cell-stage-tools">
@@ -279,6 +282,7 @@
           <div class="cell-stage-hint">拖拽旋转 · 滚轮缩放</div>
           <div class="cell-load" id="cell-load"><span class="cell-load-dot"></span><span id="cell-load-text">正在加载 ${e(cur.name)} 模型…</span></div>
         </div>
+      </div>
       </div>
       <div class="cell-right">
         <div class="panel cell-detail">

@@ -743,7 +743,10 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 
 /* ==================== 虚拟细胞页 ==================== */
 /* 左: 模型切换区(上) + 3D 舞台(下); 右: 数据详情 + 对话操作 */
-.cell-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:18px;align-items:start;margin-top:18px}
+.cell-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:18px;align-items:start;margin-top:0}
+.cell-col-left{display:flex;flex-direction:column;min-width:0}
+/* 列首页头: 与右栏同起一行, 让详情卡上边缘对齐 VIRTUAL CELL; 收紧与舞台的间距 */
+.cell-col-left .page-header{margin-bottom:14px;justify-content:flex-start}
 .cell-left{display:flex;flex-direction:column;gap:12px;padding:16px}
 .cell-switcher{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .cell-switch-card{display:flex;flex-direction:column;gap:7px;padding:7px 7px 8px;border:1px solid var(--line);border-radius:11px;background:var(--surface);cursor:pointer;text-align:left;transition:border-color .12s}
