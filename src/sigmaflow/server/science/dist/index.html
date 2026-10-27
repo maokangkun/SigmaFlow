@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="5efaca00">
+<meta name="build" content="eb1f7951">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -667,6 +667,11 @@ html:has(.auth-page){scrollbar-gutter:auto}
 .sys-stats .sys-skel::after{content:'';position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,#ffffff9c,transparent);animation:skel-slide 1.25s linear infinite}
 @keyframes skel-slide{100%{transform:translateX(100%)}}
 .sys-seg{display:inline-flex;align-items:center;gap:4px;overflow:hidden;text-overflow:ellipsis;flex-shrink:1}
+/* 硬件信息条自适应: 放不下先让长 OS 名截断, 网速(上传/下载两个值)永不缩;
+   仍不够时整段换行到第二行, 信息完整优先于单行省地 */
+.sys-line{flex-wrap:wrap;row-gap:3px}
+.sys-seg.sys-net{flex-shrink:0}
+.sys-seg.sys-os{max-width:17ch}
 .sys-os{flex-shrink:0;font-weight:550;color:var(--ink)}
 .sys-gpu-model{flex-shrink:0;font-weight:550;color:var(--ink)}
 .sys-bar{display:inline-block;width:42px;height:4px;border-radius:2px;background:var(--inset);box-shadow:inset 0 0 0 1px #d9dde5aa;overflow:hidden;vertical-align:middle}
@@ -9413,7 +9418,7 @@ V.ctxRing = () => {
         `<span class="sys-seg" title="内存占用">内存 ${s.memory.used_gb}/${s.memory.total_gb}GB ${sysBar(s.memory.percent)}</span>`,
         ...((s.disks || [s.disk]).map((d, i) =>
           `<span class="sys-seg" title="磁盘占用 (${CS.escape(d.path)})">${i ? CS.escape(d.path) : '磁盘'} ${d.used_gb}/${d.total_gb}GB ${sysBar(d.percent)}</span>`)),
-        `<span class="sys-seg" title="网速">网速 ↑${fmtBps(s.net.up_bps)} ↓${fmtBps(s.net.down_bps)}</span>`,
+        `<span class="sys-seg sys-net" title="网速(上传/下载)">网速 ↑${fmtBps(s.net.up_bps)} ↓${fmtBps(s.net.down_bps)}</span>`,
       ].join('');
       const gpus = (s.gpus || []).map((g, idx) =>
         `<span class="sys-gpu" title="GPU${idx} · ${CS.escape(g.name)} · 显存 ${g.mem_used_gb}/${g.mem_total_gb}GB (${Math.round(g.mem_used_gb / g.mem_total_gb * 100)}%) · 利用率 ${Math.round(g.usage)}%">`

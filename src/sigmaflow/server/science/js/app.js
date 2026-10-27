@@ -157,7 +157,7 @@
         `<span class="sys-seg" title="内存占用">内存 ${s.memory.used_gb}/${s.memory.total_gb}GB ${sysBar(s.memory.percent)}</span>`,
         ...((s.disks || [s.disk]).map((d, i) =>
           `<span class="sys-seg" title="磁盘占用 (${CS.escape(d.path)})">${i ? CS.escape(d.path) : '磁盘'} ${d.used_gb}/${d.total_gb}GB ${sysBar(d.percent)}</span>`)),
-        `<span class="sys-seg" title="网速">网速 ↑${fmtBps(s.net.up_bps)} ↓${fmtBps(s.net.down_bps)}</span>`,
+        `<span class="sys-seg sys-net" title="网速(上传/下载)">网速 ↑${fmtBps(s.net.up_bps)} ↓${fmtBps(s.net.down_bps)}</span>`,
       ].join('');
       const gpus = (s.gpus || []).map((g, idx) =>
         `<span class="sys-gpu" title="GPU${idx} · ${CS.escape(g.name)} · 显存 ${g.mem_used_gb}/${g.mem_total_gb}GB (${Math.round(g.mem_used_gb / g.mem_total_gb * 100)}%) · 利用率 ${Math.round(g.usage)}%">`
