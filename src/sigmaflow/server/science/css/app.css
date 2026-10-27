@@ -257,7 +257,7 @@ html:has(.auth-page){scrollbar-gutter:auto}
 .jump-latest[hidden]{display:none}
 /* 服务器状态栏: 输入框下方两行 10px 硬件/网速信息(缩进与 composer 的 + 按钮左对齐) */
 .sys-stats{display:flex;flex-direction:column;gap:3px;margin-top:5px;padding-left:17px;padding-right:17px;font-size:10px;line-height:10px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden}
-.sys-line{display:flex;align-items:center;gap:16px;min-height:10px}
+.sys-line{display:flex;align-items:center;gap:10px;min-height:10px}
 /* 终端仿卡: bash 工具消息展开时以真实终端观感展示(命令带 “> ” 前缀+输出等宽);
    主题经 CSS 变量注入, 默认 Monokai Dark, 设置里可切换 */
 .term-view{--t-bg:#272822;--t-fg:#f8f8f2;--t-accent:#a6e22e;--t-border:#49483e;margin:6px 0 2px;border:1px solid var(--t-border);border-radius:11px;background:var(--t-bg);color:var(--t-fg);font-family:var(--mono);font-size:11.5px;line-height:1.7;overflow:hidden;box-shadow:0 2px 12px #1e223122}
@@ -311,15 +311,14 @@ html:has(.auth-page){scrollbar-gutter:auto}
 .sys-stats .sys-line .sys-skel{flex:1 1 0;min-width:30px;height:10px;border-radius:0;background:var(--line-soft);position:relative;overflow:hidden}
 .sys-stats .sys-skel::after{content:'';position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,#ffffff9c,transparent);animation:skel-slide 1.25s linear infinite}
 @keyframes skel-slide{100%{transform:translateX(100%)}}
-.sys-seg{display:inline-flex;align-items:center;gap:4px;overflow:hidden;text-overflow:ellipsis;flex-shrink:1}
-/* 硬件信息条自适应: 放不下先让长 OS 名截断, 网速(上传/下载两个值)永不缩;
-   仍不够时整段换行到第二行, 信息完整优先于单行省地 */
-.sys-line{flex-wrap:wrap;row-gap:3px}
-.sys-seg.sys-net{flex-shrink:0}
+.sys-seg{display:inline-flex;align-items:center;gap:3px;overflow:hidden;text-overflow:ellipsis;flex-shrink:1}
+/* 硬件信息条单行自适应: 间距/进度条压缩让出宽度, 长 OS 名截断兜底,
+   网速(上传/下载两个值)永不缩; 极窄视口下限缩到 36vw 保证至少可见 */
+.sys-seg.sys-net{flex-shrink:0;max-width:36vw}
 .sys-seg.sys-os{max-width:17ch}
 .sys-os{flex-shrink:0;font-weight:550;color:var(--ink)}
 .sys-gpu-model{flex-shrink:0;font-weight:550;color:var(--ink)}
-.sys-bar{display:inline-block;width:42px;height:4px;border-radius:2px;background:var(--inset);box-shadow:inset 0 0 0 1px #d9dde5aa;overflow:hidden;vertical-align:middle}
+.sys-bar{display:inline-block;width:26px;height:4px;border-radius:2px;background:var(--inset);box-shadow:inset 0 0 0 1px #d9dde5aa;overflow:hidden;vertical-align:middle}
 .sys-bar>span{display:block;height:100%;background:var(--accent);border-radius:2px;transition:width .4s}
 .sys-bar.warn>span,.sys-gpu .sys-bar.warn>span,.sys-gpu .sys-bar.mem.warn>span,.sys-gpu .sys-bar.util.warn>span{background:var(--red)}
 .sys-gpus{gap:14px}
