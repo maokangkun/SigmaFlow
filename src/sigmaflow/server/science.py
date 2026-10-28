@@ -2158,6 +2158,8 @@ class ScienceAPI:
                 "title": conv.get("title") or "",
                 "projectId": conv.get("projectId"),
                 "content": conv.get("content") or [],
+                # 本次会话实际使用的 system 提示词(Trace 页 #0 系统条)
+                "systemPrompt": conv.get("systemPrompt") or "",
             }
 
         @router.delete("/conversations/{conversation_id}")
@@ -2779,6 +2781,20 @@ class ScienceAPI:
                                     if isinstance(_agent_info_holder["info"], dict)
                                     else {}
                                 )
+                                # 实发 system 提示词: 落库(会话属性, Trace #0 行)
+                                # 并推给在线前端; 幂等写, 每轮携带相同文本
+                                _sys_prompt = str(_agent_info.get("system") or "")
+                                if _sys_prompt:
+                                    try:
+                                        self.project_store.set_conversation_system(
+                                            str(data.get("runId") or ""), _sys_prompt
+                                        )
+                                        loop.call_soon_threadsafe(
+                                            chat_queue.put_nowait,
+                                            ("system", _sys_prompt),
+                                        )
+                                    except Exception:
+                                        pass
                                 # 服务端终态(轮次预算耗尽/重试耗尽/Max tokens)不能静默 done:
                                 # 原因要随 error 事件带回前端, 否则用户只看到工具轨迹
                                 # 戛然而止, 不知道循环为什么退出; 无模型正文时
@@ -2985,6 +3001,16 @@ class ScienceAPI:
                                         "event": "chat.usage",
                                         "requestId": request_id,
                                         "data": value or {},
+                                    },
+                                )
+                            elif kind == "system":
+                                # 实发 system 提示词: 前端写入 run.systemPrompt(Trace #0 行)
+                                event, message = (
+                                    "chat.system",
+                                    {
+                                        "event": "chat.system",
+                                        "requestId": request_id,
+                                        "data": {"content": value or ""},
                                     },
                                 )
                             elif kind == "done":
@@ -3658,6 +3684,25 @@ class ScienceProjectStore:
             self._save()
             return True
 
+    def set_conversation_system(self, conversation_id: str, text: str) -> bool:
+        """记录会话实际使用的 system 提示词(Trace 页 #0 系统消息条)。
+
+        每轮回复都会回写相同文本, 内容未变时不触发落盘(幂等)。
+        与前端归档路径共用互斥锁, upsert 不触碰该键, 归档不会把它抹掉。
+        """
+        if not conversation_id or not text:
+            return False
+        with self._lock:
+            conv = self.conversations.get(conversation_id)
+            if conv is None:
+                return False
+            if conv.get("systemPrompt") == text:
+                return True
+            conv["systemPrompt"] = text
+            conv["updatedAt"] = int(time.time() * 1000)
+            self._save()
+            return True
+
     def archive_user_row(self, conversation_id: str, content: str) -> bool:
         """chat.send 即落 user 消息行(与 WS 归档共锁)。
 
@@ -3986,6 +4031,11 @@ def _run_agent_chat(
                     "transcript": cmeta.get("transcript"),
                     "text": cmeta.get("text"),
                 }
+        # 本次会话实际使用的 system(bound: 工作目录/计划模式/记忆块注入后),
+        # 随 info 返回给 WS work(): 持久化到会话并以 chat.system 推给
+        # 在线前端, Trace 页据此展示 #0 系统消息条
+        if isinstance(info, dict):
+            info["system"] = bound_system
         last = info["last_response"] if isinstance(info, dict) else None
     finally:
         tools_mod.set_session_workdir(None)

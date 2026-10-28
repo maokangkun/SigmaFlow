@@ -420,7 +420,7 @@
         data.content = [];
       }
       const meta = CS.ui.conversations.find(c => c.id === id) || {};
-      const run = { id, kind: 'chat', title: meta.title || data.title || '会话', projectId: data.projectId, prompt: '', datasetIds: [], config: {},
+      const run = { id, kind: 'chat', title: meta.title || data.title || '会话', projectId: data.projectId, prompt: '', datasetIds: [], config: {}, ...(data.systemPrompt ? { systemPrompt: data.systemPrompt } : {}),
               messages: data.content.map(m => {
                 const msg = { role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) };
                 // 新格式: 存档带压缩块时间线 {t,x}/{t,n,a,r}/{t,ask…}, 解压回内存块结构
@@ -1118,6 +1118,9 @@
         }
         const span = document.querySelector('.think-root.tool-root[data-state="running"] .tool-heartbeat');
         if (span) span.textContent = ` 已运行 ${sec}s`;
+      }, sysText => {
+        // 实发 system 提示词(服务端 bound 后的成品): 写入 run 供 Trace 页 #0 系统条展示
+        if (sysText && run) { run.systemPrompt = sysText; CS.save(); }
       });
       // HTTP 降级路径: 服务端在响应里带回压缩元数据, 复用插卡逻辑保持契约一致
       if (done.compaction && done.compaction.text) toolEvent(done.compaction);

@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="19bc98ad">
+<meta name="build" content="1dd901c6">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -5453,13 +5453,15 @@ CS.markdown = text => {
     }
     return CS.api.request(httpPath, { method: httpMethod, body: body ? JSON.stringify(body) : undefined });
   };
-  CS.api.chat = async (messages, onDelta, onThink, onTool, onRetry, onUsage) => {
+  // 第 7/8 参: onProgress(长工具心跳"已运行 Xs") / onSystem(实发 system 提示词)
+  CS.api.chat = async (messages, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem) => {
     // 会话所属项目随请求下发: 服务端把项目工作目录绑定为本次对话的工具执行目录;
     // 优先取当前会话自身绑定的 projectId(全局 state 可能停留在无项目状态)
     const run = CS.state.runs.find(x => x.id === CS.state.currentRunId);
     const payload = { modelId: CS.state.settings.modelId, projectId: run?.projectId ?? CS.state.projectId, runId: CS.state.currentRunId, messages, planMode: !!CS.ui.planMode };
     if (await CS.api.ws.connect()) {
-      const data = await CS.api.ws.chat(payload, onDelta, onThink, onTool, onRetry, onUsage);
+      const data = await CS.api.ws.chat(payload, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem);
+      if (data.system && typeof data.system === 'string' && onSystem) onSystem(data.system);
       // 透传 contextTokens/cacheTokens: 标题栏 usage 行与存档回放的数据源头
       return { content: data.content, tokens: data.tokens || 0, promptTokens: data.promptTokens || 0,
         contextTokens: data.contextTokens || 0, cacheTokens: data.cacheTokens || 0 };
@@ -5516,6 +5518,7 @@ CS.markdown = text => {
             if (message.event === 'chat.think' && entry.onThink) { entry.onThink(message.data?.delta || ''); return; }
             if (message.event === 'chat.tool' && entry.onTool) { entry.onTool(message.data?.tool || {}, message.requestId); return; }
             if (message.event === 'chat.usage') { entry.onUsage && entry.onUsage(message.data || {}); return; }
+            if (message.event === 'chat.system') { entry.onSystem && entry.onSystem(message.data?.content || ''); return; }
             if (message.event === 'chat.retry') { entry.onRetry && entry.onRetry(message.data?.retry || {}); return; }
             if (message.event === 'chat.delta' && entry.onDelta) { entry.onDelta(message.data?.delta || ''); return; }
             CS.api.ws.pending.delete(message.requestId);
@@ -5551,7 +5554,7 @@ CS.markdown = text => {
         this.socket.send(JSON.stringify({ action, requestId, ...payload }));
       });
     },
-    chat(payload, onDelta, onThink, onTool, onRetry, onUsage, onProgress) {
+    chat(payload, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem) {
       if (!this.open()) return Promise.reject(new Error('WebSocket 未连接。'));
       const requestId = String(++this.seq);
       this.activeChats.add(requestId);
@@ -5561,7 +5564,7 @@ CS.markdown = text => {
         // 只折断真正卡死的连接
         const idleMs = ws.chatIdleTimeout || 180000;
         const fail = () => { CS.api.ws.pending.delete(requestId); CS.api.ws.activeChats.delete(requestId); reject(new Error('模型响应超时。')); };
-        const entry = { resolve, reject, timer: null, resetTimer: null, onDelta, onThink, onTool, onRetry, onUsage, onProgress };
+        const entry = { resolve, reject, timer: null, resetTimer: null, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem };
         entry.timer = setTimeout(fail, idleMs);
         entry.resetTimer = () => { clearTimeout(entry.timer); entry.timer = setTimeout(fail, idleMs); };
         // ask 等待期不计常规空闲: 服务端 ask 超时为 1 小时, 前端以 2 小时兜底防永久挂起
@@ -8699,7 +8702,11 @@ CS.audio = (function () {
   // 共享上下文: 角色归一 / 时间轴原点与跨度 / 逐条消息的行渲染, 供统计条与列表共同使用
   const _traceCtx = () => {
     const run = CS.currentRun();
-    const msgs = run?.messages || [];
+    // #0 系统条: 会话实发 system 提示词(存档属性 systemPrompt, 在线时由
+    // chat.system 事件写入), 合成在最前不进 run.messages, 主对话流不受影响
+    const msgs = (run?.systemPrompt
+      ? [{ role: 'system', content: run.systemPrompt, at: (run?.messages?.[0]?.at) || '' }]
+      : []).concat(run?.messages || []);
     const kindOf = m => m.role === 'user' ? 'user' : m.error ? 'error' : /^\[Conversation compressed/.test(m.content || '') || (m.role !== 'assistant' && m.role !== 'user') ? 'system' : 'reply';
     const prev = (s, n = 70) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return e(t.slice(0, n)) + (t.length > n ? '…' : ''); };
     let tools = 0, tin = 0, tout = 0, tcache = 0;
@@ -8807,7 +8814,7 @@ CS.audio = (function () {
       return b.text || '';
     };
       const detail = isOpen ? `<div class="trace-detail"><div class="trace-props">${props.map(([k, v]) => `<span class="tpair"><span class="tk">${e(k)}</span><span class="tv mono">${e(v)}</span></span>`).join('')}</div>${blocks.length ? `<div class="trace-blocks">${blocks.map((b, ri) => { const ms = segs && segs[ri] ? segs[ri].ms : 0; const raw = rawB ? rawB[ri] : (b.t ? { type: 'text', text: b.t } : null); const bkey = idx + ':' + ri; const bOpen = blockOpen.has(bkey); return `<span class="tb-item clickable${bOpen ? ' open' : ''}" role="button" data-action="toggle-trace-block" data-id="${bkey}" aria-expanded="${bOpen}" title="点击展开完整输入/输出"><span class="tk-${b.k}">${KIND[b.k]}</span><span class="tb-txt" title="${prev(b.t, 240)}">${prev(b.t, 110)}</span>${ms > 0 ? `<span class="tb-dur mono">${CS.elapsedMs(ms)}</span>` : ''}</span>${bOpen ? `<span class="tb-body"><pre>${e(bFull(raw))}</pre></span>` : ''}`; }).join('')}</div>` : ''}</div>` : '';
-      return `<div class="trace-row${isOpen ? ' open' : ''}"><button type="button" class="trace-main" data-action="toggle-trace-row" data-id="${idx}" aria-expanded="${isOpen}"><span class="trace-idx mono">#${idx + 1}</span><span class="trace-kind tk-${kind}">${KIND[kind]}${kind === 'reply' && streaming ? ' · 生成中' : ''}</span><span class="trace-preview" title="${prev(kind === 'error' && !(m.content || '').trim() ? errText : m.content, 140)}">${prev(kind === 'error' && !(m.content || '').trim() ? errText : m.content)}</span><span class="trace-tools mono">${nTools || ''}</span><span class="trace-tok mono">${tok}</span><span class="trace-dur mono">${dur > 0 ? CS.elapsedMs(dur) : ''}</span><span class="trace-bar">${barHtml}</span></button>${detail}</div>`;
+      return `<div class="trace-row${isOpen ? ' open' : ''}"><button type="button" class="trace-main" data-action="toggle-trace-row" data-id="${idx}" aria-expanded="${isOpen}"><span class="trace-idx mono">#${idx}</span><span class="trace-kind tk-${kind}">${KIND[kind]}${kind === 'reply' && streaming ? ' · 生成中' : ''}</span><span class="trace-preview" title="${prev(kind === 'error' && !(m.content || '').trim() ? errText : m.content, 140)}">${prev(kind === 'error' && !(m.content || '').trim() ? errText : m.content)}</span><span class="trace-tools mono">${nTools || ''}</span><span class="trace-tok mono">${tok}</span><span class="trace-dur mono">${dur > 0 ? CS.elapsedMs(dur) : ''}</span><span class="trace-bar">${barHtml}</span></button>${detail}</div>`;
     }).join('');
   };
   // trace 页面: 主区视图替换聊天视图, 侧栏保留; 返回按钮与标题同一行(页内流), 无会话时给出空态并引导返回
@@ -9680,7 +9687,7 @@ V.ctxRing = () => {
         data.content = [];
       }
       const meta = CS.ui.conversations.find(c => c.id === id) || {};
-      const run = { id, kind: 'chat', title: meta.title || data.title || '会话', projectId: data.projectId, prompt: '', datasetIds: [], config: {},
+      const run = { id, kind: 'chat', title: meta.title || data.title || '会话', projectId: data.projectId, prompt: '', datasetIds: [], config: {}, ...(data.systemPrompt ? { systemPrompt: data.systemPrompt } : {}),
               messages: data.content.map(m => {
                 const msg = { role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) };
                 // 新格式: 存档带压缩块时间线 {t,x}/{t,n,a,r}/{t,ask…}, 解压回内存块结构
@@ -10378,6 +10385,9 @@ V.ctxRing = () => {
         }
         const span = document.querySelector('.think-root.tool-root[data-state="running"] .tool-heartbeat');
         if (span) span.textContent = ` 已运行 ${sec}s`;
+      }, sysText => {
+        // 实发 system 提示词(服务端 bound 后的成品): 写入 run 供 Trace 页 #0 系统条展示
+        if (sysText && run) { run.systemPrompt = sysText; CS.save(); }
       });
       // HTTP 降级路径: 服务端在响应里带回压缩元数据, 复用插卡逻辑保持契约一致
       if (done.compaction && done.compaction.text) toolEvent(done.compaction);

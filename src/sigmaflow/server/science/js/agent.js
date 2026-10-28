@@ -64,13 +64,15 @@
     }
     return CS.api.request(httpPath, { method: httpMethod, body: body ? JSON.stringify(body) : undefined });
   };
-  CS.api.chat = async (messages, onDelta, onThink, onTool, onRetry, onUsage) => {
+  // 第 7/8 参: onProgress(长工具心跳"已运行 Xs") / onSystem(实发 system 提示词)
+  CS.api.chat = async (messages, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem) => {
     // 会话所属项目随请求下发: 服务端把项目工作目录绑定为本次对话的工具执行目录;
     // 优先取当前会话自身绑定的 projectId(全局 state 可能停留在无项目状态)
     const run = CS.state.runs.find(x => x.id === CS.state.currentRunId);
     const payload = { modelId: CS.state.settings.modelId, projectId: run?.projectId ?? CS.state.projectId, runId: CS.state.currentRunId, messages, planMode: !!CS.ui.planMode };
     if (await CS.api.ws.connect()) {
-      const data = await CS.api.ws.chat(payload, onDelta, onThink, onTool, onRetry, onUsage);
+      const data = await CS.api.ws.chat(payload, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem);
+      if (data.system && typeof data.system === 'string' && onSystem) onSystem(data.system);
       // 透传 contextTokens/cacheTokens: 标题栏 usage 行与存档回放的数据源头
       return { content: data.content, tokens: data.tokens || 0, promptTokens: data.promptTokens || 0,
         contextTokens: data.contextTokens || 0, cacheTokens: data.cacheTokens || 0 };
@@ -127,6 +129,7 @@
             if (message.event === 'chat.think' && entry.onThink) { entry.onThink(message.data?.delta || ''); return; }
             if (message.event === 'chat.tool' && entry.onTool) { entry.onTool(message.data?.tool || {}, message.requestId); return; }
             if (message.event === 'chat.usage') { entry.onUsage && entry.onUsage(message.data || {}); return; }
+            if (message.event === 'chat.system') { entry.onSystem && entry.onSystem(message.data?.content || ''); return; }
             if (message.event === 'chat.retry') { entry.onRetry && entry.onRetry(message.data?.retry || {}); return; }
             if (message.event === 'chat.delta' && entry.onDelta) { entry.onDelta(message.data?.delta || ''); return; }
             CS.api.ws.pending.delete(message.requestId);
@@ -162,7 +165,7 @@
         this.socket.send(JSON.stringify({ action, requestId, ...payload }));
       });
     },
-    chat(payload, onDelta, onThink, onTool, onRetry, onUsage, onProgress) {
+    chat(payload, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem) {
       if (!this.open()) return Promise.reject(new Error('WebSocket 未连接。'));
       const requestId = String(++this.seq);
       this.activeChats.add(requestId);
@@ -172,7 +175,7 @@
         // 只折断真正卡死的连接
         const idleMs = ws.chatIdleTimeout || 180000;
         const fail = () => { CS.api.ws.pending.delete(requestId); CS.api.ws.activeChats.delete(requestId); reject(new Error('模型响应超时。')); };
-        const entry = { resolve, reject, timer: null, resetTimer: null, onDelta, onThink, onTool, onRetry, onUsage, onProgress };
+        const entry = { resolve, reject, timer: null, resetTimer: null, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem };
         entry.timer = setTimeout(fail, idleMs);
         entry.resetTimer = () => { clearTimeout(entry.timer); entry.timer = setTimeout(fail, idleMs); };
         // ask 等待期不计常规空闲: 服务端 ask 超时为 1 小时, 前端以 2 小时兜底防永久挂起
