@@ -1140,7 +1140,9 @@ class ScienceAPI:
     def _conversation_system_or_bind(self, conv: dict) -> str:
         """存量 systemPrompt 属性, 缺失时按当前配置惰性组装近似 bound。"""
         prompt = str(conv.get("systemPrompt") or "")
-        if prompt:
+        # f-string 修复前入库的存量属性带未插值的 `{workdir}` 字面量,
+        # 视同无效: 降级走惰性重组, 让 #0 系统条展示修正后的真目录
+        if prompt and "`{workdir}`" not in prompt:
             return prompt
         try:
             pid = conv.get("projectId")
@@ -3807,7 +3809,7 @@ def _bind_main_system(
         )
         bound_system = (
             f"{bound_system}"
-            "\n\n# 工作目录\n本次会话绑定项目工作目录 `{workdir}`。"
+            f"\n\n# 工作目录\n本次会话绑定项目工作目录 `{workdir}`。"
             "bash 命令、文件读写与数据处理的相对路径都相对该目录执行；"
             "向用户答复时必须以该目录为当前工作目录。"
         )

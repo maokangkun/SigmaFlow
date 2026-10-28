@@ -44,3 +44,26 @@ def test_conversation_system_or_bind_prefers_stored(tmp_path):
     # 无属性: 惰性组装(非空字符串)而非空
     got = ScienceAPI._conversation_system_or_bind(fake, store.conversations["r1"])
     assert isinstance(got, str) and len(got) > 40
+
+
+def test_bind_main_system_expands_workdir():
+    bound = _bind_main_system("/data/proj-x", False, "")
+    assert "本次会话绑定项目工作目录 `/data/proj-x`。" in bound
+    assert "`{workdir}`" not in bound
+
+
+def test_stored_prompt_with_literal_workdir_is_rebound(tmp_path):
+    from sigmaflow.server.science import ScienceProjectStore
+
+    store = ScienceProjectStore(storage_dir=str(tmp_path))
+    # f-string 修复前入库的缺陷属性(字面量未插值)
+    store.conversations["r1"] = {
+        "id": "r1",
+        "content": [{"role": "user", "content": "q"}],
+        "projectId": None,
+        "systemPrompt": "旧提示 # 工作目录 本次会话绑定项目工作目录 `{workdir}`。",
+    }
+    fake = type("F", (), {})()
+    fake.project_store = store
+    got = ScienceAPI._conversation_system_or_bind(fake, store.conversations["r1"])
+    assert "`{workdir}`" not in got
