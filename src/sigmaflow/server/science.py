@@ -1866,6 +1866,7 @@ class ScienceAPI:
                     stats,
                     workdir,
                     bool(payload.planMode),
+                    conversation_id=str(getattr(payload, "runId", "") or ""),
                 )
             except RuntimeError as err:
                 raise HTTPException(status_code=400, detail=str(err))

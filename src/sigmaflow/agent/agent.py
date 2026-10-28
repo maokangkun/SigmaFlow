@@ -1172,9 +1172,14 @@ class Agent:
                     # 必须在执行前把当前会话的目录绑到那个线程, 否则相对路径会
                     # 回退到进程根目录, 破坏项目隔离
                     _wd = get_session_workdir()
+                    _scope = get_session_scope()
 
                     def _run_handler():
+                        # workdir 与会话作用域都是 thread-local: 超时包装把 handler
+                        # 挪进新线程, 必须在执行前把两者都绑过去, 否则相对路径
+                        # 回退进程根目录、task/job/inbox 落回全局共享
                         set_session_workdir(_wd)
+                        set_session_scope(_scope)
                         return handler(**inp)
 
                     out = _call_with_timeout(_run_handler, int(timeout), func)
