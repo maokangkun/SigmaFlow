@@ -85,3 +85,26 @@ def test_stop_midstream_forges_stopped_done():
     kinds = [k for k, _ in st["journal"]]
     assert kinds[-1] == "done"
     assert st["journal"][-1][1] == {"stopped": True}
+
+
+def test_concurrent_replay_pump_takeover():
+    """并发两次 replay: 后启 pump 抢占, 先启 pump 不再推送, 事件不重复"""
+
+    async def _run():
+        st = _mk(4, terminal=False)
+        ws1, ws2 = _FakeWs(), _FakeWs()
+        t1 = asyncio.create_task(API._chat_pump(ws1, "r1", st, -1))
+        await asyncio.sleep(0.12)  # t1 先把已有 4 条 delta 全部送达
+        t2 = asyncio.create_task(API._chat_pump(ws2, "r1", st, -1))
+        await asyncio.sleep(0.12)  # t2 启动并抢占令牌
+        st["journal"].append(("done", {}))  # work 侧终态
+        await asyncio.wait_for(t2, 2)
+        await asyncio.wait_for(t1, 2)  # 被抢占者应自行退出而非卡死
+        return st, ws1, ws2
+
+    st, ws1, ws2 = asyncio.run(_run())
+    # 抢占者送满全程(重放 4 条 + 终态), 被抢占者止步于抢占点的 4 条
+    assert [m["event"] for m in ws2.sent].count("chat.done") == 1
+    assert len(ws2.sent) == 5
+    assert all(m["event"] == "chat.delta" for m in ws1.sent)
+    assert st["delivered"] and st["terminal"]

@@ -1130,6 +1130,12 @@ class ScienceAPI:
         任务的执行与终态兑底归档完全不受连接生命周期影响。
         """
         cursor = start_seq if isinstance(start_seq, int) and start_seq >= -1 else -1
+        # 令牌抢占: 同一 state 同时只允许一个 pump 推送。chat.replay 再次
+        # 到达时旧 pump 在下一个事件前发现令牌易主即静默退出, 防止重复
+        # 流(如双标签页/重连竞态)把事件翻倍渲染
+        state["pump_next"] = int(state.get("pump_next") or 0) + 1
+        token = state["pump_next"]
+        state["pump_token"] = token
         while True:
             # 停止请求(经 state 置位, 跨连接生效): 补发 stopped 终态
             if state.get("stop") and not state.get("terminal"):
@@ -1144,6 +1150,9 @@ class ScienceAPI:
                 await asyncio.sleep(0.05)
                 continue
             for kind, value in items:
+                if state.get("pump_token") != token:
+                    # 已被更新的 pump 抢占: 本连接不再是权威订阅方
+                    return
                 cursor += 1
                 if kind == "delta":
                     event, message = (
@@ -2945,6 +2954,8 @@ class ScienceAPI:
                         "stopped": False,
                         "delivered": False,
                         "stop": False,
+                        "pump_token": 0,
+                        "pump_next": 0,
                     }
                     # 注册表按(用户, requestId)复合键: WS 的 requestId 是各连接
                     # 自增的小整数, 平键下并发用户的 "3" 会互相覆盖注册项、
