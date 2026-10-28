@@ -1137,6 +1137,30 @@ class ScienceAPI:
                 pass
         self._active_runs.clear()
 
+    def _conversation_system_or_bind(self, conv: dict) -> str:
+        """存量 systemPrompt 属性, 缺失时按当前配置惰性组装近似 bound。"""
+        prompt = str(conv.get("systemPrompt") or "")
+        if prompt:
+            return prompt
+        try:
+            pid = conv.get("projectId")
+            pdir = (
+                self.project_store.projects.get(pid or "", {}).get("dir")
+                if pid
+                else None
+            )
+            _last_user = next(
+                (
+                    str(r.get("content") or "")
+                    for r in reversed(conv.get("content") or [])
+                    if isinstance(r, dict) and r.get("role") == "user"
+                ),
+                "",
+            )
+            return _bind_main_system(pdir, False, _last_user)
+        except Exception:
+            return ""
+
     def _check_run_owner(self, run_id: str) -> None:
         """Multi-user isolation: a run is only visible to its owner."""
         run = self.manager.runs.get(run_id)
@@ -2158,8 +2182,9 @@ class ScienceAPI:
                 "title": conv.get("title") or "",
                 "projectId": conv.get("projectId"),
                 "content": conv.get("content") or [],
-                # 本次会话实际使用的 system 提示词(Trace 页 #0 系统条)
-                "systemPrompt": conv.get("systemPrompt") or "",
+                # 本次会话实际使用的 system 提示词(Trace 页 #0 系统条);
+                # 属性缺失的历史会话按当前配置惰性组装近似 bound
+                "systemPrompt": self._conversation_system_or_bind(conv),
             }
 
         @router.delete("/conversations/{conversation_id}")
@@ -2609,6 +2634,8 @@ class ScienceAPI:
                             "title": conv.get("title") or "",
                             "projectId": conv.get("projectId"),
                             "content": conv.get("content") or [],
+                            # 与 HTTP 路由一致: 实发 system 提示词(缺属性时惰性组装)
+                            "systemPrompt": self._conversation_system_or_bind(conv),
                         },
                     )
                 elif action == "conversation.delete":
@@ -3761,6 +3788,43 @@ def _atomic_save(path: Path, payload: str) -> None:
         path.write_text(payload, encoding="utf-8")
 
 
+def _bind_main_system(
+    workdir: Optional[str], plan_mode: bool, last_user: str = ""
+) -> str:
+    """按执行路径同序组装主 agent 的 bound system(工作目录/计划模式/记忆块)。
+
+    双消费方: _run_agent_chat 的实发 system, 以及 conversation.content 在
+    会话缺 systemPrompt 属性时(属性写入机制部署前完成轮次的历史会话)
+    的读时兜底——保证 Trace #0 系统条对老会话同样可见。
+    """
+    system, _sub = _effective_system_prompts()
+    bound_system = system
+    if workdir:
+        # 内置提示词首句形如 "You are a ... agent at <服务进程 cwd>", 会覆盖末尾的
+        # 项目目录说明; 先把这类句子里的路径改写为会话工作目录, 再附加显式说明。
+        bound_system = re.sub(
+            r"(agent at )\S+", lambda mo: mo.group(1) + workdir, f"{system}", count=1
+        )
+        bound_system = (
+            f"{bound_system}"
+            "\n\n# 工作目录\n本次会话绑定项目工作目录 `{workdir}`。"
+            "bash 命令、文件读写与数据处理的相对路径都相对该目录执行；"
+            "向用户答复时必须以该目录为当前工作目录。"
+        )
+    if plan_mode:
+        bound_system = bound_system + _PLAN_MODE_PROMPT
+    # s09 记忆注入: 索引常驻 + 与当前请求关键词相关的记录(零模型调用, 纯词法召回)
+    try:
+        from sigmaflow.agent import harness as _harness
+
+        _memory_block = _harness.memory_recall_for(last_user)
+        if _memory_block:
+            bound_system += f"\n\n# Memory\n{_memory_block}"
+    except Exception as _mem_err:
+        logging.getLogger("uvicorn.error").info("memory recall skipped: %s", _mem_err)
+    return bound_system
+
+
 def _conversation_replied(store, run_id: str) -> bool:
     """本轮回复是否已在会话存档里(投递后观察窗的判据)。
 
@@ -3947,36 +4011,19 @@ def _run_agent_chat(
         if workdir
         else sub_system
     )
-    bound_system = system
-    if workdir:
-        # 内置提示词首句形如 "You are a ... agent at <服务进程 cwd>", 会覆盖末尾的
-        # 项目目录说明; 先把这类句子里的路径改写为会话工作目录, 再附加显式说明。
-        bound_system = re.sub(
-            r"(agent at )\S+", lambda mo: mo.group(1) + workdir, f"{system}", count=1
-        )
-        bound_system = (
-            f"{bound_system}"
-            "\n\n# 工作目录\n本次会话绑定项目工作目录 `{workdir}`。"
-            "bash 命令、文件读写与数据处理的相对路径都相对该目录执行；"
-            "向用户答复时必须以该目录为当前工作目录。"
-        )
-    if plan_mode:
-        bound_system = bound_system + _PLAN_MODE_PROMPT
-    # s09 记忆注入: 索引常驻 + 与当前请求关键词相关的记录(零模型调用, 纯词法召回)
-    try:
-        _last_user = next(
+    # 执行路径与读时兜底共用的 bound system 组装(见 _bind_main_system)
+    bound_system = _bind_main_system(
+        workdir,
+        bool(plan_mode),
+        next(
             (
                 str(m.get("content", ""))
                 for m in reversed(convo)
                 if m.get("role") == "user"
             ),
             "",
-        )
-        _memory_block = _harness.memory_recall_for(_last_user)
-        if _memory_block:
-            bound_system += f"\n\n# Memory\n{_memory_block}"
-    except Exception as _mem_err:
-        logging.getLogger("uvicorn.error").info("memory recall skipped: %s", _mem_err)
+        ),
+    )
     agent = Agent(
         method="openai",
         model=model_name,
