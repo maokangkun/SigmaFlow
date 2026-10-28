@@ -1056,6 +1056,10 @@ class ScienceAPI:
         self.manager = ScienceRunManager()
         # 存储: 单用户即共享根目录; 多用户按请求用户懒加载独立目录。
         self._store_cache: Dict[tuple, Any] = {}
+        # 活跃 chat.send 注册表: request_id -> {"runId": ...}。
+        # chat.send 启动时登记, stream_chat 终态退出时注销;
+        # 优雅停机时遍历它给"仍在跑"的会话写中断行, 防止任务无声丢失。
+        self._active_runs: Dict[str, Dict[str, Any]] = {}
         try:
             _litellm_warm()  # 先完成 litellm 导入再对外服务, 避免半初始化竞态
         except Exception:
@@ -1094,8 +1098,35 @@ class ScienceAPI:
         @router.on_event("shutdown")
         async def shutdown_event():
             await self.manager.stop()
+            # 优雅停机兜底: 仍在执行的对话落"服务重启中断"行,
+            # 用户重连后能看到明确原因而不是只剩标题的黑箱空会话。
+            self._interrupt_active_chats()
 
         self.router = router
+
+    def _interrupt_active_chats(self) -> None:
+        """停机时把仍活跃的对话写成中断行(见 shutdown_event)。
+
+        只写"前端拿不到终态"的注册项: 正常终态投递后 stream_chat 已在
+        finally 里注销, 不在此列。普通重启(改样式等)不再无声吞任务。
+        """
+        for _request_id, _info in list(self._active_runs.items()):
+            _rid = str(((_info or {}).get("runId")) or "")
+            if not _rid or _rid not in self.project_store.conversations:
+                continue
+            try:
+                self.project_store.archive_assistant_row(
+                    _rid,
+                    {
+                        "role": "assistant",
+                        "content": "服务重启，任务已被中断。请重新发送以接续。",
+                        "error": "服务重启，任务中断",
+                    },
+                )
+            except Exception:
+                # 停机路径尽力而为, 单会话失败不影响其余注册项
+                pass
+        self._active_runs.clear()
 
     def _check_run_owner(self, run_id: str) -> None:
         """Multi-user isolation: a run is only visible to its owner."""
@@ -2626,6 +2657,29 @@ class ScienceAPI:
                     ).get("dir")
                     # 同一 requestId 重发前先复位停止标记
                     chat_stops[request_id] = False
+                    # user 消息发送即落库: 此前只有 done 时前端才整表归档,
+                    # 服务重启/进程中断会把"用户问了什么"一并丢成空会话。
+                    try:
+                        _last_user = next(
+                            (
+                                m
+                                for m in reversed(messages)
+                                if m.get("role") == "user"
+                                and str(m.get("content") or "").strip()
+                            ),
+                            None,
+                        )
+                        if _last_user is not None:
+                            self.project_store.archive_user_row(
+                                str(data.get("runId") or ""),
+                                str(_last_user.get("content") or ""),
+                            )
+                    except Exception:
+                        # 归档失败不阻断发送主流程
+                        pass
+                    self._active_runs[request_id] = {
+                        "runId": str(data.get("runId") or "")
+                    }
 
                     # 工作线程阻塞产出事件, 经线程安全回调投递回队列
                     async def stream_chat() -> None:
@@ -2941,14 +2995,18 @@ class ScienceAPI:
                                 if not closed:
                                     terminal_delivered["ok"] = True
                                 break
-                        await worker
-                        chat_stops.pop(request_id, None)
-                        # 流结束(含停止后的收尾)时取消该请求残留的未答 ask
-                        for ask_id in chat_asks.pop(request_id, ()) or ():
-                            try:
-                                _agent_tools_module().ASK.cancel(ask_id)
-                            except Exception:
-                                pass
+                        try:
+                            await worker
+                        finally:
+                            chat_stops.pop(request_id, None)
+                            # 活跃注销: 正常终态投递后停机不再写中断行
+                            self._active_runs.pop(request_id, None)
+                            # 流结束(含停止后的收尾)时取消该请求残留的未答 ask
+                            for ask_id in chat_asks.pop(request_id, ()) or ():
+                                try:
+                                    _agent_tools_module().ASK.cancel(ask_id)
+                                except Exception:
+                                    pass
 
                     # 流式任务与请求解耦: handle 立即返回, 事件异步推送
                     # 停止通过 chat_stops 轮询生效, 不强杀工作线程
@@ -3552,6 +3610,39 @@ class ScienceProjectStore:
                 return False
             row_out = {k: v for k, v in row.items() if v is not None}
             base.append(row_out)
+            conv["content"] = base[-200:]
+            conv["updatedAt"] = int(time.time() * 1000)
+            self._save()
+            return True
+
+    def archive_user_row(self, conversation_id: str, content: str) -> bool:
+        """chat.send 即落 user 消息行(与 WS 归档共锁)。
+
+        尾条同为 user 且内容一致视为重复(停止后原样重发的场景),
+        不再追加。返回是否实际写入。
+        """
+        text = str(content or "")
+        if not conversation_id or not text.strip():
+            return False
+        with self._lock:
+            conv = self.conversations.get(conversation_id)
+            if conv is None:
+                return False
+            base = list(conv.get("content") or [])
+            last = base[-1] if base else None
+            if (
+                isinstance(last, dict)
+                and last.get("role") == "user"
+                and str(last.get("content") or "")[:200] == text[:200]
+            ):
+                return False
+            base.append(
+                {
+                    "role": "user",
+                    "content": _clip(text, 30000),
+                    "at": int(time.time() * 1000),
+                }
+            )
             conv["content"] = base[-200:]
             conv["updatedAt"] = int(time.time() * 1000)
             self._save()
