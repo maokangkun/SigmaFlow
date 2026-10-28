@@ -404,6 +404,14 @@
     document.title = 'SigmaFlow Science · ' + ({ home: '科研工作空间', chat: 'Agent 对话', trace: '会话 Trace', data: '数据集', projects: '项目', workflows: '工作流', results: '分析结果', literature: '文献', tools: '生物工具', tasks: '任务队列', settings: '设置', help: '帮助' }[CS.ui.route] || '工作空间');
   });
 
+  // WS 断线自动重连成功后: 拉取受影响会话的最新存档(静默换新),
+  // 服务端兜底归档落库后终态/轨迹即可无缝合并, 用户无需刷新页面
+  CS.agent._afterWsRestored = async runIds => {
+    for (const rid of runIds || []) {
+      try { await loadRemoteConversation(rid); } catch { /* 会话可能尚未同步, 忽略 */ }
+    }
+  };
+
   const loadRemoteConversation = async id => {
     const fetchContent = () => CS.api.modelCall('conversation.content', 'GET', `/conversations/${encodeURIComponent(id)}/content`);
     const hadLocal = CS.state.runs.some(r => r.id === id);

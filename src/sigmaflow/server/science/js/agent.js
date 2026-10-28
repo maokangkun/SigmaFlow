@@ -133,7 +133,7 @@
             if (message.event === 'chat.retry') { entry.onRetry && entry.onRetry(message.data?.retry || {}); return; }
             if (message.event === 'chat.delta' && entry.onDelta) { entry.onDelta(message.data?.delta || ''); return; }
             CS.api.ws.pending.delete(message.requestId);
-            CS.api.ws.activeChats.delete(message.requestId);
+            CS.api.ws.activeChats.forEach(x => { if (x && x.requestId === message.requestId) CS.api.ws.activeChats.delete(x); });
             clearTimeout(entry.timer);
             message.event === 'error' ? entry.reject(new Error(message.data?.error || '接口返回错误')) : entry.resolve(message.data);
           }
@@ -143,12 +143,31 @@
           try { console.warn('[ws] connection closed', { code: ev && ev.code, reason: ev && ev.reason, hadChat: this.activeChats && this.activeChats.size > 0 }); } catch {}
           if (this.socket === socket) { this.socket = null; this.state = 'closed'; }
           const code = ev && ev.code;
-          const hint = code === 1006 ? 'WebSocket 异常断开（可能因网络中断或链路长时间无数据被回收）。当前回复已中断，可发送“继续”让模型接着此前内容重来。' : 'WebSocket 连接已关闭。';
+          // 断线时正在执行的对话: 服务端 work() 继续跑完并兜底归档,
+          // 这里自动重连(无需刷新页面), 成功后按 runId 拉会话存档合并终态
+          const _interrupted = [...this.activeChats].map(x => (x && x.runId) || '').filter(Boolean);
+          const hadChat = _interrupted.length > 0;
+          const hint = code === 1006
+            ? 'WebSocket 异常断开（可能因网络中断或链路长时间无数据被回收）。当前回复已中断，可发送“继续”让模型接着此前内容重来。'
+            : 'WebSocket 连接已关闭。';
           CS.api.ws._fail(new Error(hint));
+          if (hadChat) this._autoReconnect(_interrupted);
         };
         socket.onerror = () => { clearTimeout(timer); finish(false); };
       });
       return this.connecting;
+    },
+    // 断线自动重连: 2.5s / 8s / 20s 三档退避; 成功后回调 app 层拉取受影响
+    // 会话的最新存档(服务端兜底归档落库后即可合并终态, 数据不丢)
+    async _autoReconnect(runIds, attempt = 0) {
+      const delays = [2500, 8000, 20000];
+      if (attempt >= delays.length) return;
+      await new Promise(r => setTimeout(r, delays[attempt]));
+      if (this.open()) { if (CS.agent._afterWsRestored) { try { await CS.agent._afterWsRestored(runIds); } catch {} } return; }
+      this.failedAt = 0;  // 绕过 30s 连接冷却, 尽快恢复
+      const ok = await this.connect(4000);
+      if (ok && CS.agent._afterWsRestored) { try { await CS.agent._afterWsRestored(runIds); } catch {} }
+      else this._autoReconnect(runIds, attempt + 1);
     },
     _fail(reason) {
       for (const entry of this.pending.values()) { clearTimeout(entry.timer); entry.reject(reason); }
@@ -168,13 +187,14 @@
     chat(payload, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem) {
       if (!this.open()) return Promise.reject(new Error('WebSocket 未连接。'));
       const requestId = String(++this.seq);
-      this.activeChats.add(requestId);
+      // runId 随请求记录: 断线自动重连后按 runId 拉取会话存档合并终态
+      this.activeChats.add({ requestId, runId: payload.runId || '' });
       const ws = this;  // Promise executor 内 this 不指向 CS.api.ws
       return new Promise((resolve, reject) => {
         // 空闲超时而非总时长上限: 只要模型还在持续产出就不误杀,
         // 只折断真正卡死的连接
         const idleMs = ws.chatIdleTimeout || 180000;
-        const fail = () => { CS.api.ws.pending.delete(requestId); CS.api.ws.activeChats.delete(requestId); reject(new Error('模型响应超时。')); };
+        const fail = () => { CS.api.ws.pending.delete(requestId); CS.api.ws.activeChats.forEach(x => { if (x && x.requestId === requestId) CS.api.ws.activeChats.delete(x); }); reject(new Error('模型响应超时。')); };
         const entry = { resolve, reject, timer: null, resetTimer: null, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem };
         entry.timer = setTimeout(fail, idleMs);
         entry.resetTimer = () => { clearTimeout(entry.timer); entry.timer = setTimeout(fail, idleMs); };
