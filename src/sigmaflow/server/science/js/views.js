@@ -362,7 +362,9 @@
       if (blocks.length === n0 && live) blocks.push({ k: 'think', txt: '生成中…', live: true, mi });
     });
     if (!blocks.length) return '';
-    const MAX_COLS = 60;
+    // 上限只作为超长会话的 DOM 兜底(千级块防渲染爆炸): 常规超长(几百块)
+    // 全部渲染, 由视觉层在目录徽章左缘处渐隐截断, 不再程序性丢块
+    const MAX_COLS = 300;
     const start = Math.max(0, blocks.length - MAX_COLS * 4);
     const shown = blocks.slice(start);
     // 列内自上而下 4 格一列; 每轮用户消息强制新起一列(回合从列首开始)

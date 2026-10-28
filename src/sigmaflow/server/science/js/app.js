@@ -191,6 +191,17 @@
     if (el && _sysStatsHtml) el.innerHTML = _sysStatsHtml;
     if (hadConv) { const fresh = document.querySelector('.conversation'); if (fresh) fresh.scrollTop = savedTop; }
     CS.syncAnchorRail();
+    // 超长轨迹格视觉截断检测: 首列越出容器左缘时挂 tr-trunc(左缘渐隐)。
+    // 数据层已放宽到全部渲染, 截断完全交给视觉层; justify-flex-end 的
+    // 左溢出 scrollWidth 测不到, 用首列几何判定, 幂等无循环渲染
+    for (const track of document.querySelectorAll('.run-track')) {
+      const firstCol = track.querySelector('.tr-col');
+      if (!firstCol) continue;
+      const over = firstCol.getBoundingClientRect().x < track.getBoundingClientRect().x - 0.5;
+      // 视觉溢出挂渐隐; 数据层兜底丢块(极端超长会话)的渐隐由渲染层
+      // 以 title 声明, 此处一并保留, 不互相摘除
+      track.classList.toggle('tr-trunc', over || (track.title || '').includes('还有更早'));
+    }
     // 终端面板: 迁移 xterm 到新容器并 attach/fit
     if (CS.ui.terminal?.open) CS.agent.pty?.mount();
     // Token 用量热力图: 按容器宽度自适应列数(测量后才重排, 最多一次额外渲染)
