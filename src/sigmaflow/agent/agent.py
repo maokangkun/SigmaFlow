@@ -30,6 +30,35 @@ from .harness import GOAL
 from .utils import KnightRiderStatus, extract_json
 from .conf import *
 
+def _model_max_len(model_name: str) -> int:
+    """模型最大上下文(tokens): 统一走 litellm 价格库, 查不到落到 131072。
+
+    懒加载 litellm(重模块, 首次调用时导入一次); 服务端进程已在启动期
+    warm 过 litellm, 这里通常零开销。
+    """
+    name = str(model_name or "").strip().lower()
+    if not name:
+        return 131072
+    try:
+        import litellm
+
+        cost = getattr(litellm, "model_cost", None)
+        entry = cost.get(name) if isinstance(cost, dict) else None
+        if entry is None and isinstance(cost, dict):
+            for prefix in ("openai/", "anthropic/", "azure/", "vertex_ai/"):
+                entry = cost.get(prefix + name)
+                if entry:
+                    break
+        if isinstance(entry, dict):
+            for field in ("max_input_tokens", "max_tokens"):
+                value = entry.get(field)
+                if isinstance(value, (int, float)) and value > 0:
+                    return int(value)
+    except Exception:
+        pass
+    return 131072
+
+
 # 超时命中标记: 与合法的 None/空串返回区分开
 _TIMEOUT_HIT = object()
 
@@ -187,7 +216,7 @@ class Agent:
             case _:
                 raise ValueError(f"Unsupported method: {method}")
 
-        max_model_len = MAX_MODEL_LEN.get(self.model.lower(), MAX_MODEL_LEN["default"])
+        max_model_len = _model_max_len(self.model)  # 模型上下文统一走 litellm 库
         self.compactor = Compactor(
             TRANSCRIPT_DIR, self.client, max_model_len, model=self.model
         )
@@ -338,7 +367,7 @@ class Agent:
         begin_time = time.time()
         manual_compact = False
         ratio = 0
-        max_model_len = MAX_MODEL_LEN.get(self.model.lower(), MAX_MODEL_LEN["default"])
+        max_model_len = _model_max_len(self.model)  # 模型上下文统一走 litellm 库
         while cur_turn < max_turn:
             messages[:] = self.compactor.auto_compact(
                 messages, force=manual_compact, context_ratio=ratio

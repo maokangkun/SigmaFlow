@@ -8,6 +8,22 @@ _bind_main_system 是执行路径与 conversation.content 惰性兜底共用的
 from sigmaflow.server.science import ScienceAPI, _bind_main_system
 
 
+def test_agent_model_max_len_litellm_first(monkeypatch):
+    """agent 侧模型上下文统一走 litellm(conf 表已删)。"""
+    import sys
+    import types as _t
+
+    fake_litellm = _t.SimpleNamespace(
+        model_cost={"gpt-x": {"max_input_tokens": 258000}}
+    )
+    monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
+    from sigmaflow.agent.agent import _model_max_len
+
+    assert _model_max_len("GPT-X") == 258000
+    assert _model_max_len("unknown-model") == 131072
+    assert _model_max_len("") == 131072
+
+
 def test_bind_main_system_plain():
     base = _bind_main_system(None, False, "")
     assert "You are" in base or base  # 内置提示词存在
@@ -37,8 +53,9 @@ def test_conversation_system_or_bind_prefers_stored(tmp_path):
         "projectId": None,
         "systemPrompt": "REAL PROMPT",
     }
-    fake = type("F", (), {})()
-    fake.project_store = store
+    import types as _t
+
+    fake = _t.SimpleNamespace(project_store=store, model_store=_t.SimpleNamespace(models={}))
     # 有属性用存量
     assert ScienceAPI._conversation_system_or_bind(fake, store.conversations["r2"]) == "REAL PROMPT"
     # 无属性: 惰性组装(非空字符串)而非空
@@ -63,7 +80,38 @@ def test_stored_prompt_with_literal_workdir_is_rebound(tmp_path):
         "projectId": None,
         "systemPrompt": "旧提示 # 工作目录 本次会话绑定项目工作目录 `{workdir}`。",
     }
-    fake = type("F", (), {})()
-    fake.project_store = store
+    import types as _t
+
+    fake = _t.SimpleNamespace(project_store=store, model_store=_t.SimpleNamespace(models={}))
     got = ScienceAPI._conversation_system_or_bind(fake, store.conversations["r1"])
     assert "`{workdir}`" not in got
+
+
+def test_model_caption_text_model(monkeypatch):
+    import sigmaflow.server.science as sci
+
+    monkeypatch.setattr(
+        sci, "_litellm_lookup", lambda name: None
+    )
+    cap = _bind_main_system(None, False, "", "deepseek-v4.1-flash", 1048576)
+    assert "# 当前模型" in cap
+    assert "`deepseek-v4.1-flash`" in cap
+    assert "文本大模型" in cap
+    assert "1,048,576" in cap
+
+
+def test_model_caption_multimodal(monkeypatch):
+    import sigmaflow.server.science as sci
+
+    monkeypatch.setattr(
+        sci, "_litellm_lookup", lambda name: {"supports_vision": True}
+    )
+    # 窗口查询桩: 避免 litellm 冷导入(重模块, 拖慢测试)
+    monkeypatch.setattr(sci, "_model_context_window", lambda name, override=None: 200000)
+    cap = _bind_main_system(None, False, "", "vision-x", None)
+    assert "多模态大模型" in cap
+    assert "200,000" in cap
+
+
+def test_model_caption_absent_without_name():
+    assert "# 当前模型" not in _bind_main_system(None, False, "", "")

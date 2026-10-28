@@ -440,11 +440,14 @@ def _litellm_db() -> Dict[str, dict]:
     global _LITELLM_DB
     if _LITELLM_DB is not None:
         return _LITELLM_DB
+    # module 获取必须在锁外: _litellm_module 内部拿的是同一把
+    # threading.Lock(不可重入), 锁内互调会在无 warm 的进程里自死锁
+    # (生产进程启动期 warm 先行, module 已缓存走 fast path, 从未暴露)
+    module = _litellm_module()
     with _LITELLM_LOCK:
         if _LITELLM_DB is not None:
             return _LITELLM_DB
         dicc: Dict[str, dict] = {}
-        module = _litellm_module()
         if module and module is not False:
             # 首选官方 API 暴露的 model_cost 数据
             mc = getattr(module, "model_cost", None)
@@ -574,16 +577,8 @@ def _model_context_window(model_name: str, override: Optional[int] = None) -> in
         cw = entry.get("max_input_tokens") or entry.get("max_tokens")
         if isinstance(cw, (int, float)) and cw > 0:
             return int(cw)
-    try:
-        from sigmaflow.agent.conf import MAX_MODEL_LEN
-
-        return int(
-            MAX_MODEL_LEN.get(
-                (model_name or "").lower(), MAX_MODEL_LEN.get("default", 131072)
-            )
-        )
-    except Exception:
-        return 131072
+    # 模型信息统一走 litellm; 库里也没有的私网模型落到保守默认值
+    return 131072
 
 
 # ==================== Agent 工具配置 ====================
@@ -1159,7 +1154,36 @@ class ScienceAPI:
                 ),
                 "",
             )
-            return _bind_main_system(pdir, False, _last_user)
+            # 模型取会话最后一次回复所用模型(归档行带 model 字段), 缺省取默认模型
+            _mdl = next(
+                (
+                    str(r.get("model") or "")
+                    for r in reversed(conv.get("content") or [])
+                    if isinstance(r, dict)
+                    and r.get("role") == "assistant"
+                    and r.get("model")
+                ),
+                "",
+            ) or next(
+                (
+                    str(m.get("model") or "")
+                    for m in self.model_store.models.values()
+                    if m.get("isDefault")
+                ),
+                "",
+            )
+            _mctx = next(
+                (
+                    m.get("contextWindow")
+                    for m in self.model_store.models.values()
+                    if (m.get("model") or "") == _mdl
+                    and m.get("contextWindow")
+                ),
+                None,
+            )
+            return _bind_main_system(
+                pdir, False, _last_user, model_name=_mdl, model_ctx=_mctx
+            )
         except Exception:
             return ""
 
@@ -2122,9 +2146,7 @@ class ScienceAPI:
 
             agent_module = _agent_agent_module()
             compactor_mod = _agent_tools_module()
-            window = agent_module.MAX_MODEL_LEN.get(
-                model_name.lower(), agent_module.MAX_MODEL_LEN["default"]
-            )
+            window = _model_context_window(model_name)
             compactor = compactor_mod.Compactor(
                 agent_module.TRANSCRIPT_DIR,
                 OpenAI(
@@ -2781,6 +2803,18 @@ class ScienceAPI:
                             try:
                                 # _stream_agent_chat 返回 (text, info): info 携工具轨迹,
                                 # 前端断线时兑底归档要用
+                                # 私网模型 LiteLLM 库无条目: 用 store 显式配置的
+                                # contextWindow 作为窗口 override, 避免"当前模型"段
+                                # 落到 131072 默认值与实际不符
+                                _ctx_hit = next(
+                                    (
+                                        m.get("contextWindow")
+                                        for m in self.model_store.models.values()
+                                        if (m.get("model") or "") == model_name
+                                        and m.get("contextWindow")
+                                    ),
+                                    None,
+                                )
                                 _final_text, _agent_info_holder["info"] = (
                                     _stream_agent_chat(
                                         base_url,
@@ -2803,6 +2837,7 @@ class ScienceAPI:
                                         lambda u: loop.call_soon_threadsafe(
                                             chat_queue.put_nowait, ("usage", u)
                                         ),
+                                        model_ctx=_ctx_hit,
                                     )
                                 )
                                 _agent_info = (
@@ -3790,8 +3825,39 @@ def _atomic_save(path: Path, payload: str) -> None:
         path.write_text(payload, encoding="utf-8")
 
 
+def _model_caption(model_name: str, model_ctx: Optional[int]) -> str:
+    """"# 当前模型"段文本: 模型名 + 文本/多模态 + 上下文窗口。"""
+    if not model_name:
+        return ""
+    entry = _litellm_lookup(model_name) or {}
+    multi = bool(
+        entry.get("supports_vision")
+        or entry.get("supports_audio_input")
+        or entry.get("supports_video_input")
+        or entry.get("supports_image_input")
+    )
+    try:
+        cw = _model_context_window(model_name, model_ctx)
+    except Exception:
+        cw = 0
+    kind = (
+        "多模态大模型，支持文本与图像等多种输入"
+        if multi
+        else "文本大模型，仅支持文本输入"
+    )
+    return (
+        f"\n\n# 当前模型\n本次回复由模型 `{model_name}` 生成：这是一款{kind}。"
+        f"上下文窗口约 {cw:,} tokens，包含系统提示、历史消息与工具结果在内的全部输入；"
+        "超长对话会自动压缩早期历史以适配窗口。"
+    )
+
+
 def _bind_main_system(
-    workdir: Optional[str], plan_mode: bool, last_user: str = ""
+    workdir: Optional[str],
+    plan_mode: bool,
+    last_user: str = "",
+    model_name: str = "",
+    model_ctx: Optional[int] = None,
 ) -> str:
     """按执行路径同序组装主 agent 的 bound system(工作目录/计划模式/记忆块)。
 
@@ -3813,6 +3879,9 @@ def _bind_main_system(
             "bash 命令、文件读写与数据处理的相对路径都相对该目录执行；"
             "向用户答复时必须以该目录为当前工作目录。"
         )
+    # 当前模型段: 名称/形态/窗口; 私网模型靠 store 显式配置的 contextWindow
+    # 兜住 LiteLLM 库缺条目的精度(否则会落到 131072 默认值误导)
+    bound_system += _model_caption(model_name, model_ctx)
     if plan_mode:
         bound_system = bound_system + _PLAN_MODE_PROMPT
     # s09 记忆注入: 索引常驻 + 与当前请求关键词相关的记录(零模型调用, 纯词法召回)
@@ -3916,6 +3985,7 @@ def _run_agent_chat(
     workdir: Optional[str] = None,
     plan_mode: bool = False,
     on_usage=None,
+    model_ctx: Optional[int] = None,
 ) -> str:
     """Run a chat through the SigmaFlow agent/agent.Agent stack.
 
@@ -4025,6 +4095,8 @@ def _run_agent_chat(
             ),
             "",
         ),
+        model_name=model_name,
+        model_ctx=model_ctx,
     )
     agent = Agent(
         method="openai",
@@ -4455,6 +4527,7 @@ def _stream_agent_chat(
     workdir: Optional[str] = None,
     plan_mode: bool = False,
     on_usage=None,
+    model_ctx: Optional[int] = None,
 ):
     """Streaming chat. Runs synchronously on the caller's worker thread
     (the WS handler invokes it via asyncio.to_thread); on_delta is called
@@ -4473,6 +4546,7 @@ def _stream_agent_chat(
         workdir=workdir,
         plan_mode=plan_mode,
         on_usage=on_usage,
+        model_ctx=model_ctx,
     )
 
 

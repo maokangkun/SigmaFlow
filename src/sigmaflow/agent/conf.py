@@ -38,10 +38,6 @@ class Prompt:
     BlueLine = "[blue]━[/]"
 
 
-MAX_MODEL_LEN = {
-    "qwen3.6-27b": 262144,
-    "default": 131072,
-}
 MAX_OUT_LEN = {
     "qwen3.6-27b": 262144,
     "default": 16384,
