@@ -413,7 +413,12 @@
       let data;
       try { data = await fetchContent(); }
       catch (first) { await new Promise(r => setTimeout(r, 900)); data = await fetchContent(); }  // 冷启动 WS 未就绪抖动重试一次; modelCall 自带 WS→HTTP 兜底
-      if (!data.content?.length) { if (!hadLocal) CS.toast('该会话在服务端没有同步到消息内容。', 'error'); return; }
+      // 空壳会话(如"发送即落库"上线前被服务重启腰斩的遗留, 只登记了标题):
+      // 不再判错误卡死打开, 以空白会话正常进入, 可直接发新消息接续使用
+      if (!data.content?.length) {
+        if (!hadLocal) CS.toast('该会话暂无消息记录，可直接发送新消息继续。');
+        data.content = [];
+      }
       const meta = CS.ui.conversations.find(c => c.id === id) || {};
       const run = { id, kind: 'chat', title: meta.title || data.title || '会话', projectId: data.projectId, prompt: '', datasetIds: [], config: {},
               messages: data.content.map(m => {
@@ -455,7 +460,8 @@
       if (CS.state.currentRunId !== id) { CS.state.currentRunId = id; CS.save(); CS.navigate('chat', id); }
       else CS.save();
       CS.render();
-      if (!hadLocal) CS.toast('已从服务端加载该会话内容。');
+      // 空壳会话只保留上面那句提示, 不再叠加"加载成功"的泛用提示
+      if (!hadLocal && data.content?.length) CS.toast('已从服务端加载该会话内容。');
     } catch (error) { if (!hadLocal) CS.toast('加载会话内容失败：' + CS.api.friendlyError(error), 'error'); }
     finally { if (CS.ui.loadingRunId === id) { CS.ui.loadingRunId = null; CS.render(); } }
   };
