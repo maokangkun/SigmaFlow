@@ -665,17 +665,24 @@ class ScienceModelStore:
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.path = self.storage_dir / "models.json"
+        self.bak_path = self.path.with_name(self.path.name + ".bak")
         self.providers: Dict[str, dict] = {}
         self.models: Dict[str, dict] = {}
         self._load()
 
     def _load(self):
         data = {}
-        if self.path.exists():
+        # 主库优先, 损坏/缺失时回退上一版本 .bak: 单个损坏文件不再等于全库置零
+        for _candidate in (self.path, self.bak_path):
+            if not _candidate.exists():
+                continue
             try:
-                data = json.loads(self.path.read_text(encoding="utf-8"))
+                parsed = json.loads(_candidate.read_text(encoding="utf-8"))
             except Exception:
-                data = {}
+                continue
+            if isinstance(parsed, dict):
+                data = parsed
+                break
         if not isinstance(data, dict):
             data = {}
         # legacy flat records: {id: {name, baseUrl, apiKey, keyHint, isDefault}}
@@ -713,13 +720,15 @@ class ScienceModelStore:
         self.models = data.get("models") or {}
 
     def _save(self):
-        self.path.write_text(
+        # 原子落盘(见 _atomic_save): 半截 JSON 会在 _load 时整库判废,
+        # 是灾难性的全量丢失窗口; 上一版本轮转 .bak 供损坏回退。
+        _atomic_save(
+            self.path,
             json.dumps(
                 {"providers": self.providers, "models": self.models},
                 ensure_ascii=False,
                 indent=2,
             ),
-            encoding="utf-8",
         )
 
     @staticmethod
@@ -2811,9 +2820,36 @@ class ScienceAPI:
                                 and not chat_stops.get(request_id)
                             ):
                                 time.sleep(0.05)
-                            if not terminal_delivered["ok"] and not chat_stops.get(
-                                request_id
-                            ):
+                            # 投递成功 ≠ 落库: 前端可能死在「收到终态 →
+                            # conversation.save 归档」的缝隙里(刷新/被杀/断网),
+                            # 此前 worker 已让位退出, 回复将永久丢失。
+                            # 因此投递成功后进入观察窗: 等存档里本轮出现
+                            # assistant 尾行(前端归档的证据), 逾期未见则兑底
+                            # 补写。多补无害——前端若存活, 它的整表归档最终
+                            # 覆盖一切; 前端已死, 兜底行就是唯一幸存。
+                            _need_fallback = False
+                            if not chat_stops.get(request_id):
+                                if not terminal_delivered["ok"]:
+                                    _need_fallback = True
+                                else:
+                                    _rid_v = str(data.get("runId") or "")
+                                    _verify_until = time.time() + 2.5
+                                    while (
+                                        time.time() < _verify_until
+                                        and not chat_stops.get(request_id)
+                                        and not _conversation_replied(
+                                            self.project_store, _rid_v
+                                        )
+                                    ):
+                                        time.sleep(0.1)
+                                    if not chat_stops.get(
+                                        request_id
+                                    ) and not _conversation_replied(
+                                        self.project_store, _rid_v
+                                    ):
+                                        # 观察窗耗尽仍未归档: 前端大概率死在缝隙里
+                                        _need_fallback = True
+                            if _need_fallback:
                                 # 服务端兑底存档: 前端断线(关闭/刷新)期间 agent 在后台
                                 # 跑完时, 把结果直接落进会话存储, 用户重连回放即可看到。
                                 # 走 store 的 archive_assistant_row: 与前端同步共用互斥
@@ -3221,6 +3257,7 @@ class ScienceProjectStore:
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.path = self.storage_dir / "projects.json"
+        self.bak_path = self.path.with_name(self.path.name + ".bak")
         self.projects: Dict[str, dict] = {}
         self.conversations: Dict[str, dict] = {}
         # 会话内容互斥写锁: conversation.save(前端同步,HTTP to_thread)与
@@ -3231,24 +3268,30 @@ class ScienceProjectStore:
 
     def _load(self):
         data = {}
-        if self.path.exists():
+        # 主库优先, 损坏/缺失时回退上一版本 .bak(见 _atomic_save 的轮转语义)
+        for _candidate in (self.path, self.bak_path):
+            if not _candidate.exists():
+                continue
             try:
-                data = json.loads(self.path.read_text(encoding="utf-8"))
+                parsed = json.loads(_candidate.read_text(encoding="utf-8"))
             except Exception:
-                data = {}
+                continue
+            if isinstance(parsed, dict):
+                data = parsed
+                break
         if not isinstance(data, dict):
             data = {}
         self.projects = data.get("projects") or {}
         self.conversations = data.get("conversations") or {}
 
     def _save(self):
-        self.path.write_text(
+        _atomic_save(
+            self.path,
             json.dumps(
                 {"projects": self.projects, "conversations": self.conversations},
                 ensure_ascii=False,
                 indent=2,
             ),
-            encoding="utf-8",
         )
 
     @staticmethod
@@ -3647,6 +3690,48 @@ class ScienceProjectStore:
             conv["updatedAt"] = int(time.time() * 1000)
             self._save()
             return True
+
+
+def _atomic_save(path: Path, payload: str) -> None:
+    """原子写 + 上一版本 .bak 轮转(两个 store 共用)。
+
+    半截 JSON 会在 _load 时整库判废, 相当于一次写入失败蒸发全部记录;
+    tmp + rename 保证磁盘上任意时刻只有"完整旧库"或"完整新库",
+    .bak 额外保住上一版本供损坏回退。tmp 阶段失败时主库未被触碰。
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(payload, encoding="utf-8")
+        if path.exists():
+            # 上一版本轮转到 .bak(os.replace 同文件系统原子覆盖)
+            os.replace(path, path.with_name(path.name + ".bak"))
+        os.replace(tmp, path)
+    except Exception:
+        # 主库此刻尚未被触碰, 清理 tmp 残骸后按旧方式直写一次
+        # (tmp 与主库同目录, 同目录不可写时直写同样会失败, 行为退化为旧行为)
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        path.write_text(payload, encoding="utf-8")
+
+
+def _conversation_replied(store, run_id: str) -> bool:
+    """本轮回复是否已在会话存档里(投递后观察窗的判据)。
+
+    chat.send 即落 user 行, 因此从尾部倒序看: 先遇到 assistant 说明
+    本轮回复已入库(前端归档或兜底行), 先遇到 user 说明仍未入库。
+    会话不存在/无内容/未知行类型一律按"未归档"处理。
+    """
+    conv = (getattr(store, "conversations", {}) or {}).get(run_id) or {}
+    for row in reversed(list(conv.get("content") or [])):
+        if not isinstance(row, dict):
+            continue
+        if row.get("role") == "assistant":
+            return True
+        if row.get("role") == "user":
+            return False
+    return False
 
 
 def _append_jsonl(path: Path, record: dict) -> None:
