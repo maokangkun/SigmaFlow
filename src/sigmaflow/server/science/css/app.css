@@ -630,7 +630,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .fs-md p{margin:0 0 8px}
 .fs-md img{max-width:100%}
 /* 标题栏右侧 usage 行: mono 小字右对齐, 贴标题行的水平线 */
-.run-usage{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;align-self:flex-end;padding-bottom:2px;display:inline-flex;gap:13px;max-width:100%;overflow:hidden;-webkit-mask-image:linear-gradient(to left,transparent 0,#000 18px);mask-image:linear-gradient(to left,transparent 0,#000 18px)}
+.run-usage{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;align-self:flex-end;padding-bottom:2px;display:inline-flex;gap:13px;max-width:100%;overflow:hidden}
 .run-usage-stack{display:flex;flex-direction:column;align-items:flex-end;min-width:0;flex-shrink:1;margin-right:5px}
 /* 徽章行不减缩: 它的固有宽就是 stack 的收缩下限, 超长轨迹格因此被约束
    在"目录徽章左缘"处截断(与下方徽章行左缘对齐), 配合 tr-trunc 左缘渐隐 */
@@ -663,7 +663,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .run-track.tr-trunc{-webkit-mask-image:linear-gradient(to right,transparent 0,#000 48px);mask-image:linear-gradient(to right,transparent 0,#000 48px)}
 .run-usage .ru-item{display:inline-flex;align-items:center;gap:4px}
 /* 项目目录段: 最长的一段, 限宽后文字渐隐截断(与 run-track 超长轨迹同一视觉语言), 后续段不被挤走 */
-.run-usage .ru-item.dir-clamp{max-width:26ch;overflow:hidden;-webkit-mask-image:linear-gradient(to left,transparent 0,#000 16px);mask-image:linear-gradient(to left,transparent 0,#000 16px)}
+.run-usage .ru-item.dir-clamp{max-width:26ch;overflow:hidden}
 .run-usage .ru-item .icon{color:var(--faint)}
 .run-usage .ru-item b{font-weight:500;color:var(--muted)}
 /* 可点击项(消息数 → 会话 Trace): padding 提供悬停体感, 等量负 margin 保证 usage 行各点位坐标不变 */
