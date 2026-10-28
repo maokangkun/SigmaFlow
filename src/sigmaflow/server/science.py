@@ -1231,8 +1231,7 @@ class ScienceAPI:
                                 ),
                                 "tokens": _stats.get("completion_tokens") or 0,
                                 "promptTokens": _stats.get("prompt_tokens") or 0,
-                                "contextTokens": _stats.get("last_prompt_tokens")
-                                or 0,
+                                "contextTokens": _stats.get("last_prompt_tokens") or 0,
                                 "cacheTokens": _stats.get("cache_read_tokens") or 0,
                             },
                         },
@@ -1255,8 +1254,16 @@ class ScienceAPI:
                 if event in ("chat.done", "error"):
                     state["terminal"] = True
                     state["delivered"] = True
-                    # 孤儿 journal 的续播至此完成, 消费即删
-                    self._chat_journals.pop(request_id, None)
+                    # 孤儿 journal 的续播至此完成, 消费即删。
+                    # 优先按注册键删(生产路径); 键缺失时按 state 身份匹配
+                    # (单测直接用平键挂 journal 的场景)
+                    _jk = state.get("registry_key")
+                    if _jk is None or self._chat_journals.get(_jk) is not state:
+                        _jk = next(
+                            (k for k, v in self._chat_journals.items() if v is state),
+                            None,
+                        )
+                    self._chat_journals.pop(_jk, None)
                     return
 
     def _interrupt_active_chats(self) -> None:
@@ -1327,8 +1334,7 @@ class ScienceAPI:
                 (
                     m.get("contextWindow")
                     for m in self.model_store.models.values()
-                    if (m.get("model") or "") == _mdl
-                    and m.get("contextWindow")
+                    if (m.get("model") or "") == _mdl and m.get("contextWindow")
                 ),
                 None,
             )
@@ -2836,9 +2842,20 @@ class ScienceAPI:
                     else:
                         await fail(request_id, "问题已失效或已被回答")
                 elif action == "chat.stop":
-                    # 置位停止标记, 流式循环会在收尾时补发 chat.done
+                    # 置位停止标记, pump 据此合成 done(stopped=true) 终态并收割:
+                    # 工作线程不强制杀死(工具轮次自然收尾), 但前端在收到终态前
+                    # 一直停在"停止中"。旧 chat_stops dict 已无消费方, 新链路全
+                    # 走 per-run state["stop"]。
                     if request_id in chat_stops:
                         chat_stops[request_id] = True
+                    _stop_key = (_current_user(), request_id)
+                    _stop_rec = self._active_runs.get(_stop_key)
+                    if not isinstance(_stop_rec, dict):
+                        _stop_st = self._chat_journals.get(_stop_key)
+                    else:
+                        _stop_st = _stop_rec.get("state")
+                    if isinstance(_stop_st, dict):
+                        _stop_st["stop"] = True
                     # 未回答的 ask 一并取消, 让阻塞的工具线程立刻返回
                     for ask_id in chat_asks.pop(request_id, ()) or ():
                         try:
@@ -2848,15 +2865,15 @@ class ScienceAPI:
                     await reply("chat.stop.ack", request_id, {"stopped": True})
                 elif action == "chat.replay":
                     # 断线续播: 前端携带最后收到的 seq 重连后按原 requestId
-                    # 申请从断点继续推送, 中途缺失的事件无损补齐
-                    _info = self._active_runs.get(request_id) or {}
+                    # 申请从断点继续推送, 中途缺失的事件无损补齐。
+                    # 注册键含登录用户(见 chat.send 处注释): 他人的同号
+                    # requestId 既覆盖不了注册项、也取不到 journal
+                    _replay_key = (_current_user(), request_id)
+                    _info = self._active_runs.get(_replay_key) or {}
                     _state = _info.get("state") if isinstance(_info, dict) else None
                     if not isinstance(_state, dict):
-                        _state = self._chat_journals.get(request_id)
-                    if (
-                        not isinstance(_state, dict)
-                        or "journal" not in _state
-                    ):
+                        _state = self._chat_journals.get(_replay_key)
+                    if not isinstance(_state, dict) or "journal" not in _state:
                         await fail(
                             request_id,
                             "该任务已在服务端结束或不存在，无法续播；将从会话存档同步最新内容",
@@ -2929,14 +2946,18 @@ class ScienceAPI:
                         "delivered": False,
                         "stop": False,
                     }
-                    self._active_runs[request_id] = {
+                    # 注册表按(用户, requestId)复合键: WS 的 requestId 是各连接
+                    # 自增的小整数, 平键下并发用户的 "3" 会互相覆盖注册项、
+                    # 猜中即可劫持他人在途对话的 journal 续播流。
+                    _run_key = (_current_user(), request_id)
+                    state["registry_key"] = _run_key
+                    self._active_runs[_run_key] = {
                         "runId": str(data.get("runId") or ""),
                         "state": state,
                     }
 
                     # 工作线程阻塞产出事件, 经 _emit 累积进 journal
                     async def stream_chat() -> None:
-
                         def work():
                             t0 = time.time()
 
@@ -3122,7 +3143,9 @@ class ScienceAPI:
                                                 "".join(state["content"]), 20000
                                             )
                                             or _clip(
-                                                str(_fb_info.get("last_response") or ""),
+                                                str(
+                                                    _fb_info.get("last_response") or ""
+                                                ),
                                                 20000,
                                             ),
                                             "blocks": _blocks_from_agent_info(_fb_info)
@@ -3167,7 +3190,7 @@ class ScienceAPI:
                         finally:
                             chat_stops.pop(request_id, None)
                             # 活跃注销: 正常终态投递后停机不再写中断行
-                            self._active_runs.pop(request_id, None)
+                            self._active_runs.pop(state.get("registry_key"), None)
                             # 流结束(含停止后的收尾)时取消该请求残留的未答 ask
                             for ask_id in chat_asks.pop(request_id, ()) or ():
                                 try:
@@ -3179,7 +3202,7 @@ class ScienceAPI:
                                 # journal 无期限保留, 前端续播消费即删; 仅以
                                 # 容量上限 LRU 淘汰防长期运行泄漏, 被淘汰的
                                 # 极端场景仍有服务端兑底归档与存档合并兜底。
-                                self._chat_journals[request_id] = state
+                                self._chat_journals[state.get("registry_key")] = state
                                 while len(self._chat_journals) > _CHAT_JOURNAL_MAX:
                                     self._chat_journals.pop(
                                         next(iter(self._chat_journals)), None
@@ -3877,7 +3900,7 @@ def _atomic_save(path: Path, payload: str) -> None:
 
 
 def _model_caption(model_name: str, model_ctx: Optional[int]) -> str:
-    """"# 当前模型"段文本: 模型名 + 文本/多模态 + 上下文窗口。"""
+    """ "# 当前模型"段文本: 模型名 + 文本/多模态 + 上下文窗口。"""
     if not model_name:
         return ""
     entry = _litellm_lookup(model_name) or {}
