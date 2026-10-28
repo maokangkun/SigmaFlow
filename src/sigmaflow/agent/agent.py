@@ -23,7 +23,9 @@ from .tools import (
     Compactor,
     BG,
     MCP,
+    get_session_scope,
     get_session_workdir,
+    set_session_scope,
     set_session_workdir,
 )
 from .harness import GOAL
@@ -1127,6 +1129,7 @@ class Agent:
                         pass
 
             session_wd = get_session_workdir()
+            session_scope = get_session_scope()
 
             def _tool_exec(c):
                 # 失败不中断会话: 任何异常都转成错误文本, 作为该次调用的结果返回给模型
@@ -1242,7 +1245,11 @@ class Agent:
             # 会误杀会话("模型响应超时")。看门狗线程每 45s 发一次 progress 事件,
             # 前端 resetTimer 保持连接; 事件对模型不可见, 纯展示层保活。
             def _tool_exec_cwd(c):
-                # 工具的工作目录存在 thread-local 上, 并行线程需要重新绑定
+                # 工具的工作目录与会话作用域存在 thread-local 上, 并行线程需要重新绑定
+                try:
+                    set_session_scope(session_scope)
+                except Exception:
+                    pass
                 if c["func"] in needs_wd:
                     try:
                         set_session_workdir(session_wd)

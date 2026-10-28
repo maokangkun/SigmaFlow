@@ -34,6 +34,53 @@ from .sciverse_api import SCIVERSE_TOOL_HANDLERS, SCIVERSE_TOOLS
 # 沙箱语义随之切换: 相对路径解析与越界检查都以当前会话工作目录为根。
 _SESSION_WORKDIR = threading.local()
 
+# 会话作用域: task/job/inbox 这类"有状态"工具按会话隔离(服务层把 runId 绑
+# 到工具执行线程上), 每个会话只看到自己的任务列表、后台作业与收件箱。
+# 未绑定线程(本地 SDK 等)回落到 "default", 与历史全局行为完全一致。
+_SESSION_SCOPE = threading.local()
+_SCOPE_RE = __import__("re").compile(r"[^A-Za-z0-9._-]")
+_SCOPE_INSTANCES: dict = {}
+_SCOPE_LOCK = threading.Lock()
+
+
+def set_session_scope(scope) -> None:
+    """Bind the calling thread's session scope; None restores the default."""
+    _SESSION_SCOPE.scope = str(scope) if scope else None
+
+
+def get_session_scope() -> str:
+    """Resolve the effective scope key for stateful tools on this thread."""
+    return getattr(_SESSION_SCOPE, "scope", None) or "default"
+
+
+def _scope_dir_name(scope: str) -> str:
+    """目录名安全化: runId 天然满足白名单, 其余字符fold成下划线。"""
+    return _SCOPE_RE.sub("_", str(scope or "default"))[:80] or "default"
+
+
+def _scoped_instance(kind: str, factory, scope: str):
+    """按 scope 缓存有状态工具的实例(每会话一份目录/分片)。"""
+    key = (kind, _scope_dir_name(scope))
+    with _SCOPE_LOCK:
+        inst = _SCOPE_INSTANCES.get(key)
+        if inst is None:
+            inst = factory(scope)
+            _SCOPE_INSTANCES[key] = inst
+        return inst
+
+
+class _ScopedProxy:
+    """把属性访问转发到当前线程 scope 对应的实例: 调用方(TM/BG/BUS 的
+    既有引用)零改动即可获得会话隔离。"""
+
+    def __init__(self, kind, factory):
+        self._kind = kind
+        self._factory = factory
+
+    def __getattr__(self, name):
+        inst = _scoped_instance(self._kind, self._factory, get_session_scope())
+        return getattr(inst, name)
+
 
 def set_session_workdir(path) -> None:
     """Bind the calling thread's session workdir; None restores the default."""
@@ -919,7 +966,7 @@ class TaskManager:
 
     def __init__(self, tasks_dir: Path):
         self.dir = tasks_dir
-        self.dir.mkdir(exist_ok=True)
+        self.dir.mkdir(parents=True, exist_ok=True)
         with TaskManager._lock:
             self._next_id = self._max_id() + 1
 
@@ -1038,7 +1085,13 @@ class TaskManager:
         return "\n".join(lines)
 
 
-TM = TaskManager(TASKS_DIR)
+def _tm_factory(scope: str) -> "TaskManager":
+    d = TASKS_DIR / _scope_dir_name(scope) if scope != "default" else TASKS_DIR
+    return TaskManager(d)
+
+
+# 代理: TM.create/task_list 等经线程 scope 转发, 每会话独立目录与编号
+TM = _ScopedProxy("task", _tm_factory)
 
 
 # -- BackgroundManager: threaded execution + notification queue --
@@ -1228,7 +1281,12 @@ class BackgroundManager:
         return all(t["status"] != "running" for t in self.tasks.values())
 
 
-BG = BackgroundManager()
+def _bg_factory(scope: str) -> "BackgroundManager":
+    """每个会话一份后台作业管理器: check_job/kill_job/完成通知只见本会话。"""
+    return BackgroundManager()
+
+
+BG = _ScopedProxy("bg", _bg_factory)
 
 
 # -- MessageBus: JSONL inbox per teammate --
@@ -1286,7 +1344,13 @@ class MessageBus:
         return f"Broadcast to {count} teammates"
 
 
-BUS = MessageBus(INBOX_DIR)
+def _bus_factory(scope: str) -> "MessageBus":
+    """每个会话独立收件箱: read_inbox/broadcast 不再读到其他会话的消息。"""
+    d = INBOX_DIR / _scope_dir_name(scope) if scope != "default" else INBOX_DIR
+    return MessageBus(d)
+
+
+BUS = _ScopedProxy("bus", _bus_factory)
 
 # -- MCPClient: list tools and call tools on configured MCP servers --
 # class MCPClient:

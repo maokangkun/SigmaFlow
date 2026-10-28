@@ -3052,6 +3052,9 @@ class ScienceAPI:
                                         bool(data.get("planMode")),
                                         lambda u: _emit("usage", u),
                                         model_ctx=_ctx_hit,
+                                        conversation_id=str(
+                                            data.get("runId") or ""
+                                        ),
                                     )
                                 )
                                 _agent_info = (
@@ -4071,6 +4074,7 @@ def _run_agent_chat(
     plan_mode: bool = False,
     on_usage=None,
     model_ctx: Optional[int] = None,
+    conversation_id: str = "",
 ) -> str:
     """Run a chat through the SigmaFlow agent/agent.Agent stack.
 
@@ -4086,6 +4090,8 @@ def _run_agent_chat(
 
     tools_mod = _agent_tools_module()
     tools_mod.set_session_workdir(workdir)
+    # 会话作用域: task/job/inbox 等有状态工具按 runId 分片, 会话间互不可见
+    tools_mod.set_session_scope(conversation_id or None)
 
     raw = [
         {"role": m.get("role"), "content": m.get("content", "")}
@@ -4245,6 +4251,7 @@ def _run_agent_chat(
         last = info["last_response"] if isinstance(info, dict) else None
     finally:
         tools_mod.set_session_workdir(None)
+    tools_mod.set_session_scope(None)
 
     if not last:
         # 轮次耗尽的截停(agent 侧已写入轮次上限语义的 error): 生成一段可用的进度回复,
@@ -4613,6 +4620,7 @@ def _stream_agent_chat(
     plan_mode: bool = False,
     on_usage=None,
     model_ctx: Optional[int] = None,
+    conversation_id: str = "",
 ):
     """Streaming chat. Runs synchronously on the caller's worker thread
     (the WS handler invokes it via asyncio.to_thread); on_delta is called
@@ -4632,6 +4640,7 @@ def _stream_agent_chat(
         plan_mode=plan_mode,
         on_usage=on_usage,
         model_ctx=model_ctx,
+        conversation_id=conversation_id,
     )
 
 
