@@ -368,6 +368,9 @@ def _list_provider_models(base_url: str, api_key: str) -> dict:
 # 不 import litellm 模块本身, 避免其启动开销; 数据缺失时所有查询静默降级。
 
 _LITELLM_LOCK = threading.Lock()
+# 断线孤儿 journal 的容量上限: 超出时按最旧淘汰(运行中的任务 journal
+# 挂在活跃注册表上, 不占此区; 被淘汰的极端场景仍有服务端兑底归档兜底)
+_CHAT_JOURNAL_MAX = 16
 _LITELLM_DB: Optional[Dict[str, dict]] = None
 _LITELLM_MODULE: Any = None  # 懒加载的 litellm 模块; 未加载为 None, 导入失败为 False
 _LITELLM_LOOKUP_CACHE: Dict[str, Optional[dict]] = {}
@@ -1064,6 +1067,9 @@ class ScienceAPI:
         # chat.send 启动时登记, stream_chat 终态退出时注销;
         # 优雅停机时遍历它给"仍在跑"的会话写中断行, 防止任务无声丢失。
         self._active_runs: Dict[str, Dict[str, Any]] = {}
+        # 断线孤儿 journal: 任务已在后台跑完但终态未送出的请求
+        # (request_id -> state)。无期限保留至前端续播消费(消费即删)。
+        self._chat_journals: Dict[str, Dict[str, Any]] = {}
         try:
             _litellm_warm()  # 先完成 litellm 导入再对外服务, 避免半初始化竞态
         except Exception:
@@ -1107,6 +1113,151 @@ class ScienceAPI:
             self._interrupt_active_chats()
 
         self.router = router
+
+    async def _chat_pump(
+        self,
+        ws: WebSocket,
+        request_id: str,
+        state: dict,
+        start_seq: int,
+    ) -> None:
+        """journal 消费循环: 从 start_seq 起向连接推送事件直至终态。
+
+        正常流与断线续播(chat.replay)共用本循环。事件先由工作线程累积进
+        state["journal"]((kind, value) 元组), pump 以游标轮询消费并给每条
+        消息标注 seq——前端记录最后收到的 seq, 重连后即可无损续播缺失的
+        中间消息。send 失败(连接死亡)时静默退出, journal 随任务继续保留,
+        任务的执行与终态兑底归档完全不受连接生命周期影响。
+        """
+        cursor = start_seq if isinstance(start_seq, int) and start_seq >= -1 else -1
+        while True:
+            # 停止请求(经 state 置位, 跨连接生效): 补发 stopped 终态
+            if state.get("stop") and not state.get("terminal"):
+                state["terminal"] = True
+                state["stopped"] = True
+                if len(state["journal"]) < 50000:
+                    state["journal"].append(("done", {"stopped": True}))
+            items = state["journal"][cursor + 1 :]
+            if not items:
+                if state.get("terminal") and cursor + 1 >= len(state["journal"]):
+                    return
+                await asyncio.sleep(0.05)
+                continue
+            for kind, value in items:
+                cursor += 1
+                if kind == "delta":
+                    event, message = (
+                        "chat.delta",
+                        {
+                            "event": "chat.delta",
+                            "requestId": request_id,
+                            "seq": cursor,
+                            "data": {"delta": value},
+                        },
+                    )
+                elif kind == "think":
+                    event, message = (
+                        "chat.think",
+                        {
+                            "event": "chat.think",
+                            "requestId": request_id,
+                            "seq": cursor,
+                            "data": {"delta": value},
+                        },
+                    )
+                elif kind == "tool":
+                    event, message = (
+                        "chat.tool",
+                        {
+                            "event": "chat.tool",
+                            "requestId": request_id,
+                            "seq": cursor,
+                            "data": {"tool": value},
+                        },
+                    )
+                elif kind == "progress":
+                    event, message = (
+                        "chat.progress",
+                        {
+                            "event": "chat.progress",
+                            "requestId": request_id,
+                            "seq": cursor,
+                            "data": value or {},
+                        },
+                    )
+                elif kind == "retry":
+                    event, message = (
+                        "chat.retry",
+                        {
+                            "event": "chat.retry",
+                            "requestId": request_id,
+                            "seq": cursor,
+                            "data": {"retry": value},
+                        },
+                    )
+                elif kind == "usage":
+                    event, message = (
+                        "chat.usage",
+                        {
+                            "event": "chat.usage",
+                            "requestId": request_id,
+                            "seq": cursor,
+                            "data": value or {},
+                        },
+                    )
+                elif kind == "system":
+                    event, message = (
+                        "chat.system",
+                        {
+                            "event": "chat.system",
+                            "requestId": request_id,
+                            "seq": cursor,
+                            "data": {"content": value or ""},
+                        },
+                    )
+                elif kind == "done":
+                    _d = value if isinstance(value, dict) else {}
+                    _stats = state.get("stats") or {}
+                    event, message = (
+                        "chat.done",
+                        {
+                            "event": "chat.done",
+                            "requestId": request_id,
+                            "seq": cursor,
+                            "data": {
+                                "content": "".join(state.get("content") or []),
+                                "stopped": bool(
+                                    _d.get("stopped") or state.get("stopped")
+                                ),
+                                "tokens": _stats.get("completion_tokens") or 0,
+                                "promptTokens": _stats.get("prompt_tokens") or 0,
+                                "contextTokens": _stats.get("last_prompt_tokens")
+                                or 0,
+                                "cacheTokens": _stats.get("cache_read_tokens") or 0,
+                            },
+                        },
+                    )
+                else:
+                    event, message = (
+                        "error",
+                        {
+                            "event": "error",
+                            "requestId": request_id,
+                            "seq": cursor,
+                            "data": {"error": value},
+                        },
+                    )
+                try:
+                    await ws.send_json(message)
+                except Exception:
+                    # 连接已死: journal 随任务保留, 等待重连续播
+                    return
+                if event in ("chat.done", "error"):
+                    state["terminal"] = True
+                    state["delivered"] = True
+                    # 孤儿 journal 的续播至此完成, 消费即删
+                    self._chat_journals.pop(request_id, None)
+                    return
 
     def _interrupt_active_chats(self) -> None:
         """停机时把仍活跃的对话写成中断行(见 shutdown_event)。
@@ -2695,6 +2846,31 @@ class ScienceAPI:
                         except Exception:
                             pass
                     await reply("chat.stop.ack", request_id, {"stopped": True})
+                elif action == "chat.replay":
+                    # 断线续播: 前端携带最后收到的 seq 重连后按原 requestId
+                    # 申请从断点继续推送, 中途缺失的事件无损补齐
+                    _info = self._active_runs.get(request_id) or {}
+                    _state = _info.get("state") if isinstance(_info, dict) else None
+                    if not isinstance(_state, dict):
+                        _state = self._chat_journals.get(request_id)
+                    if (
+                        not isinstance(_state, dict)
+                        or "journal" not in _state
+                    ):
+                        await fail(
+                            request_id,
+                            "该任务已在服务端结束或不存在，无法续播；将从会话存档同步最新内容",
+                        )
+                        return
+                    try:
+                        _last_seq = int(data.get("lastSeq", -1))
+                    except (TypeError, ValueError):
+                        _last_seq = -1
+                    _replay = asyncio.create_task(
+                        self._chat_pump(ws, request_id, _state, _last_seq)
+                    )
+                    chat_tasks.add(_replay)
+                    _replay.add_done_callback(chat_tasks.discard)
                 elif action == "chat.send":
                     try:
                         base_url, api_key, model_name = _resolve_chat(
@@ -2739,24 +2915,43 @@ class ScienceAPI:
                     except Exception:
                         # 归档失败不阻断发送主流程
                         pass
+                    # per-request 事件 journal: work 线程只管把事件按序
+                    # 追加进 state["journal"], pump 以游标消费推送。断线不
+                    # 影响任务执行, 重连后 chat.replay 从最后收到的 seq 续
+                    # 播, 中途缺失的消息无损补齐。
+                    stats: dict = {}
+                    state: Dict[str, Any] = {
+                        "journal": [],
+                        "content": [],
+                        "stats": stats,
+                        "terminal": False,
+                        "stopped": False,
+                        "delivered": False,
+                        "stop": False,
+                    }
                     self._active_runs[request_id] = {
-                        "runId": str(data.get("runId") or "")
+                        "runId": str(data.get("runId") or ""),
+                        "state": state,
                     }
 
-                    # 工作线程阻塞产出事件, 经线程安全回调投递回队列
+                    # 工作线程阻塞产出事件, 经 _emit 累积进 journal
                     async def stream_chat() -> None:
-                        loop = asyncio.get_running_loop()
-                        chat_queue: asyncio.Queue = asyncio.Queue()
-                        content: list = []
-                        stats: dict = {}
-                        closed = False
-                        # 终态(chat.done/error)是否已由 pump 成功送达前端: 前端收到
-                        # 终态会自行归档完整行, 服务端兑底归档据此让位, 避免双行
-                        terminal_delivered = {"ok": False}
 
-                        # 事件元组 (kind, value): delta/think/tool/done/error
                         def work():
                             t0 = time.time()
+
+                            def _emit(kind, value=None):
+                                # 事件入 journal: cap 防御极端长流(超限后
+                                # 续播已无意义); GIL 下 list.append 线程安全
+                                if len(state["journal"]) >= 50000:
+                                    return
+                                state["journal"].append((kind, value))
+
+                            def on_delta(d):
+                                # 正文在 emit 侧累积, 断线期间 pump 消费
+                                # 不工作也不影响兑底归档取到完整正文
+                                state["content"].append(d)
+                                _emit("delta", d)
 
                             def on_tool_wrap(ev):
                                 # ask 轮次: 记录 id 供停止/断开时取消;
@@ -2783,20 +2978,15 @@ class ScienceAPI:
                                     and ev.get("kind") == "progress"
                                 ):
                                     # 长工具心跳: 单独事件类型, 前端只保活不进块
-                                    loop.call_soon_threadsafe(
-                                        chat_queue.put_nowait,
-                                        (
-                                            "progress",
-                                            {
-                                                "name": ev.get("name"),
-                                                "elapsed": ev.get("elapsed"),
-                                            },
-                                        ),
+                                    _emit(
+                                        "progress",
+                                        {
+                                            "name": ev.get("name"),
+                                            "elapsed": ev.get("elapsed"),
+                                        },
                                     )
                                     return
-                                loop.call_soon_threadsafe(
-                                    chat_queue.put_nowait, ("tool", ev)
-                                )
+                                _emit("tool", ev)
 
                             _agent_info_holder = {"info": None}
                             _except_err = None
@@ -2821,22 +3011,14 @@ class ScienceAPI:
                                         api_key,
                                         model_name,
                                         messages,
-                                        lambda d: loop.call_soon_threadsafe(
-                                            chat_queue.put_nowait, ("delta", d)
-                                        ),
-                                        lambda t: loop.call_soon_threadsafe(
-                                            chat_queue.put_nowait, ("think", t)
-                                        ),
+                                        on_delta,
+                                        lambda t: _emit("think", t),
                                         on_tool_wrap,
-                                        lambda r: loop.call_soon_threadsafe(
-                                            chat_queue.put_nowait, ("retry", r)
-                                        ),
+                                        lambda r: _emit("retry", r),
                                         stats,
                                         chat_workdir,
                                         bool(data.get("planMode")),
-                                        lambda u: loop.call_soon_threadsafe(
-                                            chat_queue.put_nowait, ("usage", u)
-                                        ),
+                                        lambda u: _emit("usage", u),
                                         model_ctx=_ctx_hit,
                                     )
                                 )
@@ -2853,10 +3035,7 @@ class ScienceAPI:
                                         self.project_store.set_conversation_system(
                                             str(data.get("runId") or ""), _sys_prompt
                                         )
-                                        loop.call_soon_threadsafe(
-                                            chat_queue.put_nowait,
-                                            ("system", _sys_prompt),
-                                        )
+                                        _emit("system", _sys_prompt)
                                     except Exception:
                                         pass
                                 # 服务端终态(轮次预算耗尽/重试耗尽/Max tokens)不能静默 done:
@@ -2870,24 +3049,16 @@ class ScienceAPI:
                                         and _final_text
                                         and _final_text.strip()
                                     ):
-                                        loop.call_soon_threadsafe(
-                                            chat_queue.put_nowait,
-                                            ("delta", _final_text),
-                                        )
-                                    loop.call_soon_threadsafe(
-                                        chat_queue.put_nowait,
-                                        ("error", _agent_info["error"]),
-                                    )
-                                else:
-                                    loop.call_soon_threadsafe(
-                                        chat_queue.put_nowait, ("done", None)
-                                    )
+                                        on_delta(_final_text)
+                                    if not state["terminal"]:
+                                        _emit("error", _agent_info["error"])
+                                elif not state["terminal"]:
+                                    _emit("done", {})
                             except Exception as err:
-                                loop.call_soon_threadsafe(
-                                    chat_queue.put_nowait, ("error", str(err))
-                                )
+                                if not state["terminal"]:
+                                    _emit("error", str(err))
                                 _except_err = str(err)
-                            # 终态事件已入队。pump 在线时会把它送达前端, 前端收到
+                            # 终态事件已入 journal。pump 在线时会把它送达前端, 前端收到
                             # done/error 后自行归档完整行; 此时服务端再 append 一行就是
                             # 「前端同步先落、worker 归档后到」的双行竞态, 而尾条查重只拦
                             # 无块的纯文本行。因此兑底归档只在「前端拿不到终态」时进行:
@@ -2896,8 +3067,8 @@ class ScienceAPI:
                             _deadline = time.time() + 1.5
                             while (
                                 time.time() < _deadline
-                                and not terminal_delivered["ok"]
-                                and not chat_stops.get(request_id)
+                                and not state["delivered"]
+                                and not state.get("stop")
                             ):
                                 time.sleep(0.05)
                             # 投递成功 ≠ 落库: 前端可能死在「收到终态 →
@@ -2908,22 +3079,22 @@ class ScienceAPI:
                             # 补写。多补无害——前端若存活, 它的整表归档最终
                             # 覆盖一切; 前端已死, 兜底行就是唯一幸存。
                             _need_fallback = False
-                            if not chat_stops.get(request_id):
-                                if not terminal_delivered["ok"]:
+                            if not state.get("stop"):
+                                if not state["delivered"]:
                                     _need_fallback = True
                                 else:
                                     _rid_v = str(data.get("runId") or "")
                                     _verify_until = time.time() + 2.5
                                     while (
                                         time.time() < _verify_until
-                                        and not chat_stops.get(request_id)
+                                        and not state.get("stop")
                                         and not _conversation_replied(
                                             self.project_store, _rid_v
                                         )
                                     ):
                                         time.sleep(0.1)
-                                    if not chat_stops.get(
-                                        request_id
+                                    if not state.get(
+                                        "stop"
                                     ) and not _conversation_replied(
                                         self.project_store, _rid_v
                                     ):
@@ -2947,7 +3118,13 @@ class ScienceAPI:
                                         str(data.get("runId") or ""),
                                         {
                                             "role": "assistant",
-                                            "content": _clip("".join(content), 20000),
+                                            "content": _clip(
+                                                "".join(state["content"]), 20000
+                                            )
+                                            or _clip(
+                                                str(_fb_info.get("last_response") or ""),
+                                                20000,
+                                            ),
                                             "blocks": _blocks_from_agent_info(_fb_info)
                                             if _fb_info
                                             else None,
@@ -2984,143 +3161,7 @@ class ScienceAPI:
 
                         # to_thread 在默认执行器中运行 work, 不阻塞事件循环
                         worker = asyncio.create_task(asyncio.to_thread(work))
-                        while not closed:
-                            if chat_stops.get(request_id):
-                                # 客户端请求停止: 直接补发 chat.done(stopped=true)
-                                closed = True
-                                try:
-                                    await ws.send_json(
-                                        {
-                                            "event": "chat.done",
-                                            "requestId": request_id,
-                                            "data": {
-                                                "content": "".join(content),
-                                                "stopped": True,
-                                            },
-                                        }
-                                    )
-                                except Exception:
-                                    pass
-                                break
-                            # 等下一轮模型时队列可能长时间无事件, 若无限阻塞在 get(),
-                            # 停止标记就永远得不到检查; 用短超时让循环有机会轮询停止。
-                            try:
-                                kind, value = await asyncio.wait_for(
-                                    chat_queue.get(), timeout=0.5
-                                )
-                            except asyncio.TimeoutError:
-                                continue
-                            if kind == "delta":
-                                content.append(value)
-                                event, message = (
-                                    "chat.delta",
-                                    {
-                                        "event": "chat.delta",
-                                        "requestId": request_id,
-                                        "data": {"delta": value},
-                                    },
-                                )
-                            elif kind == "think":
-                                event, message = (
-                                    "chat.think",
-                                    {
-                                        "event": "chat.think",
-                                        "requestId": request_id,
-                                        "data": {"delta": value},
-                                    },
-                                )
-                            elif kind == "tool":
-                                event, message = (
-                                    "chat.tool",
-                                    {
-                                        "event": "chat.tool",
-                                        "requestId": request_id,
-                                        "data": {"tool": value},
-                                    },
-                                )
-                            elif kind == "progress":
-                                # 长工具心跳: 前端只重置空闲计时并刷新运行时长
-                                event, message = (
-                                    "chat.progress",
-                                    {
-                                        "event": "chat.progress",
-                                        "requestId": request_id,
-                                        "data": value or {},
-                                    },
-                                )
-                            elif kind == "retry":
-                                event, message = (
-                                    "chat.retry",
-                                    {
-                                        "event": "chat.retry",
-                                        "requestId": request_id,
-                                        "data": {"retry": value},
-                                    },
-                                )
-                            elif kind == "usage":
-                                # 每轮模型调用后的累计 usage: 流式期间前端即时更新输入/缓存计数
-                                event, message = (
-                                    "chat.usage",
-                                    {
-                                        "event": "chat.usage",
-                                        "requestId": request_id,
-                                        "data": value or {},
-                                    },
-                                )
-                            elif kind == "system":
-                                # 实发 system 提示词: 前端写入 run.systemPrompt(Trace #0 行)
-                                event, message = (
-                                    "chat.system",
-                                    {
-                                        "event": "chat.system",
-                                        "requestId": request_id,
-                                        "data": {"content": value or ""},
-                                    },
-                                )
-                            elif kind == "done":
-                                event, message = (
-                                    "chat.done",
-                                    {
-                                        "event": "chat.done",
-                                        "requestId": request_id,
-                                        "data": {
-                                            "content": "".join(content),
-                                            "tokens": stats.get("completion_tokens")
-                                            or 0,
-                                            "promptTokens": stats.get("prompt_tokens")
-                                            or 0,
-                                            "contextTokens": stats.get(
-                                                "last_prompt_tokens"
-                                            )
-                                            or 0,
-                                            "cacheTokens": stats.get(
-                                                "cache_read_tokens"
-                                            )
-                                            or 0,
-                                        },
-                                    },
-                                )
-                            else:
-                                event, message = (
-                                    "error",
-                                    {
-                                        "event": "error",
-                                        "requestId": request_id,
-                                        "data": {"error": value},
-                                    },
-                                )
-                            try:
-                                await ws.send_json(message)
-                            except Exception:
-                                # 发送失败一般意味着客户端已断开
-                                # 置位 closed 以退出循环并回收工作线程
-                                closed = True
-                            if event in ("chat.done", "error"):
-                                # 终态送达成功: 前端收到后会自行归档完整行,
-                                # 置位让工作线程的兑底归档让位, 避免双行入库
-                                if not closed:
-                                    terminal_delivered["ok"] = True
-                                break
+                        await self._chat_pump(ws, request_id, state, -1)
                         try:
                             await worker
                         finally:
@@ -3133,6 +3174,16 @@ class ScienceAPI:
                                     _agent_tools_module().ASK.cancel(ask_id)
                                 except Exception:
                                     pass
+                            if not state["delivered"]:
+                                # 断线孤儿: 任务已在后台跑完但终态未送出。
+                                # journal 无期限保留, 前端续播消费即删; 仅以
+                                # 容量上限 LRU 淘汰防长期运行泄漏, 被淘汰的
+                                # 极端场景仍有服务端兑底归档与存档合并兜底。
+                                self._chat_journals[request_id] = state
+                                while len(self._chat_journals) > _CHAT_JOURNAL_MAX:
+                                    self._chat_journals.pop(
+                                        next(iter(self._chat_journals)), None
+                                    )
 
                     # 流式任务与请求解耦: handle 立即返回, 事件异步推送
                     # 停止通过 chat_stops 轮询生效, 不强杀工作线程

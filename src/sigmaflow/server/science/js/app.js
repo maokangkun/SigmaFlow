@@ -407,9 +407,9 @@
   // WS 断线自动重连成功后: 拉取受影响会话的最新存档(静默换新),
   // 服务端兜底归档落库后终态/轨迹即可无缝合并, 用户无需刷新页面
   CS.agent._afterWsRestored = async runIds => {
-    for (const rid of runIds || []) {
-      try { await loadRemoteConversation(rid); } catch { /* 会话可能尚未同步, 忽略 */ }
-    }
+    // 续播由 ws 层 chat.replay 接管(journal 按 seq 补齐缺失事件), 这里只
+    // 给用户一个"后台任务已接回"的提示; 不整表换新, 避免与续流事件竞态
+    if (runIds && runIds.length) CS.toast('网络已恢复，后台任务已接续同步。', 'info');
   };
 
   const loadRemoteConversation = async id => {
@@ -1146,10 +1146,19 @@
       if (done.cacheTokens) reply.cacheTokens = done.cacheTokens;
       CS.audio.playDone();  // 回复完成提示音; 出错分支不播放
     } catch (error) {
-      // 失败不再伪装成正文追在 content 里, 而是挂到 error 字段,
-      // 由红色错误块呈现(可展开看详情), 已流出的部分正文保持原样
       const msg = CS.api.friendlyError(error);
-      reply.error = { message: msg, detail: error?.stack ? (msg + '\n\n' + error.stack) : msg };
+      if (error && (error.silent || String(error.message || '').includes('无法续播'))) {
+        // 服务端 journal 已失效(容量淘汰/服务重启)或深度离线: 不把会话
+        // 定格成错误——任务结果由服务端兑底归档兜底, 从存档静默合并最新
+        // 内容即可; 已流出的部分正文原样保留
+        CS.toast('后台任务结果已存档，已从服务端同步最新内容。', 'info');
+        try { await loadRemoteConversation(run.id); } catch {}
+        reply.error = null;
+      } else {
+        // 失败不再伪装成正文追在 content 里, 而是挂到 error 字段,
+        // 由红色错误块呈现(可展开看详情), 已流出的部分正文保持原样
+        reply.error = { message: msg, detail: error?.stack ? (msg + '\n\n' + error.stack) : msg };
+      }
     }
     finishTimer();
     reply.blocks = reply.blocks.filter(b => b.type === 'tool' || b.type === 'ask' || b.type === 'deliverables' || !!b.text);  // 丢弃中途产生的空段

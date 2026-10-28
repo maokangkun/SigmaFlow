@@ -89,7 +89,7 @@
   // requestId, interleaved with pushed "state" snapshots for subscribed runs.
   CS.api.ws = {
     socket: null, state: 'closed', seq: 0, connecting: null, failedAt: 0,
-    pending: new Map(), onState: new Map(), activeChats: new Set(),
+    pending: new Map(), onState: new Map(), activeChats: new Set(), suspended: new Map(),
     open() { return this.socket && this.socket.readyState === 1; },
     connect(timeout = 3500) {
       if (this.open()) return Promise.resolve(true);
@@ -114,6 +114,8 @@
             if (handler) handler(message.data);
           } else if (message.requestId && CS.api.ws.pending.has(message.requestId)) {
             const entry = CS.api.ws.pending.get(message.requestId);
+            // journal 续播游标: 记录最后收到的 seq, 断线重连后从它无损续播
+            if (typeof message.seq === 'number') entry.lastSeq = message.seq;
             // 长推理场景下生成可持续很久: 每收到新分片就重置空闲计时,
             // 只在连续无活动超过阈值时才判定超时
             if (message.event === 'chat.progress') { entry.resetTimer && entry.resetTimer(); if (entry.onProgress) entry.onProgress(message.data || {}); return; }
@@ -132,9 +134,11 @@
             if (message.event === 'chat.system') { entry.onSystem && entry.onSystem(message.data?.content || ''); return; }
             if (message.event === 'chat.retry') { entry.onRetry && entry.onRetry(message.data?.retry || {}); return; }
             if (message.event === 'chat.delta' && entry.onDelta) { entry.onDelta(message.data?.delta || ''); return; }
+            CS.api.ws.suspended.delete(message.requestId);
             CS.api.ws.pending.delete(message.requestId);
             CS.api.ws.activeChats.forEach(x => { if (x && x.requestId === message.requestId) CS.api.ws.activeChats.delete(x); });
             clearTimeout(entry.timer);
+            try { entry.onFinishOnce && entry.onFinishOnce(); entry.onFinishOnce = null; } catch {}
             message.event === 'error' ? entry.reject(new Error(message.data?.error || '接口返回错误')) : entry.resolve(message.data);
           }
         };
@@ -148,26 +152,78 @@
           const _interrupted = [...this.activeChats].map(x => (x && x.runId) || '').filter(Boolean);
           const hadChat = _interrupted.length > 0;
           const hint = code === 1006
-            ? 'WebSocket 异常断开（可能因网络中断或链路长时间无数据被回收）。当前回复已中断，可发送“继续”让模型接着此前内容重来。'
-            : 'WebSocket 连接已关闭。';
-          CS.api.ws._fail(new Error(hint));
-          if (hadChat) this._autoReconnect(_interrupted);
+            ? 'WebSocket 异常断开（网络不稳或链路被回收）。任务已在服务端后台继续执行，恢复连接后自动同步。'
+            : 'WebSocket 连接已关闭。任务已在服务端后台继续执行，恢复连接后自动同步。';
+          if (hadChat) {
+            CS.api.ws._suspend(hint);
+            this._autoReconnect(_interrupted);
+          } else {
+            CS.api.ws._fail(new Error(hint));
+          }
         };
         socket.onerror = () => { clearTimeout(timer); finish(false); };
       });
       return this.connecting;
     },
-    // 断线自动重连: 2.5s / 8s / 20s 三档退避; 成功后回调 app 层拉取受影响
-    // 会话的最新存档(服务端兜底归档落库后即可合并终态, 数据不丢)
+    // 挂起: 断线时不终止进行中的对话请求——任务在服务端后台继续执行,
+    // entry 连同流式回调转入 suspended, 自动重连成功后 chat.replay 按
+    // seq 续播, 中间缺失的消息无损补齐; startChat 的 promise 保持未决,
+    // 页面呈现"恢复中"而非失败
+    _suspend(reason) {
+      const chatIds = new Set([...this.activeChats].map(x => x && x.requestId).filter(Boolean));
+      for (const [rid, entry] of this.pending) {
+        if (chatIds.has(rid)) {
+          entry.pauseIdle && entry.pauseIdle();  // 断线窗口不计常规空闲, 挂长兜底
+          const runId = ([...this.activeChats].find(x => x && x.requestId === rid) || {}).runId || '';
+          this.suspended.set(rid, { entry, runId, reason });
+        } else {
+          clearTimeout(entry.timer);
+          entry.reject(new Error(reason));
+        }
+      }
+      this.pending.clear();
+      this.activeChats.clear();
+      for (const handler of this.onState.values()) handler(null, new Error(reason));
+    },
+    // 重连成功: 逐个把挂起请求重挂 pending 并向服务端申请 journal 续播;
+    // 服务端任务无论仍在跑还是早已跑完都按 seq 补齐并继续, 回调即恢复渲染
+    _resumeSuspended() {
+      if (!this.open() || this.suspended.size === 0) return;
+      for (const [rid, info] of [...this.suspended]) {
+        this.suspended.delete(rid);
+        try {
+          this.pending.set(rid, info.entry);
+          info.entry.resetTimer && info.entry.resetTimer();
+          this.activeChats.add({ requestId: rid, runId: info.runId || '' });
+          this.socket.send(JSON.stringify({ action: 'chat.replay', requestId: rid, lastSeq: typeof info.entry.lastSeq === 'number' ? info.entry.lastSeq : -1 }));
+        } catch { try { info.entry.reject(new Error('恢复连接失败。任务仍在后台执行，稍后重开会话可同步。')); } catch {} }
+      }
+    },
+    // 深度离线看门狗: 三档退避都失败后, 每 15s 探测连接直到恢复;
+    // 服务端 journal 无期限保留(容量上限内), 无论断多久都能无损续播
+    async _offlineWatchdog() {
+      while (this.suspended.size > 0) {
+        await new Promise(r => setTimeout(r, 15000));
+        if (this.suspended.size === 0) return;
+        this.failedAt = 0;
+        try { const ok = await this.connect(4000); if (ok) { this._resumeSuspended(); return; } } catch {}
+      }
+    },
+    // 断线自动重连: 2.5s / 8s / 20s 三档退避; 成功后续播挂起请求并通知
+    // app 层; 三档全失败转离线看门狗, 网络恢复后照样续播, 用户零操作
     async _autoReconnect(runIds, attempt = 0) {
       const delays = [2500, 8000, 20000];
-      if (attempt >= delays.length) return;
+      if (attempt >= delays.length) { this._offlineWatchdog(); return; }
       await new Promise(r => setTimeout(r, delays[attempt]));
-      if (this.open()) { if (CS.agent._afterWsRestored) { try { await CS.agent._afterWsRestored(runIds); } catch {} } return; }
+      if (this.suspended.size === 0) return;
+      if (this.open()) { this._resumeSuspended(); if (CS.agent._afterWsRestored) { try { await CS.agent._afterWsRestored(runIds); } catch {} } return; }
       this.failedAt = 0;  // 绕过 30s 连接冷却, 尽快恢复
-      const ok = await this.connect(4000);
-      if (ok && CS.agent._afterWsRestored) { try { await CS.agent._afterWsRestored(runIds); } catch {} }
-      else this._autoReconnect(runIds, attempt + 1);
+      let ok = false;
+      try { ok = await this.connect(4000); } catch {}
+      if (ok) {
+        this._resumeSuspended();
+        if (CS.agent._afterWsRestored) { try { await CS.agent._afterWsRestored(runIds); } catch {} }
+      } else this._autoReconnect(runIds, attempt + 1);
     },
     _fail(reason) {
       for (const entry of this.pending.values()) { clearTimeout(entry.timer); entry.reject(reason); }
@@ -208,6 +264,9 @@
     stopChats() {
       if (!this.socket || this.state !== 'open') return;
       for (const requestId of this.activeChats) {
+        try { this.socket.send(JSON.stringify({ action: 'chat.stop', requestId })); } catch { /* 连接已断时忽略 */ }
+      }
+      for (const requestId of this.suspended.keys()) {
         try { this.socket.send(JSON.stringify({ action: 'chat.stop', requestId })); } catch { /* 连接已断时忽略 */ }
       }
     },
