@@ -1995,7 +1995,14 @@ class ScienceAPI:
         @router.get("/system-prompt")
         async def get_system_prompt():
             def _builtin_text():
-                return _default_system_prompts()[0]
+                # 设置页展示完整生效版: 默认提示 + 当前模型/记忆段(实际发给模型的文本);
+                # 工作目录段随绑定项目产生, 无项目语境的设置页不示例
+                try:
+                    _prov, model_name, _key = _resolve_chat(self.model_store, None)
+                    model_ctx = _model_context_window(model_name)
+                    return _bind_main_system(None, False, "", model_name, model_ctx)
+                except Exception:
+                    return _default_system_prompts()[0]
 
             builtin = await asyncio.to_thread(_builtin_text)
             cfg = _load_system_prompt_config()
