@@ -1960,6 +1960,13 @@
         }, 2050);
       }
     },
+    'toggle-embed-compact': (id, el) => {
+      // 嵌入摘要卡折叠: 键 = 会话id|mi|bi(由 ekey 数据传递)
+      if (!CS.ui.embedCompactCollapsed) CS.ui.embedCompactCollapsed = new Set();
+      if (CS.ui.embedCompactCollapsed.has(id)) CS.ui.embedCompactCollapsed.delete(id);
+      else CS.ui.embedCompactCollapsed.add(id);
+      CS.render();
+    },
     'jump-compact': () => {
       // 压缩宣告 chip → 跳到最近的摘要卡(末次压缩的卡在卡序列尾部)
       const cards = [...document.querySelectorAll('.compact-card')];

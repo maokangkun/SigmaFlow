@@ -353,7 +353,7 @@
           else if (b.type === 'tool') blocks.push({ k: 'tool', txt: (b.name || '工具') + ' ' + (typeof b.result === 'string' ? b.result : ''), live: on, mi, bi });
           else if (b.type === 'present') blocks.push({ k: 'present', txt: '展示 ' + (b.name || b.path || ''), live: on, mi, bi });
           else if (b.type === 'sysnote' && !/Conversation history was just compacted/.test(b.text || '')) blocks.push({ k: 'system', txt: '系统注入', live: on, mi, bi });
-          else if (b.type === 'compact') blocks.push({ k: 'system', txt: String(b.text || '').trim() ? '上下文已压缩' : '正在压缩会话', live: on, mi, bi });
+          else if (b.type === 'compact') blocks.push({ k: 'compact', txt: String(b.text || '').trim() ? '上下文已压缩' : '正在压缩会话', live: on, mi, bi });
           else if (b.type === 'ask') blocks.push({ k: 'tool', txt: 'ask 提问', live: on, mi, bi });
           else if (b.type === 'text' && (b.text || '').trim()) blocks.push({ k: 'reply', txt: b.text, live: on, mi, bi });
         });
@@ -381,7 +381,7 @@
       cur.push(b);
     });
     if (cur.length) cols.push(cur);
-    const name = { user: '用户', think: '思考', tool: '工具', reply: '回复', system: '系统', error: '错误' };
+    const name = { user: '用户', think: '思考', tool: '工具', reply: '回复', system: '系统', error: '错误', compact: '压缩' };
     const cell = (b, gi) => `<span role="button" class="tr-cell tr-${b.k}${b.live ? ' tr-live' : ''}" data-action="track-jump" data-id="${b.bi == null ? b.mi : b.mi + ':' + b.bi}" title="#${start + gi + 1} ${name[b.k]}${b.live ? ' · 生成中' : ''} · ${e(String(b.txt || '').replace(/\s+/g, ' ').slice(0, 80))} · 点击跳转到该消息"></span>`;
     // 超长会话被截掉头部时加渐隐类, 在左缘用 mask 提示“还有更早的”
     return `<div class="run-track${start ? ' tr-trunc' : ''}" aria-hidden="true"${start ? ` title="还有更早的 ${start} 条消息未展示"` : ''} data-blocks="${blocks.length}">${cols.map(c => `<span class="tr-col">${c.map(cell).join('')}</span>`).join('')}</div>`;
@@ -709,7 +709,10 @@ V.ctxRing = () => {
                   }
                   const _cc = String(b.text || '');
                   const _chead = (_cc.split('\n')[0] || '').slice(0, 60);
-                  return `<div class="compact-card" data-bi="${bi}" data-action="toggle-embed-compact" title="点击折叠/展开摘要"><div class="compact-head"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">${e(_chead)}</span></div><div class="compact-body md-body">${CS.markdown(_cc.split('\n').slice(1).join('\n'))}</div></div>`;
+                  // 折叠态与错误卡/整卡折同一套内存态: 键 = 会话id|mi|bi(追加稳定)
+                  const _eck = `${run.id}|${idxOf}|${bi}`;
+                  const _ecol = (CS.ui.embedCompactCollapsed || (CS.ui.embedCompactCollapsed = new Set())).has(_eck);
+                  return `<div class="compact-card${_ecol ? ' compact-folded' : ''}" data-bi="${bi}"><button type="button" class="compact-head" data-action="toggle-embed-compact" data-id="${e(_eck)}" aria-expanded="${_ecol ? 'false' : 'true'}" title="${_ecol ? '展开摘要' : '折叠摘要'}"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">${e(_chead)}</span><span class="think-chevron">${i('chevron', '', 12)}</span></button>${_ecol ? '' : `<div class="compact-body md-body">${CS.markdown(_cc.split('\n').slice(1).join('\n'))}</div>`}</div>`;
                 }
                 if (b.type === 'ask') return renderAsk(b, bi);
                 if (b.type === 'sysnote') {

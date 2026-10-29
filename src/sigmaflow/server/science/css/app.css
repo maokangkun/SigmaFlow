@@ -651,14 +651,15 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .run-track .tr-tool{background:var(--tr-tool)}
 .run-track .tr-reply{background:var(--tr-reply)}
 .run-track .tr-system{background:var(--tr-system)}
+.run-track .tr-compact{background:var(--tr-compact)}
 .run-track .tr-error{background:var(--tr-error)}
 /* 运行中消息的方块呼吸动效; 减少动态效果时全局 animation 已被禁用 */
 @keyframes tr-pulse{0%,100%{opacity:.55;transform:scale(.82)}50%{opacity:1;transform:scale(1.06)}}
 .run-track .tr-live{animation:tr-pulse 1.15s ease-in-out infinite}
 /* 轨迹配色方案: 马卡龙(默认柔和粉彩) / 经典 / 素雅单色, 设置页可切换 */
-:root{--tr-user:#35b26a;--tr-think:#3d5fc4;--tr-tool:#f5a623;--tr-reply:#8f4fd6;--tr-system:#9aa1ab;--tr-error:#e03b3b;--tr-present:#12a5b0}
-:root[data-trackpalette="classic"]{--tr-user:#3aa463;--tr-think:var(--blue);--tr-tool:var(--amber);--tr-reply:#d1568f;--tr-system:#6e7480;--tr-error:#e03b3b;--tr-present:#1f9bb4}
-:root[data-trackpalette="mono"]{--tr-user:#5c6672;--tr-think:#8a93a3;--tr-tool:#a9b1bd;--tr-reply:#cdd3dc;--tr-system:#eef1f5;--tr-error:#b8452f;--tr-present:#9fb6bd}
+:root{--tr-compact:#6d4fd0;--tr-user:#35b26a;--tr-think:#3d5fc4;--tr-tool:#f5a623;--tr-reply:#8f4fd6;--tr-system:#9aa1ab;--tr-error:#e03b3b;--tr-present:#12a5b0}
+:root[data-trackpalette="classic"]{--tr-compact:#5a3fb0;--tr-user:#3aa463;--tr-think:var(--blue);--tr-tool:var(--amber);--tr-reply:#d1568f;--tr-system:#6e7480;--tr-error:#e03b3b;--tr-present:#1f9bb4}
+:root[data-trackpalette="mono"]{--tr-compact:#3f4450;--tr-user:#5c6672;--tr-think:#8a93a3;--tr-tool:#a9b1bd;--tr-reply:#cdd3dc;--tr-system:#eef1f5;--tr-error:#b8452f;--tr-present:#9fb6bd}
 @media(max-width:800px){.run-track{max-width:340px}}
 /* 超长会话截断提示: 左缘 16px 渐隐, 感知还有更早的消息被折叠(宽窄屏同样生效) */
 .run-track.tr-trunc{-webkit-mask-image:linear-gradient(to right,transparent 0,#000 48px);mask-image:linear-gradient(to right,transparent 0,#000 48px)}
@@ -825,3 +826,9 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .sysnote-chip.jumpable:hover{background:#e8f0fb}
 .sysnote-txt{flex:1;min-width:0}
 .sysnote-go{flex-shrink:0;color:var(--accent,#5c9cf5);font-weight:550;white-space:nowrap}
+
+/* 嵌入摘要卡折叠态: head 右侧 chevron 旋转提示 */
+.compact-card .compact-head{display:flex;align-items:center;gap:8px;width:100%;background:none;border:none;cursor:pointer;text-align:left;padding:inherit}
+.compact-card .compact-head:hover{background:color-mix(in srgb,var(--accent-bg, #eef2fb) 60%,transparent)}
+.compact-card .compact-head .think-chevron{transform:rotate(90deg);color:var(--faint)}
+.compact-card.compact-folded .compact-head .think-chevron{transform:rotate(0deg)}

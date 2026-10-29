@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="484b081c">
+<meta name="build" content="035a67af">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1006,14 +1006,15 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .run-track .tr-tool{background:var(--tr-tool)}
 .run-track .tr-reply{background:var(--tr-reply)}
 .run-track .tr-system{background:var(--tr-system)}
+.run-track .tr-compact{background:var(--tr-compact)}
 .run-track .tr-error{background:var(--tr-error)}
 /* 运行中消息的方块呼吸动效; 减少动态效果时全局 animation 已被禁用 */
 @keyframes tr-pulse{0%,100%{opacity:.55;transform:scale(.82)}50%{opacity:1;transform:scale(1.06)}}
 .run-track .tr-live{animation:tr-pulse 1.15s ease-in-out infinite}
 /* 轨迹配色方案: 马卡龙(默认柔和粉彩) / 经典 / 素雅单色, 设置页可切换 */
-:root{--tr-user:#35b26a;--tr-think:#3d5fc4;--tr-tool:#f5a623;--tr-reply:#8f4fd6;--tr-system:#9aa1ab;--tr-error:#e03b3b;--tr-present:#12a5b0}
-:root[data-trackpalette="classic"]{--tr-user:#3aa463;--tr-think:var(--blue);--tr-tool:var(--amber);--tr-reply:#d1568f;--tr-system:#6e7480;--tr-error:#e03b3b;--tr-present:#1f9bb4}
-:root[data-trackpalette="mono"]{--tr-user:#5c6672;--tr-think:#8a93a3;--tr-tool:#a9b1bd;--tr-reply:#cdd3dc;--tr-system:#eef1f5;--tr-error:#b8452f;--tr-present:#9fb6bd}
+:root{--tr-compact:#6d4fd0;--tr-user:#35b26a;--tr-think:#3d5fc4;--tr-tool:#f5a623;--tr-reply:#8f4fd6;--tr-system:#9aa1ab;--tr-error:#e03b3b;--tr-present:#12a5b0}
+:root[data-trackpalette="classic"]{--tr-compact:#5a3fb0;--tr-user:#3aa463;--tr-think:var(--blue);--tr-tool:var(--amber);--tr-reply:#d1568f;--tr-system:#6e7480;--tr-error:#e03b3b;--tr-present:#1f9bb4}
+:root[data-trackpalette="mono"]{--tr-compact:#3f4450;--tr-user:#5c6672;--tr-think:#8a93a3;--tr-tool:#a9b1bd;--tr-reply:#cdd3dc;--tr-system:#eef1f5;--tr-error:#b8452f;--tr-present:#9fb6bd}
 @media(max-width:800px){.run-track{max-width:340px}}
 /* 超长会话截断提示: 左缘 16px 渐隐, 感知还有更早的消息被折叠(宽窄屏同样生效) */
 .run-track.tr-trunc{-webkit-mask-image:linear-gradient(to right,transparent 0,#000 48px);mask-image:linear-gradient(to right,transparent 0,#000 48px)}
@@ -1180,6 +1181,12 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .sysnote-chip.jumpable:hover{background:#e8f0fb}
 .sysnote-txt{flex:1;min-width:0}
 .sysnote-go{flex-shrink:0;color:var(--accent,#5c9cf5);font-weight:550;white-space:nowrap}
+
+/* 嵌入摘要卡折叠态: head 右侧 chevron 旋转提示 */
+.compact-card .compact-head{display:flex;align-items:center;gap:8px;width:100%;background:none;border:none;cursor:pointer;text-align:left;padding:inherit}
+.compact-card .compact-head:hover{background:color-mix(in srgb,var(--accent-bg, #eef2fb) 60%,transparent)}
+.compact-card .compact-head .think-chevron{transform:rotate(90deg);color:var(--faint)}
+.compact-card.compact-folded .compact-head .think-chevron{transform:rotate(0deg)}
 
 </style>
 </head>
@@ -8784,7 +8791,7 @@ CS.audio = (function () {
           else if (b.type === 'tool') blocks.push({ k: 'tool', txt: (b.name || '工具') + ' ' + (typeof b.result === 'string' ? b.result : ''), live: on, mi, bi });
           else if (b.type === 'present') blocks.push({ k: 'present', txt: '展示 ' + (b.name || b.path || ''), live: on, mi, bi });
           else if (b.type === 'sysnote' && !/Conversation history was just compacted/.test(b.text || '')) blocks.push({ k: 'system', txt: '系统注入', live: on, mi, bi });
-          else if (b.type === 'compact') blocks.push({ k: 'system', txt: String(b.text || '').trim() ? '上下文已压缩' : '正在压缩会话', live: on, mi, bi });
+          else if (b.type === 'compact') blocks.push({ k: 'compact', txt: String(b.text || '').trim() ? '上下文已压缩' : '正在压缩会话', live: on, mi, bi });
           else if (b.type === 'ask') blocks.push({ k: 'tool', txt: 'ask 提问', live: on, mi, bi });
           else if (b.type === 'text' && (b.text || '').trim()) blocks.push({ k: 'reply', txt: b.text, live: on, mi, bi });
         });
@@ -8812,7 +8819,7 @@ CS.audio = (function () {
       cur.push(b);
     });
     if (cur.length) cols.push(cur);
-    const name = { user: '用户', think: '思考', tool: '工具', reply: '回复', system: '系统', error: '错误' };
+    const name = { user: '用户', think: '思考', tool: '工具', reply: '回复', system: '系统', error: '错误', compact: '压缩' };
     const cell = (b, gi) => `<span role="button" class="tr-cell tr-${b.k}${b.live ? ' tr-live' : ''}" data-action="track-jump" data-id="${b.bi == null ? b.mi : b.mi + ':' + b.bi}" title="#${start + gi + 1} ${name[b.k]}${b.live ? ' · 生成中' : ''} · ${e(String(b.txt || '').replace(/\s+/g, ' ').slice(0, 80))} · 点击跳转到该消息"></span>`;
     // 超长会话被截掉头部时加渐隐类, 在左缘用 mask 提示“还有更早的”
     return `<div class="run-track${start ? ' tr-trunc' : ''}" aria-hidden="true"${start ? ` title="还有更早的 ${start} 条消息未展示"` : ''} data-blocks="${blocks.length}">${cols.map(c => `<span class="tr-col">${c.map(cell).join('')}</span>`).join('')}</div>`;
@@ -9140,7 +9147,10 @@ V.ctxRing = () => {
                   }
                   const _cc = String(b.text || '');
                   const _chead = (_cc.split('\n')[0] || '').slice(0, 60);
-                  return `<div class="compact-card" data-bi="${bi}" data-action="toggle-embed-compact" title="点击折叠/展开摘要"><div class="compact-head"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">${e(_chead)}</span></div><div class="compact-body md-body">${CS.markdown(_cc.split('\n').slice(1).join('\n'))}</div></div>`;
+                  // 折叠态与错误卡/整卡折同一套内存态: 键 = 会话id|mi|bi(追加稳定)
+                  const _eck = `${run.id}|${idxOf}|${bi}`;
+                  const _ecol = (CS.ui.embedCompactCollapsed || (CS.ui.embedCompactCollapsed = new Set())).has(_eck);
+                  return `<div class="compact-card${_ecol ? ' compact-folded' : ''}" data-bi="${bi}"><button type="button" class="compact-head" data-action="toggle-embed-compact" data-id="${e(_eck)}" aria-expanded="${_ecol ? 'false' : 'true'}" title="${_ecol ? '展开摘要' : '折叠摘要'}"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">${e(_chead)}</span><span class="think-chevron">${i('chevron', '', 12)}</span></button>${_ecol ? '' : `<div class="compact-body md-body">${CS.markdown(_cc.split('\n').slice(1).join('\n'))}</div>`}</div>`;
                 }
                 if (b.type === 'ask') return renderAsk(b, bi);
                 if (b.type === 'sysnote') {
@@ -11420,6 +11430,13 @@ V.ctxRing = () => {
           if (t2) t2.classList.remove('ph-hold');
         }, 2050);
       }
+    },
+    'toggle-embed-compact': (id, el) => {
+      // 嵌入摘要卡折叠: 键 = 会话id|mi|bi(由 ekey 数据传递)
+      if (!CS.ui.embedCompactCollapsed) CS.ui.embedCompactCollapsed = new Set();
+      if (CS.ui.embedCompactCollapsed.has(id)) CS.ui.embedCompactCollapsed.delete(id);
+      else CS.ui.embedCompactCollapsed.add(id);
+      CS.render();
     },
     'jump-compact': () => {
       // 压缩宣告 chip → 跳到最近的摘要卡(末次压缩的卡在卡序列尾部)
