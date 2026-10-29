@@ -1703,6 +1703,78 @@ def run_ask(questions=None, _notify=None):
 
 setattr(run_ask, "__ask_tool__", True)  # 标记 ask 工具, 供 agent 侧识别
 
+# present: 模型在对话中向用户主动展示文件(图片/3D/音视频/PDF/文本等)。
+# 事件经 _notify 流向前端(与 ask 同机制), 展示为时间线上的独立卡片;
+# typ 字段为将来的非文件形态(url/结构化卡片)预留。
+_PRESENT_CLASSES = {
+    "image": "png jpg jpeg gif webp svg bmp tiff ico",
+    "video": "mp4 webm mov mkv avi",
+    "audio": "mp3 wav ogg flac m4a aac",
+    "3d": "glb gltf fbx obj stl",
+    "pdf": "pdf",
+    "html": "html htm",
+    "archive": "zip tar gz 7z rar",
+}
+
+
+def _present_klass(ext: str) -> str:
+    ext = (ext or "").lower().lstrip(".")
+    for k, exts in _PRESENT_CLASSES.items():
+        if ext in exts.split():
+            return k
+    text_like = (
+        "md txt json csv tsv yml yaml toml ini log diff patch".split()
+        + "py js ts jsx tsx sh bash c cpp h hpp java go rs rb php r css scss xml sql ipynb".split()
+    )
+    return "text" if ext in text_like else "other"
+
+
+def run_present(path, title="", note="", _notify=None):
+    """把项目内文件以富媒介卡片呈给用户; 文件本体由前端按需加载。"""
+    p = str(path or "").strip()
+    if not p:
+        return "Error: path is required"
+    root = get_session_workdir()
+    if os.path.isabs(p):
+        # 模型常给绝对路径: 在项目根内就投影成相对路径, 之外的再报错
+        abs_full = Path(os.path.realpath(p))
+        try:
+            if abs_full.is_relative_to(root):
+                p = os.path.relpath(abs_full, root)
+            else:
+                return (
+                    "Error: path must be inside the project directory"
+                    f" ({root}); pass a relative path."
+                )
+        except (OSError, ValueError):
+            return "Error: invalid path"
+    full = safe_path(p)
+    if not os.path.isfile(full):
+        return f"Error: file not found: {p}"
+    size = full.stat().st_size
+    ext = full.suffix.lstrip(".").lower()
+    ev = {
+        "kind": "present",
+        "typ": "file",
+        "path": p,
+        "name": full.name,
+        "ext": ext,
+        "klass": _present_klass(ext),
+        "size": size,
+        "title": str(title or "")[:200],
+        "note": str(note or "")[:500],
+    }
+    if _notify is not None:
+        try:
+            _notify(ev)
+        except Exception as _e:
+            with open("/tmp/present-trace.log", "a") as _f2:
+                _f2.write("emit-failed: " + repr(_e)[:200] + chr(10))
+    return f"Presented {full.name} to the user."
+
+
+setattr(run_present, "__notify_tool__", True)  # 需要事件通道的工具(与 ask 同款)
+
 TOOL_HANDLERS = {
     "bash": lambda **kw: run_bash(kw.get("command", ""), kw.get("timeout")),
     "memory_save": lambda **kw: _harness_memory_save(
@@ -1739,6 +1811,7 @@ TOOL_HANDLERS = {
     "edit": lambda **kw: run_edit(
         kw.get("path", ""), kw.get("old_text", ""), kw.get("new_text", "")
     ),
+    "present": run_present,  # 直接引用: 事件通道参数 _notify 需要透传(与 run_ask 同款)
     "load_skill": lambda **kw: skill_loader.get_content(kw.get("name", "")),
     "arxiv_search": lambda **kw: arxiv_search(
         kw.get("query", ""), kw.get("max_results", 5)

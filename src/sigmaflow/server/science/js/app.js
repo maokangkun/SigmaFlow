@@ -450,6 +450,8 @@
                     if (b.t === 'tool') return { type: 'tool', name: b.n || '工具', args: b.a && typeof b.a === 'object' ? b.a : {}, result: b.r || '', isError: !!b.e };
                     if (b.t === 'ask') return { type: 'ask', id: b.id, questions: Array.isArray(b.qs) ? b.qs : [], answered: !!b.ok, result: b.r || '', answers: Array.isArray(b.ans) ? b.ans : null, stale: !b.ok };
                     if (b.t === 'text') return { type: 'text', text: b.x || '' };
+                    if (b.t === 'deliverables') return { type: 'deliverables', files: Array.isArray(b.files) ? b.files : [] };
+                    if (b.t === 'present') return { type: 'present', typ: b.typ || 'file', path: b.path, name: b.name, ext: b.ext, klass: b.klass, size: b.size, title: b.title, note: b.note, pid: b.pid || '' };
                     return null;
                   }).filter(Boolean);
                 }
@@ -849,6 +851,8 @@
         else if (b.type === 'tool') out.push({ t: 'tool', n: b.name || '工具', a: b.args && typeof b.args === 'object' ? b.args : {}, r: b.result == null ? '' : String(b.result), ...(b.isError ? { e: true } : {}) });
         else if (b.type === 'ask') out.push({ t: 'ask', id: b.id, qs: Array.isArray(b.questions) ? b.questions : [], ok: !!b.answered, r: b.result || '', ans: Array.isArray(b.answers) ? b.answers : null });
         else if (b.type === 'text') out.push({ t: 'text', x: b.text || '' });
+        else if (b.type === 'deliverables') out.push({ t: 'deliverables', files: b.files || [] });
+        else if (b.type === 'present') out.push({ t: 'present', typ: b.typ || 'file', path: b.path, name: b.name, ext: b.ext, klass: b.klass, size: b.size, title: b.title, note: b.note, pid: b.pid || '' });
       });
       return out;
     };
@@ -1025,6 +1029,11 @@
         if (t.files.length) reply.blocks.push({ type: 'deliverables', files: t.files });
         return;
       }
+      // present: 模型主动呈现的富媒介文件卡片(typ 字段为将来的非文件形态预留)
+      if (t.kind === 'present') {
+        reply.blocks.push({ type: 'present', typ: t.typ || 'file', path: t.path, name: t.name, ext: t.ext, klass: t.klass, size: t.size, title: t.title, note: t.note, pid: run?.projectId || CS.state.projectId, at: Date.now() });
+        return;
+      }
       // 每次工具调用独立成块, 不再合并进之前的工具列表
       if (t.kind === 'call') {
         // ask 的通用工具卡跳过: 问题卡片由专门的 ask 事件负责
@@ -1172,7 +1181,7 @@
       }
     }
     finishTimer();
-    reply.blocks = reply.blocks.filter(b => b.type === 'tool' || b.type === 'ask' || b.type === 'deliverables' || !!b.text);  // 丢弃中途产生的空段
+    reply.blocks = reply.blocks.filter(b => b.type === 'tool' || b.type === 'ask' || b.type === 'deliverables' || b.type === 'present' || !!b.text);  // 丢弃中途产生的空段
     CS.save(); CS.render();
     if (!CS.ui.followLock && CS.state.settings.autoScroll !== false) setTimeout(scrollToLatest, 20);  // 用户暂停跟随或关闭自动滚动时不拽到底部
     syncConversation(run);
@@ -1256,6 +1265,17 @@
     if (modal.type === 'fs-preview') {
       title = modal.name || '文件预览'; wide = true;
       const kind = modal.kind || 'text';
+      const pk = modal.presentKlass;
+      if (modal.presenting && pk === 'audio' && modal.dataUrl) {
+        body = `<div class="modal-pad" style="text-align:center"><div class="row-between mb-20"><span class="small muted mono">${e(modal.path || '')}</span><span class="small muted">${CS.formatBytes(modal.size)}</span></div><audio controls src="${modal.dataUrl}" style="width:100%"></audio></div>`;
+      } else if (modal.presenting && pk === 'video' && modal.dataUrl) {
+        body = `<div class="modal-pad"><div class="row-between mb-20"><span class="small muted mono">${e(modal.path || '')}</span><span class="small muted">${CS.formatBytes(modal.size)}</span></div><video controls src="${modal.dataUrl}" style="width:100%;max-height:62vh;border-radius:8px;background:#111"></video></div>`;
+      } else if (modal.presenting && pk === 'html' && modal.dataUrl) {
+        body = `<div class="modal-pad"><div class="row-between mb-20"><span class="small muted mono">${e(modal.path || '')}</span><span class="small muted">${CS.formatBytes(modal.size)}</span></div><iframe src="${modal.dataUrl}" sandbox="allow-scripts" style="width:100%;height:62vh;border:1px solid #d9dde5;border-radius:8px;background:#fff"></iframe></div>`;
+      } else if (modal.presenting && pk === '3d' && modal.dataUrl) {
+        body = `<div class="modal-pad"><div class="row-between mb-20"><span class="small muted mono">${e(modal.path || '')}</span><span class="small muted">${CS.formatBytes(modal.size)}</span></div><div id="present-3d-stage" class="present-3d-stage"></div></div>`;
+        setTimeout(() => { try { CS.mountPresent3D('present-3d-stage', modal.dataUrl); } catch {} }, 40);
+      } else {
       const metaBar = `<div class="row-between mb-20"><span class="small muted mono">${e(modal.path || '')}</span><span class="small muted">${kind !== 'text' && kind !== 'binary' ? e(String(kind).toUpperCase() + ' · ') : ''}${CS.formatBytes(modal.size)}</span></div>`;
       if (kind === 'pdf' && modal.dataUrl) {
         body = `<div class="modal-pad">${metaBar}<iframe src="${modal.dataUrl}" title="${e(modal.name || 'pdf')}" style="width:100%;height:66vh;border:0;border-radius:8px;background:#fff"></iframe>${modal.note ? `<p class="small muted mt-8">${e(modal.note)}</p>` : ''}</div>`;
@@ -1276,6 +1296,7 @@
         body = `<div class="modal-pad"><p class="small muted">二进制文件（${CS.formatBytes(modal.size)}），不支持预览。${modal.note ? e(modal.note) : ''}</p></div>`;
       } else {
         body = `<div class="modal-pad">${metaBar}<pre style="max-height:62vh;overflow:auto;margin:0">${e(modal.content || '')}</pre>${modal.truncated ? '<p class="small muted mt-12">内容过大，仅显示前 512 KB。</p>' : ''}</div>`;
+      }
       }
     } else if (modal.type === 'feedback') {
       // 消息反馈弹窗: 点赞/点踩共用, 类别随 rating 切换(dsh message-feedback 思路)
@@ -1532,6 +1553,12 @@
     'fs-upload': () => { document.getElementById('fs-upload-input')?.click(); },
     'fs-refresh': () => { _fsRefreshAll(); CS.render(); },
     // ---- 文件浏览器右键菜单: 动作全部经 POST /fs/op 白名单(不开放任意 shell) ----
+    'open-present': (id, el) => {
+      // present 卡片点击: entry 的分类信息由渲染层带上, 预览器按 klass 分派
+      const d = el ? el.dataset : null;
+      if (!d || !d.path) return;
+      CS.agent.presentPreview({ pid: d.bpid || CS.state.projectId, path: d.path, klass: d.klass, name: d.name, title: d.title, size: Number(d.size) || 0 });
+    },
     'fs-menu-copy-path': (id, el) => {
       const path = el?.dataset?.path || '';
       CS.ui.fsCtx = null; CS.render();
@@ -2850,6 +2877,67 @@
       }
       CS.emit('render');
     }
+  };
+  // present 的 3D 预览: cell3d.min.js 组件包(THREE/GLTFLoader/DRACO/OrbitControls)
+  // 裸搭场景; modal 关闭时整体释放
+  CS.present3dDispose = () => {
+    const v = CS._presentViewer; if (!v) return;
+    try { cancelAnimationFrame(v.raf); } catch {}
+    try { v.renderer.dispose(); v.renderer.forceContextLoss && v.renderer.forceContextLoss(); } catch {}
+    CS._presentViewer = null;
+  };
+  CS.mountPresent3D = (stageId, url) => {
+    CS.present3dDispose();
+    const CV = window.CellViewer;
+    const stage = document.getElementById(stageId);
+    if (!stage || !CV) { if (stage) stage.innerHTML = '<p class="small muted" style="padding:20px">3D 预览不可用。</p>'; return; }
+    const w = stage.clientWidth || 640, h = stage.clientHeight || 480;
+    const renderer = new CV.THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    renderer.setSize(w, h);
+    renderer.toneMapping = CV.THREE.ACESFilmicToneMapping;
+    stage.appendChild(renderer.domElement);
+    const scene = new CV.THREE.Scene();
+    const camera = new CV.THREE.PerspectiveCamera(45, w / h, 0.01, 2000);
+    const pmrem = new CV.THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new CV.RoomEnvironment(), 0.04).texture;
+    const key = new CV.THREE.DirectionalLight(0xffffff, 2.0); key.position.set(3, 5, 2); scene.add(key);
+    const rim = new CV.THREE.DirectionalLight(0xbfd4ff, 0.7); rim.position.set(-4, 2, -3); scene.add(rim);
+    const controls = new CV.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    const v = { renderer, raf: 0 };
+    CS._presentViewer = v;
+    controls.addEventListener('change', () => { v.needsRender = true; });
+    const render = () => { v.raf = requestAnimationFrame(render); if (controls.update()) v.needsRender = true; renderer.render(scene, camera); };
+    render();
+    try {
+      const draco = new CV.DRACOLoader(); draco.setDecoderPath('vendor/draco/');
+      const loader = new CV.GLTFLoader(); loader.setDRACOLoader(draco);
+      loader.load(url, gltf => {
+        scene.add(gltf.scene);
+        const box = new CV.THREE.Box3().setFromObject(gltf.scene);
+        const size = box.getSize(new CV.THREE.Vector3()); const center = box.getCenter(new CV.THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z) || 1;
+        camera.position.set(center.x + maxDim * 0.9, center.y + maxDim * 0.7, center.z + maxDim * 1.2);
+        camera.lookAt(center);
+        controls.target.copy(center);
+        v.needsRender = true;
+      }, undefined, () => { stage.innerHTML = '<p class="small muted" style="padding:20px">模型加载失败。</p>'; });
+    } catch {}
+  };
+  const _origClose = CS.closeModal;
+  CS.closeModal = function() {
+    if (CS.ui.modal && CS.ui.modal.type === 'fs-preview') CS.present3dDispose();
+    return _origClose();
+  };
+
+  // present 卡片预览: 与 fs-preview 共用后端(/fs/file), 渲染按 klass 分派
+  CS.agent.presentPreview = async entry => {
+    if (!entry.pid) { CS.toast('该文件不在项目目录内，无法预览。', 'error'); return; }
+    try {
+      const data = await CS.api.request('/fs/file?projectId=' + encodeURIComponent(entry.pid) + '&path=' + encodeURIComponent(entry.path), { method: 'GET' });
+      CS.showModal('fs-preview', { name: entry.title || entry.name, path: entry.path, ...data, presentKlass: entry.klass, presenting: true });
+    } catch (error) { CS.toast('无法读取该文件：' + CS.api.friendlyError(error), 'error'); }
   };
   CS.agent.previewFsFile = async path => {
     const st = CS.ui.fs; if (!st) return;

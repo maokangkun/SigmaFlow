@@ -647,6 +647,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .compact-card.msg-flash{animation:msg-flash 1.8s ease-out}
 .run-track .tr-user{background:var(--tr-user)}
 .run-track .tr-think{background:var(--tr-think)}
+.run-track .tr-present{background:var(--tr-present)}
 .run-track .tr-tool{background:var(--tr-tool)}
 .run-track .tr-reply{background:var(--tr-reply)}
 .run-track .tr-system{background:var(--tr-system)}
@@ -655,9 +656,9 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 @keyframes tr-pulse{0%,100%{opacity:.55;transform:scale(.82)}50%{opacity:1;transform:scale(1.06)}}
 .run-track .tr-live{animation:tr-pulse 1.15s ease-in-out infinite}
 /* 轨迹配色方案: 马卡龙(默认柔和粉彩) / 经典 / 素雅单色, 设置页可切换 */
-:root{--tr-user:#35b26a;--tr-think:#3d5fc4;--tr-tool:#f5a623;--tr-reply:#8f4fd6;--tr-system:#9aa1ab;--tr-error:#e03b3b}
-:root[data-trackpalette="classic"]{--tr-user:#3aa463;--tr-think:var(--blue);--tr-tool:var(--amber);--tr-reply:#d1568f;--tr-system:#6e7480;--tr-error:#e03b3b}
-:root[data-trackpalette="mono"]{--tr-user:#5c6672;--tr-think:#8a93a3;--tr-tool:#a9b1bd;--tr-reply:#cdd3dc;--tr-system:#eef1f5;--tr-error:#b8452f}
+:root{--tr-user:#35b26a;--tr-think:#3d5fc4;--tr-tool:#f5a623;--tr-reply:#8f4fd6;--tr-system:#9aa1ab;--tr-error:#e03b3b;--tr-present:#12a5b0}
+:root[data-trackpalette="classic"]{--tr-user:#3aa463;--tr-think:var(--blue);--tr-tool:var(--amber);--tr-reply:#d1568f;--tr-system:#6e7480;--tr-error:#e03b3b;--tr-present:#1f9bb4}
+:root[data-trackpalette="mono"]{--tr-user:#5c6672;--tr-think:#8a93a3;--tr-tool:#a9b1bd;--tr-reply:#cdd3dc;--tr-system:#eef1f5;--tr-error:#b8452f;--tr-present:#9fb6bd}
 @media(max-width:800px){.run-track{max-width:340px}}
 /* 超长会话截断提示: 左缘 16px 渐隐, 感知还有更早的消息被折叠(宽窄屏同样生效) */
 .run-track.tr-trunc{-webkit-mask-image:linear-gradient(to right,transparent 0,#000 48px);mask-image:linear-gradient(to right,transparent 0,#000 48px)}
@@ -801,3 +802,14 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 @media(max-width:940px){.cell-layout{grid-template-columns:1fr;gap:14px}.cell-stage{height:min(64vh,560px);min-height:340px;flex:none}.cell-switch-img{aspect-ratio:16/9}}
 /* 文件浏览器右键菜单: 光标定位浮层, 条目复用 model-menu-item 样式 */
 .fs-ctx-menu{position:fixed;z-index:60;min-width:172px;display:flex;flex-direction:column;padding:5px;border-radius:10px;background:#fff;border:1px solid #d9dde5;box-shadow:0 12px 34px rgba(20,28,45,.16)}
+
+/* present 富媒介卡片: 模型在对话中主动呈现的文件 */
+.present-card{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #d9dde5;border-radius:10px;background:linear-gradient(135deg,#f4f7fb,#eef3f9);cursor:pointer;margin:8px 0}
+.present-card:hover{border-color:var(--accent);box-shadow:0 3px 14px rgba(20,28,45,.08)}
+.present-ic{flex-shrink:0;width:34px;height:34px;border-radius:8px;background:#fff;border:1px solid #dfe3ea;display:flex;align-items:center;justify-content:center;color:var(--accent)}
+.present-body{flex:1;min-width:0;overflow:hidden}
+.present-name{font-weight:550;color:var(--ink);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.present-sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.present-open{flex-shrink:0;color:var(--faint)}
+.present-3d-stage{width:100%;height:56vh;border-radius:8px;background:#111;position:relative}
+.present-3d-stage canvas{display:block}

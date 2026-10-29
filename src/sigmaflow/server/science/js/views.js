@@ -349,6 +349,7 @@
           const on = live && bi === liveIdx;
           if (b.type === 'think' && (b.text || '').trim()) blocks.push({ k: 'think', txt: b.text, live: on, mi });
           else if (b.type === 'tool') blocks.push({ k: 'tool', txt: (b.name || '工具') + ' ' + (typeof b.result === 'string' ? b.result : ''), live: on, mi });
+          else if (b.type === 'present') blocks.push({ k: 'present', txt: '展示 ' + (b.name || b.path || ''), live: on, mi });
           else if (b.type === 'ask') blocks.push({ k: 'tool', txt: 'ask 提问', live: on, mi });
           else if (b.type === 'text' && (b.text || '').trim()) blocks.push({ k: 'reply', txt: b.text, live: on, mi });
         });
@@ -684,6 +685,13 @@ V.ctxRing = () => {
                   return `<div class="agent-intro md-body"${live ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(b.text)}</div>`;
                 }
                 if (b.type === 'ask') return renderAsk(b, bi);
+                if (b.type === 'present') {
+                  // 模型主动呈现的富媒介文件卡片: 图标按类别, 点击进预览
+                  const k = b.klass || 'other';
+                  const kicon = { image: 'eye', '3d': 'dna', video: 'play', audio: 'message', pdf: 'file', html: 'globe', text: 'file', archive: 'database', other: 'file' }[k] || 'file';
+                  const kb = { image: '图片', '3d': '3D 模型', video: '视频', audio: '音频', pdf: 'PDF', html: 'HTML', text: '文本', archive: '压缩包', other: '文件' }[k] || '文件';
+                  return `<div class="present-card" data-action="open-present" data-path="${e(b.path)}" data-klass="${e(b.klass || 'other')}" data-name="${e(b.name || '')}" data-title="${e(b.title || '')}" data-size="${e(String(b.size || 0))}" data-note="${e(b.note || '')}" data-bpid="${e(b.pid || '')}" role="button" tabindex="0" title="点击预览"><div class="present-ic">${i(kicon, '', 17)}</div><div class="present-body"><div class="present-name">${e(b.title || b.name || b.path)}</div><div class="present-sub small muted">${kb}${b.size ? ' · ' + CS.formatBytes(b.size) : ''}${b.note ? ' · ' + e(b.note) : ''}</div></div><span class="present-open small muted">查看</span></div>`;
+                }
                 if (b.type === 'deliverables') {
                   // 本轮修改文件行(dsh deliverables 思路): 来源只信 edit/write 参数
                   const files = Array.isArray(b.files) ? b.files : [];

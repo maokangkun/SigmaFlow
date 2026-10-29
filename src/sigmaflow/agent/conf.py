@@ -161,6 +161,34 @@ CHILD_TOOLS = [
         },
     },
     {
+        "name": "present",
+        "description": (
+            "Present a file to the user as a rich media card in the"
+            " conversation (images, 3D models, audio/video, PDF, HTML,"
+            " code/text). Use it whenever a produced or relevant artifact"
+            " deserves visual attention - e.g. after generating a plot,"
+            " rendering a model, or when a report file is ready."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "File path inside the project directory.",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Optional short caption shown on the card.",
+                },
+                "note": {
+                    "type": "string",
+                    "description": "Optional one-line explanation for the user.",
+                },
+            },
+            "required": ["path"],
+        },
+    },
+    {
         "name": "grep",
         "description": "Search text with an installed grep-like tool.",
         "input_schema": {

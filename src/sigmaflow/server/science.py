@@ -3734,6 +3734,40 @@ class ScienceProjectStore:
                                     ),
                                 }
                             )
+                        elif _t == "deliverables":
+                            _files = b.get("files")
+                            if isinstance(_files, list) and _files:
+                                saved_blocks.append(
+                                    {
+                                        "t": "deliverables",
+                                        "files": [
+                                            {
+                                                "path": _clip(
+                                                    str(d.get("path", "")), 500
+                                                ),
+                                                "op": _clip(str(d.get("op", "")), 16),
+                                            }
+                                            for d in _files[:40]
+                                            if isinstance(d, dict)
+                                        ],
+                                    }
+                                )
+                        elif _t == "present":
+                            # 富媒介展示卡: 字段原样透传(尺寸/分类/项目归属都轻量)
+                            saved_blocks.append(
+                                {
+                                    "t": "present",
+                                    "typ": _clip(str(b.get("typ", "file")), 16),
+                                    "path": _clip(str(b.get("path", "")), 500),
+                                    "name": _clip(str(b.get("name", "")), 300),
+                                    "ext": _clip(str(b.get("ext", "")), 32),
+                                    "klass": _clip(str(b.get("klass", "other")), 16),
+                                    "size": int(b.get("size") or 0),
+                                    "title": _clip(str(b.get("title", "")), 200),
+                                    "note": _clip(str(b.get("note", "")), 500),
+                                    "pid": _clip(str(b.get("pid", "")), 64),
+                                }
+                            )
                     if saved_blocks:
                         item["blocks"] = saved_blocks
                 deliverables = msg.get("deliverables")

@@ -1182,6 +1182,11 @@ class Agent:
                         # ask 由用户回答节奏决定, 不设外层超时
                         inp.pop("_notify", None)
                         return str(handler(_notify=self.on_tool, **inp))
+                    if getattr(handler, "__notify_tool__", False):
+                        # 需要事件通道的工具(present): 弹答案走 on_tool,
+                        # 与 ask 同一注入机制但保留外层超时
+                        inp.pop("_notify", None)
+                        return str(handler(_notify=self.on_tool, **inp))
                     timeout = TOOL_TIMEOUTS.get(func, TOOL_TIMEOUT_DEFAULT)
                     # bash 的模型自报等待: 外层超时退让(内层 + 30s 余量),
                     # 保证先触发的是"收养为后台 job"语义而不是外层硬截
