@@ -353,6 +353,7 @@
           else if (b.type === 'tool') blocks.push({ k: 'tool', txt: (b.name || '工具') + ' ' + (typeof b.result === 'string' ? b.result : ''), live: on, mi, bi });
           else if (b.type === 'present') blocks.push({ k: 'present', txt: '展示 ' + (b.name || b.path || ''), live: on, mi, bi });
           else if (b.type === 'sysnote' && !/Conversation history was just compacted/.test(b.text || '')) blocks.push({ k: 'system', txt: '系统注入', live: on, mi, bi });
+          else if (b.type === 'compact') blocks.push({ k: 'system', txt: String(b.text || '').trim() ? '上下文已压缩' : '正在压缩会话', live: on, mi, bi });
           else if (b.type === 'ask') blocks.push({ k: 'tool', txt: 'ask 提问', live: on, mi, bi });
           else if (b.type === 'text' && (b.text || '').trim()) blocks.push({ k: 'reply', txt: b.text, live: on, mi, bi });
         });
@@ -651,6 +652,7 @@ V.ctxRing = () => {
         return `<div class="msg-block agent-block compact-reply-block" data-mi="${idxOf}"><div class="agent-message"><div class="agent-avatar${pending ? ' avatar-pulsing' : ''}">${i('dna', '', 21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span> <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${status}${streamBody}${pending ? '' : V_COMPACT(m, idxOf)}${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.tokens ? `<span class="message-meta">${CS.num(m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy', '', 13)}</span></span></div>`}</div></div></div>`;
       };
       const bubble = m => {
+        if (m.hidden) return '';  // 归位后的独立卡消息: 摘要已嵌入相邻回复的块时间线
         // idxOf 上提到分支前: 压缩卡(meta 行/折叠键)与普通消息操作都按消息序号定位
         const idxOf = run.messages.indexOf(m);
         if (m.role === 'assistant' && isCompactMsg(m)) return V_COMPACT_REPLY(m, idxOf);
@@ -697,6 +699,17 @@ V.ctxRing = () => {
                     return `${pm[1].trim() ? `<div class="agent-intro md-body">${CS.markdown(pm[1])}</div>` : ''}<div class="plan-card" data-bi="${bi}"><div class="plan-head">${i('workflow', '', 15)}<span>计划方案</span><span class="plan-tag">等待你的确认</span></div><div class="plan-body md-body">${CS.markdown(pm[2])}</div>${canApprove ? `<div class="plan-actions"><button type="button" class="btn primary" data-action="approve-plan" data-id="${idxOf}">批准并执行</button><button type="button" class="btn flat" data-action="refine-plan">继续讨论</button></div>` : '<div class="small muted plan-foot-hint">该计划已生成，可继续对话调整或直接下指令。</div>'}</div>${pm[3].trim() ? `<div class="agent-intro md-body">${CS.markdown(pm[3])}</div>` : ''}`;
                   }
                   return `<div class="agent-intro md-body" data-bi="${bi}"${live ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(b.text)}</div>`;
+                }
+                if (b.type === 'compact') {
+                  // 压缩块: 空文本=等待态(agent 自动压缩中), 有文本=摘要卡;
+                  // 嵌在回复块时间线里, 显示位置与压缩实际发生的时刻一致
+                  if (!String(b.text || '').trim()) {
+                    if (!live) return '';
+                    return `<div class="compact-card" data-bi="${bi}"><div class="compact-head"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">正在压缩会话</span><span class="compact-dots"><span>.</span><span>.</span><span>.</span></span></div></div>`;
+                  }
+                  const _cc = String(b.text || '');
+                  const _chead = (_cc.split('\n')[0] || '').slice(0, 60);
+                  return `<div class="compact-card" data-bi="${bi}" data-action="toggle-embed-compact" title="点击折叠/展开摘要"><div class="compact-head"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">${e(_chead)}</span></div><div class="compact-body md-body">${CS.markdown(_cc.split('\n').slice(1).join('\n'))}</div></div>`;
                 }
                 if (b.type === 'ask') return renderAsk(b, bi);
                 if (b.type === 'sysnote') {

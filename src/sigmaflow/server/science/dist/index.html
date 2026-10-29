@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="4d98fd6c">
+<meta name="build" content="484b081c">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -8784,6 +8784,7 @@ CS.audio = (function () {
           else if (b.type === 'tool') blocks.push({ k: 'tool', txt: (b.name || '工具') + ' ' + (typeof b.result === 'string' ? b.result : ''), live: on, mi, bi });
           else if (b.type === 'present') blocks.push({ k: 'present', txt: '展示 ' + (b.name || b.path || ''), live: on, mi, bi });
           else if (b.type === 'sysnote' && !/Conversation history was just compacted/.test(b.text || '')) blocks.push({ k: 'system', txt: '系统注入', live: on, mi, bi });
+          else if (b.type === 'compact') blocks.push({ k: 'system', txt: String(b.text || '').trim() ? '上下文已压缩' : '正在压缩会话', live: on, mi, bi });
           else if (b.type === 'ask') blocks.push({ k: 'tool', txt: 'ask 提问', live: on, mi, bi });
           else if (b.type === 'text' && (b.text || '').trim()) blocks.push({ k: 'reply', txt: b.text, live: on, mi, bi });
         });
@@ -9082,6 +9083,7 @@ V.ctxRing = () => {
         return `<div class="msg-block agent-block compact-reply-block" data-mi="${idxOf}"><div class="agent-message"><div class="agent-avatar${pending ? ' avatar-pulsing' : ''}">${i('dna', '', 21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span> <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${status}${streamBody}${pending ? '' : V_COMPACT(m, idxOf)}${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.tokens ? `<span class="message-meta">${CS.num(m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy', '', 13)}</span></span></div>`}</div></div></div>`;
       };
       const bubble = m => {
+        if (m.hidden) return '';  // 归位后的独立卡消息: 摘要已嵌入相邻回复的块时间线
         // idxOf 上提到分支前: 压缩卡(meta 行/折叠键)与普通消息操作都按消息序号定位
         const idxOf = run.messages.indexOf(m);
         if (m.role === 'assistant' && isCompactMsg(m)) return V_COMPACT_REPLY(m, idxOf);
@@ -9128,6 +9130,17 @@ V.ctxRing = () => {
                     return `${pm[1].trim() ? `<div class="agent-intro md-body">${CS.markdown(pm[1])}</div>` : ''}<div class="plan-card" data-bi="${bi}"><div class="plan-head">${i('workflow', '', 15)}<span>计划方案</span><span class="plan-tag">等待你的确认</span></div><div class="plan-body md-body">${CS.markdown(pm[2])}</div>${canApprove ? `<div class="plan-actions"><button type="button" class="btn primary" data-action="approve-plan" data-id="${idxOf}">批准并执行</button><button type="button" class="btn flat" data-action="refine-plan">继续讨论</button></div>` : '<div class="small muted plan-foot-hint">该计划已生成，可继续对话调整或直接下指令。</div>'}</div>${pm[3].trim() ? `<div class="agent-intro md-body">${CS.markdown(pm[3])}</div>` : ''}`;
                   }
                   return `<div class="agent-intro md-body" data-bi="${bi}"${live ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(b.text)}</div>`;
+                }
+                if (b.type === 'compact') {
+                  // 压缩块: 空文本=等待态(agent 自动压缩中), 有文本=摘要卡;
+                  // 嵌在回复块时间线里, 显示位置与压缩实际发生的时刻一致
+                  if (!String(b.text || '').trim()) {
+                    if (!live) return '';
+                    return `<div class="compact-card" data-bi="${bi}"><div class="compact-head"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">正在压缩会话</span><span class="compact-dots"><span>.</span><span>.</span><span>.</span></span></div></div>`;
+                  }
+                  const _cc = String(b.text || '');
+                  const _chead = (_cc.split('\n')[0] || '').slice(0, 60);
+                  return `<div class="compact-card" data-bi="${bi}" data-action="toggle-embed-compact" title="点击折叠/展开摘要"><div class="compact-head"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">${e(_chead)}</span></div><div class="compact-body md-body">${CS.markdown(_cc.split('\n').slice(1).join('\n'))}</div></div>`;
                 }
                 if (b.type === 'ask') return renderAsk(b, bi);
                 if (b.type === 'sysnote') {
@@ -9887,6 +9900,7 @@ V.ctxRing = () => {
             if (b.t === 'tool') return { type: 'tool', name: b.n || '工具', args: b.a && typeof b.a === 'object' ? b.a : {}, result: b.r || '', isError: !!b.e };
             if (b.t === 'ask') return { type: 'ask', id: b.id, questions: Array.isArray(b.qs) ? b.qs : [], answered: !!b.ok, result: b.r || '', answers: Array.isArray(b.ans) ? b.ans : null, stale: !b.ok };
             if (b.t === 'text') return { type: 'text', text: b.x || '' };
+            if (b.t === 'compact') return { type: 'compact', text: b.x || '' };
             if (b.t === 'deliverables') return { type: 'deliverables', files: Array.isArray(b.files) ? b.files : [] };
             if (b.t === 'present') return { type: 'present', typ: b.typ || 'file', path: b.path, name: b.name, ext: b.ext, klass: b.klass, size: b.size, title: b.title, note: b.note, pid: b.pid || '' };
             if (b.t === 'sysnote') return { type: 'sysnote', text: b.x || '' };
@@ -9941,6 +9955,34 @@ V.ctxRing = () => {
         offset += rows.length;
         if (!hadLocal) CS.render();
       }
+      // 归位独立压缩卡(旧版存档形态): 压缩当时插在 reply 前面的独立消息,
+      // 按卡的实际发生时点嵌入到相邻回复的块时间线里(compacted 宣告块的位置
+      // 就是锚点), 之后独立消息仅作为契约载体隐藏不渲染
+      const relocateCompactCards = msgs => {
+        let seq = 0;  // 第 N 张卡 ↔ 第 N 条压缩宣告
+        const cards = msgs.filter(m => !m.hidden && m.role !== 'user' && String(m.content || '').startsWith('[Conversation compressed'));
+        cards.forEach(card => {
+          const ci = msgs.indexOf(card);
+          // 卡是 splice 到含宣告的流式回复之前的, 宣告块在其后的消息里 — 向后找
+          for (let di = ci + 1; di <= ci + 3; di++) {
+            const cand = msgs[di];
+            if (!cand || cand.role !== 'assistant' || !Array.isArray(cand.blocks)) continue;
+            const marks = cand.blocks.map((b2, bi) => (b2 && b2.type === 'sysnote' && /Conversation history was just compacted/.test(String(b2.text || '')) ? bi : -1)).filter(x => x >= 0);
+            // 第 N 张卡 ↔ 第 N 条压缩宣告; 只查本卡对应宣告位置是否已嵌, 不扫别处
+            if (marks.length > seq) {
+              const bi = marks[seq];
+              const prev = bi > 0 ? cand.blocks[bi - 1] : null;
+              if (!(prev && prev.type === 'compact')) {
+                cand.blocks.splice(bi, 0, { type: 'compact', text: String(card.content || '') });
+              }
+              card.hidden = true;
+              seq++;
+              break;
+            }
+          }
+        });
+      };
+      relocateCompactCards(run.messages);
       if (hadLocal) {
         // 同 id 旧 run 整体替换为服务端全量版; 用户消息自带的引用上下文
         // (refContext)只存在本地, 按消息序号原样保留
@@ -10492,41 +10534,36 @@ V.ctxRing = () => {
       else reply.blocks.push({ type: 'text', text: delta, at: Date.now() });
     };
     const pushTool = (t, reqId) => {
-      // 压缩两阶段: 开始(compactStart)插"压缩会话"等待卡; 完成(compact)原地
-      // 变摘要卡 — 没有单独的宣告 chip, 全流程由这张卡承载
+      // 压缩两阶段走块内嵌: 开始往当前流式 reply 的块时间线推空 compact 块
+      // (渲染成"正在压缩会话"等待卡), 完成时把摘要填进该块 — 卡的位置与
+      // 压缩实际发生的时刻一致, 不再出现插到回复消息前面的错位
       if (t.kind === 'compactStart') {
-        if (run.messages.some(m => m.compactPending)) return;  // 防重: 等待卡已在
-        const wait = { id: 'cmpp-' + Math.random().toString(36).slice(2, 8), role: 'assistant', compactPending: true, blocks: [], content: '', at: new Date().toISOString() };
         const lastMsg = run.messages[run.messages.length - 1];
-        const insertAt = lastMsg && lastMsg.streaming ? run.messages.length - 1 : run.messages.length;
-        run.messages.splice(insertAt, 0, wait);
-        run.messages.forEach(m => { if (m.promptTokens) delete m.promptTokens; });
-        CS.save(); CS.render();
-        return;
-      }
-      if (t.kind === 'compact' && t.text) {
-        // 完成: 优先订到等待卡原地填摘要(agent 卡外壳保持连续); 无等待卡
-        // (事件重放/HTTP 快路径)才单独插卡, 内容去重与旧逻辑一致
-        const waitCard = [...run.messages].reverse().find(m => m.compactPending);
-        if (waitCard) {
-          waitCard.compactPending = false;
-          delete waitCard.streaming;
-          delete waitCard.summaryDelta;
-          waitCard.compact = true;
-          waitCard.content = String(t.text);
-          waitCard.at = new Date().toISOString();
+        if (lastMsg && lastMsg.streaming && Array.isArray(lastMsg.blocks)) {
+          if (lastMsg.blocks.some(b2 => b2 && b2.type === 'compact' && !String(b2.text || '').trim())) return;  // 防重
+          lastMsg.blocks.push({ type: 'compact', text: '', at: Date.now() });
           CS.save(); CS.render();
           return;
         }
-        // 相同摘要卡已存在时不重复插入(防护事件重放与 HTTP/WS 双通路)
-        if (run.messages.some(m => m.compact && m.content === String(t.text))) return;
-        // 自动压缩同样只在尾部追加摘要卡; 界面历史不删除, 上下文由服务端契约裁剪
-        const card = { id: 'cmp-' + Math.random().toString(36).slice(2, 8), role: 'assistant', compact: true, content: String(t.text), at: new Date().toISOString() };
+        return;  // 没有可嵌入的流式回复时静默(等待块由完成事件直接建)
+      }
+      if (t.kind === 'compact' && t.text) {
+        const target = run.messages.find(m => Array.isArray(m.blocks) && m.blocks.some(b2 => b2 && b2.type === 'compact' && !String(b2.text || '').trim()));
+        if (target) {
+          const empty = target.blocks.find(b2 => b2.type === 'compact' && !String(b2.text || '').trim());
+          empty.text = String(t.text);
+          empty.end = Date.now();
+          CS.save(); CS.render();
+          return;
+        }
+        // 无等待块(事件重放/HTTP 快路径): 嵌入当前流式或最后一条回复
         const lastMsg = run.messages[run.messages.length - 1];
-        const insertAt = lastMsg && lastMsg.streaming ? run.messages.length - 1 : run.messages.length;
-        run.messages.splice(insertAt, 0, card);
-        run.messages.forEach(m => { if (m.promptTokens) delete m.promptTokens; });
-        CS.save(); CS.render();
+        const targetMsg = lastMsg && lastMsg.role === 'assistant' && Array.isArray(lastMsg.blocks) ? lastMsg : null;
+        if (targetMsg && !targetMsg.blocks.some(b2 => b2 && b2.type === 'compact' && String(b2.text || '') === String(t.text))) {
+          targetMsg.blocks.push({ type: 'compact', text: String(t.text), at: Date.now() });
+          CS.save(); CS.render();
+          return;
+        }
         return;
       }
       // 产出文件行(dsh deliverables 思路): 后到的事件携带全量清单, 移除旧块重挂尾部

@@ -439,6 +439,7 @@
             if (b.t === 'tool') return { type: 'tool', name: b.n || '工具', args: b.a && typeof b.a === 'object' ? b.a : {}, result: b.r || '', isError: !!b.e };
             if (b.t === 'ask') return { type: 'ask', id: b.id, questions: Array.isArray(b.qs) ? b.qs : [], answered: !!b.ok, result: b.r || '', answers: Array.isArray(b.ans) ? b.ans : null, stale: !b.ok };
             if (b.t === 'text') return { type: 'text', text: b.x || '' };
+            if (b.t === 'compact') return { type: 'compact', text: b.x || '' };
             if (b.t === 'deliverables') return { type: 'deliverables', files: Array.isArray(b.files) ? b.files : [] };
             if (b.t === 'present') return { type: 'present', typ: b.typ || 'file', path: b.path, name: b.name, ext: b.ext, klass: b.klass, size: b.size, title: b.title, note: b.note, pid: b.pid || '' };
             if (b.t === 'sysnote') return { type: 'sysnote', text: b.x || '' };
@@ -493,6 +494,34 @@
         offset += rows.length;
         if (!hadLocal) CS.render();
       }
+      // 归位独立压缩卡(旧版存档形态): 压缩当时插在 reply 前面的独立消息,
+      // 按卡的实际发生时点嵌入到相邻回复的块时间线里(compacted 宣告块的位置
+      // 就是锚点), 之后独立消息仅作为契约载体隐藏不渲染
+      const relocateCompactCards = msgs => {
+        let seq = 0;  // 第 N 张卡 ↔ 第 N 条压缩宣告
+        const cards = msgs.filter(m => !m.hidden && m.role !== 'user' && String(m.content || '').startsWith('[Conversation compressed'));
+        cards.forEach(card => {
+          const ci = msgs.indexOf(card);
+          // 卡是 splice 到含宣告的流式回复之前的, 宣告块在其后的消息里 — 向后找
+          for (let di = ci + 1; di <= ci + 3; di++) {
+            const cand = msgs[di];
+            if (!cand || cand.role !== 'assistant' || !Array.isArray(cand.blocks)) continue;
+            const marks = cand.blocks.map((b2, bi) => (b2 && b2.type === 'sysnote' && /Conversation history was just compacted/.test(String(b2.text || '')) ? bi : -1)).filter(x => x >= 0);
+            // 第 N 张卡 ↔ 第 N 条压缩宣告; 只查本卡对应宣告位置是否已嵌, 不扫别处
+            if (marks.length > seq) {
+              const bi = marks[seq];
+              const prev = bi > 0 ? cand.blocks[bi - 1] : null;
+              if (!(prev && prev.type === 'compact')) {
+                cand.blocks.splice(bi, 0, { type: 'compact', text: String(card.content || '') });
+              }
+              card.hidden = true;
+              seq++;
+              break;
+            }
+          }
+        });
+      };
+      relocateCompactCards(run.messages);
       if (hadLocal) {
         // 同 id 旧 run 整体替换为服务端全量版; 用户消息自带的引用上下文
         // (refContext)只存在本地, 按消息序号原样保留
@@ -1044,41 +1073,36 @@
       else reply.blocks.push({ type: 'text', text: delta, at: Date.now() });
     };
     const pushTool = (t, reqId) => {
-      // 压缩两阶段: 开始(compactStart)插"压缩会话"等待卡; 完成(compact)原地
-      // 变摘要卡 — 没有单独的宣告 chip, 全流程由这张卡承载
+      // 压缩两阶段走块内嵌: 开始往当前流式 reply 的块时间线推空 compact 块
+      // (渲染成"正在压缩会话"等待卡), 完成时把摘要填进该块 — 卡的位置与
+      // 压缩实际发生的时刻一致, 不再出现插到回复消息前面的错位
       if (t.kind === 'compactStart') {
-        if (run.messages.some(m => m.compactPending)) return;  // 防重: 等待卡已在
-        const wait = { id: 'cmpp-' + Math.random().toString(36).slice(2, 8), role: 'assistant', compactPending: true, blocks: [], content: '', at: new Date().toISOString() };
         const lastMsg = run.messages[run.messages.length - 1];
-        const insertAt = lastMsg && lastMsg.streaming ? run.messages.length - 1 : run.messages.length;
-        run.messages.splice(insertAt, 0, wait);
-        run.messages.forEach(m => { if (m.promptTokens) delete m.promptTokens; });
-        CS.save(); CS.render();
-        return;
-      }
-      if (t.kind === 'compact' && t.text) {
-        // 完成: 优先订到等待卡原地填摘要(agent 卡外壳保持连续); 无等待卡
-        // (事件重放/HTTP 快路径)才单独插卡, 内容去重与旧逻辑一致
-        const waitCard = [...run.messages].reverse().find(m => m.compactPending);
-        if (waitCard) {
-          waitCard.compactPending = false;
-          delete waitCard.streaming;
-          delete waitCard.summaryDelta;
-          waitCard.compact = true;
-          waitCard.content = String(t.text);
-          waitCard.at = new Date().toISOString();
+        if (lastMsg && lastMsg.streaming && Array.isArray(lastMsg.blocks)) {
+          if (lastMsg.blocks.some(b2 => b2 && b2.type === 'compact' && !String(b2.text || '').trim())) return;  // 防重
+          lastMsg.blocks.push({ type: 'compact', text: '', at: Date.now() });
           CS.save(); CS.render();
           return;
         }
-        // 相同摘要卡已存在时不重复插入(防护事件重放与 HTTP/WS 双通路)
-        if (run.messages.some(m => m.compact && m.content === String(t.text))) return;
-        // 自动压缩同样只在尾部追加摘要卡; 界面历史不删除, 上下文由服务端契约裁剪
-        const card = { id: 'cmp-' + Math.random().toString(36).slice(2, 8), role: 'assistant', compact: true, content: String(t.text), at: new Date().toISOString() };
+        return;  // 没有可嵌入的流式回复时静默(等待块由完成事件直接建)
+      }
+      if (t.kind === 'compact' && t.text) {
+        const target = run.messages.find(m => Array.isArray(m.blocks) && m.blocks.some(b2 => b2 && b2.type === 'compact' && !String(b2.text || '').trim()));
+        if (target) {
+          const empty = target.blocks.find(b2 => b2.type === 'compact' && !String(b2.text || '').trim());
+          empty.text = String(t.text);
+          empty.end = Date.now();
+          CS.save(); CS.render();
+          return;
+        }
+        // 无等待块(事件重放/HTTP 快路径): 嵌入当前流式或最后一条回复
         const lastMsg = run.messages[run.messages.length - 1];
-        const insertAt = lastMsg && lastMsg.streaming ? run.messages.length - 1 : run.messages.length;
-        run.messages.splice(insertAt, 0, card);
-        run.messages.forEach(m => { if (m.promptTokens) delete m.promptTokens; });
-        CS.save(); CS.render();
+        const targetMsg = lastMsg && lastMsg.role === 'assistant' && Array.isArray(lastMsg.blocks) ? lastMsg : null;
+        if (targetMsg && !targetMsg.blocks.some(b2 => b2 && b2.type === 'compact' && String(b2.text || '') === String(t.text))) {
+          targetMsg.blocks.push({ type: 'compact', text: String(t.text), at: Date.now() });
+          CS.save(); CS.render();
+          return;
+        }
         return;
       }
       // 产出文件行(dsh deliverables 思路): 后到的事件携带全量清单, 移除旧块重挂尾部

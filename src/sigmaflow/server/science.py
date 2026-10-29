@@ -3848,6 +3848,15 @@ class ScienceProjectStore:
                                         ],
                                     }
                                 )
+                        elif _t == "compact":
+                            saved_blocks.append(
+                                {
+                                    "t": "compact",
+                                    "x": _clip(
+                                        str(b.get("x", b.get("text", ""))), 5000
+                                    ),
+                                }
+                            )
                         elif _t == "sysnote":
                             saved_blocks.append(
                                 {
