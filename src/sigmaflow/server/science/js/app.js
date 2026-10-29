@@ -1883,7 +1883,9 @@
       }
     },
     'track-jump': (id, el) => {
-      const mi = parseInt(id, 10);
+      // 格子 id 两态: "mi:bi"(块级钉点) / "mi"(消息级: 用户消息/错误格/旧存档)
+      const colon = id.indexOf(':');
+      const mi = parseInt(colon >= 0 ? id.slice(0, colon) : id, 10);
       if (isNaN(mi)) return;
       const target = document.querySelector('.conversation [data-mi="' + mi + '"]');
       if (!target) { CS.toast('该消息不在当前视图中。', 'error'); return; }
@@ -1891,7 +1893,19 @@
       // 正中部的工具块森林里, 末尾的红色错误行不在视口内。点击红色错误格的
       // 意图是"看哪里出错了", 优先滚到消息内的错误行本身。
       const isErr = !!(el && el.classList && el.classList.contains('tr-error'));
-      const anchor = (isErr && target.querySelector(':scope .think-root.error-root')) || target;
+      // 块级格: 直接滚到消息内对应的块元素; 空块/分段渲染等差异导致锚点缺失时
+      // 回退到整条消息, 保证点击总有正确落点
+      let anchor = null;
+      if (colon >= 0 && !isErr) {
+        const bi = parseInt(id.slice(colon + 1), 10);
+        if (!isNaN(bi)) {
+          const blk = target.querySelector('[data-bi="' + bi + '"]');
+          if (blk) anchor = blk;
+        }
+      }
+      if (!anchor) {
+        anchor = (isErr && target.querySelector(':scope .think-root.error-root')) || target;
+      }
       anchor.scrollIntoView({ behavior: 'smooth', block: 'center' });
       anchor.classList.remove('msg-flash');
       void anchor.offsetWidth;
