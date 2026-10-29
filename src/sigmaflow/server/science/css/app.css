@@ -710,7 +710,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .trace-bar>.trace-seg:first-child{border-radius:4px 0 0 4px}
 .trace-bar>.trace-seg:last-child{border-radius:0 4px 4px 0}
 .trace-bar>.trace-seg:first-child:last-child{border-radius:4px}
-.seg-user{background:var(--tr-user)}.seg-think{background:var(--tr-think)}.seg-tool{background:var(--tr-tool)}.seg-reply{background:var(--tr-reply)}.seg-error{background:var(--tr-error)}.seg-system{background:var(--tr-system)}
+.seg-user{background:var(--tr-user)}.seg-think{background:var(--tr-think)}.seg-tool{background:var(--tr-tool)}.seg-reply{background:var(--tr-reply)}.seg-error{background:var(--tr-error)}.seg-system{background:var(--tr-system)}.seg-compact{background:var(--tr-compact)}
 .trace-detail{padding:2px 14px 13px 49px;border-top:1px dashed var(--line-soft);background:color-mix(in srgb,var(--accent-bg) 45%,transparent)}
 .trace-props{display:flex;flex-wrap:wrap;gap:7px 20px;padding:10px 0 8px}
 .tpair{display:inline-flex;align-items:baseline;gap:7px}
@@ -725,7 +725,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .tb-item.clickable:hover,.tb-item.open{background:color-mix(in srgb,var(--accent-bg) 55%,transparent)}
 .tb-body{display:block;margin:0 0 7px 44px}
 .tb-body pre{margin:0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:color-mix(in srgb,var(--accent-bg) 30%,transparent);font-size:10.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;color:var(--ink)}
-.tb-item .tk-user,.tb-item .tk-reply,.tb-item .tk-think,.tb-item .tk-tool,.tb-item .tk-system,.tb-item .tk-error,.tb-item .tk-sysnote{flex-shrink:0;width:44px;padding:2px 0;text-align:center;font-size:9px;font-weight:570}
+.tb-item .tk-user,.tb-item .tk-reply,.tb-item .tk-think,.tb-item .tk-tool,.tb-item .tk-system,.tb-item .tk-error,.tb-item .tk-sysnote,.tb-item .tk-compact{flex-shrink:0;width:44px;padding:2px 0;text-align:center;font-size:9px;font-weight:570}
 .tb-txt{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* 聊天/trace 主列铺满主区: 解除 .page 与宽屏 media 给出的 max-width, 供 flex width:100% 生效(置于所有 media 之后以确保覆盖) */
@@ -825,6 +825,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .sysnote-tag{flex-shrink:0;display:inline-flex;align-items:center;gap:4px;font-weight:550;color:var(--accent,#5c9cf5)}
 .sysnote-txt{overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;white-space:normal}
 .tk-sysnote{background:color-mix(in srgb,var(--tr-think) 16%,transparent);color:#1d5f8a}
+.tk-compact{background:color-mix(in srgb,var(--tr-compact) 15%,transparent);color:var(--tr-compact)}
 
 /* 压缩宣告 chip 的可点击态: 跳转到摘要卡 */
 .sysnote-chip.jumpable{cursor:pointer;transition:background .12s}

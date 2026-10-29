@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="f1bb1430">
+<meta name="build" content="bf158cb0">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1065,7 +1065,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .trace-bar>.trace-seg:first-child{border-radius:4px 0 0 4px}
 .trace-bar>.trace-seg:last-child{border-radius:0 4px 4px 0}
 .trace-bar>.trace-seg:first-child:last-child{border-radius:4px}
-.seg-user{background:var(--tr-user)}.seg-think{background:var(--tr-think)}.seg-tool{background:var(--tr-tool)}.seg-reply{background:var(--tr-reply)}.seg-error{background:var(--tr-error)}.seg-system{background:var(--tr-system)}
+.seg-user{background:var(--tr-user)}.seg-think{background:var(--tr-think)}.seg-tool{background:var(--tr-tool)}.seg-reply{background:var(--tr-reply)}.seg-error{background:var(--tr-error)}.seg-system{background:var(--tr-system)}.seg-compact{background:var(--tr-compact)}
 .trace-detail{padding:2px 14px 13px 49px;border-top:1px dashed var(--line-soft);background:color-mix(in srgb,var(--accent-bg) 45%,transparent)}
 .trace-props{display:flex;flex-wrap:wrap;gap:7px 20px;padding:10px 0 8px}
 .tpair{display:inline-flex;align-items:baseline;gap:7px}
@@ -1080,7 +1080,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .tb-item.clickable:hover,.tb-item.open{background:color-mix(in srgb,var(--accent-bg) 55%,transparent)}
 .tb-body{display:block;margin:0 0 7px 44px}
 .tb-body pre{margin:0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:color-mix(in srgb,var(--accent-bg) 30%,transparent);font-size:10.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;color:var(--ink)}
-.tb-item .tk-user,.tb-item .tk-reply,.tb-item .tk-think,.tb-item .tk-tool,.tb-item .tk-system,.tb-item .tk-error,.tb-item .tk-sysnote{flex-shrink:0;width:44px;padding:2px 0;text-align:center;font-size:9px;font-weight:570}
+.tb-item .tk-user,.tb-item .tk-reply,.tb-item .tk-think,.tb-item .tk-tool,.tb-item .tk-system,.tb-item .tk-error,.tb-item .tk-sysnote,.tb-item .tk-compact{flex-shrink:0;width:44px;padding:2px 0;text-align:center;font-size:9px;font-weight:570}
 .tb-txt{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* 聊天/trace 主列铺满主区: 解除 .page 与宽屏 media 给出的 max-width, 供 flex width:100% 生效(置于所有 media 之后以确保覆盖) */
@@ -1180,6 +1180,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .sysnote-tag{flex-shrink:0;display:inline-flex;align-items:center;gap:4px;font-weight:550;color:var(--accent,#5c9cf5)}
 .sysnote-txt{overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;white-space:normal}
 .tk-sysnote{background:color-mix(in srgb,var(--tr-think) 16%,transparent);color:#1d5f8a}
+.tk-compact{background:color-mix(in srgb,var(--tr-compact) 15%,transparent);color:var(--tr-compact)}
 
 /* 压缩宣告 chip 的可点击态: 跳转到摘要卡 */
 .sysnote-chip.jumpable{cursor:pointer;transition:background .12s}
@@ -8852,8 +8853,8 @@ CS.audio = (function () {
     // chat.system 事件写入), 合成在最前不进 run.messages, 主对话流不受影响
     const msgs = (run?.systemPrompt
       ? [{ role: 'system', content: run.systemPrompt, at: (run?.messages?.[0]?.at) || '' }]
-      : []).concat(run?.messages || []);
-    const kindOf = m => m.role === 'user' ? 'user' : m.error ? 'error' : /^\[Conversation compressed/.test(m.content || '') || (m.role !== 'assistant' && m.role !== 'user') ? 'system' : 'reply';
+      : []).concat((run?.messages || []).filter(mm => !mm.hidden));  // 归位后的独立压缩卡本体不再占 Trace 槽位
+    const kindOf = m => m.role === 'user' ? 'user' : m.error ? 'error' : /^\[Conversation compressed/.test(m.content || '') ? 'compact' : (m.role !== 'assistant' && m.role !== 'user') ? 'system' : 'reply';
     const prev = (s, n = 70) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return e(t.slice(0, n)) + (t.length > n ? '…' : ''); };
     let tools = 0, tin = 0, tout = 0, tcache = 0;
     msgs.forEach(m => {
@@ -8868,7 +8869,7 @@ CS.audio = (function () {
   V.traceRows = () => {
     const { msgs, kindOf, prev } = _traceCtx();
     if (!msgs.length) return '';
-    const KIND = { user: '用户', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误', sysnote: '注入' };
+    const KIND = { user: '用户', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误', sysnote: '注入', compact: '压缩' };
     // 运行耗时占比时间轴: 分母 = 各条消息运行耗时之和(流式实时计入), 消息间空闲时段不占条, 段连续堆叠
     // 行内再分段: 优先块边界时间戳(相邻差), 缺省按文本量等比; 段色随块类型(思考/工具/回复)
     const barSegs = mm => {
@@ -8912,6 +8913,7 @@ CS.audio = (function () {
       if (kind === 'user') blocks = [{ k: 'user', t: m.content }];
       else if (kind === 'error' && !errHasTimeline) blocks = [{ k: 'error', t: errText }];
       else if (kind === 'system') blocks = [{ k: 'system', t: m.content }];
+      else if (kind === 'compact') blocks = [{ k: 'compact', t: m.content }];
       else {
         if (Array.isArray(m.blocks) && m.blocks.length) m.blocks.forEach(b => {
           if (!b || typeof b !== 'object') return;
@@ -8920,6 +8922,7 @@ CS.audio = (function () {
           else if (b.type === 'ask') blocks.push({ k: 'tool', t: 'ask 提问' });
           else if (b.type === 'text' && (b.text || '').trim()) blocks.push({ k: 'reply', t: b.text });
           else if (b.type === 'sysnote') blocks.push({ k: 'sysnote', t: b.text || '' });
+          else if (b.type === 'compact') blocks.push({ k: 'compact', t: String(b.text || '').trim() ? '上下文已压缩' : '正在压缩会话' });
         });
         else {
           if ((m.reasoning || '').trim()) blocks.push({ k: 'think', t: m.reasoning });

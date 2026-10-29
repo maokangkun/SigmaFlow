@@ -409,8 +409,8 @@
     // chat.system 事件写入), 合成在最前不进 run.messages, 主对话流不受影响
     const msgs = (run?.systemPrompt
       ? [{ role: 'system', content: run.systemPrompt, at: (run?.messages?.[0]?.at) || '' }]
-      : []).concat(run?.messages || []);
-    const kindOf = m => m.role === 'user' ? 'user' : m.error ? 'error' : /^\[Conversation compressed/.test(m.content || '') || (m.role !== 'assistant' && m.role !== 'user') ? 'system' : 'reply';
+      : []).concat((run?.messages || []).filter(mm => !mm.hidden));  // 归位后的独立压缩卡本体不再占 Trace 槽位
+    const kindOf = m => m.role === 'user' ? 'user' : m.error ? 'error' : /^\[Conversation compressed/.test(m.content || '') ? 'compact' : (m.role !== 'assistant' && m.role !== 'user') ? 'system' : 'reply';
     const prev = (s, n = 70) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return e(t.slice(0, n)) + (t.length > n ? '…' : ''); };
     let tools = 0, tin = 0, tout = 0, tcache = 0;
     msgs.forEach(m => {
@@ -425,7 +425,7 @@
   V.traceRows = () => {
     const { msgs, kindOf, prev } = _traceCtx();
     if (!msgs.length) return '';
-    const KIND = { user: '用户', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误', sysnote: '注入' };
+    const KIND = { user: '用户', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误', sysnote: '注入', compact: '压缩' };
     // 运行耗时占比时间轴: 分母 = 各条消息运行耗时之和(流式实时计入), 消息间空闲时段不占条, 段连续堆叠
     // 行内再分段: 优先块边界时间戳(相邻差), 缺省按文本量等比; 段色随块类型(思考/工具/回复)
     const barSegs = mm => {
@@ -469,6 +469,7 @@
       if (kind === 'user') blocks = [{ k: 'user', t: m.content }];
       else if (kind === 'error' && !errHasTimeline) blocks = [{ k: 'error', t: errText }];
       else if (kind === 'system') blocks = [{ k: 'system', t: m.content }];
+      else if (kind === 'compact') blocks = [{ k: 'compact', t: m.content }];
       else {
         if (Array.isArray(m.blocks) && m.blocks.length) m.blocks.forEach(b => {
           if (!b || typeof b !== 'object') return;
@@ -477,6 +478,7 @@
           else if (b.type === 'ask') blocks.push({ k: 'tool', t: 'ask 提问' });
           else if (b.type === 'text' && (b.text || '').trim()) blocks.push({ k: 'reply', t: b.text });
           else if (b.type === 'sysnote') blocks.push({ k: 'sysnote', t: b.text || '' });
+          else if (b.type === 'compact') blocks.push({ k: 'compact', t: String(b.text || '').trim() ? '上下文已压缩' : '正在压缩会话' });
         });
         else {
           if ((m.reasoning || '').trim()) blocks.push({ k: 'think', t: m.reasoning });
