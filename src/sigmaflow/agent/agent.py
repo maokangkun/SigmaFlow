@@ -32,6 +32,20 @@ from .harness import GOAL
 from .utils import KnightRiderStatus, extract_json
 from .conf import *
 
+# 静默工具轮 nudge: 连续多轮只调工具不产出任何文字时, 注入一条滚动提醒让
+# 模型向用户叙述进展(pi/dsh 式"先说明再行动"的工作风格, 底层无法强制,
+# 但规律性提醒能把模型的叙述习惯拉回来)。与 max_turn-1 的 finalize 提示
+# 同一形态(user 角色的 [System] 短消息)。
+_SILENT_TURN_NUDGE_THRESHOLD = 3
+_SILENT_TURN_NUDGE = (
+    "[System] You have called tools for several turns in a row without "
+    "explaining anything to the user. In your next response, FIRST write a "
+    "short paragraph (in the user's language) describing what you are "
+    "doing, what the results so far show, and what you plan next; then you "
+    "may continue with further tool calls."
+)
+
+
 def _model_max_len(model_name: str) -> int:
     """模型最大上下文(tokens): 统一走 litellm 价格库, 查不到落到 131072。
 
@@ -369,6 +383,7 @@ class Agent:
         begin_time = time.time()
         manual_compact = False
         ratio = 0
+        silent_turns = 0
         max_model_len = _model_max_len(self.model)  # 模型上下文统一走 litellm 库
         while cur_turn < max_turn:
             messages[:] = self.compactor.auto_compact(
@@ -1425,6 +1440,26 @@ class Agent:
                     )
                 except Exception:
                     pass
+            # 静默轮计分: 本轮有可见文字即清零; 纯工具轮累计, 超阈值注入滚动
+            # nudge(旧 nudge 先移除, 历史不叠加)。只看本轮 assistant 是否对
+            # 用户产出了文字, 与 ask/后台通知等 user 注入无关。
+            _turn_text = str(getattr(msg, "content", "") or "").strip()
+            _turn_tools = bool(getattr(msg, "tool_calls", None))
+            if _turn_text:
+                silent_turns = 0
+                messages[:] = [
+                    m
+                    for m in messages
+                    if not (
+                        m.get("role") == "user"
+                        and m.get("content") == _SILENT_TURN_NUDGE
+                    )
+                ]
+            elif _turn_tools:
+                silent_turns += 1
+                if silent_turns >= _SILENT_TURN_NUDGE_THRESHOLD:
+                    messages.append({"role": "user", "content": _SILENT_TURN_NUDGE})
+                    silent_turns = 1
             cur_turn += 1
             if cur_turn == max_turn - 1:
                 console.print(

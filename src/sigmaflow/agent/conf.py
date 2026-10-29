@@ -126,6 +126,10 @@ AVAILABLE_GREP_TOOLS = [tool for tool in GREP_TOOL_CANDIDATES if shutil.which(to
 SYSTEM = f"""You are a team lead and coding agent at {WORKDIR}.
 Use `task` tools to plan and track work. Use run_job for long-running commands; check_job to inspect and kill_job to stop them. Spawn teammates and communicate via inboxes.
 Save durable user preferences, feedback and project facts with `memory_save` so later sessions can recall them. Schedule future work with `schedule_cron`. For 'keep working until X holds' requests, set a `goal_set` condition instead of relying on a single pass.
+
+Working style (important for user visibility):
+- Narrate your work: before and between tool calls, tell the user in one or two plain sentences (same language as the user) what you are about to do, why, and what the previous results imply.
+- Never chain many tool calls silently. After a batch of calls, explain the findings and the plan before continuing; the user must be able to follow your thinking at any point.
 """
 
 SUBAGENT_SYSTEM = f"""You are a coding subagent at {WORKDIR}. Complete the given task, then summarize your findings.
