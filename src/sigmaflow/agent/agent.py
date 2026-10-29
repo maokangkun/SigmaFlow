@@ -55,6 +55,24 @@ _CONTINUE_AFTER_NUDGE = (
 )
 
 
+def _inject_sysnote(on_tool, messages, info, msg_dict, text=None):
+    """把注入的 [System] 提示消息同时同步给前端时间线(sysnote 块)。"""
+    messages.append(msg_dict)
+    info.setdefault("messages", []).append(msg_dict)
+    if on_tool is not None:
+        try:
+            on_tool(
+                {
+                    "kind": "sysnote",
+                    "text": str(text if text is not None else msg_dict.get("content", ""))[
+                        :1000
+                    ],
+                }
+            )
+        except Exception:
+            pass
+
+
 def _model_max_len(model_name: str) -> int:
     """模型最大上下文(tokens): 统一走 litellm 价格库, 查不到落到 131072。
 
@@ -439,12 +457,11 @@ class Agent:
                 notif_text = "\n".join(
                     f"[bg:{n['task_id']}] {n['status']}: {n['result']}" for n in notifs
                 )
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": f"<background-results>\n{notif_text}\n</background-results>",
-                    }
-                )
+                _bg_msg = {
+                    "role": "user",
+                    "content": f"<background-results>\n{notif_text}\n</background-results>",
+                }
+                _inject_sysnote(self.on_tool, messages, info, _bg_msg)
                 messages.append(
                     {"role": "assistant", "content": "Noted background results."}
                 )
@@ -950,15 +967,19 @@ class Agent:
                                         "Continue working and surface the missing evidence."
                                     ),
                                 }
-                                messages.append(_goal_msg)
-                                info["messages"].append(_goal_msg)
+                                _inject_sysnote(
+                                    self.on_tool, messages, info, _goal_msg
+                                )
                                 continue
 
                             if nudge_armed > 0:
                                 # nudge 复活: 模型把说明写成了终点, 强制接续一次
-                                _revive = {"role": "user", "content": _CONTINUE_AFTER_NUDGE}
-                                messages.append(_revive)
-                                info["messages"].append(_revive)
+                                _inject_sysnote(
+                                    self.on_tool,
+                                    messages,
+                                    info,
+                                    {"role": "user", "content": _CONTINUE_AFTER_NUDGE},
+                                )
                                 nudge_armed = 0
                                 continue
 
@@ -1046,15 +1067,19 @@ class Agent:
                                         "Continue working and surface the missing evidence."
                                     ),
                                 }
-                                messages.append(_goal_msg)
-                                info["messages"].append(_goal_msg)
+                                _inject_sysnote(
+                                    self.on_tool, messages, info, _goal_msg
+                                )
                                 continue
 
                             if nudge_armed > 0:
                                 # nudge 复活: 模型把说明写成了终点, 强制接续一次
-                                _revive = {"role": "user", "content": _CONTINUE_AFTER_NUDGE}
-                                messages.append(_revive)
-                                info["messages"].append(_revive)
+                                _inject_sysnote(
+                                    self.on_tool,
+                                    messages,
+                                    info,
+                                    {"role": "user", "content": _CONTINUE_AFTER_NUDGE},
+                                )
                                 nudge_armed = 0
                                 continue
 
@@ -1500,7 +1525,12 @@ class Agent:
             elif _turn_tools:
                 silent_turns += 1
                 if silent_turns >= _SILENT_TURN_NUDGE_THRESHOLD:
-                    messages.append({"role": "user", "content": _SILENT_TURN_NUDGE})
+                    _inject_sysnote(
+                        self.on_tool,
+                        messages,
+                        info,
+                        {"role": "user", "content": _SILENT_TURN_NUDGE},
+                    )
                     nudge_armed = 1
                     silent_turns = 1
             cur_turn += 1
@@ -1508,19 +1538,16 @@ class Agent:
                 console.print(
                     f"{Prompt.Warning}Max turn {max_turn} will be reached in the next turn, stopping to avoid infinite loop."
                 )
-                m = [
-                    {
-                        "role": "user",
-                        "content": (
-                            "[System] Max turn will be reached in the next turn. "
-                            "Do NOT call any more tools in the next response: reply with a "
-                            "final summary of what has been done so far, what remains, and "
-                            "how to continue. Stopping to avoid infinite loop."
-                        ),
-                    }
-                ]
-                print(f"{Prompt.User}{m[0]['content']}")
-                messages.extend(m)
+                _fin = (
+                    "[System] Max turn will be reached in the next turn. "
+                    "Do NOT call any more tools in the next response: reply with a "
+                    "final summary of what has been done so far, what remains, and "
+                    "how to continue. Stopping to avoid infinite loop."
+                )
+                print(f"{Prompt.User}{_fin}")
+                _inject_sysnote(
+                    self.on_tool, messages, info, {"role": "user", "content": _fin}
+                )
                 info["messages"].extend(m)
 
         # 轮次预算耗尽且模型从未输出正文(长工具链任务被截停): 标记错误为轮次上限语义,

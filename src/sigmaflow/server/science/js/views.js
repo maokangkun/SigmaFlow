@@ -1,6 +1,8 @@
 /* UI composition. All user-controlled strings pass through CS.escape. */
 (() => {
   const e = CS.escape, i = CS.icon;
+  // 轻量 UI 片段(app.js 的 H 没有跨模块共享, 这里给空态分支各补一份)
+  const H = { notice: t => `<div class="notice">${e(t)}</div>` };
   const btn = (action, label, icon = '', kind = '', extra = '') => `<button type="button" class="btn ${kind}" data-action="${action}" ${extra}>${icon ? i(icon, '', 15) : ''}${label ? `<span>${e(label)}</span>` : ''}</button>`;
   const iconBtn = (action, icon, label, extra = '') => `<button type="button" class="icon-btn" data-action="${action}" title="${e(label)}" aria-label="${e(label)}" ${extra}>${i(icon)}</button>`;
   const pill = (label, type = '') => `<span class="pill ${type}">${e(label)}</span>`;
@@ -350,6 +352,7 @@
           if (b.type === 'think' && (b.text || '').trim()) blocks.push({ k: 'think', txt: b.text, live: on, mi });
           else if (b.type === 'tool') blocks.push({ k: 'tool', txt: (b.name || '工具') + ' ' + (typeof b.result === 'string' ? b.result : ''), live: on, mi });
           else if (b.type === 'present') blocks.push({ k: 'present', txt: '展示 ' + (b.name || b.path || ''), live: on, mi });
+          else if (b.type === 'sysnote') blocks.push({ k: 'system', txt: '系统注入', live: on, mi });
           else if (b.type === 'ask') blocks.push({ k: 'tool', txt: 'ask 提问', live: on, mi });
           else if (b.type === 'text' && (b.text || '').trim()) blocks.push({ k: 'reply', txt: b.text, live: on, mi });
         });
@@ -421,7 +424,7 @@
   V.traceRows = () => {
     const { msgs, kindOf, prev } = _traceCtx();
     if (!msgs.length) return '';
-    const KIND = { user: '用户', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误' };
+    const KIND = { user: '用户', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误', sysnote: '注入' };
     // 运行耗时占比时间轴: 分母 = 各条消息运行耗时之和(流式实时计入), 消息间空闲时段不占条, 段连续堆叠
     // 行内再分段: 优先块边界时间戳(相邻差), 缺省按文本量等比; 段色随块类型(思考/工具/回复)
     const barSegs = mm => {
@@ -472,6 +475,7 @@
           else if (b.type === 'tool') blocks.push({ k: 'tool', t: (b.name || '工具') + (typeof b.result === 'string' && b.result ? ' → ' + b.result : ' (执行中)') });
           else if (b.type === 'ask') blocks.push({ k: 'tool', t: 'ask 提问' });
           else if (b.type === 'text' && (b.text || '').trim()) blocks.push({ k: 'reply', t: b.text });
+          else if (b.type === 'sysnote') blocks.push({ k: 'sysnote', t: b.text || '' });
         });
         else {
           if ((m.reasoning || '').trim()) blocks.push({ k: 'think', t: m.reasoning });
@@ -495,7 +499,17 @@
     const isOpen = open.has(idx);
     // 块行完整原文: 新管线直接用原始块对象(含工具入参/出参), 旧数据从展示文本兕底
     const blockOpen = CS.ui.traceBlockOpen instanceof Set ? CS.ui.traceBlockOpen : new Set();
-    const rawB = Array.isArray(m.blocks) && m.blocks.length ? m.blocks.filter(b => b && (b.type === 'tool' || b.type === 'ask' || (b.text || '').trim())) : null;
+    let rawB = Array.isArray(m.blocks) && m.blocks.length ? m.blocks.filter(b => b && (b.type === 'tool' || b.type === 'ask' || (b.text || '').trim())) : null;
+    if (Array.isArray(m.blocks) && m.blocks.some(b => b && b.type === 'sysnote')) {
+      // 对位表按完整块序列重建: sysnote 与其余块保持同序, 展开原文取全文
+      let _pass = [];
+      m.blocks.forEach(b => {
+        if (!b) return _pass.push(null);
+        if (b.type === 'sysnote') { _pass.push(b); return; }
+        if (b.type === 'tool' || b.type === 'ask' || (b.text || '').trim()) _pass.push(b); else _pass.push(null);
+      });
+      rawB = _pass;
+    }
     const bFull = b => {
       if (!b) return '';
       if (b.type === 'tool') {
@@ -685,6 +699,11 @@ V.ctxRing = () => {
                   return `<div class="agent-intro md-body"${live ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(b.text)}</div>`;
                 }
                 if (b.type === 'ask') return renderAsk(b, bi);
+                if (b.type === 'sysnote') {
+                  const _sn = String(b.text || '').replace(/^\[System\]\s*/i, '').replace(/^\[Goal still active\]\s*/i, '');
+                  const _tag = /background-results/.test(_sn) ? '后台结果回灌' : '注入提示';
+                  return `<div class="sysnote-chip" title="${e(String(b.text || ''))}"><span class="sysnote-tag">${i('info', '', 12)}${_tag}</span><span class="sysnote-txt">${e(_sn.slice(0, 160))}${_sn.length > 160 ? '…' : ''}</span></div>`;
+                }
                 if (b.type === 'present') {
                   // 模型主动呈现的富媒介文件卡片: 图标按类别, 点击进预览
                   const k = b.klass || 'other';

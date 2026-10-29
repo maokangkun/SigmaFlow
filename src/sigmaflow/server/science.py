@@ -3752,6 +3752,15 @@ class ScienceProjectStore:
                                         ],
                                     }
                                 )
+                        elif _t == "sysnote":
+                            saved_blocks.append(
+                                {
+                                    "t": "sysnote",
+                                    "x": _clip(
+                                        str(b.get("x", b.get("text", ""))), 5000
+                                    ),
+                                }
+                            )
                         elif _t == "present":
                             # 富媒介展示卡: 字段原样透传(尺寸/分类/项目归属都轻量)
                             saved_blocks.append(

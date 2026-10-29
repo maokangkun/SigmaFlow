@@ -452,6 +452,7 @@
                     if (b.t === 'text') return { type: 'text', text: b.x || '' };
                     if (b.t === 'deliverables') return { type: 'deliverables', files: Array.isArray(b.files) ? b.files : [] };
                     if (b.t === 'present') return { type: 'present', typ: b.typ || 'file', path: b.path, name: b.name, ext: b.ext, klass: b.klass, size: b.size, title: b.title, note: b.note, pid: b.pid || '' };
+                    if (b.t === 'sysnote') return { type: 'sysnote', text: b.x || '' };
                     return null;
                   }).filter(Boolean);
                 }
@@ -853,6 +854,7 @@
         else if (b.type === 'text') out.push({ t: 'text', x: b.text || '' });
         else if (b.type === 'deliverables') out.push({ t: 'deliverables', files: b.files || [] });
         else if (b.type === 'present') out.push({ t: 'present', typ: b.typ || 'file', path: b.path, name: b.name, ext: b.ext, klass: b.klass, size: b.size, title: b.title, note: b.note, pid: b.pid || '' });
+        else if (b.type === 'sysnote') out.push({ t: 'sysnote', x: b.text || '' });
       });
       return out;
     };
@@ -1027,6 +1029,11 @@
       if (t.kind === 'deliverables' && Array.isArray(t.files)) {
         reply.blocks = reply.blocks.filter(b => b.type !== 'deliverables');
         if (t.files.length) reply.blocks.push({ type: 'deliverables', files: t.files });
+        return;
+      }
+      // sysnote: agent 循环注入的 [System] 提示(nudge/finalize/goal/后台结果回灌)
+      if (t.kind === 'sysnote') {
+        reply.blocks.push({ type: 'sysnote', text: String(t.text || ''), at: Date.now() });
         return;
       }
       // present: 模型主动呈现的富媒介文件卡片(typ 字段为将来的非文件形态预留)
