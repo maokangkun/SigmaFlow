@@ -27,12 +27,12 @@ def test_agent_model_max_len_litellm_first(monkeypatch):
 def test_bind_main_system_plain():
     base = _bind_main_system(None, False, "")
     assert "You are" in base or base  # 内置提示词存在
-    assert "# 工作目录" not in base
+    assert "# Working directory" not in base
 
 
 def test_bind_main_system_with_workdir():
     bound = _bind_main_system("/tmp/proj", False, "")
-    assert "# 工作目录" in bound
+    assert "# Working directory" in bound
     assert "/tmp/proj" in bound
 
 
@@ -65,7 +65,7 @@ def test_conversation_system_or_bind_prefers_stored(tmp_path):
 
 def test_bind_main_system_expands_workdir():
     bound = _bind_main_system("/data/proj-x", False, "")
-    assert "本次会话绑定项目工作目录 `/data/proj-x`。" in bound
+    assert "run inside the project working directory `/data/proj-x`" in bound
     assert "`{workdir}`" not in bound
 
 
@@ -94,9 +94,8 @@ def test_model_caption_text_model(monkeypatch):
         sci, "_litellm_lookup", lambda name: None
     )
     cap = _bind_main_system(None, False, "", "deepseek-v4.1-flash", 1048576)
-    assert "# 当前模型" in cap
-    assert "`deepseek-v4.1-flash`" in cap
-    assert "文本大模型" in cap
+    assert "# Current model" in cap
+    assert "`deepseek-v4.1-flash`, a text-only model" in cap
     assert "1,048,576" in cap
 
 
@@ -109,7 +108,7 @@ def test_model_caption_multimodal(monkeypatch):
     # 窗口查询桩: 避免 litellm 冷导入(重模块, 拖慢测试)
     monkeypatch.setattr(sci, "_model_context_window", lambda name, override=None: 200000)
     cap = _bind_main_system(None, False, "", "vision-x", None)
-    assert "多模态大模型" in cap
+    assert "multimodal model" in cap
     assert "200,000" in cap
 
 
