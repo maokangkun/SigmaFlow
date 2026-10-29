@@ -41,8 +41,17 @@ _SILENT_TURN_NUDGE = (
     "[System] You have called tools for several turns in a row without "
     "explaining anything to the user. In your next response, FIRST write a "
     "short paragraph (in the user's language) describing what you are "
-    "doing, what the results so far show, and what you plan next; then you "
-    "may continue with further tool calls."
+    "doing, what the results so far show, and what you plan next; THEN "
+    "immediately CONTINUE the work by calling the next tools in the SAME "
+    "response. The narration is an addition, not the end: the task is NOT "
+    "finished, do not stop after explaining."
+)
+# nudge 后模型把说明当终点(纯文字收尾)时的复活指令: 只注入一次, 强制接续
+_CONTINUE_AFTER_NUDGE = (
+    "[System] Your last response explained the situation but stopped "
+    "without doing the work. Continue the task NOW by calling the next "
+    "tools in this response. Keep narrating briefly between calls; only "
+    "stop when the original request is fully completed."
 )
 
 
@@ -384,6 +393,7 @@ class Agent:
         manual_compact = False
         ratio = 0
         silent_turns = 0
+        nudge_armed = 0
         max_model_len = _model_max_len(self.model)  # 模型上下文统一走 litellm 库
         while cur_turn < max_turn:
             messages[:] = self.compactor.auto_compact(
@@ -944,6 +954,14 @@ class Agent:
                                 info["messages"].append(_goal_msg)
                                 continue
 
+                            if nudge_armed > 0:
+                                # nudge 复活: 模型把说明写成了终点, 强制接续一次
+                                _revive = {"role": "user", "content": _CONTINUE_AFTER_NUDGE}
+                                messages.append(_revive)
+                                info["messages"].append(_revive)
+                                nudge_armed = 0
+                                continue
+
                             break
                 case "openai":
                     if (
@@ -1032,6 +1050,14 @@ class Agent:
                                 info["messages"].append(_goal_msg)
                                 continue
 
+                            if nudge_armed > 0:
+                                # nudge 复活: 模型把说明写成了终点, 强制接续一次
+                                _revive = {"role": "user", "content": _CONTINUE_AFTER_NUDGE}
+                                messages.append(_revive)
+                                info["messages"].append(_revive)
+                                nudge_armed = 0
+                                continue
+
                             break
                     else:
                         if msg.content and msg.content.strip():
@@ -1061,6 +1087,7 @@ class Agent:
             # Tools calling
             # 两段式: 第一段解析 tool_use 块并广播 call 事件; 第二段执行、打印并回填结果。
             # 同轮的多个普通工具互不依赖, 可并行执行; task(子 agent)与单工具保持串行。
+            nudge_armed = 0  # 有工具调用的响应说明模型已在正常接续
             calls = []
             for block in (
                 response.content if self.method == "anthropic" else msg.tool_calls
@@ -1474,6 +1501,7 @@ class Agent:
                 silent_turns += 1
                 if silent_turns >= _SILENT_TURN_NUDGE_THRESHOLD:
                     messages.append({"role": "user", "content": _SILENT_TURN_NUDGE})
+                    nudge_armed = 1
                     silent_turns = 1
             cur_turn += 1
             if cur_turn == max_turn - 1:
