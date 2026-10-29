@@ -583,6 +583,8 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 /* head 居中, 两侧分割线横贯到卡边缘: —— 上下文已压缩 —— */
 .compact-head{display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;padding:0;margin:0;cursor:pointer;color:inherit;font:inherit;justify-content:center}
 .compact-head::before,.compact-head::after{content:'';flex:1 1 24px;height:1px;background:var(--line)}
+/* 展开态: 边框已给足边界感, 去掉两侧分割线只在折叠(隐形卡)时保留标题行的 —— 修饰 */
+.compact-card:not(.compact-folded) .compact-head::before,.compact-card:not(.compact-folded) .compact-head::after{display:none}
 .compact-head:hover .compact-title{color:var(--accent)}
 .compact-ico{color:var(--muted);display:inline-flex}
 .compact-title{font-weight:600;font-size:13px;white-space:nowrap}

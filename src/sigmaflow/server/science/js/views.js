@@ -634,9 +634,9 @@ V.ctxRing = () => {
         const c = String(m.content || '');
         const header = c.split('\n')[0] || '上下文已压缩';
         const body = c.split('\n').slice(1).join('\n').trim();
-        // 折叠键 = 会话id+消息序号(追加式列表里 idxOf 稳定): 默认展开, 与错误卡同一套内存态机制
+        // 折叠键 = 会话id+消息序号(追加式列表里 idxOf 稳定): 默认折叠, 点击过的进"已展开集"
         const ckey = `${run.id}|${idxOf}`;
-        const collapsed = (CS.ui.compactCollapsedSet || (CS.ui.compactCollapsedSet = new Set())).has(ckey);
+        const collapsed = !(CS.ui.compactExpandedSet || (CS.ui.compactExpandedSet = new Set())).has(ckey);
         const head = `<button type="button" class="compact-head" data-action="toggle-compact" data-ckey="${e(ckey)}" aria-expanded="${collapsed ? 'false' : 'true'}" title="${collapsed ? '展开摘要' : '折叠摘要'}"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span></button>`;
         return `<div class="compact-card${collapsed ? ' compact-folded' : ''}" data-mi="${idxOf}">${head}${body && !collapsed ? `<div class="compact-body md-body"><div class="compact-subline mono">${e(header)}</div>${CS.markdown(body)}</div>` : ''}</div>`;
       };
@@ -709,9 +709,9 @@ V.ctxRing = () => {
                   }
                   const _cc = String(b.text || '');
                   const _chead = (_cc.split('\n')[0] || '').slice(0, 60);
-                  // 折叠态与错误卡/整卡折同一套内存态: 键 = 会话id|mi|bi(追加稳定)
+                  // 默认折叠, 点开过的进"已展开集"; 键 = 会话id|mi|bi(追加稳定)
                   const _eck = `${run.id}|${idxOf}|${bi}`;
-                  const _ecol = (CS.ui.embedCompactCollapsed || (CS.ui.embedCompactCollapsed = new Set())).has(_eck);
+                  const _ecol = !(CS.ui.embedCompactExpanded || (CS.ui.embedCompactExpanded = new Set())).has(_eck);
                   return `<div class="compact-card${_ecol ? ' compact-folded' : ''}" data-bi="${bi}"><button type="button" class="compact-head" data-action="toggle-embed-compact" data-id="${e(_eck)}" aria-expanded="${_ecol ? 'false' : 'true'}" title="${_ecol ? '展开摘要' : '折叠摘要'}"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span></button>${_ecol ? '' : `<div class="compact-body md-body"><div class="compact-subline mono">${e(_chead)}</div>${CS.markdown(_cc.split('\n').slice(1).join('\n'))}</div>`}</div>`;
                 }
                 if (b.type === 'ask') return renderAsk(b, bi);

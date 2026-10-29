@@ -1887,10 +1887,10 @@
       if (set.has(k)) set.delete(k); else set.add(k);
     }),
     'toggle-compact': (id, el) => {
-      // 摘要卡点击折叠/展开: 键 = 会话id+消息序号(内存态, 与错误卡同机制)
+      // 摘要卡点击折叠/展开: 卡默认折叠, 点开过的进已展开集(键 = 会话id+消息序号)
       const k = el?.dataset?.ckey;
       if (!k) return;
-      const set = CS.ui.compactCollapsedSet || (CS.ui.compactCollapsedSet = new Set());
+      const set = CS.ui.compactExpandedSet || (CS.ui.compactExpandedSet = new Set());
       if (set.has(k)) set.delete(k); else set.add(k);
       CS.render();
     },
@@ -1961,10 +1961,10 @@
       }
     },
     'toggle-embed-compact': (id, el) => {
-      // 嵌入摘要卡折叠: 键 = 会话id|mi|bi(由 ekey 数据传递)
-      if (!CS.ui.embedCompactCollapsed) CS.ui.embedCompactCollapsed = new Set();
-      if (CS.ui.embedCompactCollapsed.has(id)) CS.ui.embedCompactCollapsed.delete(id);
-      else CS.ui.embedCompactCollapsed.add(id);
+      // 嵌入摘要卡折叠: 卡默认折叠, 点开过的进已展开集(键 = 会话id|mi|bi)
+      if (!CS.ui.embedCompactExpanded) CS.ui.embedCompactExpanded = new Set();
+      if (CS.ui.embedCompactExpanded.has(id)) CS.ui.embedCompactExpanded.delete(id);
+      else CS.ui.embedCompactExpanded.add(id);
       CS.render();
     },
     'jump-compact': () => {

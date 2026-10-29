@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="5b66361c">
+<meta name="build" content="37783412">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -938,6 +938,8 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 /* head 居中, 两侧分割线横贯到卡边缘: —— 上下文已压缩 —— */
 .compact-head{display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;padding:0;margin:0;cursor:pointer;color:inherit;font:inherit;justify-content:center}
 .compact-head::before,.compact-head::after{content:'';flex:1 1 24px;height:1px;background:var(--line)}
+/* 展开态: 边框已给足边界感, 去掉两侧分割线只在折叠(隐形卡)时保留标题行的 —— 修饰 */
+.compact-card:not(.compact-folded) .compact-head::before,.compact-card:not(.compact-folded) .compact-head::after{display:none}
 .compact-head:hover .compact-title{color:var(--accent)}
 .compact-ico{color:var(--muted);display:inline-flex}
 .compact-title{font-weight:600;font-size:13px;white-space:nowrap}
@@ -9075,9 +9077,9 @@ V.ctxRing = () => {
         const c = String(m.content || '');
         const header = c.split('\n')[0] || '上下文已压缩';
         const body = c.split('\n').slice(1).join('\n').trim();
-        // 折叠键 = 会话id+消息序号(追加式列表里 idxOf 稳定): 默认展开, 与错误卡同一套内存态机制
+        // 折叠键 = 会话id+消息序号(追加式列表里 idxOf 稳定): 默认折叠, 点击过的进"已展开集"
         const ckey = `${run.id}|${idxOf}`;
-        const collapsed = (CS.ui.compactCollapsedSet || (CS.ui.compactCollapsedSet = new Set())).has(ckey);
+        const collapsed = !(CS.ui.compactExpandedSet || (CS.ui.compactExpandedSet = new Set())).has(ckey);
         const head = `<button type="button" class="compact-head" data-action="toggle-compact" data-ckey="${e(ckey)}" aria-expanded="${collapsed ? 'false' : 'true'}" title="${collapsed ? '展开摘要' : '折叠摘要'}"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span></button>`;
         return `<div class="compact-card${collapsed ? ' compact-folded' : ''}" data-mi="${idxOf}">${head}${body && !collapsed ? `<div class="compact-body md-body"><div class="compact-subline mono">${e(header)}</div>${CS.markdown(body)}</div>` : ''}</div>`;
       };
@@ -9150,9 +9152,9 @@ V.ctxRing = () => {
                   }
                   const _cc = String(b.text || '');
                   const _chead = (_cc.split('\n')[0] || '').slice(0, 60);
-                  // 折叠态与错误卡/整卡折同一套内存态: 键 = 会话id|mi|bi(追加稳定)
+                  // 默认折叠, 点开过的进"已展开集"; 键 = 会话id|mi|bi(追加稳定)
                   const _eck = `${run.id}|${idxOf}|${bi}`;
-                  const _ecol = (CS.ui.embedCompactCollapsed || (CS.ui.embedCompactCollapsed = new Set())).has(_eck);
+                  const _ecol = !(CS.ui.embedCompactExpanded || (CS.ui.embedCompactExpanded = new Set())).has(_eck);
                   return `<div class="compact-card${_ecol ? ' compact-folded' : ''}" data-bi="${bi}"><button type="button" class="compact-head" data-action="toggle-embed-compact" data-id="${e(_eck)}" aria-expanded="${_ecol ? 'false' : 'true'}" title="${_ecol ? '展开摘要' : '折叠摘要'}"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span></button>${_ecol ? '' : `<div class="compact-body md-body"><div class="compact-subline mono">${e(_chead)}</div>${CS.markdown(_cc.split('\n').slice(1).join('\n'))}</div>`}</div>`;
                 }
                 if (b.type === 'ask') return renderAsk(b, bi);
@@ -11361,10 +11363,10 @@ V.ctxRing = () => {
       if (set.has(k)) set.delete(k); else set.add(k);
     }),
     'toggle-compact': (id, el) => {
-      // 摘要卡点击折叠/展开: 键 = 会话id+消息序号(内存态, 与错误卡同机制)
+      // 摘要卡点击折叠/展开: 卡默认折叠, 点开过的进已展开集(键 = 会话id+消息序号)
       const k = el?.dataset?.ckey;
       if (!k) return;
-      const set = CS.ui.compactCollapsedSet || (CS.ui.compactCollapsedSet = new Set());
+      const set = CS.ui.compactExpandedSet || (CS.ui.compactExpandedSet = new Set());
       if (set.has(k)) set.delete(k); else set.add(k);
       CS.render();
     },
@@ -11435,10 +11437,10 @@ V.ctxRing = () => {
       }
     },
     'toggle-embed-compact': (id, el) => {
-      // 嵌入摘要卡折叠: 键 = 会话id|mi|bi(由 ekey 数据传递)
-      if (!CS.ui.embedCompactCollapsed) CS.ui.embedCompactCollapsed = new Set();
-      if (CS.ui.embedCompactCollapsed.has(id)) CS.ui.embedCompactCollapsed.delete(id);
-      else CS.ui.embedCompactCollapsed.add(id);
+      // 嵌入摘要卡折叠: 卡默认折叠, 点开过的进已展开集(键 = 会话id|mi|bi)
+      if (!CS.ui.embedCompactExpanded) CS.ui.embedCompactExpanded = new Set();
+      if (CS.ui.embedCompactExpanded.has(id)) CS.ui.embedCompactExpanded.delete(id);
+      else CS.ui.embedCompactExpanded.add(id);
       CS.render();
     },
     'jump-compact': () => {
