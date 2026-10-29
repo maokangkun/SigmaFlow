@@ -369,7 +369,9 @@ class Compactor:
         max_model_len=None,
         model=None,
         overrides=None,
+        on_event=None,
     ):
+        self.on_event = on_event  # 压缩生命周期回调: 生成摘要前发 {kind:'compactStart'}
         self.transcript_dir = transcript_dir
         self.client = client
         self.max_model_len = max_model_len
@@ -615,6 +617,12 @@ class Compactor:
             not force and dropped < self._cfg("COMPACT_MIN_DROPS", int, 4)
         ):
             return messages
+        if self.on_event:
+            # 开始生成摘要: 前端借此先渲染"压缩会话"等待卡, 摘要完成事件原地填内容
+            try:
+                self.on_event({"kind": "compactStart"})
+            except Exception:
+                pass
         kept = [m for i, m in enumerate(messages[cut:]) if i + cut != marker_idx]
         names = self._tool_name_map(messages)
         # 全文转存 transcripts, 供事后审计

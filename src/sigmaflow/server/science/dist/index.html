@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="e3317624">
+<meta name="build" content="4d98fd6c">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -8783,7 +8783,7 @@ CS.audio = (function () {
           if (b.type === 'think' && (b.text || '').trim()) blocks.push({ k: 'think', txt: b.text, live: on, mi, bi });
           else if (b.type === 'tool') blocks.push({ k: 'tool', txt: (b.name || '工具') + ' ' + (typeof b.result === 'string' ? b.result : ''), live: on, mi, bi });
           else if (b.type === 'present') blocks.push({ k: 'present', txt: '展示 ' + (b.name || b.path || ''), live: on, mi, bi });
-          else if (b.type === 'sysnote') blocks.push({ k: 'system', txt: '系统注入', live: on, mi, bi });
+          else if (b.type === 'sysnote' && !/Conversation history was just compacted/.test(b.text || '')) blocks.push({ k: 'system', txt: '系统注入', live: on, mi, bi });
           else if (b.type === 'ask') blocks.push({ k: 'tool', txt: 'ask 提问', live: on, mi, bi });
           else if (b.type === 'text' && (b.text || '').trim()) blocks.push({ k: 'reply', txt: b.text, live: on, mi, bi });
         });
@@ -9077,7 +9077,7 @@ V.ctxRing = () => {
         const idxOf = run.messages.indexOf(m);  // meta 行的操作按钮需要消息索引
         const pending = !!m.compactPending;
         // 名称行/计时/token 与正常回复一套结构; 进行中在 body 内显示压缩状态行(仿思考行)
-        const status = `<div class="compact-status" data-state="${pending ? 'running' : 'ok'}">${i('minimize2', '', 14)}<span class="compact-status-text">${pending ? '上下文正在压缩中' : '已完成上下文压缩'}</span>${pending ? '<span class="compact-dots"><span>.</span><span>.</span><span>.</span></span>' : ''}</div>`;
+        const status = `<div class="compact-status" data-state="${pending ? 'running' : 'ok'}">${i('minimize2', '', 14)}<span class="compact-status-text">${pending ? '正在压缩会话' : '已完成上下文压缩'}</span>${pending ? '<span class="compact-dots"><span>.</span><span>.</span><span>.</span></span>' : ''}</div>`;
         const streamBody = pending && m.summaryDelta ? `<div class="compact-card compact-streaming-card"><div class="compact-head"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">摘要生成中…</span></div><div class="compact-body md-body compact-streaming">${CS.markdown(m.summaryDelta)}</div></div>` : '';
         return `<div class="msg-block agent-block compact-reply-block" data-mi="${idxOf}"><div class="agent-message"><div class="agent-avatar${pending ? ' avatar-pulsing' : ''}">${i('dna', '', 21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span> <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${status}${streamBody}${pending ? '' : V_COMPACT(m, idxOf)}${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.tokens ? `<span class="message-meta">${CS.num(m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy', '', 13)}</span></span></div>`}</div></div></div>`;
       };
@@ -9131,6 +9131,10 @@ V.ctxRing = () => {
                 }
                 if (b.type === 'ask') return renderAsk(b, bi);
                 if (b.type === 'sysnote') {
+                  const _raw = String(b.text || '');
+                  // 压缩宣告不再以 chip 呈现: "压缩会话"等待卡承担全部流程;
+                  // 历史归档里已有的宣告块同样滤除
+                  if (/Conversation history was just compacted/.test(_raw)) return '';
                   const _sn = String(b.text || '').replace(/^\[System\]\s*/i, '').replace(/^\[Goal still active\]\s*/i, '');
                   const _tag = /background-results/.test(_sn) ? '后台结果' : '注入提示';
                   // 压缩宣告的 chip 可点击: 摘要卡插入在当时的消息位置, 长会话里
@@ -10488,9 +10492,32 @@ V.ctxRing = () => {
       else reply.blocks.push({ type: 'text', text: delta, at: Date.now() });
     };
     const pushTool = (t, reqId) => {
-      // pi 式压缩: 服务器把头几轮替换为摘要; 前端丢弃对应轮次并置入摘要卡,
-      // 会话列表变短后随 reply 结束的同步一起持久化, 下轮请求上下文即已压缩
+      // 压缩两阶段: 开始(compactStart)插"压缩会话"等待卡; 完成(compact)原地
+      // 变摘要卡 — 没有单独的宣告 chip, 全流程由这张卡承载
+      if (t.kind === 'compactStart') {
+        if (run.messages.some(m => m.compactPending)) return;  // 防重: 等待卡已在
+        const wait = { id: 'cmpp-' + Math.random().toString(36).slice(2, 8), role: 'assistant', compactPending: true, blocks: [], content: '', at: new Date().toISOString() };
+        const lastMsg = run.messages[run.messages.length - 1];
+        const insertAt = lastMsg && lastMsg.streaming ? run.messages.length - 1 : run.messages.length;
+        run.messages.splice(insertAt, 0, wait);
+        run.messages.forEach(m => { if (m.promptTokens) delete m.promptTokens; });
+        CS.save(); CS.render();
+        return;
+      }
       if (t.kind === 'compact' && t.text) {
+        // 完成: 优先订到等待卡原地填摘要(agent 卡外壳保持连续); 无等待卡
+        // (事件重放/HTTP 快路径)才单独插卡, 内容去重与旧逻辑一致
+        const waitCard = [...run.messages].reverse().find(m => m.compactPending);
+        if (waitCard) {
+          waitCard.compactPending = false;
+          delete waitCard.streaming;
+          delete waitCard.summaryDelta;
+          waitCard.compact = true;
+          waitCard.content = String(t.text);
+          waitCard.at = new Date().toISOString();
+          CS.save(); CS.render();
+          return;
+        }
         // 相同摘要卡已存在时不重复插入(防护事件重放与 HTTP/WS 双通路)
         if (run.messages.some(m => m.compact && m.content === String(t.text))) return;
         // 自动压缩同样只在尾部追加摘要卡; 界面历史不删除, 上下文由服务端契约裁剪

@@ -1044,9 +1044,32 @@
       else reply.blocks.push({ type: 'text', text: delta, at: Date.now() });
     };
     const pushTool = (t, reqId) => {
-      // pi 式压缩: 服务器把头几轮替换为摘要; 前端丢弃对应轮次并置入摘要卡,
-      // 会话列表变短后随 reply 结束的同步一起持久化, 下轮请求上下文即已压缩
+      // 压缩两阶段: 开始(compactStart)插"压缩会话"等待卡; 完成(compact)原地
+      // 变摘要卡 — 没有单独的宣告 chip, 全流程由这张卡承载
+      if (t.kind === 'compactStart') {
+        if (run.messages.some(m => m.compactPending)) return;  // 防重: 等待卡已在
+        const wait = { id: 'cmpp-' + Math.random().toString(36).slice(2, 8), role: 'assistant', compactPending: true, blocks: [], content: '', at: new Date().toISOString() };
+        const lastMsg = run.messages[run.messages.length - 1];
+        const insertAt = lastMsg && lastMsg.streaming ? run.messages.length - 1 : run.messages.length;
+        run.messages.splice(insertAt, 0, wait);
+        run.messages.forEach(m => { if (m.promptTokens) delete m.promptTokens; });
+        CS.save(); CS.render();
+        return;
+      }
       if (t.kind === 'compact' && t.text) {
+        // 完成: 优先订到等待卡原地填摘要(agent 卡外壳保持连续); 无等待卡
+        // (事件重放/HTTP 快路径)才单独插卡, 内容去重与旧逻辑一致
+        const waitCard = [...run.messages].reverse().find(m => m.compactPending);
+        if (waitCard) {
+          waitCard.compactPending = false;
+          delete waitCard.streaming;
+          delete waitCard.summaryDelta;
+          waitCard.compact = true;
+          waitCard.content = String(t.text);
+          waitCard.at = new Date().toISOString();
+          CS.save(); CS.render();
+          return;
+        }
         // 相同摘要卡已存在时不重复插入(防护事件重放与 HTTP/WS 双通路)
         if (run.messages.some(m => m.compact && m.content === String(t.text))) return;
         // 自动压缩同样只在尾部追加摘要卡; 界面历史不删除, 上下文由服务端契约裁剪
