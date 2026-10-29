@@ -4388,6 +4388,8 @@ def _run_agent_chat(
         retry=5,  # 模型请求失败/超时重试五次(间隔递增), SDK 内部重试关闭避免叠加
         max_turn=max_turn,
         nudge_threshold=_nudge_threshold(),
+        max_model_len=model_ctx,  # 网关自定模型名 litellm 不识, fallback 会低估窗口导致误压缩
+        tool_result_limit=_tool_result_limit(),  # 与设置页 toolResultLimit 同源
         tools=_effective_agent_tools(),
         system=bound_system,
         sub_system=sub_system,

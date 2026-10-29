@@ -206,6 +206,8 @@ class Agent:
         retry=5,
         max_turn=1e10,
         nudge_threshold=None,
+        max_model_len=None,
+        tool_result_limit=30000,
         debug=False,
         support_tool=False,
         on_delta=None,
@@ -227,6 +229,11 @@ class Agent:
         self.retry = retry
         self.max_turn = max_turn
         self.nudge_threshold = nudge_threshold
+        # 传入者(web 模型配置的真实上下文窗)优先, 空则回落 litellm
+        self.max_model_len = (
+            int(max_model_len) if max_model_len else _model_max_len(model_name)
+        )
+        self.tool_result_limit = int(tool_result_limit)
         self.debug = debug
         self.support_tool = support_tool
 
@@ -261,7 +268,7 @@ class Agent:
             case _:
                 raise ValueError(f"Unsupported method: {method}")
 
-        max_model_len = _model_max_len(self.model)  # 模型上下文统一走 litellm 库
+        max_model_len = self.max_model_len  # 压缩触发分母与调用侧同源
         self.compactor = Compactor(
             TRANSCRIPT_DIR,
             self.client,
@@ -423,7 +430,7 @@ class Agent:
         ratio = 0
         silent_tools = 0
         nudge_armed = 0
-        max_model_len = _model_max_len(self.model)  # 模型上下文统一走 litellm 库
+        max_model_len = self.max_model_len  # 构造时已定(litellm 或显式传入), 不随轮重查
         while cur_turn < max_turn:
             messages[:] = self.compactor.auto_compact(
                 messages, force=manual_compact, context_ratio=ratio
@@ -1468,13 +1475,20 @@ class Agent:
                         )
                     except Exception:
                         pass
+                # 超长结果截短后才进 messages: 全文直入会让下一轮窗口估算爆炸误触压缩
+                result_text = str(output)[: self.tool_result_limit]
+                if len(str(output)) > self.tool_result_limit:
+                    result_text += (
+                        f"\n[... {len(str(output)) - self.tool_result_limit} "
+                        "chars omitted]"
+                    )
                 match self.method:
                     case "anthropic":
                         results.append(
                             {
                                 "type": "tool_result",
                                 "tool_use_id": c["block"].id,
-                                "content": output,
+                                "content": result_text,
                             }
                         )
                         # anthropic: 同样把 tool_result 补回 messages, 供下一轮发送。
@@ -1485,7 +1499,7 @@ class Agent:
                                     {
                                         "type": "tool_result",
                                         "tool_use_id": c["block"].id,
-                                        "content": output,
+                                        "content": result_text,
                                     }
                                 ],
                             }
@@ -1495,7 +1509,7 @@ class Agent:
                             {
                                 "role": "tool",
                                 "tool_call_id": c["block"].id,
-                                "content": str(output),
+                                "content": result_text,
                             }
                         )
                         # 工具结果必须进入 messages, 否则下一轮模型看不到结果 (deepseek 等会反复空回)
@@ -1503,7 +1517,7 @@ class Agent:
                             {
                                 "role": "tool",
                                 "tool_call_id": c["block"].id,
-                                "content": str(output),
+                                "content": result_text,
                             }
                         )
 
