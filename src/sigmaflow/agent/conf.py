@@ -138,10 +138,24 @@ SUBAGENT_SYSTEM = f"""You are a coding subagent at {WORKDIR}. Complete the given
 CHILD_TOOLS = [
     {
         "name": "bash",
-        "description": "Run a shell command.",
+        "description": (
+            "Run a shell command. For commands that may run longer than the"
+            " default 600s, pass timeout=<seconds> (max 3600); on timeout the"
+            " process is NOT killed - it is adopted as a background job you can"
+            " poll with check_job."
+        ),
         "input_schema": {
             "type": "object",
-            "properties": {"command": {"type": "string"}},
+            "properties": {
+                "command": {"type": "string"},
+                "timeout": {
+                    "type": "integer",
+                    "description": (
+                        "Optional per-call wait in seconds (5-3600). Omit for"
+                        " the default 600s.短命令不要传。"
+                    ),
+                },
+            },
             "required": ["command"],
         },
     },

@@ -101,12 +101,28 @@ def safe_path(p: str) -> Path:
     return path
 
 
-def run_bash(command: str) -> str:
+BASH_TIMEOUT_DEFAULT = CMD_TIMEOUT
+BASH_TIMEOUT_MAX = 3600
+
+
+def _bash_timeout(timeout) -> int:
+    """模型自报的超时做区间钳制: 太小无意义(不如默认), 太大放大外层占用。"""
+    try:
+        t = int(timeout)
+    except (TypeError, ValueError):
+        return BASH_TIMEOUT_DEFAULT
+    if t <= 0:
+        return BASH_TIMEOUT_DEFAULT
+    return max(5, min(BASH_TIMEOUT_MAX, t))
+
+
+def run_bash(command: str, timeout=None) -> str:
     if command == "":
         return "Error: command cannot be empty"
     dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
     if any(d in command for d in dangerous):
         return "Error: Dangerous command blocked"
+    _wait = _bash_timeout(timeout)
     proc = subprocess.Popen(
         command,
         shell=True,
@@ -116,16 +132,16 @@ def run_bash(command: str) -> str:
         text=True,
     )
     try:
-        out, err = proc.communicate(timeout=CMD_TIMEOUT)
+        out, err = proc.communicate(timeout=_wait)
         out = (out or "") + (err or "")
         return out.strip() or "(no output)"
     except subprocess.TimeoutExpired:
         # 超时不杀进程: 收养为后台 job 继续跑, 把决定权交给模型 ——
         # 继续等(sleep 后 check_job)或放弃(继续其它工作), 会话循环不中断(lcc s11 思路)
         task_id = str(uuid.uuid4())[:8]
-        BG.adopt(task_id, proc, command, CMD_TIMEOUT, get_session_workdir())
+        BG.adopt(task_id, proc, command, _wait, get_session_workdir())
         return (
-            f"Error: Timeout — the command has been running for {CMD_TIMEOUT}s and is "
+            f"Error: Timeout — the command has been running for {_wait}s and is "
             f"STILL RUNNING in the background as job {task_id} (it was NOT killed; "
             "its output will be captured). You decide: (a) to keep waiting, call bash "
             f"with something like `sleep 120` then check_job with job_id {task_id}, "
@@ -1688,7 +1704,7 @@ def run_ask(questions=None, _notify=None):
 setattr(run_ask, "__ask_tool__", True)  # 标记 ask 工具, 供 agent 侧识别
 
 TOOL_HANDLERS = {
-    "bash": lambda **kw: run_bash(kw.get("command", "")),
+    "bash": lambda **kw: run_bash(kw.get("command", ""), kw.get("timeout")),
     "memory_save": lambda **kw: _harness_memory_save(
         kw.get("name", ""),
         kw.get("type", "project"),

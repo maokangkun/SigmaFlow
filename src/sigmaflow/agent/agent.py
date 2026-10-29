@@ -1183,6 +1183,16 @@ class Agent:
                         inp.pop("_notify", None)
                         return str(handler(_notify=self.on_tool, **inp))
                     timeout = TOOL_TIMEOUTS.get(func, TOOL_TIMEOUT_DEFAULT)
+                    # bash 的模型自报等待: 外层超时退让(内层 + 30s 余量),
+                    # 保证先触发的是"收养为后台 job"语义而不是外层硬截
+                    if func == "bash" and isinstance(inp, dict) and inp.get("timeout"):
+                        try:
+                            timeout = max(
+                                timeout,
+                                int(inp["timeout"]) + 30,
+                            )
+                        except (TypeError, ValueError):
+                            pass
                     # 会话工作目录是 thread-local: 超时包装可能把 handler 挪到新线程,
                     # 必须在执行前把当前会话的目录绑到那个线程, 否则相对路径会
                     # 回退到进程根目录, 破坏项目隔离
