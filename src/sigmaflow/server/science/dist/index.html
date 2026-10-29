@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="8d88b93f">
+<meta name="build" content="6df5a15d">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -10875,10 +10875,13 @@ V.ctxRing = () => {
     'fs-upload': () => { document.getElementById('fs-upload-input')?.click(); },
     'fs-refresh': () => {
       const st = CS.ui.fs; if (!st) return;
+      // children 清空后, 已展开的子目录行只剩 spinner(views 按有无 children
+      // 数据渲染)——必须把这些路径也逐一重新拉取, 否则会话中哪怕普通过程
+      // 点一次刷新, 展开的目录就永远转圈
+      const keep = new Set([...st.expanded]);
       st.children = {}; st.git = {}; st.loading = true;
-      const keep = [...st.expanded];
-      st.expanded = new Set(keep);
       CS.agent.loadFsDir('');
+      for (const path of keep) if (path) CS.agent.loadFsDir(path);
       CS.render();
     },
     'toggle-project-settings': id => { CS.ui.projectSettingsMenu = CS.ui.projectSettingsMenu === id ? null : id; CS.render(); },
@@ -12109,7 +12112,13 @@ V.ctxRing = () => {
       cur.loading = false;
       CS.emit('render');
     } catch (error) {
-      const cur = CS.ui.fs; if (cur && cur.projectId === st.projectId) { cur.loading = false; if (!path && !Array.isArray(cur.root)) { cur.root = []; cur.error = (error && error.message) || ''; } }
+      const cur = CS.ui.fs; if (cur && cur.projectId === st.projectId) {
+        cur.loading = false;
+        if (!path && !Array.isArray(cur.root)) { cur.root = []; cur.error = (error && error.message) || ''; }
+        // 子目录请求失败也必须落地一个数组: 渲染层以 children[path] 是否为
+        // 数组判断"数据已到", 失败不填的话该行 spinner 永远不消失
+        if (path && !Array.isArray(cur.children[path])) cur.children[path] = [];
+      }
       CS.emit('render');
     }
   };
