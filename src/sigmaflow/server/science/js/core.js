@@ -9,7 +9,10 @@
   CS.today = () => new Date().toISOString().slice(0, 10);
   CS.time = value => new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 CS.elapsedMs = ms => {
-  const s = Math.max(0, Math.round(Number(ms) / 1000));
+  // 不足一秒时用 ms 呈现, 避免 trace 里常见的小耗时被整成 0s
+  const n = Math.max(0, Number(ms) || 0);
+  if (n < 1000) return Math.round(n) + 'ms';
+  const s = Math.round(n / 1000);
   if (s < 60) return s + 's';
   const m = Math.floor(s / 60);
   if (m < 60) return m + 'm' + String(s % 60).padStart(2, '0') + 's';
