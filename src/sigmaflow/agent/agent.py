@@ -64,9 +64,9 @@ def _inject_sysnote(on_tool, messages, info, msg_dict, text=None):
             on_tool(
                 {
                     "kind": "sysnote",
-                    "text": str(text if text is not None else msg_dict.get("content", ""))[
-                        :1000
-                    ],
+                    "text": str(
+                        text if text is not None else msg_dict.get("content", "")
+                    )[:1000],
                 }
             )
         except Exception:
@@ -409,7 +409,11 @@ class Agent:
 
         cur_turn = len([m for m in messages if m["role"] == "assistant"])
         max_turn = max_turn or self.max_turn
-        _nudge_at = self.nudge_threshold if self.nudge_threshold is not None else _SILENT_TURN_NUDGE_THRESHOLD
+        _nudge_at = (
+            self.nudge_threshold
+            if self.nudge_threshold is not None
+            else _SILENT_TURN_NUDGE_THRESHOLD
+        )
         begin_time = time.time()
         manual_compact = False
         ratio = 0
@@ -973,9 +977,7 @@ class Agent:
                                         "Continue working and surface the missing evidence."
                                     ),
                                 }
-                                _inject_sysnote(
-                                    self.on_tool, messages, info, _goal_msg
-                                )
+                                _inject_sysnote(self.on_tool, messages, info, _goal_msg)
                                 continue
 
                             if nudge_armed > 0:
@@ -1073,9 +1075,7 @@ class Agent:
                                         "Continue working and surface the missing evidence."
                                     ),
                                 }
-                                _inject_sysnote(
-                                    self.on_tool, messages, info, _goal_msg
-                                )
+                                _inject_sysnote(self.on_tool, messages, info, _goal_msg)
                                 continue
 
                             if nudge_armed > 0:
@@ -1555,7 +1555,6 @@ class Agent:
                 _inject_sysnote(
                     self.on_tool, messages, info, {"role": "user", "content": _fin}
                 )
-                info["messages"].extend(m)
 
         # 轮次预算耗尽且模型从未输出正文(长工具链任务被截停): 标记错误为轮次上限语义,
         # 前端据此给出可理解的提示, 而不是误导性的"模型没有返回内容"

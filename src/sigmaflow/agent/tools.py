@@ -1767,9 +1767,8 @@ def run_present(path, title="", note="", _notify=None):
     if _notify is not None:
         try:
             _notify(ev)
-        except Exception as _e:
-            with open("/tmp/present-trace.log", "a") as _f2:
-                _f2.write("emit-failed: " + repr(_e)[:200] + chr(10))
+        except Exception:
+            pass  # 事件通道异常不阻断工具返回(卡片丢失由前端兜底, 不落调试文件)
     return f"Presented {full.name} to the user."
 
 

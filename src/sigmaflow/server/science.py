@@ -2095,7 +2095,9 @@ class ScienceAPI:
         async def set_nudge_threshold(payload: TurnBudgetIn, request: Request):
             """写回静默工具 nudge 阈值; 即时生效, 0 表示禁用。"""
             _check_origin(request)
-            v = max(0, min(int(payload.limit if payload.limit is not None else 10), 100))
+            v = max(
+                0, min(int(payload.limit if payload.limit is not None else 10), 100)
+            )
             d = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
                 os.path.expanduser("~"), ".sigmaflow", "science"
             )
@@ -3126,9 +3128,7 @@ class ScienceAPI:
                                         bool(data.get("planMode")),
                                         lambda u: _emit("usage", u),
                                         model_ctx=_ctx_hit,
-                                        conversation_id=str(
-                                            data.get("runId") or ""
-                                        ),
+                                        conversation_id=str(data.get("runId") or ""),
                                     )
                                 )
                                 _agent_info = (
@@ -4395,7 +4395,9 @@ def _run_agent_chat(
         last = info["last_response"] if isinstance(info, dict) else None
     finally:
         tools_mod.set_session_workdir(None)
-    tools_mod.set_session_scope(None)
+        # 作用域复位必须与工作目录同在 finally: 若放外面, 会话中途抛异常时
+        # 线程池复用的线程会把本会话的 task/job/inbox 作用域泄漏给下一个会话
+        tools_mod.set_session_scope(None)
 
     if not last:
         # 轮次耗尽的截停(agent 侧已写入轮次上限语义的 error): 生成一段可用的进度回复,
