@@ -60,7 +60,16 @@
         const m = httpPath.match(/^\/conversations\/([^/]+)\/content$/);
         if (m) payload.id = decodeURIComponent(m[1]);
       }
-      return CS.api.ws.send(wsAction, payload);
+      try {
+        return await CS.api.ws.send(wsAction, payload);
+      } catch (err) {
+        // WS 送达失败(响应超时/半开断开)时幂等请求转 HTTP 兜底: 页面刷新
+        // 常落在 WS 迟滞窗口(服务重启/长工具轮占线), 10s 超时不应钉死加载。
+        // 非幂等 mutation(删除/归档等)不重发, 保留原错误供调用方提示。
+        const idem = httpMethod === 'GET' || (httpMethod === 'POST' && httpPath === '/conversations');
+        if (!idem) throw err;
+        return CS.api.request(httpPath, { method: httpMethod, body: body ? JSON.stringify(body) : undefined });
+      }
     }
     return CS.api.request(httpPath, { method: httpMethod, body: body ? JSON.stringify(body) : undefined });
   };
