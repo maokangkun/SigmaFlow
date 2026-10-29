@@ -3079,6 +3079,16 @@ class ScienceAPI:
                                 # 戛然而止, 不知道循环为什么退出; 无模型正文时
                                 # _run_agent_chat 生成的进度说明作为尾段 delta 补发
                                 # (有正文时正文早已流式送达, 不能重复发)
+                                # 预期内截断: 轮次耗尽且模型没有产出正文, 但补偿说明
+                                # 已作为正文流出。截停不是错误, 终态走 done——
+                                # 下拉红错块的文案与这段说明几乎逐字重复, 只会
+                                # 让用户误以为任务"出错了"
+                                _note_served = bool(
+                                    _agent_info.get("error")
+                                    and not _agent_info.get("last_response")
+                                    and _final_text
+                                    and _final_text.strip()
+                                )
                                 if _agent_info.get("error"):
                                     if (
                                         not _agent_info.get("last_response")
@@ -3087,7 +3097,10 @@ class ScienceAPI:
                                     ):
                                         on_delta(_final_text)
                                     if not state["terminal"]:
-                                        _emit("error", _agent_info["error"])
+                                        if _note_served:
+                                            _emit("done", {})
+                                        else:
+                                            _emit("error", _agent_info["error"])
                                 elif not state["terminal"]:
                                     _emit("done", {})
                             except Exception as err:
@@ -3166,14 +3179,19 @@ class ScienceAPI:
                                             "blocks": _blocks_from_agent_info(_fb_info)
                                             if _fb_info
                                             else None,
-                                            # 截停/异常原因一并持久化, 回放时错误块可见
-                                            "error": _except_err
-                                            or (
-                                                _fb_info.get("error")
-                                                if _fb_info
-                                                else None
-                                            )
-                                            or None,
+                                            # 截停/异常原因一并持久化, 回放时错误块可见;
+                                            # 预期内截断(说明已作正文)例外, 保持在线/回放一致
+                                            "error": None
+                                            if _note_served
+                                            else (
+                                                _except_err
+                                                or (
+                                                    _fb_info.get("error")
+                                                    if _fb_info
+                                                    else None
+                                                )
+                                                or None
+                                            ),
                                             "at": time.strftime(
                                                 "%Y-%m-%dT%H:%M:%S.000Z",
                                                 time.gmtime(_now_ms / 1000.0),
@@ -4267,8 +4285,8 @@ def _run_agent_chat(
                 if isinstance(d, dict)
             ]
             note = (
-                "本次回复未产出最终文字: 单次回复的工具轮次预算已用完, 工具执行轨迹已保留。"
-                "可发送『继续』让任务接续执行。"
+                "本轮的工具轮次预算已用完，任务在此预期内截断："
+                "已完成的执行轨迹与产出都保留在上方，发送『继续』即可接续执行。"
             )
             if files:
                 note += "\n\n本轮产出文件:\n" + "\n".join(f"- {f}" for f in files[:10])
