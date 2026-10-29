@@ -2378,6 +2378,17 @@
       try { const d = await CS.api.request('/turn-budget', { method: 'POST', body: JSON.stringify({ limit: 100 }) }); CS.ui.turnBudget = d.limit; CS.render(); CS.toast('已恢复默认 100 轮。'); }
       catch (err) { CS.toast(CS.api.friendlyError(err), 'error'); }
     },
+    'save-nudge-threshold': async () => {
+      const el = document.getElementById('nudge-threshold-input');
+      const v = parseInt((el?.value || '').trim(), 10);
+      if (!Number.isFinite(v) || v < 0) { CS.toast('请输入不小于 0 的数字。', 'error'); return; }
+      try { const d = await CS.api.request('/nudge-threshold', { method: 'POST', body: JSON.stringify({ limit: v }) }); CS.ui.nudgeThreshold = d.limit; CS.render(); CS.toast(d.limit === 0 ? '已设为 0，静默提醒已关闭。' : '已保存，下一次回复生效。'); }
+      catch (err) { CS.toast(CS.api.friendlyError(err), 'error'); }
+    },
+    'reset-nudge-threshold': async () => {
+      try { const d = await CS.api.request('/nudge-threshold', { method: 'POST', body: JSON.stringify({ limit: 10 }) }); CS.ui.nudgeThreshold = d.limit; CS.render(); CS.toast('已恢复默认 10 个。'); }
+      catch (err) { CS.toast(CS.api.friendlyError(err), 'error'); }
+    },
     'dir-create': async () => {
       const box = document.getElementById('dir-listing');
       const input = document.getElementById('dir-new-name');

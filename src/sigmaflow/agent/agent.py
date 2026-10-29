@@ -32,11 +32,11 @@ from .harness import GOAL
 from .utils import KnightRiderStatus, extract_json
 from .conf import *
 
-# 静默工具轮 nudge: 连续多轮只调工具不产出任何文字时, 注入一条滚动提醒让
+# 静默工具 nudge: 连续调用多个工具(跨轮累计)不产出任何文字时, 注入一条滚动提醒让
 # 模型向用户叙述进展(pi/dsh 式"先说明再行动"的工作风格, 底层无法强制,
 # 但规律性提醒能把模型的叙述习惯拉回来)。与 max_turn-1 的 finalize 提示
 # 同一形态(user 角色的 [System] 短消息)。
-_SILENT_TURN_NUDGE_THRESHOLD = 3
+_SILENT_TURN_NUDGE_THRESHOLD = 10
 _SILENT_TURN_NUDGE = (
     "[System] You have called tools for several turns in a row without "
     "explaining anything to the user. In your next response, FIRST write a "
@@ -205,6 +205,7 @@ class Agent:
         available_tools=None,
         retry=3,
         max_turn=1e10,
+        nudge_threshold=None,
         debug=False,
         support_tool=False,
         on_delta=None,
@@ -225,6 +226,7 @@ class Agent:
         self.sub_tools = sub_tools
         self.retry = retry
         self.max_turn = max_turn
+        self.nudge_threshold = nudge_threshold
         self.debug = debug
         self.support_tool = support_tool
 
@@ -407,10 +409,11 @@ class Agent:
 
         cur_turn = len([m for m in messages if m["role"] == "assistant"])
         max_turn = max_turn or self.max_turn
+        _nudge_at = self.nudge_threshold if self.nudge_threshold is not None else _SILENT_TURN_NUDGE_THRESHOLD
         begin_time = time.time()
         manual_compact = False
         ratio = 0
-        silent_turns = 0
+        silent_tools = 0
         nudge_armed = 0
         max_model_len = _model_max_len(self.model)  # 模型上下文统一走 litellm 库
         while cur_turn < max_turn:
@@ -1513,7 +1516,7 @@ class Agent:
             _turn_text = str(getattr(msg, "content", "") or "").strip()
             _turn_tools = bool(getattr(msg, "tool_calls", None))
             if _turn_text:
-                silent_turns = 0
+                silent_tools = 0
                 messages[:] = [
                     m
                     for m in messages
@@ -1523,8 +1526,9 @@ class Agent:
                     )
                 ]
             elif _turn_tools:
-                silent_turns += 1
-                if silent_turns >= _SILENT_TURN_NUDGE_THRESHOLD:
+                # 按连续工具调用数而非轮数累计: 一轮并行多工具时同等计数
+                silent_tools += max(1, len(calls))
+                if _nudge_at > 0 and silent_tools >= _nudge_at:
                     _inject_sysnote(
                         self.on_tool,
                         messages,
@@ -1532,7 +1536,7 @@ class Agent:
                         {"role": "user", "content": _SILENT_TURN_NUDGE},
                     )
                     nudge_armed = 1
-                    silent_turns = 1
+                    silent_tools = 0
             cur_turn += 1
             if cur_turn == max_turn - 1:
                 console.print(

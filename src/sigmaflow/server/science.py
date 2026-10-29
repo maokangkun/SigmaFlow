@@ -114,6 +114,7 @@ TICK_SECONDS = 0.7
 
 _TOOL_LIMIT_CACHE: dict = {}
 _TURN_BUDGET_CACHE: dict = {}
+_NUDGE_CACHE: dict = {}
 
 
 def _turn_budget() -> int:
@@ -141,6 +142,34 @@ def _turn_budget() -> int:
     if key is not None:
         _TURN_BUDGET_CACHE["key"] = key
         _TURN_BUDGET_CACHE["value"] = v
+    return v
+
+
+def _nudge_threshold() -> int:
+    """静默工具 nudge 阈值: 连续调用多少个工具不产出文字时注入提醒, 默认 10, 0 为禁用。
+
+    前端设置页可调(存 settings.json 的 nudgeThreshold), mtime 缓存策略与
+    turnBudget 一致, 设置变更即时生效。"""
+    d = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
+        os.path.expanduser("~"), ".sigmaflow", "science"
+    )
+    path = os.path.join(d, "settings.json")
+    try:
+        st = os.stat(path)
+        key = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        key = None
+    if key is not None and _NUDGE_CACHE.get("key") == key:
+        return _NUDGE_CACHE["value"]
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8")) if key else {}
+        v = int(data["nudgeThreshold"])
+    except Exception:
+        v = 10
+    v = max(0, min(v, 100))
+    if key is not None:
+        _NUDGE_CACHE["key"] = key
+        _NUDGE_CACHE["value"] = v
     return v
 
 
@@ -2051,6 +2080,35 @@ class ScienceAPI:
             except Exception:
                 data = {}
             data["turnBudget"] = v
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            return {"limit": v}
+
+        @router.get("/nudge-threshold")
+        async def get_nudge_threshold():
+            """查询静默工具 nudge 阈值(设置页展示)。"""
+            return {"limit": await asyncio.to_thread(_nudge_threshold)}
+
+        @router.post("/nudge-threshold")
+        async def set_nudge_threshold(payload: TurnBudgetIn, request: Request):
+            """写回静默工具 nudge 阈值; 即时生效, 0 表示禁用。"""
+            _check_origin(request)
+            v = max(0, min(int(payload.limit if payload.limit is not None else 10), 100))
+            d = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
+                os.path.expanduser("~"), ".sigmaflow", "science"
+            )
+            path = Path(d) / "settings.json"
+            try:
+                data = (
+                    json.loads(path.read_text(encoding="utf-8"))
+                    if path.exists()
+                    else {}
+                )
+            except Exception:
+                data = {}
+            data["nudgeThreshold"] = v
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(
                 json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -4282,6 +4340,7 @@ def _run_agent_chat(
         support_tool=True,
         retry=3,  # 模型请求失败/超时重试三次, SDK 内部重试关闭避免叠加
         max_turn=max_turn,
+        nudge_threshold=_nudge_threshold(),
         tools=_effective_agent_tools(),
         system=bound_system,
         sub_system=sub_system,
