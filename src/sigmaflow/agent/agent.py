@@ -443,6 +443,23 @@ class Agent:
                         )
                     except Exception:
                         pass
+                # 压缩对模型也要显式宣告: 只给摘要不给说明时, 模型可能把截断的
+                # 上下文当成会话本就如此, 重复已完成工作或答非所问
+                _inject_sysnote(
+                    self.on_tool,
+                    messages,
+                    info,
+                    {
+                        "role": "user",
+                        "content": (
+                            "[System] Conversation history was just compacted: "
+                            "earlier turns were replaced by the summary above "
+                            "(marked [Conversation compressed]). Continue the "
+                            "current task from that summary; do not redo work "
+                            "that is already recorded."
+                        ),
+                    },
+                )
             # 压缩只收缩上下文(摘要卡追加尾部), 原本占头部的 system 消息可能被
             # 摘要吞掉: 每轮压缩后都补插一次, 与函数开头的装配保持一致
             if messages[0]["role"] != "system":

@@ -2069,6 +2069,9 @@
         await CS.refreshContextInfo().catch(() => {});
         const msgsAfter = CS.contractMsgsEst();
         CS.toast(`已压缩：早期 ${r.droppedTotal || dropped} 条并入摘要, 对话上下文 ${CS.kfmt(msgsBefore)} → ${CS.kfmt(msgsAfter)} tokens; 全部历史保留在会话里。`);
+        // 压缩完成后自动接续: 手动压缩是过程动作而非终止, agent 应基于摘要
+        // 无停顿地继续当前任务(等同用户手点一次「继续」)
+        if (run === CS.currentRun() && !run.messages.some(m => m.streaming || m.compactPending)) sendChatMessage(run, '继续', []);
       } catch (error) {
         run.messages = run.messages.filter(m => m !== pending);
         CS.save(); CS.render();
