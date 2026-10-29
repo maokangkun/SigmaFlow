@@ -132,7 +132,7 @@
             if (message.event === 'chat.tool' && entry.onTool) { entry.onTool(message.data?.tool || {}, message.requestId); return; }
             if (message.event === 'chat.usage') { entry.onUsage && entry.onUsage(message.data || {}); return; }
             if (message.event === 'chat.system') { entry.onSystem && entry.onSystem(message.data?.content || ''); return; }
-            if (message.event === 'chat.retry') { entry.onRetry && entry.onRetry(message.data?.retry || {}); return; }
+            if (message.event === 'chat.retry') { entry.resetTimer && entry.resetTimer(); entry.onRetry && entry.onRetry(message.data?.retry || {}); return; }
             if (message.event === 'chat.delta' && entry.onDelta) { entry.onDelta(message.data?.delta || ''); return; }
             CS.api.ws.suspended.delete(message.requestId);
             CS.api.ws.pending.delete(message.requestId);

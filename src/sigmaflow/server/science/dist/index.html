@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="54b72292">
+<meta name="build" content="339e89cf">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -5546,7 +5546,7 @@ CS.markdown = text => {
             if (message.event === 'chat.tool' && entry.onTool) { entry.onTool(message.data?.tool || {}, message.requestId); return; }
             if (message.event === 'chat.usage') { entry.onUsage && entry.onUsage(message.data || {}); return; }
             if (message.event === 'chat.system') { entry.onSystem && entry.onSystem(message.data?.content || ''); return; }
-            if (message.event === 'chat.retry') { entry.onRetry && entry.onRetry(message.data?.retry || {}); return; }
+            if (message.event === 'chat.retry') { entry.resetTimer && entry.resetTimer(); entry.onRetry && entry.onRetry(message.data?.retry || {}); return; }
             if (message.event === 'chat.delta' && entry.onDelta) { entry.onDelta(message.data?.delta || ''); return; }
             CS.api.ws.suspended.delete(message.requestId);
             CS.api.ws.pending.delete(message.requestId);
@@ -10530,6 +10530,8 @@ V.ctxRing = () => {
         if (follow) scrollToLatest();
       };
       // 模型请求失败进入重试: 在等待指示处显示第 N/5 次失败与原因(间隔随次数递增)
+      // 发新请求前先清上一轮残留, 否则上一会话的失败状态会在等待期错误显示
+      if (CS.ui.chatRetry) { CS.ui.chatRetry = null; }
       const retryEvent = r => {
         if (!r || !r.attempt) return;
         CS.ui.chatRetry = { runId: run.id, attempt: r.attempt, total: r.total || 5, error: r.error || '' };

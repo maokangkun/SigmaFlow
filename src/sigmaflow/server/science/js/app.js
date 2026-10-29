@@ -1112,6 +1112,8 @@
         if (follow) scrollToLatest();
       };
       // 模型请求失败进入重试: 在等待指示处显示第 N/5 次失败与原因(间隔随次数递增)
+      // 发新请求前先清上一轮残留, 否则上一会话的失败状态会在等待期错误显示
+      if (CS.ui.chatRetry) { CS.ui.chatRetry = null; }
       const retryEvent = r => {
         if (!r || !r.attempt) return;
         CS.ui.chatRetry = { runId: run.id, attempt: r.attempt, total: r.total || 5, error: r.error || '' };
