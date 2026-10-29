@@ -577,14 +577,17 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 
 /* 上下文压缩摘要卡(pi compaction): 队首摘要以卡片形式回放 */
 .compact-block{margin:10px 0 2px 0}
-.compact-card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 14px}
-.compact-head{display:flex;align-items:center;gap:8px;width:100%;background:none;border:none;padding:0;margin:0;cursor:pointer;text-align:left;color:inherit;font:inherit}
+.compact-card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 14px;transition:border-color .15s,background .15s}
+/* 折叠态隐形: 无边框无底色, 仅保留可点击的居中标题行 */
+.compact-card.compact-folded{border-color:transparent;background:transparent;padding-top:6px;padding-bottom:6px}
+/* head 居中, 两侧分割线横贯到卡边缘: —— 上下文已压缩 —— */
+.compact-head{display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;padding:0;margin:0;cursor:pointer;color:inherit;font:inherit;justify-content:center}
+.compact-head::before,.compact-head::after{content:'';flex:1 1 24px;height:1px;background:var(--line)}
 .compact-head:hover .compact-title{color:var(--accent)}
 .compact-ico{color:var(--muted);display:inline-flex}
-.compact-title{font-weight:600;font-size:13px}
-.compact-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
-.compact-sub,.compact-head .tiny{flex:1 1 auto;min-width:0}
-.compact-body{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:12.5px;line-height:1.65;color:var(--text);max-height:340px;overflow-y:auto}
+.compact-title{font-weight:600;font-size:13px;white-space:nowrap}
+.compact-subline{text-align:left;font-size:10.5px;color:var(--muted);margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.85}
+.compact-body{margin-top:10px;text-align:left;padding-top:10px;border-top:1px solid var(--line);font-size:12.5px;line-height:1.65;color:var(--text);max-height:340px;overflow-y:auto}
 .compact-body p{margin:0 0 8px 0}
 .compact-body p:last-child{margin-bottom:0}
 .compact-body ul,.compact-body ol{margin:4px 0 8px 0;padding-left:20px}

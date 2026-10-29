@@ -637,8 +637,8 @@ V.ctxRing = () => {
         // 折叠键 = 会话id+消息序号(追加式列表里 idxOf 稳定): 默认展开, 与错误卡同一套内存态机制
         const ckey = `${run.id}|${idxOf}`;
         const collapsed = (CS.ui.compactCollapsedSet || (CS.ui.compactCollapsedSet = new Set())).has(ckey);
-        const head = `<button type="button" class="compact-head" data-action="toggle-compact" data-ckey="${e(ckey)}" aria-expanded="${collapsed ? 'false' : 'true'}" title="${collapsed ? '展开摘要' : '折叠摘要'}"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">${e(header)}</span></button>`;
-        return `<div class="compact-card" data-mi="${idxOf}">${head}${body && !collapsed ? `<div class="compact-body md-body">${CS.markdown(body)}</div>` : ''}</div>`;
+        const head = `<button type="button" class="compact-head" data-action="toggle-compact" data-ckey="${e(ckey)}" aria-expanded="${collapsed ? 'false' : 'true'}" title="${collapsed ? '展开摘要' : '折叠摘要'}"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span></button>`;
+        return `<div class="compact-card${collapsed ? ' compact-folded' : ''}" data-mi="${idxOf}">${head}${body && !collapsed ? `<div class="compact-body md-body"><div class="compact-subline mono">${e(header)}</div>${CS.markdown(body)}</div>` : ''}</div>`;
       };
       // 压缩摘要作为特殊回复消息: agent 消息外壳(头像/名称) + 内嵌摘要卡;
       // 进行中状态(compactPending)显示"上下文正在压缩中"等待动画
@@ -712,7 +712,7 @@ V.ctxRing = () => {
                   // 折叠态与错误卡/整卡折同一套内存态: 键 = 会话id|mi|bi(追加稳定)
                   const _eck = `${run.id}|${idxOf}|${bi}`;
                   const _ecol = (CS.ui.embedCompactCollapsed || (CS.ui.embedCompactCollapsed = new Set())).has(_eck);
-                  return `<div class="compact-card${_ecol ? ' compact-folded' : ''}" data-bi="${bi}"><button type="button" class="compact-head" data-action="toggle-embed-compact" data-id="${e(_eck)}" aria-expanded="${_ecol ? 'false' : 'true'}" title="${_ecol ? '展开摘要' : '折叠摘要'}"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">${e(_chead)}</span><span class="think-chevron">${i('chevron', '', 12)}</span></button>${_ecol ? '' : `<div class="compact-body md-body">${CS.markdown(_cc.split('\n').slice(1).join('\n'))}</div>`}</div>`;
+                  return `<div class="compact-card${_ecol ? ' compact-folded' : ''}" data-bi="${bi}"><button type="button" class="compact-head" data-action="toggle-embed-compact" data-id="${e(_eck)}" aria-expanded="${_ecol ? 'false' : 'true'}" title="${_ecol ? '展开摘要' : '折叠摘要'}"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span></button>${_ecol ? '' : `<div class="compact-body md-body"><div class="compact-subline mono">${e(_chead)}</div>${CS.markdown(_cc.split('\n').slice(1).join('\n'))}</div>`}</div>`;
                 }
                 if (b.type === 'ask') return renderAsk(b, bi);
                 if (b.type === 'sysnote') {
