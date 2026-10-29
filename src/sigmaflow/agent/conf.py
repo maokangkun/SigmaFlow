@@ -151,8 +151,9 @@ CHILD_TOOLS = [
                 "timeout": {
                     "type": "integer",
                     "description": (
-                        "Optional per-call wait in seconds (5-3600). Omit for"
-                        " the default 600s.短命令不要传。"
+                        "Optional per-call wait in seconds (5-3600), for"
+                        " long-running commands only. Omit for the default"
+                        " 600s."
                     ),
                 },
             },
