@@ -1913,6 +1913,17 @@
         }, 2050);
       }
     },
+    'jump-compact': () => {
+      // 压缩宣告 chip → 跳到最近的摘要卡(末次压缩的卡在卡序列尾部)
+      const cards = [...document.querySelectorAll('.compact-card')];
+      const el = cards[cards.length - 1];
+      if (!el) { CS.toast('未找到摘要卡。', 'error'); return; }
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.remove('msg-flash');
+      void el.offsetWidth;
+      el.classList.add('msg-flash');
+      setTimeout(() => el.classList.remove('msg-flash'), 1800);
+    },
     'track-jump': (id, el) => {
       // 格子 id 两态: "mi:bi"(块级钉点) / "mi"(消息级: 用户消息/错误格/旧存档)
       const colon = id.indexOf(':');

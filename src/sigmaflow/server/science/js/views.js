@@ -702,7 +702,10 @@ V.ctxRing = () => {
                 if (b.type === 'sysnote') {
                   const _sn = String(b.text || '').replace(/^\[System\]\s*/i, '').replace(/^\[Goal still active\]\s*/i, '');
                   const _tag = /background-results/.test(_sn) ? '后台结果' : '注入提示';
-                  return `<div class="sysnote-chip" data-bi="${bi}" title="${e(String(b.text || ''))}"><span class="sysnote-tag">${i('info', '', 12)}${_tag}</span><span class="sysnote-txt">${e(_sn.slice(0, 160))}${_sn.length > 160 ? '…' : ''}</span></div>`;
+                  // 压缩宣告的 chip 可点击: 摘要卡插入在当时的消息位置, 长会话里
+                  // 离这条提示可能隔着几百格, 点击直达
+                  const _isCmp = /Conversation history was just compacted/.test(_sn);
+                  return `<div class="sysnote-chip${_isCmp ? ' jumpable' : ''}"${_isCmp ? ' data-action="jump-compact" role="button" tabindex="0"' : ''} data-bi="${bi}" title="${e(String(b.text || ''))}${_isCmp ? ' · 点击跳转到摘要卡' : ''}"><span class="sysnote-tag">${i(_isCmp ? 'layers' : 'info', '', 12)}${_tag}</span><span class="sysnote-txt">${e(_isCmp ? _sn.slice(0, 90) : _sn.slice(0, 160))}${_sn.length > (_isCmp ? 90 : 160) ? '…' : ''}</span>${_isCmp ? '<span class="sysnote-go">查看摘要 ›</span>' : ''}</div>`;
                 }
                 if (b.type === 'present') {
                   // 模型主动呈现的富媒介文件卡片: 图标按类别, 点击进预览

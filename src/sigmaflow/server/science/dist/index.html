@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="eb59106c">
+<meta name="build" content="e3317624">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1174,6 +1174,12 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .sysnote-tag{flex-shrink:0;display:inline-flex;align-items:center;gap:4px;font-weight:550;color:var(--accent,#5c9cf5)}
 .sysnote-txt{overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .tk-sysnote{background:color-mix(in srgb,var(--tr-think) 16%,transparent);color:#1d5f8a}
+
+/* 压缩宣告 chip 的可点击态: 跳转到摘要卡 */
+.sysnote-chip.jumpable{cursor:pointer;transition:background .12s}
+.sysnote-chip.jumpable:hover{background:#e8f0fb}
+.sysnote-txt{flex:1;min-width:0}
+.sysnote-go{flex-shrink:0;color:var(--accent,#5c9cf5);font-weight:550;white-space:nowrap}
 
 </style>
 </head>
@@ -9127,7 +9133,10 @@ V.ctxRing = () => {
                 if (b.type === 'sysnote') {
                   const _sn = String(b.text || '').replace(/^\[System\]\s*/i, '').replace(/^\[Goal still active\]\s*/i, '');
                   const _tag = /background-results/.test(_sn) ? '后台结果' : '注入提示';
-                  return `<div class="sysnote-chip" data-bi="${bi}" title="${e(String(b.text || ''))}"><span class="sysnote-tag">${i('info', '', 12)}${_tag}</span><span class="sysnote-txt">${e(_sn.slice(0, 160))}${_sn.length > 160 ? '…' : ''}</span></div>`;
+                  // 压缩宣告的 chip 可点击: 摘要卡插入在当时的消息位置, 长会话里
+                  // 离这条提示可能隔着几百格, 点击直达
+                  const _isCmp = /Conversation history was just compacted/.test(_sn);
+                  return `<div class="sysnote-chip${_isCmp ? ' jumpable' : ''}"${_isCmp ? ' data-action="jump-compact" role="button" tabindex="0"' : ''} data-bi="${bi}" title="${e(String(b.text || ''))}${_isCmp ? ' · 点击跳转到摘要卡' : ''}"><span class="sysnote-tag">${i(_isCmp ? 'layers' : 'info', '', 12)}${_tag}</span><span class="sysnote-txt">${e(_isCmp ? _sn.slice(0, 90) : _sn.slice(0, 160))}${_sn.length > (_isCmp ? 90 : 160) ? '…' : ''}</span>${_isCmp ? '<span class="sysnote-go">查看摘要 ›</span>' : ''}</div>`;
                 }
                 if (b.type === 'present') {
                   // 模型主动呈现的富媒介文件卡片: 图标按类别, 点击进预览
@@ -11347,6 +11356,17 @@ V.ctxRing = () => {
           if (t2) t2.classList.remove('ph-hold');
         }, 2050);
       }
+    },
+    'jump-compact': () => {
+      // 压缩宣告 chip → 跳到最近的摘要卡(末次压缩的卡在卡序列尾部)
+      const cards = [...document.querySelectorAll('.compact-card')];
+      const el = cards[cards.length - 1];
+      if (!el) { CS.toast('未找到摘要卡。', 'error'); return; }
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.remove('msg-flash');
+      void el.offsetWidth;
+      el.classList.add('msg-flash');
+      setTimeout(() => el.classList.remove('msg-flash'), 1800);
     },
     'track-jump': (id, el) => {
       // 格子 id 两态: "mi:bi"(块级钉点) / "mi"(消息级: 用户消息/错误格/旧存档)

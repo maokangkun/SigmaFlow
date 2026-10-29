@@ -819,3 +819,9 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .sysnote-tag{flex-shrink:0;display:inline-flex;align-items:center;gap:4px;font-weight:550;color:var(--accent,#5c9cf5)}
 .sysnote-txt{overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .tk-sysnote{background:color-mix(in srgb,var(--tr-think) 16%,transparent);color:#1d5f8a}
+
+/* 压缩宣告 chip 的可点击态: 跳转到摘要卡 */
+.sysnote-chip.jumpable{cursor:pointer;transition:background .12s}
+.sysnote-chip.jumpable:hover{background:#e8f0fb}
+.sysnote-txt{flex:1;min-width:0}
+.sysnote-go{flex-shrink:0;color:var(--accent,#5c9cf5);font-weight:550;white-space:nowrap}
