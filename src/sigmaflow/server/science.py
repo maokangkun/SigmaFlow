@@ -97,6 +97,7 @@ from .science_fs import (
     _PtySession,
     _fs_exec_payload,
     _fs_file_payload,
+    _fs_op_payload,
     _fs_tree_payload,
     _fs_upload_payload,
     _pty_key_of,
@@ -1744,6 +1745,20 @@ class ScienceAPI:
             project = self.project_store.projects.get(payload.projectId or "")
             return await asyncio.to_thread(
                 _fs_upload_payload, project, payload.name, payload.dataBase64
+            )
+
+        @router.post("/fs/op")
+        async def fs_op(payload: _FsOpIn, request: Request):
+            """文件浏览器右键菜单操作(规定动作白名单, 不开放任意 shell)。"""
+            _check_origin(request)
+            project = self.project_store.projects.get(payload.projectId or "")
+            return await asyncio.to_thread(
+                _fs_op_payload,
+                project,
+                payload.action or "",
+                payload.src or "",
+                payload.dst or "",
+                payload.name or "",
             )
 
         @router.get("/projects")
@@ -3423,6 +3438,14 @@ class _FsUploadIn(BaseModel):
 class FsMkdirIn(BaseModel):
     path: str = Field(default="", max_length=2000)
     name: str = Field(default="", max_length=120)
+
+
+class _FsOpIn(BaseModel):
+    projectId: Optional[str] = None
+    action: Optional[str] = None
+    src: Optional[str] = None
+    dst: Optional[str] = None
+    name: Optional[str] = None
 
 
 class ChatIn(BaseModel):

@@ -5,6 +5,7 @@ payload 函数由 science.py 路由层调用; PTY 会话跨 websocket 复用。"
 import base64
 import fcntl
 import os
+import shutil
 import pty as _pty_mod
 import select
 import signal
@@ -526,3 +527,71 @@ def _fs_file_payload(project, rel: str) -> dict:
     text = head[:_FS_TEXT_MAX].decode("utf-8", "replace")
     payload.update({"binary": False, "content": text, "truncated": truncated})
     return payload
+
+
+def _fs_op_payload(project, action: str, src: str, dst: str, name: str) -> dict:
+    """文件浏览器的右键操作: delete/move/copy/rename/touch/mkdir。
+
+    所有路径都经 _fs_resolve 限制在项目根内, 并拒绝触碰 .git 等受保护目录;
+    move/copy 的目标已存在时直接报错(不静默覆盖)。
+    """
+    base = str((project or {}).get("dir") or "").strip()
+    if not base or not os.path.isdir(base):
+        raise HTTPException(
+            status_code=404, detail="项目目录不存在，请编辑项目并填写本地路径"
+        )
+    protected = list(_FS_HIDDEN_NAMES)
+
+    def _resolved(rel: str):
+        target, root = _fs_resolve(base, rel)
+        if target is None or target == root:
+            raise HTTPException(status_code=400, detail="路径无效或越出项目目录")
+        for seg in target[len(root) + 1 :].split(os.sep):
+            if seg in protected:
+                raise HTTPException(status_code=400, detail=f"受保护目录: {seg}")
+        return target, root
+
+    src_t, _ = _resolved(src)
+
+    if action == "delete":
+        if src_t == os.path.realpath(base):
+            raise HTTPException(status_code=400, detail="不能删除项目根目录")
+        try:
+            if os.path.isdir(src_t) and not os.path.islink(src_t):
+                shutil.rmtree(src_t)
+            else:
+                os.unlink(src_t)
+        except FileNotFoundError:
+            pass
+        return {"ok": True}
+
+    if action == "touch" or action == "mkdir":
+        clean = os.path.basename(str(name or "").replace("\\", "/").replace("\x00", ""))[
+            :200
+        ]
+        if not clean or clean in (".", "..") or "/" in clean or clean in protected:
+            raise HTTPException(status_code=400, detail="名称无效")
+        target = os.path.join(src_t, clean)
+        if os.path.exists(target):
+            raise HTTPException(status_code=400, detail="同名条目已存在")
+        if action == "mkdir":
+            os.makedirs(target, exist_ok=False)
+        else:
+            with open(target, "x", encoding="utf-8"):
+                pass
+        return {"ok": True}
+
+    # move / copy / rename: 目标必须不存在(不静默覆盖)
+    dst_t, _ = _resolved(dst)
+    if os.path.exists(dst_t):
+        raise HTTPException(status_code=400, detail="目标路径已存在")
+    if action in ("move", "rename"):
+        shutil.move(src_t, dst_t)
+        return {"ok": True}
+    if action == "copy":
+        if os.path.isdir(src_t):
+            shutil.copytree(src_t, dst_t)
+        else:
+            shutil.copy2(src_t, dst_t)
+        return {"ok": True}
+    raise HTTPException(status_code=400, detail=f"未知操作: {action}")

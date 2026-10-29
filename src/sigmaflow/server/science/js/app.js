@@ -1339,6 +1339,16 @@
       const p = CS.data.papers.find(p => p.id === modal.id);
       body = `<p class="small muted mb-20">${e(p.title)}</p><form id="note-form" data-form="note"><textarea id="paper-note-text" class="note-editor" maxlength="10000" placeholder="记录你的阅读思考、证据局限与待验证问题…">${e(CS.state.notes[modal.id] || '')}</textarea></form><p class="tiny faint mt-12">笔记仅在本机保存，不自动发送到模型。</p>`;
       footer = `<button class="btn primary" form="note-form" type="submit">${i('check','',15)} 保存笔记</button>`;
+    } else if (modal.type === 'fs-input') {
+      // 文件浏览器右键操作的输入弹窗(重命名/移动/复制/新建): 回车提交, 校验在 confirm handler
+      title = modal.title;
+      body = `<p class="confirm-text">${e(modal.label || '')}</p><input id="fs-op-input" class="text-input mono" style="width:100%" value="${e(modal.value || '')}" placeholder="${e(modal.placeholder || '')}" autocomplete="off" />`;
+      footer = H.btn('close-modal','取消','','flat') + H.btn('confirm-fs-op', modal.confirmLabel || '确认','check','primary');
+      const submit = () => { const btn = document.querySelector('.modal-footer [data-action="confirm-fs-op"]'); if (btn) btn.click(); };
+      setTimeout(() => {
+        const inp = document.getElementById('fs-op-input');
+        if (inp) { inp.onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); submit(); } }; inp.select(); }
+      }, 40);
     } else if (modal.type === 'confirm') {
       title = modal.title;
       body = `<p class="confirm-text">${e(modal.message)}</p>`;
@@ -1520,16 +1530,71 @@
     'term-close': () => { CS.ui.terminal.open = false; CS.render(); },
     'term-clear': () => { CS.agent.pty?.clear(); },
     'fs-upload': () => { document.getElementById('fs-upload-input')?.click(); },
-    'fs-refresh': () => {
-      const st = CS.ui.fs; if (!st) return;
-      // children 清空后, 已展开的子目录行只剩 spinner(views 按有无 children
-      // 数据渲染)——必须把这些路径也逐一重新拉取, 否则会话中哪怕普通过程
-      // 点一次刷新, 展开的目录就永远转圈
-      const keep = new Set([...st.expanded]);
-      st.children = {}; st.git = {}; st.loading = true;
-      CS.agent.loadFsDir('');
-      for (const path of keep) if (path) CS.agent.loadFsDir(path);
-      CS.render();
+    'fs-refresh': () => { _fsRefreshAll(); CS.render(); },
+    // ---- 文件浏览器右键菜单: 动作全部经 POST /fs/op 白名单(不开放任意 shell) ----
+    'fs-menu-copy-path': (id, el) => {
+      const path = el?.dataset?.path || '';
+      CS.ui.fsCtx = null; CS.render();
+      if (navigator.clipboard) navigator.clipboard.writeText(path).then(() => CS.toast('路径已复制。', 'info'), () => {});
+      else CS.toast(path, 'info');
+    },
+    'fs-menu-copy': (id, el) => {
+      const path = el?.dataset?.path || '';
+      CS.ui.fsCtx = null;
+      CS.showModal('fs-input', { title: '复制到…', label: '项目内目标路径(不存在的新路径)', value: path, action: 'copy', src: path, confirmLabel: '复制' });
+    },
+    'fs-menu-move': (id, el) => {
+      const path = el?.dataset?.path || '';
+      CS.ui.fsCtx = null;
+      CS.showModal('fs-input', { title: '移动到…', label: '项目内目标路径(不存在的新路径)', value: path, action: 'move', src: path, confirmLabel: '移动' });
+    },
+    'fs-menu-rename': (id, el) => {
+      const path = el?.dataset?.path || '';
+      const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+      CS.ui.fsCtx = null;
+      CS.showModal('fs-input', { title: '重命名', label: '新名称(不含路径分隔符)', value: path.split('/').pop(), prefix: parent, action: 'rename', src: path, confirmLabel: '重命名' });
+    },
+    'fs-menu-delete': (id, el) => {
+      const path = el?.dataset?.path || '', type = el?.dataset?.type || 'file';
+      CS.ui.fsCtx = null;
+      CS.showModal('confirm', { title: type === 'dir' ? '删除文件夹？' : '删除文件？', message: type === 'dir' ? '将删除文件夹「' + path + '」及其全部内容。此操作不可撤销。' : '将删除文件「' + path + '」。此操作不可撤销。', confirmAction: 'confirm-fs-delete', confirmLabel: '删除', danger: true, fsPath: path });
+    },
+    'fs-menu-newfile': (id, el) => {
+      const path = el?.dataset?.path || '';
+      CS.ui.fsCtx = null;
+      CS.showModal('fs-input', { title: '新建文件', label: '文件名(不含路径分隔符)', value: '', action: 'touch', src: path, confirmLabel: '创建' });
+    },
+    'fs-menu-newfolder': (id, el) => {
+      const path = el?.dataset?.path || '';
+      CS.ui.fsCtx = null;
+      CS.showModal('fs-input', { title: '新建文件夹', label: '文件夹名(不含路径分隔符)', value: '', action: 'mkdir', src: path, confirmLabel: '创建' });
+    },
+    'confirm-fs-delete': async () => {
+      const path = (CS.ui.modal && CS.ui.modal.fsPath) || ''; CS.closeModal();
+      if (!path) return;
+      try {
+        await CS.api.request('/fs/op', { method: 'POST', body: JSON.stringify({ projectId: CS.ui.fs && CS.ui.fs.projectId, action: 'delete', src: path }) });
+        _fsRefreshAll(); CS.toast('已删除。', 'info');
+      } catch (err) { CS.toast('删除失败：' + CS.api.friendlyError(err), 'error'); }
+    },
+    'confirm-fs-op': async () => {
+      const m = CS.ui.modal || {};
+      const inputEl = document.getElementById('fs-op-input');
+      const val = (inputEl && inputEl.value || '').trim();
+      if (!val) { CS.toast('请填写内容。', 'error'); return; }
+      let dst = val;
+      if (m.action === 'rename') {
+        if (/[\\\/]/.test(val)) { CS.toast('重命名只允许单段名称。', 'error'); return; }
+        dst = m.prefix ? m.prefix + '/' + val : val;
+      }
+      if ((m.action === 'touch' || m.action === 'mkdir') && /[\\\/]/.test(val)) { CS.toast('名称不能包含路径分隔符。', 'error'); return; }
+      CS.closeModal();
+      try {
+        await CS.api.request('/fs/op', { method: 'POST', body: JSON.stringify({ projectId: CS.ui.fs && CS.ui.fs.projectId, action: m.action, src: m.src, dst, name: val }) });
+        // 新建动作: 展开所在目录让用户立刻看到产物(收起状态下新建是盲操作)
+        if ((m.action === 'touch' || m.action === 'mkdir') && m.src && CS.ui.fs) CS.ui.fs.expanded.add(m.src);
+        _fsRefreshAll(); CS.toast('操作完成。', 'info');
+      } catch (err) { CS.toast('操作失败：' + CS.api.friendlyError(err), 'error'); }
     },
     'toggle-project-settings': id => { CS.ui.projectSettingsMenu = CS.ui.projectSettingsMenu === id ? null : id; CS.render(); },
     'ask-pick-option': (id, el) => {
@@ -2424,12 +2489,22 @@
       finally{ CS.ui.testing=false; CS.save(); CS.render(); }
     }
   };
+  // 文件浏览器右键: 记录光标位渲染菜单; click/Escape 关闭在全局 click 与键盘处理里
+  document.addEventListener('contextmenu', ev => {
+    const row = ev.target.closest && ev.target.closest('.fs-row');
+    if (!row) { if (CS.ui.fsCtx) { CS.ui.fsCtx = null; CS.render(); } return; }
+    const type = row.dataset.action === 'fs-dir' ? 'dir' : 'file';
+    ev.preventDefault();
+    CS.ui.fsCtx = { path: row.dataset.path || '', type, x: ev.clientX, y: ev.clientY };
+    CS.render();
+  });
   document.addEventListener('click', async event => {
     if (CS.ui.userMenu && !event.target.closest('.workspace-chip')) { CS.ui.userMenu = false; CS.render(); }
     if (CS.ui.modelMenu && !event.target.closest('.model-select')) { CS.ui.modelMenu = false; CS.render(); }
     if (CS.ui.contextMenu && !event.target.closest('.ctx-use')) { CS.ui.contextMenu = false; CS.render(); }
     if (CS.ui.projectMenu && !event.target.closest('.composer-project')) { CS.ui.projectMenu = false; CS.render(); }
     if (CS.ui.projectSettingsMenu && !event.target.closest('.project-link')) { CS.ui.projectSettingsMenu = null; CS.render(); }
+    if (CS.ui.fsCtx && !event.target.closest('.fs-ctx-menu')) { CS.ui.fsCtx = null; CS.render(); }
     if (CS.ui.dropdown && !event.target.closest('.dd-wrap')) { CS.ui.dropdown = null; CS.render(); }
     const nav = event.target.closest('[data-nav]');
     if (nav) {
@@ -2748,6 +2823,13 @@
     if (real.length) payload.content = real.map(m => ({ role: m.role, content: m.content }));  // 空则不带 → 服务端保留已有
     CS.api.modelCall('conversation.save', 'POST', '/conversations', payload)
       .then(() => CS.agent.loadConversations()).catch(() => {});
+  };
+  const _fsRefreshAll = () => {
+    const st = CS.ui.fs; if (!st) return;
+    const keep = new Set([...st.expanded]);
+    st.children = {}; st.git = {}; st.loading = true;
+    CS.agent.loadFsDir('');
+    for (const path of keep) if (path) CS.agent.loadFsDir(path);
   };
   CS.agent.loadFsDir = async path => {
     const st = CS.ui.fs; if (!st) return;

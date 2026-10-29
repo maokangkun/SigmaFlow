@@ -799,3 +799,5 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .cell-ask-panel textarea{width:100%;margin-top:12px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:12.5px;resize:vertical;min-height:76px;background:#fff;font-family:inherit;color:var(--ink)}
 .cell-ask-panel textarea:focus-visible{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
 @media(max-width:940px){.cell-layout{grid-template-columns:1fr;gap:14px}.cell-stage{height:min(64vh,560px);min-height:340px;flex:none}.cell-switch-img{aspect-ratio:16/9}}
+/* 文件浏览器右键菜单: 光标定位浮层, 条目复用 model-menu-item 样式 */
+.fs-ctx-menu{position:fixed;z-index:60;min-width:172px;display:flex;flex-direction:column;padding:5px;border-radius:10px;background:#fff;border:1px solid #d9dde5;box-shadow:0 12px 34px rgba(20,28,45,.16)}

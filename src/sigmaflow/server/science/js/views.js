@@ -555,10 +555,28 @@ V.ctxRing = () => {
       return `<button type="button" class="fs-row${open ? ' open' : ''}" style="padding-left:${6 + depth * 13}px" data-action="${isDir ? 'fs-dir' : 'fs-open'}" data-path="${e(entry.path)}" title="${e(entry.path)}${stx ? ' · git ' + stx : ''}">${icon}<span class="fs-name${stx ? ' st-' + stx.toLowerCase() : ''}">${e(entry.name)}</span>${badge}</button>${kids}`;
     };
     if (!Array.isArray(st.root)) return '<div class="fs-empty small muted">正在加载目录…</div>';
-    if (st.root.length) return `<div class="fs-tree">${st.root.map(x => row(x, 0)).join('')}</div>`;
-    return st.error
+    let treeHtml = st.error
       ? `<div class="fs-empty small muted">${e(st.error)}</div>`
       : '<div class="fs-empty small muted">目录为空，或项目尚未配置本地路径。</div>';
+    if (st.root.length) treeHtml = `<div class="fs-tree">${st.root.map(x => row(x, 0)).join('')}</div>`;
+    // 右键菜单: 定位在光标处, 动作经 data-action 走既有点击委托
+    if (CS.ui.fsCtx && typeof CS.ui.fsCtx.x === 'number') {
+      const f = CS.ui.fsCtx;
+      const isDir = f.type === 'dir';
+      const mi = (action, label) => `<button type="button" class="model-menu-item" data-action="${action}" data-path="${e(f.path)}" data-type="${e(f.type)}">${label}</button>`;
+      treeHtml += `<div class="fs-ctx-menu" style="left:${Math.min(f.x, window.innerWidth - 190)}px;top:${Math.min(f.y, window.innerHeight - 260)}px">`
+        + (isDir
+            ? mi('fs-menu-newfile', '新建文件') + mi('fs-menu-newfolder', '新建文件夹') + '<div class="menu-divider"></div>'
+            : '')
+        + mi('fs-menu-rename', '重命名')
+        + mi('fs-menu-move', '移动到…')
+        + mi('fs-menu-copy', isDir ? '复制到…' : '复制到…')
+        + mi('fs-menu-copy-path', '复制路径')
+        + '<div class="menu-divider"></div>'
+        + `<button type="button" class="model-menu-item danger" data-action="fs-menu-delete" data-path="${e(f.path)}" data-type="${e(f.type)}">删除</button>`
+        + `</div>`;
+    }
+    return treeHtml;
   };
   V.terminalDrawer = () => {
     const t = CS.ui.terminal;
