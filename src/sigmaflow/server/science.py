@@ -4338,7 +4338,7 @@ def _run_agent_chat(
         base_url=base_url,
         api_key=api_key or "sk-empty",
         support_tool=True,
-        retry=3,  # 模型请求失败/超时重试三次, SDK 内部重试关闭避免叠加
+        retry=5,  # 模型请求失败/超时重试五次(间隔递增), SDK 内部重试关闭避免叠加
         max_turn=max_turn,
         nudge_threshold=_nudge_threshold(),
         tools=_effective_agent_tools(),

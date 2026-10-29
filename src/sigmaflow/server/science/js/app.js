@@ -1111,10 +1111,10 @@
         CS.render();
         if (follow) scrollToLatest();
       };
-      // 模型请求失败进入重试: 在等待指示处显示第 N/3 次失败与原因
+      // 模型请求失败进入重试: 在等待指示处显示第 N/5 次失败与原因(间隔随次数递增)
       const retryEvent = r => {
         if (!r || !r.attempt) return;
-        CS.ui.chatRetry = { runId: run.id, attempt: r.attempt, total: r.total || 3, error: r.error || '' };
+        CS.ui.chatRetry = { runId: run.id, attempt: r.attempt, total: r.total || 5, error: r.error || '' };
         CS.render();
       };
       const done = await CS.api.chat(history, delta => {

@@ -203,7 +203,7 @@ class Agent:
         base_url=None,
         api_key=None,
         available_tools=None,
-        retry=3,
+        retry=5,
         max_turn=1e10,
         nudge_threshold=None,
         debug=False,
@@ -894,7 +894,10 @@ class Agent:
                                 )
                             except Exception:
                                 pass
-                        time.sleep(random.randint(2, 5))
+                        if tried < self.retry:
+                            # 重试间隔随次数递增(约 3s/6s/12s/24s/48s, 封顶 60s)加随机抖动
+                            _backoff = min(60, 3 * 2 ** (tried - 1))
+                            time.sleep(_backoff + random.uniform(0, 2))
                         if tried == self.retry:
                             console.print(f"{Prompt.Error}{traceback.format_exc()}")
             else:
