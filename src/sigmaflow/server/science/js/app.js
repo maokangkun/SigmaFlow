@@ -424,70 +424,98 @@
   };
 
   const loadRemoteConversation = async id => {
-    const fetchContent = () => CS.api.modelCall('conversation.content', 'GET', `/conversations/${encodeURIComponent(id)}/content`);
     const hadLocal = CS.state.runs.some(r => r.id === id);
     // 首次远程加载(本地无副本)才出骨架; 已有副本时静默换新, 不打断阅读
     if (!hadLocal) CS.ui.loadingRunId = id;
     try {
+      // 存档消息 → 内存消息: 新格式解压块时间线 {t,x}/{t,n,a,r}..., 旧格式压平
+      // 记录重建 blocks; 分页循环里每页复用同一解码
+      const decodeMsg = m => {
+        const msg = { role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) };
+        if (msg.role === 'assistant' && Array.isArray(m.blocks) && m.blocks.length) {
+          msg.blocks = m.blocks.map(b => {
+            if (!b || typeof b !== 'object') return null;
+            if (b.t === 'think') return { type: 'think', text: b.x || '' };
+            if (b.t === 'tool') return { type: 'tool', name: b.n || '工具', args: b.a && typeof b.a === 'object' ? b.a : {}, result: b.r || '', isError: !!b.e };
+            if (b.t === 'ask') return { type: 'ask', id: b.id, questions: Array.isArray(b.qs) ? b.qs : [], answered: !!b.ok, result: b.r || '', answers: Array.isArray(b.ans) ? b.ans : null, stale: !b.ok };
+            if (b.t === 'text') return { type: 'text', text: b.x || '' };
+            if (b.t === 'deliverables') return { type: 'deliverables', files: Array.isArray(b.files) ? b.files : [] };
+            if (b.t === 'present') return { type: 'present', typ: b.typ || 'file', path: b.path, name: b.name, ext: b.ext, klass: b.klass, size: b.size, title: b.title, note: b.note, pid: b.pid || '' };
+            if (b.t === 'sysnote') return { type: 'sysnote', text: b.x || '' };
+            return null;
+          }).filter(Boolean);
+        }
+        if (msg.role === 'assistant' && !msg.blocks && (msg.reasoning || msg.tools?.length || msg.asks?.length || msg.deliverables?.length)) {
+          const blocks = [];
+          if (msg.reasoning) blocks.push({ type: 'think', text: msg.reasoning });
+          for (const t of msg.tools || []) blocks.push({ type: 'tool', name: t.name, args: t.args, result: t.result });
+          for (const a of msg.asks || []) blocks.push({ type: 'ask', id: a.id, questions: a.questions, answered: !!a.answered, result: a.result, answers: Array.isArray(a.answers) ? a.answers : null, stale: !a.answered });
+          if (msg.content) blocks.push({ type: 'text', text: msg.content });
+          if (msg.deliverables?.length) blocks.push({ type: 'deliverables', files: msg.deliverables });
+          msg.blocks = blocks;
+        }
+        return msg;
+      };
+      // 分块传输: 每页 30 条; 大存档不再一把梭(长会话整包 JSON 曾撑爆 HTTP
+      // 超时窗口), 逐页拉逐页渲染, 首页到达即可阅读
+      const PAGE = 30;
+      const fetchPage = offset => CS.api.request(`/conversations/${encodeURIComponent(id)}/content?offset=${offset}&limit=${PAGE}`, { method: 'GET', timeout: 60000 });
       let data;
-      try { data = await fetchContent(); }
-      catch (first) { await new Promise(r => setTimeout(r, 900)); data = await fetchContent(); }  // 冷启动 WS 未就绪抖动重试一次; modelCall 自带 WS→HTTP 兜底
-      // 空壳会话(如"发送即落库"上线前被服务重启腰斩的遗留, 只登记了标题):
-      // 不再判错误卡死打开, 以空白会话正常进入, 可直接发新消息接续使用
-      if (!data.content?.length) {
-        if (!hadLocal) CS.toast('该会话暂无消息记录，可直接发送新消息继续。');
-        data.content = [];
-      }
+      try { data = await fetchPage(0); }
+      catch (first) { await new Promise(r => setTimeout(r, 900)); data = await fetchPage(0); }
       const meta = CS.ui.conversations.find(c => c.id === id) || {};
-      const run = { id, kind: 'chat', title: meta.title || data.title || '会话', projectId: data.projectId, prompt: '', datasetIds: [], config: {}, ...(data.systemPrompt ? { systemPrompt: data.systemPrompt } : {}),
-              messages: data.content.map(m => {
-                const msg = { role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) };
-                // 新格式: 存档带压缩块时间线 {t,x}/{t,n,a,r}/{t,ask…}, 解压回内存块结构
-                if (msg.role === 'assistant' && Array.isArray(m.blocks) && m.blocks.length) {
-                  msg.blocks = m.blocks.map(b => {
-                    if (!b || typeof b !== 'object') return null;
-                    if (b.t === 'think') return { type: 'think', text: b.x || '' };
-                    if (b.t === 'tool') return { type: 'tool', name: b.n || '工具', args: b.a && typeof b.a === 'object' ? b.a : {}, result: b.r || '', isError: !!b.e };
-                    if (b.t === 'ask') return { type: 'ask', id: b.id, questions: Array.isArray(b.qs) ? b.qs : [], answered: !!b.ok, result: b.r || '', answers: Array.isArray(b.ans) ? b.ans : null, stale: !b.ok };
-                    if (b.t === 'text') return { type: 'text', text: b.x || '' };
-                    if (b.t === 'deliverables') return { type: 'deliverables', files: Array.isArray(b.files) ? b.files : [] };
-                    if (b.t === 'present') return { type: 'present', typ: b.typ || 'file', path: b.path, name: b.name, ext: b.ext, klass: b.klass, size: b.size, title: b.title, note: b.note, pid: b.pid || '' };
-                    if (b.t === 'sysnote') return { type: 'sysnote', text: b.x || '' };
-                    return null;
-                  }).filter(Boolean);
-                }
-                // 旧格式记录压平了时间线, 加载时重建为 think/tool/text 块以便按时间线展示
-                if (msg.role === 'assistant' && !msg.blocks && (msg.reasoning || msg.tools?.length || msg.asks?.length || msg.deliverables?.length)) {
-                  const blocks = [];
-                  if (msg.reasoning) blocks.push({ type: 'think', text: msg.reasoning });
-                  for (const t of msg.tools || []) blocks.push({ type: 'tool', name: t.name, args: t.args, result: t.result });
-                  for (const a of msg.asks || []) blocks.push({ type: 'ask', id: a.id, questions: a.questions, answered: !!a.answered, result: a.result, answers: Array.isArray(a.answers) ? a.answers : null, stale: !a.answered });
-                  if (msg.content) blocks.push({ type: 'text', text: msg.content });
-                  if (msg.deliverables?.length) blocks.push({ type: 'deliverables', files: msg.deliverables });
-                  msg.blocks = blocks;
-                }
-                return msg;
-              }),
-              steps: [], createdAt: meta.createdAt ? new Date(meta.createdAt).toISOString() : new Date().toISOString(), status: 'complete', progress: 0, transport: 'chat', isDemo: false };
-      // 同 id 旧 run(如被中断的本地截断版)整体替换为服务端全量版, 不留双份;
-      // 用户消息自带的引用上下文(refContext)只存在本地, 按消息序号原样保留
-      const oldIdx = CS.state.runs.findIndex(r => r.id === id);
-      if (oldIdx >= 0) {
-        const oldMsgs = CS.state.runs[oldIdx].messages || [];
-        oldMsgs.forEach((om, i) => { if (om?.role === 'user' && om.refContext && run.messages[i]?.role === 'user') run.messages[i].refContext = om.refContext; });
-        CS.state.runs[oldIdx] = run;
+      const total = Number(data.total ?? 0);
+      const first = Array.isArray(data.content) ? data.content : [];
+      // 空壳会话(如"发送即落库"上线前被服务重启腰斩的遗留): 以空白会话正常进入
+      if (!first.length && !total) {
+        if (!hadLocal) CS.toast('该会话暂无消息记录，可直接发送新消息继续。');
       }
-      else CS.state.runs.push(run);
-      if (data.projectId) CS.state.projectId = data.projectId;
-      if (CS.state.currentRunId !== id) { CS.state.currentRunId = id; CS.save(); CS.navigate('chat', id); }
-      else CS.save();
-      CS.render();
-      // 空壳会话只保留上面那句提示, 不再叠加"加载成功"的泛用提示
-      if (!hadLocal && data.content?.length) CS.toast('已从服务端加载该会话内容。');
+      const run = { id, kind: 'chat', title: meta.title || data.title || '会话', projectId: data.projectId, prompt: '', datasetIds: [], config: {}, ...(data.systemPrompt ? { systemPrompt: data.systemPrompt } : {}),
+              messages: first.map(decodeMsg),
+              steps: [], createdAt: meta.createdAt ? new Date(meta.createdAt).toISOString() : new Date().toISOString(), status: 'complete', progress: 0, transport: 'chat', isDemo: false };
+      // 本地无副本: 首页渲染先行(分页继续后台补全); 已有副本: 拉完再整体换新,
+      // 加载过程不闪烁也不再出现"当前视图忽然变短"
+      if (!hadLocal) {
+        const oldIdx2 = CS.state.runs.findIndex(r => r.id === id);
+        if (oldIdx2 >= 0) CS.state.runs[oldIdx2] = run;
+        else CS.state.runs.push(run);
+        if (data.projectId) CS.state.projectId = data.projectId;
+        if (CS.state.currentRunId !== id) { CS.state.currentRunId = id; CS.save(); CS.navigate('chat', id); }
+        else CS.save();
+        CS.render();
+      }
+      let offset = first.length;
+      while (offset < total) {
+        const page = await fetchPage(offset);
+        const rows = Array.isArray(page.content) ? page.content : [];
+        if (!rows.length) break;  // 服务端切片为空防御, 防 total 与实际不一致死循环
+        run.messages.push(...rows.map(decodeMsg));
+        offset += rows.length;
+        if (!hadLocal) CS.render();
+      }
+      if (hadLocal) {
+        // 同 id 旧 run 整体替换为服务端全量版; 用户消息自带的引用上下文
+        // (refContext)只存在本地, 按消息序号原样保留
+        const oldIdx = CS.state.runs.findIndex(r => r.id === id);
+        if (oldIdx >= 0) {
+          const oldMsgs = CS.state.runs[oldIdx].messages || [];
+          oldMsgs.forEach((om, i2) => { if (om?.role === 'user' && om.refContext && run.messages[i2]?.role === 'user') run.messages[i2].refContext = om.refContext; });
+          CS.state.runs[oldIdx] = run;
+        }
+        else CS.state.runs.push(run);
+        if (data.projectId) CS.state.projectId = data.projectId;
+        if (CS.state.currentRunId !== id) { CS.state.currentRunId = id; CS.save(); CS.navigate('chat', id); }
+        else CS.save();
+        CS.render();
+        if (first.length) CS.toast('已从服务端同步该会话内容。', 'info');
+      } else {
+        CS.save();
+        CS.render();
+      }
     } catch (error) { if (!hadLocal) CS.toast('加载会话内容失败：' + CS.api.friendlyError(error), 'error'); }
     finally { if (CS.ui.loadingRunId === id) { CS.ui.loadingRunId = null; CS.render(); } }
   };
-  const startChat = prompt => {
+    const startChat = prompt => {
     const run = {
       id: CS.uid('run'), kind: 'chat', title: prompt.slice(0, 24) || '新会话',
       projectId: CS.state.projectId, prompt, datasetIds: [...CS.ui.attachments], config: {},
@@ -968,6 +996,9 @@
   };
 
   const sendChatMessage = async (run, text, datasetIds, opts = {}) => {
+    // 分页加载未完成时不放行: 契约/压缩卡可能还在后页, 半份历史会让模型
+    // 基于截断上下文接续
+    if (CS.ui.loadingRunId === run.id) { CS.toast('会话内容仍在加载，稍候再发送。', 'error'); return; }
     // 隐形续接(压缩完成后): 不插可见用户消息, 历史以压缩摘要卡结尾,
     // 服务端契约把摘要卡组装为 user 末条, 模型基于摘要直接开始下一轮
     if (!opts.hiddenContinue) run.messages.push({ role: 'user', content: text, datasetIds: [...datasetIds], at: new Date().toISOString() });

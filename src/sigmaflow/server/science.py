@@ -2439,19 +2439,57 @@ class ScienceAPI:
             }
 
         @router.get("/conversations/{conversation_id}/content")
-        async def get_conversation_content(conversation_id: str):
+        async def get_conversation_content(conversation_id: str, request: Request):
             conv = self.project_store.conversations.get(conversation_id)
             if conv is None:
                 raise HTTPException(status_code=404, detail="Conversation not found")
-            return {
+            content = conv.get("content") or []
+            out = {
                 "id": conversation_id,
                 "title": conv.get("title") or "",
                 "projectId": conv.get("projectId"),
-                "content": conv.get("content") or [],
-                # 本次会话实际使用的 system 提示词(Trace 页 #0 系统条);
-                # 属性缺失的历史会话按当前配置惰性组装近似 bound
-                "systemPrompt": self._conversation_system_or_bind(conv),
+                # total 供前端分页循环判断进度; 不带分页参数仍是全量(兼容旧调用)
+                "total": len(content),
+                "content": content,
             }
+            # 本次会话实际使用的 system 提示词(Trace 页 #0 系统条); 惰性组装不轻
+            # 每页都算, 只有第一页带, 后续页前端沿用首页结果
+            if not int(request.query_params.get("offset") or 0):
+                out["systemPrompt"] = self._conversation_system_or_bind(conv)
+            # 分块传输: offset/limit 切片, 大存档逐页拉逐步渲染
+            try:
+                _off = max(0, int(request.query_params.get("offset") or 0))
+                _lim = max(0, int(request.query_params.get("limit") or 0))
+            except Exception:
+                _off = _lim = 0
+            if _lim:
+                out["content"] = content[_off:_off + _lim]
+                out["offset"] = _off
+                out["limit"] = _lim
+            # 传输瘦身: 超长工具结果在回放视图只展示前 600 字, 存档里的 3 万字
+            # 正文分段加载后照样把单包拖到兆级——传输端按 4000 字截短(rc 标记),
+            # 存储不动, 展开详情/Trace 的完整版走各自的数据通路
+            def _shape(m):
+                if not isinstance(m, dict) or not isinstance(m.get("blocks"), list):
+                    return m
+                changed = False
+                shaped = []
+                for b in m["blocks"]:
+                    if isinstance(b, dict) and b.get("t") == "tool" and isinstance(b.get("r"), str) and len(b["r"]) > 4000:
+                        b2 = dict(b)
+                        b2["r"] = b["r"][:4000]
+                        b2["rc"] = 1
+                        shaped.append(b2)
+                        changed = True
+                    else:
+                        shaped.append(b)
+                if changed:
+                    m2 = dict(m)
+                    m2["blocks"] = shaped
+                    return m2
+                return m
+            out["content"] = [_shape(x) for x in out["content"]]
+            return out
 
         @router.delete("/conversations/{conversation_id}")
         async def delete_conversation(conversation_id: str, request: Request):
