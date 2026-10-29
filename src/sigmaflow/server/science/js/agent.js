@@ -43,6 +43,13 @@
           throw new Error(detail);
         }
         return await response.json();
+      } catch (err) {
+        // 超时 abort 抛的是原生 AbortSignal 异常("signal is aborted without
+        // reason"), 转成可读的请求超时提示
+        if (err && (err.name === 'AbortError' || /abort/i.test(String(err && err.message)))) {
+          throw new Error('请求超时 (HTTP ' + Math.round((options.timeout || 15000) / 1000) + 's)，服务繁忙请稍后重试。');
+        }
+        throw err;
       } finally { clearTimeout(timer); }
     }
   };
@@ -68,7 +75,8 @@
         // 非幂等 mutation(删除/归档等)不重发, 保留原错误供调用方提示。
         const idem = httpMethod === 'GET' || (httpMethod === 'POST' && httpPath === '/conversations');
         if (!idem) throw err;
-        return CS.api.request(httpPath, { method: httpMethod, body: body ? JSON.stringify(body) : undefined });
+        // 兜底超时放宽到 60s: 页面冷启动与大存档下载都会占满默认 15s
+        return CS.api.request(httpPath, { method: httpMethod, body: body ? JSON.stringify(body) : undefined, timeout: 60000 });
       }
     }
     return CS.api.request(httpPath, { method: httpMethod, body: body ? JSON.stringify(body) : undefined });
