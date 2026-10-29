@@ -867,11 +867,15 @@ class Compactor:
             ratio >= threshold or (ratio * window if window else 0) > hard_limit
         )
         if force or auto:
-            print(
-                f"{Prompt.Compact}manual compact"
+            # 双来源数值进日志: est=字符级估读, usage=API 返回摊到窗口的占比; 事后审计一眼分辨触发源
+            est_tokens = int(est_ratio * self.max_model_len) if self.max_model_len else est_ratio
+            usage_tokens = int((context_ratio or 0) * self.max_model_len) if self.max_model_len else context_ratio
+            reason = (
+                "manual"
                 if force
-                else f"{Prompt.Compact}auto compact triggered"
+                else f"est={est_tokens} tokens, api_usage={usage_tokens} tokens, window={self.max_model_len}"
             )
+            print(f"{Prompt.Compact}{'manual compact' if force else f'auto compact triggered ({reason})'}")
             return self.summary_compact(messages, force=force)
         # 未触发: 只做轻量裁剪; 未发生压缩时清掉上次的事件残留
         messages = self.tool_compact(messages, context_ratio=context_ratio)
