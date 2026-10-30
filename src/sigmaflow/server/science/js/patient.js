@@ -1983,7 +1983,7 @@ function caseIdxOf(id){for(let i=0;i<CASES.length;i++)if(CASES[i].id===id)return
 function startCase(id){
   const idx=caseIdxOf(id);
   const p=caseProgress();
-  if(idx<0||idx+1>p.unlocked){log('病例未解锁');return;}
+  if(idx<0){log('病例不存在');return;}   // 全部病例开放挑战(无解锁门槛)
   closeCaseSelect();
   resetSim();                                  // 初始化复位: 病例进行前预设状态
   const c=CASES[idx];
@@ -2077,7 +2077,7 @@ function openCaseSelect(){
   if(grid){
     let h='';
     CASES.forEach(function(c,i){
-      const locked=i+1>p.unlocked;
+      const locked=false;   // 全部病例开放挑战
       const res=p.results[c.id];
       h+='<div class="caseCard'+(locked?' lock':'')+'" '+(locked?'':'onclick="startCase(\''+c.id+'\')"')+
         '><h5>'+(locked?'🔒 ':'')+'C'+(i+1)+' '+c.name+'</h5>'+
