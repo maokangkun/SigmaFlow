@@ -828,6 +828,9 @@ function waveFrame(dt){
 // ============ 3D 心脏（canvas 软件渲染） ============
 var MESH=null;
 var BW={sel:null};
+// 肺/肾左右两叶在器官条折叠为一枚(组键): 3D 高亮/压暗经 selHits 换算
+var ORGAN_GROUP={lungL:'lung',lungR:'lung',kidneyL:'kidney',kidneyR:'kidney'};
+function selHits(id){if(!BW.sel)return false;if(BW.sel===id)return true;var g=ORGAN_GROUP[id];return !!g&&BW.sel===g;}
 var ORGANS=[];
 var SPREAD=1.45;
 var ORGAN_ICONS={heart:'Blood',lungL:'Lung',lungR:'Lung',liver:'Liver',spleen:'Spleen',thyroid:'Thyroid',pancreas:'Pancreas',gallbladder:'Gallbladder',kidneyL:'Kidney',kidneyR:'Kidney',stomach:'Stomach'};
@@ -835,23 +838,43 @@ function renderOrganStrip(){
   const strips=[document.getElementById('organStrip'),document.getElementById('organStripBig')].filter(s=>s);
   if(!strips.length||!ORGANS.length)return;
   strips.forEach(strip=>strip.innerHTML='');
-  ORGANS.forEach(o=>{
+  // 展示条目: 左右肺/肾按 ORGAN_GROUP 折叠为一枚 "肺"/"肾"; 组的全部成员切除才显示"已切除"
+  const seen={},entries=[];
+  OrgansLoop: for(const o of ORGANS){
+    const g=ORGAN_GROUP[o.id],key=g||o.id;
+    let e=seen[key];
+    if(!e){e=seen[key]={key,ids:[],zh:g?(g==='lung'?'肺':'肾'):o.zh,ic:ORGAN_ICONS[o.id],color:o.color};entries.push(e);}
+    e.ids.push(o.id);
+    const rm=!!(S.ect&&S.ect[o.id]);
+    e.removed=(e.removed===undefined)?rm:(e.removed&&rm);
+  }
+  entries.forEach(e=>{
     const b=document.createElement('button');
-    const ic=ORGAN_ICONS[o.id];
-    const removed=!!(S.ect&&S.ect[o.id]);
-    const dotC='rgb('+Math.round(o.color[0]*255)+','+Math.round(o.color[1]*255)+','+Math.round(o.color[2]*255)+')';
-    b.innerHTML=(removed?'<span class="ectTag">已切除</span>':'')+(ic?('<img src="patient/'+ic+'.png">'):('<span class="dot" style="background:'+dotC+'"></span>'))+'<span class="zhName">'+o.zh+'</span>';
-    if(BW.sel===o.id&&!removed)b.classList.add('sel');
-    if(removed)b.classList.add('removed');
+    const rm=!!e.removed;
+    const dotC='rgb('+Math.round(e.color[0]*255)+','+Math.round(e.color[1]*255)+','+Math.round(e.color[2]*255)+')';
+    b.innerHTML=(rm?'<span class="ectTag">已切除</span>':'')+(e.ic?('<img src="patient/'+e.ic+'.png">'):('<span class="dot" style="background:'+dotC+'"></span>'))+'<span class="zhName">'+e.zh+'</span>';
+    if(BW.sel===e.key&&!rm)b.classList.add('sel');
+    if(rm)b.classList.add('removed');
     strips.forEach(strip=>strip.appendChild(b.cloneNode(true)));
   });
-  strips.forEach(strip=>strip.querySelectorAll('button').forEach((b,idx)=>{
-    b.onclick=()=>{
-      const org=ORGANS[idx];
-      if(S.ect&&S.ect[org.id]){BW.sel=null;renderOrganStrip();return;}   // 已切除: 不可再选中, 仅展示术后状态
-      BW.sel=(BW.sel===org.id?null:org.id);renderOrganStrip();
-    };
-  }));
+  strips.forEach(strip=>{
+    strip.querySelectorAll('button').forEach(b=>{
+      b.onclick=()=>{
+        const e=entries.find(x=>x.zh===b.querySelector('.zhName').textContent);
+        if(!e)return;
+        const allRm=e.ids.every(id=>S.ect&&S.ect[id]);
+        if(allRm){BW.sel=null;renderOrganStrip();return;}   // 组内全部已切除: 不可再选中
+        BW.sel=(BW.sel===e.key?null:e.key);renderOrganStrip();
+      };
+    });
+    // 滚轮=横向滚动: 悬浮条隐藏了滚动条但仍要可达
+    if(!strip.dataset.wheelBound){
+      strip.dataset.wheelBound='1';
+      strip.addEventListener('wheel',ev=>{
+        if(Math.abs(ev.deltaY)>Math.abs(ev.deltaX)){strip.scrollLeft+=ev.deltaY;ev.preventDefault();}
+      },{passive:false});
+    }
+  });
 }
 function toggleSpread(){
   SPREAD=(SPREAD>1.05?1.0:1.45);
@@ -2526,7 +2549,7 @@ window.PatientViewer = (function () {
         if (fx && fx.arrest > 0 && o.anim === 'heart' && fx.cprComp > 0) o.node.scale.y *= 1 - 0.15 * fx.cprComp;
         if (!(fx && fx.vf > 0 && o.anim === 'heart')) o.node.position.copy(hp);
         var removed = (s.ect && s.ect[id]);
-        var dimmed = (BW.sel && BW.sel !== id);
+        var dimmed = (BW.sel && !selHits(id));
         for (var mi = 0; mi < o.mats.length; mi++) {
           var m = o.mats[mi];
           m.transparent = !!dimmed || !!removed;
@@ -2549,7 +2572,7 @@ window.PatientViewer = (function () {
               m.emissive.setRGB(0.72, 0.16, 0.10);
               m.emissiveIntensity = gl;
             }
-            if (BW.sel === id) { r = Math.min(1, r * 1.35); gg = Math.min(1, gg * 1.15); bb = Math.min(1, bb * 1.15); }
+            if (selHits(id)) { r = Math.min(1, r * 1.35); gg = Math.min(1, gg * 1.15); bb = Math.min(1, bb * 1.15); }
           }
           m.color.setRGB(r, gg, bb);
         }

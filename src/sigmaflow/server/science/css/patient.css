@@ -149,6 +149,7 @@
   overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
 #patient-root #heartBox #organStrip::-webkit-scrollbar{display:none}
 #patient-root #heartBox #organStrip button{flex-direction:column;gap:2px;padding:3px 6px;font-size:9px;
+  height:32px;justify-content:center;min-width:36px;flex:none;
   background:rgba(255,255,255,.72);border-radius:7px}
 #patient-root #heartBox #organStrip button:active{box-shadow:var(--shadow-inset)}
 #patient-root #organStrip{display:flex;flex-wrap:wrap;gap:6px;padding:10px;margin:8px 10px 10px;
