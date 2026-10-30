@@ -57,6 +57,56 @@ from .science_auth import (
 
 from sigmaflow.agent import conf as _agent_conf
 
+# 会话分页单页字节上限(shape 后序列化), 与前端传的 limit 条数参数并行兜底
+_CONVERSATION_PAGE_MAX_BYTES = 4_000_000
+
+
+def _shape_conversation_row(m):
+    """回放视图传输瘦身: 超长工具结果截到 4000 字并标 rc(存储不动);
+    展开详情与 Trace 页的完整版走各自的数据通路。"""
+    if not isinstance(m, dict) or not isinstance(m.get("blocks"), list):
+        return m
+    changed = False
+    shaped = []
+    for b in m["blocks"]:
+        if (
+            isinstance(b, dict)
+            and b.get("t") == "tool"
+            and isinstance(b.get("r"), str)
+            and len(b["r"]) > 4000
+        ):
+            b2 = dict(b)
+            b2["r"] = b["r"][:4000]
+            b2["rc"] = 1
+            shaped.append(b2)
+            changed = True
+        else:
+            shaped.append(b)
+    if changed:
+        m2 = dict(m)
+        m2["blocks"] = shaped
+        return m2
+    return m
+
+
+def _conversation_page_rows(content, offset, limit):
+    """会话分页切片: limit 条为界, shape 后按累计序列化字节提前收刀。
+
+    单条 600KB 级的存量消息会让 30 条一页拖到十几兆, 字节上限由
+    服务端兜底; 至少放行 1 条保证分页游标可前进。"""
+    out = []
+    acc = 0
+    for raw in content[offset : offset + limit]:
+        row = _shape_conversation_row(raw)
+        try:
+            acc += len(json.dumps(row, ensure_ascii=False).encode("utf-8"))
+        except Exception:
+            acc += 60000
+        out.append(row)
+        if acc >= _CONVERSATION_PAGE_MAX_BYTES:
+            break
+    return out
+
 from .science_admin import (
     _ScienceSkillView,
     _TOOL_ALIASES,
@@ -2493,39 +2543,13 @@ class ScienceAPI:
             except Exception:
                 _off = _lim = 0
             if _lim:
-                out["content"] = content[_off : _off + _lim]
+                # 分页参数协商: 条数上限由前端传, 字节上限由服务端兜底,
+                # 前端按 rows.length 推进 offset 无需感知
+                out["content"] = _conversation_page_rows(content, _off, _lim)
                 out["offset"] = _off
                 out["limit"] = _lim
-
-            # 传输瘦身: 超长工具结果在回放视图只展示前 600 字, 存档里的 3 万字
-            # 正文分段加载后照样把单包拖到兆级——传输端按 4000 字截短(rc 标记),
-            # 存储不动, 展开详情/Trace 的完整版走各自的数据通路
-            def _shape(m):
-                if not isinstance(m, dict) or not isinstance(m.get("blocks"), list):
-                    return m
-                changed = False
-                shaped = []
-                for b in m["blocks"]:
-                    if (
-                        isinstance(b, dict)
-                        and b.get("t") == "tool"
-                        and isinstance(b.get("r"), str)
-                        and len(b["r"]) > 4000
-                    ):
-                        b2 = dict(b)
-                        b2["r"] = b["r"][:4000]
-                        b2["rc"] = 1
-                        shaped.append(b2)
-                        changed = True
-                    else:
-                        shaped.append(b)
-                if changed:
-                    m2 = dict(m)
-                    m2["blocks"] = shaped
-                    return m2
-                return m
-
-            out["content"] = [_shape(x) for x in out["content"]]
+            else:
+                out["content"] = [_shape_conversation_row(x) for x in out["content"]]
             return out
 
         @router.delete("/conversations/{conversation_id}")
@@ -4165,19 +4189,26 @@ def _system_prompt_template() -> str:
     {memory} 处注入与当前请求召回相关的记忆条目。
     """
     base, _sub = _effective_system_prompts()
-    # 动态真值反替为占位符: 首句服务 cwd 与 skills 目录随部署环境变化, 预览不再写死
+    # 动态真值反替为占位符: 首句服务 cwd 与 skills 目录随部署环境变化, 预览不再写死;
+    # skills 的取值与反替 key 都走 agent.tools 单点(skills_dir_field/skills_dir_from_listing),
+    # 文案或 "# Skills" 标题调整时不用再手工对齐本函数
+    sd = ""
     try:
-        skills_dir = str(_agent_tools_module().skill_loader.skills_dir)
+        _tools_mod = _agent_tools_module()
+        sd = _tools_mod.skills_dir_from_listing(base)
+        if sd is None:
+            sd = str(_tools_mod.skill_loader.skills_dir)
+        t2 = base.replace(
+            _tools_mod.skills_dir_field(sd), _tools_mod.skills_dir_field("{skills_dir}")
+        )
     except Exception:
-        skills_dir = ""
+        t2 = base
     t2 = re.sub(
         r"agent at " + re.escape(str(_agent_conf.WORKDIR)),
         "agent at {workdir}",
-        base,
+        t2,
         count=1,
     )
-    if skills_dir:
-        t2 = t2.replace(f"Skills dir: {skills_dir}", "Skills dir: {skills_dir}")
     return (
         f"{t2}\n\n{_DIRECTORY_BLOCK}"
         f"{_MODEL_BLOCK}"

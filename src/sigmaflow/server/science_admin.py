@@ -572,10 +572,12 @@ class _ScienceSkillView:
         self.skills = skills
 
     def get_descriptions(self) -> str:
-        # # Skills 标题与 tools.SkillLoader.get_descriptions 同构(标题发给模型, 模板侧占位)
-        skill_prompt = f"\n# Skills\nUse `load_skill` to access specialized knowledge before tackling unfamiliar topics.\nSkills dir: {self.skills_dir}\nSkills available:\n"
+        # 构造走 agent.tools 的单点函数(与 SkillLoader 同措辞); 多用户模式下
+        # 用户切换时 skills_dir 值变化, 预览反替经 skills_dir_from_listing 取到的是当前值
+        from sigmaflow.agent.tools import skills_listing_block as _sls_block
+
         if not self.skills:
-            return skill_prompt + "(no skills available)"
+            return _sls_block(self.skills_dir, "(no skills available)")
         lines = []
         for name, skill in self.skills.items():
             desc = skill["meta"].get("description", "No description")
@@ -584,7 +586,7 @@ class _ScienceSkillView:
             if tags:
                 line += f" [{tags}]"
             lines.append(line.strip())
-        return skill_prompt + "\n".join(lines)
+        return _sls_block(self.skills_dir, "\n".join(lines))
 
     def get_content(self, name: str) -> str:
         skill = self.skills.get(name)

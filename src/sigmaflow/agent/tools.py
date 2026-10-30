@@ -296,6 +296,29 @@ def rag(query: str):
     return j["data"].get("chunks", [])
 
 
+def skills_dir_field(skills_dir) -> str:
+    """技能段里 `Skills dir: <path>` 一行的单点措辞。
+
+    get_descriptions 用它构造, science 模板预览用 skills_dir_from_listing 提取真值后
+    经同一函数换成 {skills_dir} 占位——改措辞/标题只需改这两个函数, 三处自动同步。
+    """
+    return f"Skills dir: {skills_dir}"
+
+
+def skills_listing_block(skills_dir, body: str) -> str:
+    """系统提示词技能段文本(# Skills 标题 + 使用指引 + 清单)。"""
+    return (
+        f"\n# Skills\nUse `load_skill` to access specialized knowledge before tackling unfamiliar topics.\n"
+        f"{skills_dir_field(skills_dir)}\nSkills available:\n{body}"
+    )
+
+
+def skills_dir_from_listing(text: str):
+    """从 skills_listing_block 产出的文本里提取运行时技能目录真值(未命中返回 None)。"""
+    m = re.search(re.escape("Skills dir: ") + r"([^\n]+)", text)
+    return m.group(1).strip() if m else None
+
+
 # -- SkillLoader: scan skills/<name>/SKILL.md with YAML frontmatter --
 class SkillLoader:
     def __init__(self, skills_dir: Path):
@@ -321,12 +344,9 @@ class SkillLoader:
         return meta, match.group(2).strip()
 
     def get_descriptions(self) -> str:
-        # # Skills 标题: 系统提示词大纲化(与 # Working directory/# Current model 同风格)
-        skill_prompt = f"\n# Skills\nUse `load_skill` to access specialized knowledge before tackling unfamiliar topics.\nSkills dir: {self.skills_dir}\nSkills available:\n"
-
         """Layer 1: short descriptions for the system prompt."""
         if not self.skills:
-            return skill_prompt + "(no skills available)"
+            return skills_listing_block(self.skills_dir, "(no skills available)")
         lines = []
         for name, skill in self.skills.items():
             desc = skill["meta"].get("description", "No description")
@@ -335,7 +355,7 @@ class SkillLoader:
             if tags:
                 line += f" [{tags}]"
             lines.append(line.strip())
-        return skill_prompt + "\n".join(lines)
+        return skills_listing_block(self.skills_dir, "\n".join(lines))
 
     def get_content(self, name: str) -> str:
         """Layer 2: full skill body returned in tool_result."""
