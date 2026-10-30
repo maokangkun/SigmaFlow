@@ -220,7 +220,7 @@
 
   V.sidebar = () => {
     const active = CS.ui.route;
-    const nav = [ ['home','message','新对话'], ['literature','book','文献'], ['data','database','数据集'], ['workflows','workflow','工作流'], ['results','chart','分析结果'], ['tools','grid','生物工具'], ['tasks','queue','任务队列'], ['cell','cells','虚拟细胞'] ];
+    const nav = [ ['home','message','新对话'], ['literature','book','文献'], ['data','database','数据集'], ['workflows','workflow','工作流'], ['results','chart','分析结果'], ['tools','grid','生物工具'], ['tasks','queue','任务队列'], ['cell','cells','虚拟细胞'], ['patient','patient','虚拟患者'] ];
     const running = CS.state.runs.filter(r => ['running','paused','awaiting','connecting'].includes(r.status)).length;
     const streaming = new Set(CS.state.runs.filter(r => (r.messages || []).some(m => m.streaming)).map(r => r.id));
     return `${CS.ui.mobileSidebar ? '<button class="sidebar-scrim" aria-label="关闭菜单" data-action="toggle-sidebar"></button>' : ''}<aside class="sidebar ${CS.ui.mobileSidebar ? 'open' : ''} ${CS.ui.sidebarFolded ? 'folded' : ''}" aria-label="主导航">
@@ -302,6 +302,143 @@
       </div>
     </div></section>`;
   };
+  // ===== 虚拟患者 =====
+  // 引擎(patient.js 移植层)按 ID 直驱下列 DOM: id 不作改动; inline onclick 直调引擎
+  // 全局函数(生产服务无 CSP 限制)。渲染产物整体包在 #patient-root —— app.js 的渲染
+  // 钩子会在重渲染时把活的 DOM 节点原样搬回(保 canvas/WebGL 上下文与表单状态)。
+  V.patient = () => `<section class="page patient-page"><div id="patient-root">
+    <div class="pat-topbar">
+      <img class="pat-logo" src="patient/Logo.png" alt="LIFE">
+      <div class="pat-id"><div id="patName">模拟患者</div><div id="patTag">SIM-PATIENT · 成人 · 70kg</div></div>
+      <div class="alarmBanner" id="alarmBanner">监护中</div>
+      <div id="clock">00:00</div>
+      <div class="pat-topbtns">
+        <button type="button" onclick="openCaseSelect()">📋 病例</button>
+        <button type="button" onclick="toggleSound()" id="sndBtn">🔊 音效开</button>
+        <button type="button" onclick="togglePause()" id="pauseBtn">⏸ 暂停</button>
+        <button type="button" onclick="openEncyclopedia()">📖 百科</button>
+        <button type="button" onclick="resetSim()">↺ 复苏重置</button>
+      </div>
+    </div>
+    <div class="pat-main">
+      <div class="pat-mid">
+        <section id="waves">
+          <div class="lane"><canvas id="ecgCv"></canvas><div class="laneNum l0" id="n-hr"><div class="lab">HR 心率</div><div class="val">--</div><div class="unit">bpm</div></div></div>
+          <div class="lane"><canvas id="plethCv"></canvas><div class="laneNum l1" id="n-spo2"><div class="lab">SpO₂ 脉搏血氧</div><div class="val">--</div><div class="unit">%</div></div></div>
+          <div class="lane"><canvas id="co2Cv"></canvas><div class="laneNum l2" id="n-rr"><div class="lab">RESP 呼吸 · etCO₂</div><div class="val">--</div><div class="unit">bpm</div><div style="font-size:11px" id="etco2v"></div></div></div>
+          <div id="numCols">
+            <div class="numTile" id="t-map"><div class="lab">ART MAP</div><div class="val">--</div><div class="unit">mmHg</div></div>
+            <div class="numTile" id="t-temp"><div class="lab">TEMP 体温</div><div class="val">--</div><div class="unit">°C</div></div>
+            <div class="numTile" id="t-glu"><div class="lab">GLU 血糖</div><div class="val">--</div><div class="unit">mmol/L</div></div>
+            <div class="numTile" id="t-k"><div class="lab">K⁺ 血钾</div><div class="val">--</div><div class="unit">mmol/L</div></div>
+            <div class="numTile" id="t-ph"><div class="lab">pH 酸碱</div><div class="val">--</div><div class="unit">​</div></div>
+            <div class="numTile" id="t-paco2"><div class="lab">PaCO₂</div><div class="val">--</div><div class="unit">mmHg</div></div>
+            <div class="numTile" id="t-gcs"><div class="lab">GCS 意识</div><div class="val">--</div><div class="unit">/15</div></div>
+            <div class="numTile" id="t-rhy"><div class="lab">心律</div><div class="val" style="font-size:15px">窦性</div><div class="unit">​</div></div>
+          </div>
+          <div id="statusStrip"><span class="none">状态正常 · 图标为游戏原素材</span></div>
+          <div id="frsInfo"></div>
+          <div id="diagBar"><button type="button" onclick="showDiagnosis()">🩺 诊断 · 病理判定</button><span class="hint">引擎监测 20+ 病理状态 → LIDiagnosis 风格判定；采血化验在右侧急救台</span></div>
+        </section>
+        <section id="body3d">
+          <div class="bhead"><h3>3D 全身器官</h3><button type="button" id="btnSpread" onclick="toggleSpread()">⇔ 分离</button><button type="button" onclick="toggleBig3d()">⛶ 大图</button></div>
+          <div id="heartBox"><canvas id="h3d"></canvas><div class="tag">WebGL 渲染 · 拖拽旋转 / 滚轮缩放 · 心搏呼吸同步 · 点器官查百科</div></div>
+          <div id="organStrip"></div>
+        </section>
+      </div>
+      <div class="pat-aside">
+        <div class="pat-logpanel">
+          <h3>事件记录</h3>
+          <div id="logBox"></div>
+        </div>
+        <div class="pat-console">
+          <h3>输注工作站</h3>
+          <div id="rxZone">
+            <select id="chemSel"></select>
+            <select id="routeSel"></select>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input id="doseIn" type="number" value="1" min="0.1" max="50" step="0.5" style="flex:1" title="剂量">
+              <span style="font-size:11px;color:#7d8db0">单位剂量</span>
+            </div>
+            <div id="rxRow"><button type="button" class="act" onclick="administer()">输液/给药</button><button type="button" class="clear" onclick="clearDrug()">代谢清除</button></div>
+          </div>
+          <div id="pumpGrid">
+            <button type="button" onclick="doDefib()"><img src="patient/Electric.png" alt="除颤">除颤</button>
+            <button type="button" onclick="doPace(this)" id="btnPace">起搏</button>
+            <button type="button" onclick="doVent(this)" id="btnVent">机械通气</button>
+            <button type="button" onclick="doO2(this)" id="btnO2">吸氧</button>
+            <button type="button" onclick="doCPR(this)" id="btnCPR">CPR</button>
+            <button type="button" onclick="doFluid()">补液500ml</button>
+            <button type="button" onclick="doTransfuse()">输血400ml</button>
+            <button type="button" onclick="doBleed()">放血500ml</button>
+            <button type="button" onclick="toggleAdm()" id="btnAdm">拟交感支持</button>
+            <button type="button" onclick="doPericardial()" id="btnPeri">🩹 心包穿刺</button>
+            <button type="button" onclick="doCooling(this)" id="btnCool">❄ 物理降温</button>
+            <button type="button" onclick="drawBlood()" id="btnLab"><img src="patient/Blood.png" alt="采血化验">采血化验</button>
+          </div>
+          <h3>饮食摄入（LIFood · 24 种）</h3>
+          <div id="foodZone">
+            <div class="frow">
+              <select id="foodSel" onchange="foodHint()"></select>
+              <select id="foodPortion" onchange="foodHint()" style="flex:0 0 84px">
+                <option value="0.5">半份</option>
+                <option value="1" selected>1 份</option>
+                <option value="2">2 份</option>
+                <option value="3">3 份</option>
+              </select>
+            </div>
+            <div class="frow"><button type="button" onclick="eatFood()">🍽 摄入（经口）</button></div>
+            <div id="foodInfo">选择食物查看营养构成——经口入 S.gut 肠腔房室吸收（LMFood→LMSmallIntestine AbsorptionRate）。</div>
+          </div>
+          <h3>急救台</h3>
+          <div id="emZone">
+            <div class="emRow"><span class="emLab">⚡ 能量</span>
+              <div class="enBtns">
+                <button type="button" class="enBtn" onclick="setEnergy(this,120)">120J</button>
+                <button type="button" class="enBtn sel" onclick="setEnergy(this,200)">200J</button>
+                <button type="button" class="enBtn" onclick="setEnergy(this,300)">300J</button>
+                <button type="button" class="enBtn" onclick="setEnergy(this,360)">360J</button>
+              </div>
+            </div>
+            <button type="button" class="shockBtn" onclick="doShock()">⚡ 除颤电击（<span id="enNow">200</span>J）</button>
+            <div class="emRow"><label class="swLab"><input type="checkbox" id="paceOn" onchange="paceToggle(this)">🩺 起搏</label>
+              <span class="emLab">频率</span>
+              <input type="range" id="paceRate" min="60" max="180" value="80" oninput="paceSet(this)">
+              <span class="emVal" id="paceRateV">80</span><span class="emUnit">bpm</span>
+            </div>
+            <button type="button" class="emAct" id="cprBtn" onclick="doCPR(this)">🫀 胸外按压 CPR</button>
+            <div class="cprBarWrap"><div class="cprBar" id="cprBar"></div></div>
+            <div class="emSub" id="cprPerf">冠脉灌注线 —</div>
+            <button type="button" class="emAct" id="btnWithdraw" style="display:none" onclick="withdrawLifeAsk()">🚫 撤除生命维持 · 宣告临床死亡</button>
+          </div>
+          <h3>呼吸机</h3>
+          <div id="ventZone">
+            <label class="swLab"><input type="checkbox" id="ventOn" onchange="ventToggle(this)">💨 机械通气 A/C</label>
+            <div class="emRow"><span class="emLab">RR</span><input type="range" id="ventRR" min="6" max="40" value="12" oninput="ventSet()"><span class="emVal" id="ventRRv">12</span><span class="emUnit">/min</span></div>
+            <div class="emRow"><span class="emLab">Vt 潮气量</span><input type="range" id="ventVt" min="200" max="800" step="10" value="500" oninput="ventSet()"><span class="emVal" id="ventVtv">500</span><span class="emUnit">ml</span></div>
+            <div class="emRow"><span class="emLab">PEEP</span><input type="range" id="ventPeep" min="0" max="15" value="5" oninput="ventSet()"><span class="emVal" id="ventPeepv">5</span><span class="emUnit">cmH₂O</span></div>
+            <div class="emRow"><span class="emLab">FiO₂</span><input type="range" id="ventFi" min="21" max="100" value="60" oninput="ventSet()"><span class="emVal" id="ventFiv">60</span><span class="emUnit">%</span></div>
+            <div class="emSub" id="ventInfo">待机</div>
+          </div>
+          <div id="drugBox"><div style="color:#56718a;margin-bottom:2px">血药/介质浓度</div><div id="drugList">无</div></div>
+        </div>
+      </div>
+    </div>
+    <div id="big3d">
+      <div class="bhead"><h3>3D 全身器官视图</h3><button type="button" onclick="toggleBig3d()">✕ 关闭</button></div>
+      <div id="glSlot"></div>
+      <div id="organStripBig"></div>
+    </div>
+    <div id="modal" onclick="if(event.target===this)closeModal()"><div id="modalCard"><h4 id="modalTitle"></h4><div id="searchRow"><input id="encSearch" placeholder="搜索词条…" oninput="renderEncList()"><button type="button" onclick="closeModal()">关闭</button></div><div id="modalBody"></div></div></div>
+    <div id="confirmBox" style="position:fixed;inset:0;background:rgba(30,42,58,.45);display:none;align-items:center;justify-content:center;z-index:80"><div id="confirmCard"><div class="cmsg" id="confirmMsg"></div><div class="cbtns"><button type="button" onclick="cancelConfirm()">取消</button><button type="button" class="ok" onclick="okConfirm()">确认电击</button></div></div></div>
+    <div id="labBox" onclick="if(event.target===this)closeLab()"><div id="labCard"></div></div>
+    <div id="shockFlash"></div>
+    <div id="diagBox" onclick="if(event.target===this)closeDiag()"><div id="diagCard"></div></div>
+    <div id="death"><h2>死 亡</h2><div class="dsub" id="deathSub">LIDeath · 宣布死亡（CallDeath）</div><div class="cause" id="deathCause" style="display:none"></div><div id="deathCard"></div><div class="dbtns"><button type="button" id="btnRestart" onclick="resetSim()">🔄 重新来过（Restart）</button><button type="button" id="btnWithdrawD" onclick="withdrawLifeAsk()">🚫 撤除生命维持 · 宣告临床死亡</button></div></div>
+    <div id="caseHUD"><h5 id="caseHudName">病例</h5><div class="caseTime" id="caseHudTime">⏱ 00:00 / 00:00</div><div id="caseHudGoals"></div><div class="hintCase" id="caseHudHint"></div><button type="button" style="margin-top:6px;width:100%" onclick="caseQuit()">退出病例</button></div>
+    <div id="caseBox" onclick="if(event.target===this)closeCaseSelect()"><div id="caseCard"><h4>📋 病例挑战</h4><div class="sub">22 个 scripted 病例关卡（16 基础 + 6 感染挑战）——初始化病理状态、限时达目标、自动判定与评级。治疗手段即日常界面（给药/除颤/通气/补液…）。胜利解锁下一病例，进度存 localStorage。</div><div id="caseGrid"></div></div></div>
+    <div id="caseEndBox"><div id="caseEndCard"></div></div>
+  </div></section>`;
   V.runTrack = () => {
     const run = CS.currentRun();
     const all = run?.messages || [];

@@ -18,6 +18,8 @@ await fs.mkdir(path.join(root,'dist'),{recursive:true});
 // 不再引用兄弟站点的任何可执行代码或素材。
 await fs.cp(path.join(root,'js/vendor/draco'),path.join(root,'dist/vendor/draco'),{recursive:true});
 await fs.cp(path.join(root,'assets/cell'),path.join(root,'dist/cell'),{recursive:true});
+// 虚拟患者素材: 游戏原 PNG/音效 wav 与 Draco 压缩全身器官 GLB(16MB, 按需 fetch)
+await fs.cp(path.join(root,'assets/patient'),path.join(root,'dist/patient'),{recursive:true});
 // 版本搬戳: 前端页面展示构建号, 便于确认浏览器加载的是新 bundle（SPA 不刷新永远跑旧代码）
 const crypto=await import('node:crypto');
 const shortHash=crypto.createHash('md5').update(html).digest('hex').slice(0,8);

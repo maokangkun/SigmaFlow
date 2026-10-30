@@ -191,7 +191,18 @@
     const conv = document.querySelector('.conversation');
     const savedTop = conv ? conv.scrollTop : 0;
     const hadConv = !!conv;
+    // 虚拟患者页: 引擎状态机持有大量活 DOM 引用(波形扫掠/WebGL 上下文/表单),
+    // 与其每次渲染重建再逐个回填, 不如把整个 #patient-root 节点原样搬回新壳
+    const patKeep = CS.ui.route === 'patient' ? document.getElementById('patient-root') : null;
     _origRender();
+    if (CS.ui.route === 'patient') {
+      const fresh = document.getElementById('patient-root');
+      if (patKeep && fresh && fresh !== patKeep) fresh.replaceWith(patKeep);
+      else if (!patKeep) CS.mountPatientPage();  // 首次进入: 引擎 init + 3D 视图挂载
+    } else if (CS._patientLive) {
+      CS.unmountPatientPage();  // 离开页面: 停引擎定时器 + 释放 WebGL
+    }
+    CS._patientLive = CS.ui.route === 'patient';
     // 虚拟细胞页: 每次渲染后重建 three 场景(innerHTML 整体替换会丢 canvas)
     if (CS.ui.route === 'cell') CS.mountCellViewer();
     // 工具设置的参数编辑框需要按内容自适应高度, 在每次渲染后同步
@@ -421,7 +432,7 @@
 
   window.addEventListener('hashchange', () => {
     CS.ui.route = applyRoute(); CS.ui.mobileSidebar = false; CS.closeModal(); CS.render(); window.scrollTo(0, 0);
-    document.title = 'SigmaFlow Science · ' + ({ home: '科研工作空间', chat: 'Agent 对话', trace: '会话 Trace', data: '数据集', projects: '项目', workflows: '工作流', results: '分析结果', literature: '文献', tools: '生物工具', tasks: '任务队列', settings: '设置', help: '帮助' }[CS.ui.route] || '工作空间');
+    document.title = 'SigmaFlow Science · ' + ({ home: '科研工作空间', chat: 'Agent 对话', trace: '会话 Trace', data: '数据集', projects: '项目', workflows: '工作流', results: '分析结果', literature: '文献', tools: '生物工具', tasks: '任务队列', settings: '设置', help: '帮助', patient: '虚拟患者' }[CS.ui.route] || '工作空间');
   });
 
   // WS 断线自动重连成功后: 拉取受影响会话的最新存档(静默换新),
@@ -566,6 +577,21 @@
     CS.navigate('chat', run.id);
     sendChatMessage(run, prompt, run.datasetIds);
   };
+  // ===== 虚拟患者(生理模拟引擎)页面生命周期 =====
+  // 引擎本体在 js/patient.js(移植层 window.PatientSim/PatientViewer); 这里只做
+  // 壳层编排: mount = 引擎 init + 3D 挂载, unmount = 停定时器 + 释放 WebGL。
+  // 引擎状态 S 为脚本级全局, 离开再回来不重置(可通过「复苏重置」手动清零)。
+  CS.mountPatientPage = () => {
+    const root = document.getElementById('patient-root');
+    if (!root) return;
+    if (window.PatientSim) PatientSim.mount();
+    const cv = document.getElementById('h3d');
+    if (window.PatientViewer && cv) PatientViewer.mount(cv);
+  };
+  CS.unmountPatientPage = () => {
+    if (window.PatientSim) PatientSim.unmount();  // 内部顺带释放 3D 视图
+  };
+
   // ===== 虚拟细胞 3D 查看器 =====
   // 内核来自 vendor/cell3d.min.js(window.CellViewer: three + GLTFLoader + DRACOLoader
   // + OrbitControls + RoomEnvironment); GLB/JPG 由 learningcell 静态部署提供

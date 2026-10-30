@@ -57,6 +57,7 @@ CS.icons = {
   bookmark: '<path d="M5 3h14v19l-7-5-7 5V3Z"/>',
   leaf: '<path d="M20 3C10 1 2 7 5 16s17 3 15-13ZM5 21 16 9"/>',
   network: '<circle cx="12" cy="4" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="20" cy="17" r="3"/><path d="m10 7-4 9M14 7l5 7M8 19l9-1"/>',
+  patient: '<path d="M12 21C7 17 3 13.4 3 9.3 3 6.4 5.1 4.5 7.6 4.5c1.8 0 3.4 1 4.4 2.6 1-1.6 2.6-2.6 4.4-2.6C18.9 4.5 21 6.4 21 9.3c0 4.1-4 7.7-9 11.7Z"/><path d="M6.5 12h3l1.5-3 2.5 6 1.5-3h3"/>',
   cells: '<circle cx="8" cy="7" r="4"/><circle cx="18" cy="8" r="3"/><circle cx="8" cy="18" r="3"/><circle cx="18" cy="18" r="4"/>',
   filter: '<path d="M3 5h18M6 12h12M9 19h6"/>',
   panel: '<rect x="2" y="3" width="20" height="18" rx="3"/><path d="M15 3v18"/>',
