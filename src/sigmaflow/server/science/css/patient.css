@@ -157,6 +157,9 @@
 #patient-root #organStrip button,#patient-root #organStripBig button{display:flex;align-items:center;gap:4px;
   background:var(--surface);border-radius:8px;padding:3px 8px;font-size:11px;color:var(--ink);box-shadow:var(--shadow-small)}
 #patient-root #heartBox #organStrip button img{height:15px}
+/* 手绘 SVG 器官图标(无素材条目) */
+#patient-root #heartBox #organStrip .svgIco{width:15px;height:15px;display:block}
+#patient-root #heartBox #organStrip .svgIco svg{width:100%;height:100%;display:block}
 /* 心脏图标(Blood.png 白色血滴)染成血红, 浅色 chip 上清晰可辨 */
 #patient-root #heartBox #organStrip button img.bloodTint{filter:brightness(0) saturate(100%) invert(24%) sepia(89%) saturate(5000%) hue-rotate(340deg) brightness(92%) contrast(88%)}
 #patient-root #heartBox #organStrip button img{display:block;image-rendering:-webkit-optimize-contrast}

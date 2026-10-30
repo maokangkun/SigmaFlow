@@ -834,6 +834,21 @@ function selHits(id){if(!BW.sel)return false;if(BW.sel===id)return true;var g=OR
 var ORGANS=[];
 var SPREAD=1.45;
 var ORGAN_ICONS={heart:'Blood',lungL:'Lung',lungR:'Lung',liver:'Liver',spleen:'Spleen',thyroid:'Thyroid',pancreas:'Pancreas',gallbladder:'Gallbladder',kidneyL:'Kidney',kidneyR:'Kidney',stomach:'Stomach'};
+// 手绘内联 SVG 图标: 覆盖无游戏素材的器官(按解剖特征+器官色绘制, 24×24)
+var ORGAN_SVG={
+ brain:'<path d="M12 3c-2.5 0-3.4 1.2-4 2-1.8-.2-3.4 1.2-3.2 3C3 9 2.6 11 3.6 12.4c-.8 1.8.4 3.8 2.2 4.1.3 1.9 2.3 3 4 2.3.9 1 3.6 1 4.5 0 1.7.8 3.7-.3 4-2.2 1.8-.3 3-2.3 2.2-4.1 1-1.5.6-3.4-1.2-4.4.2-1.8-1.4-3.2-3.2-3C15.4 4.2 14.5 3 12 3z" fill="#b6809e"/><path d="M12 5.5v12M8.3 7.5c1 1 1 2.2 0 3.2M15.7 8c-1 1-1 2.2 0 3.2" stroke="#8a5a75" stroke-width="1.1" fill="none"/>',
+ airway:'<path d="M12 3v7M12 10c0 4-6 4-7 10M12 10c0 4 6 4 7 10" fill="none" stroke="#9fb7c9" stroke-width="2.2" stroke-linecap="round"/>',
+ sintestine:'<path d="M6 5c8-2 12 1 12 3.6 0 2-2 3-4 3s-3-1-3-2.6M6 19c8 2 12-1 12-3.6 0-2-2-3-4-3s-3 1-3 2.6" fill="none" stroke="#e0a08a" stroke-width="2" stroke-linecap="round"/>',
+ lintestine:'<path d="M7 4h10a4 4 0 0 1 3.6 5.6c-1.6 5.6-4.2 9.4-9.6 9.4H8.4a2.9 2.9 0 0 1 0-5.8h2.8" fill="none" stroke="#d98f70" stroke-width="2.2" stroke-linecap="round"/>',
+ adrenal:'<path d="M6.5 13.5C6.5 9 9 6.5 12 6.5s5.5 2.5 5.5 7z" fill="#d9b23f"/><ellipse cx="12" cy="16.4" rx="6.2" ry="3.1" fill="#b9853f"/>',
+ bladder:'<ellipse cx="12" cy="11" rx="7.2" ry="6" fill="#e3c46a"/><path d="M12 17v4" stroke="#b79a3f" stroke-width="2.2" stroke-linecap="round"/>',
+ prostate:'<path d="M12 5.5c4.8 0 7.8 3.2 7.8 6.8S16.8 19 12 19 4.2 15.9 4.2 12.3 7.2 5.5 12 5.5z" fill="#c98a8f"/><path d="M12 7.5v9" stroke="#a4646b" stroke-width="1.2"/>',
+ uterus:'<path d="M12 6.5c3 0 4.4 2 4.4 4.8 0 3-2 5.8-4.4 7.7-2.4-1.9-4.4-4.7-4.4-7.7C7.6 8.5 9 6.5 12 6.5z" fill="#d1688e"/><path d="M7.6 8.4C5 8.2 3.2 10 3.2 11.8M16.4 8.4c2.6-.2 4.4 1.6 4.4 3.4" stroke="#d1688e" stroke-width="1.5" fill="none"/><circle cx="3.4" cy="12.8" r="1.7" fill="#d1688e"/><circle cx="20.6" cy="12.8" r="1.7" fill="#d1688e"/>',
+ testis:'<circle cx="9" cy="14.5" r="4.1" fill="#d8a08a"/><circle cx="15" cy="14.5" r="4.1" fill="#d8a08a"/><path d="M8 6.5c1-2 2.8-3 4-3s3 1 4 3" stroke="#b9853f" stroke-width="2" fill="none" stroke-linecap="round"/>',
+ artery:'<path d="M12 21V8M12 12c-3 0-5-1.8-7-6M12 12c3 0 5-1.8 7-6M12 17h-5M12 17h5" fill="none" stroke="#c22032" stroke-width="2.2" stroke-linecap="round"/>',
+ vein:'<path d="M12 21V8M12 12c-3 0-5-1.8-7-6M12 12c3 0 5-1.8 7-6M12 17h-5M12 17h5" fill="none" stroke="#2e4fb0" stroke-width="2.2" stroke-linecap="round"/>'
+};
+function organSvgIco(id){return ORGAN_SVG[id]?('<span class="svgIco"><svg viewBox="0 0 24 24">'+ORGAN_SVG[id]+'</svg></span>'):null;}
 function renderOrganStrip(){
   const strips=[document.getElementById('organStrip'),document.getElementById('organStripBig')].filter(s=>s);
   if(!strips.length||!ORGANS.length)return;
@@ -852,7 +867,7 @@ function renderOrganStrip(){
     const b=document.createElement('button');
     const rm=!!e.removed;
     const dotC='rgb('+Math.round(e.color[0]*255)+','+Math.round(e.color[1]*255)+','+Math.round(e.color[2]*255)+')';
-    b.innerHTML=(rm?'<span class="ectTag">已切除</span>':'')+(e.ic?('<img src="patient/'+e.ic+'.png"'+(e.key==='heart'?' class="bloodTint"':'')+'>'):('<span class="dot" style="background:'+dotC+'"></span>'))+'<span class="zhName">'+e.zh+'</span>';
+    b.innerHTML=(rm?'<span class="ectTag">已切除</span>':'')+(e.ic?('<img src="patient/'+e.ic+'.png"'+(e.key==='heart'?' class="bloodTint"':'')+'>'):(organSvgIco(e.key)||organSvgIco(e.ids[0])||('<span class="dot" style="background:'+dotC+'"></span>')))+'<span class="zhName">'+e.zh+'</span>';
     if(BW.sel===e.key&&!rm)b.classList.add('sel');
     if(rm)b.classList.add('removed');
     strips.forEach(strip=>strip.appendChild(b.cloneNode(true)));
