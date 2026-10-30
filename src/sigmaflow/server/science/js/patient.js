@@ -1022,7 +1022,7 @@ function uiFrame(){
   set('n-hr',S.hr,S.hr>110||S.hr<50,S.hr>160||S.hr<35,Math.round(S.hr));
   set('n-spo2',S.spo2,S.spo2<93,S.spo2<85,Math.round(S.spo2));
   set('n-rr',S.rr,S.rr>26||S.rr<8,S.rr>42||S.rr<4,Math.round(S.rr));
-  document.getElementById('etco2v').textContent='etCO₂ '+Math.round(clamp(S.paco2*0.7,5,70));
+  document.getElementById('etco2v').textContent=String(Math.round(clamp(S.paco2*0.7,5,70)));
   document.getElementById('n-rr').querySelector('.unit').textContent='bpm';
   set('t-map',S.map,S.map<68||S.map>110,S.map<50||S.map>140,Math.round(S.map));
   set('t-temp',S.temp,S.temp>37.8||S.temp<35.8,S.temp>40||S.temp<33,S.temp.toFixed(1));

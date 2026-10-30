@@ -83,14 +83,12 @@
 #patient-root .laneNum .unit,#patient-root .numTile .unit{font-size:9px;color:var(--pat-ink-dim);line-height:1.1}
 #patient-root .laneNum{width:var(--pat-tile-w);flex:none;border-left:1px solid #1a2434}
 #patient-root .l0{color:var(--pat-led-ecg)} #patient-root .l1{color:var(--pat-led-pleth)} #patient-root .l2{color:var(--pat-led-co2)}
-#patient-root #etco2v{font-size:10px;color:var(--pat-ink-dim)}
 #patient-root .laneNum.crit .val{color:var(--pat-led-crit)!important;animation:patBlink .9s infinite}
 #patient-root .laneNum.warn .val{color:var(--pat-led-warn)!important}
 /* 数值塔: 3行x3列(波形读数列算整体 3x4 的第1列) —— 列语义 MAP/TEMP/GLU, PaCO2/pH/K, 末行 GCS/心律/空 */
 #patient-root #numCols{flex:none;display:grid;grid-template-columns:repeat(3,var(--pat-tile-w));
   grid-template-rows:repeat(3,1fr);gap:0}
-#patient-root #t-empty{visibility:visible}
-#patient-root #t-empty .lab,#patient-root #t-empty .val,#patient-root #t-empty .unit{visibility:hidden}
+#patient-root #t-etco2{--led:#7bd8e0}
 /* 塔块与波形读数盒同款: 紧排; 行分隔线与 lane 一样画在各盒底边(同锚不偏移), 列分隔线为左线 */
 #patient-root .numTile{border-left:1px solid #1a2434;border-bottom:1px solid #1a2434}
 #patient-root #numCols .numTile:nth-child(3n+1){border-left:none}
@@ -434,7 +432,6 @@
   #patient-root .laneNum .val,#patient-root .numTile .val{font-size:14px}
   #patient-root #t-rhy .val{font-size:11px;letter-spacing:1.5px}
   #patient-root .laneNum .unit,#patient-root .numTile .unit{font-size:7px}
-  #patient-root #etco2v{font-size:8px}
 }
 }
 /* ===== ≤1080px: 治疗台折到下方, 监护屏内部保持一行(读数|数字塔|病理) ===== */

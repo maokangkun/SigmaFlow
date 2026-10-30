@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="7aa7f0bf">
+<meta name="build" content="d2b8e2be">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1288,14 +1288,12 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 #patient-root .laneNum .unit,#patient-root .numTile .unit{font-size:9px;color:var(--pat-ink-dim);line-height:1.1}
 #patient-root .laneNum{width:var(--pat-tile-w);flex:none;border-left:1px solid #1a2434}
 #patient-root .l0{color:var(--pat-led-ecg)} #patient-root .l1{color:var(--pat-led-pleth)} #patient-root .l2{color:var(--pat-led-co2)}
-#patient-root #etco2v{font-size:10px;color:var(--pat-ink-dim)}
 #patient-root .laneNum.crit .val{color:var(--pat-led-crit)!important;animation:patBlink .9s infinite}
 #patient-root .laneNum.warn .val{color:var(--pat-led-warn)!important}
 /* 数值塔: 3行x3列(波形读数列算整体 3x4 的第1列) —— 列语义 MAP/TEMP/GLU, PaCO2/pH/K, 末行 GCS/心律/空 */
 #patient-root #numCols{flex:none;display:grid;grid-template-columns:repeat(3,var(--pat-tile-w));
   grid-template-rows:repeat(3,1fr);gap:0}
-#patient-root #t-empty{visibility:visible}
-#patient-root #t-empty .lab,#patient-root #t-empty .val,#patient-root #t-empty .unit{visibility:hidden}
+#patient-root #t-etco2{--led:#7bd8e0}
 /* 塔块与波形读数盒同款: 紧排; 行分隔线与 lane 一样画在各盒底边(同锚不偏移), 列分隔线为左线 */
 #patient-root .numTile{border-left:1px solid #1a2434;border-bottom:1px solid #1a2434}
 #patient-root #numCols .numTile:nth-child(3n+1){border-left:none}
@@ -1639,7 +1637,6 @@ html[data-motion="reduced"] #anchor-tip{display:none}
   #patient-root .laneNum .val,#patient-root .numTile .val{font-size:14px}
   #patient-root #t-rhy .val{font-size:11px;letter-spacing:1.5px}
   #patient-root .laneNum .unit,#patient-root .numTile .unit{font-size:7px}
-  #patient-root #etco2v{font-size:8px}
 }
 }
 /* ===== ≤1080px: 治疗台折到下方, 监护屏内部保持一行(读数|数字塔|病理) ===== */
@@ -6300,7 +6297,7 @@ function uiFrame(){
   set('n-hr',S.hr,S.hr>110||S.hr<50,S.hr>160||S.hr<35,Math.round(S.hr));
   set('n-spo2',S.spo2,S.spo2<93,S.spo2<85,Math.round(S.spo2));
   set('n-rr',S.rr,S.rr>26||S.rr<8,S.rr>42||S.rr<4,Math.round(S.rr));
-  document.getElementById('etco2v').textContent='etCO₂ '+Math.round(clamp(S.paco2*0.7,5,70));
+  document.getElementById('etco2v').textContent=String(Math.round(clamp(S.paco2*0.7,5,70)));
   document.getElementById('n-rr').querySelector('.unit').textContent='bpm';
   set('t-map',S.map,S.map<68||S.map>110,S.map<50||S.map>140,Math.round(S.map));
   set('t-temp',S.temp,S.temp>37.8||S.temp<35.8,S.temp>40||S.temp<33,S.temp.toFixed(1));
@@ -12086,7 +12083,7 @@ CS.audio = (function () {
           <div class="pat-waves">
           <div class="lane"><canvas id="ecgCv"></canvas><div class="laneNum l0" id="n-hr"><div class="lab">HR 心率</div><div class="val">--</div><div class="unit">bpm</div></div></div>
           <div class="lane"><canvas id="plethCv"></canvas><div class="laneNum l1" id="n-spo2"><div class="lab">SpO₂ 脉搏血氧</div><div class="val">--</div><div class="unit">%</div></div></div>
-          <div class="lane"><canvas id="co2Cv"></canvas><div class="laneNum l2" id="n-rr"><div class="lab">RESP 呼吸 · etCO₂</div><div class="val">--</div><div class="unit">bpm</div><div style="font-size:11px" id="etco2v"></div></div></div>
+          <div class="lane"><canvas id="co2Cv"></canvas><div class="laneNum l2" id="n-rr"><div class="lab">RESP 呼吸</div><div class="val">--</div><div class="unit">bpm</div></div></div>
           </div>
           <div id="numCols">
             <div class="numTile" id="t-map"><div class="lab">ART MAP</div><div class="val">--</div><div class="unit">mmHg</div></div>
@@ -12095,9 +12092,9 @@ CS.audio = (function () {
             <div class="numTile" id="t-paco2"><div class="lab">PaCO₂</div><div class="val">--</div><div class="unit">mmHg</div></div>
             <div class="numTile" id="t-ph"><div class="lab">pH 酸碱</div><div class="val">--</div><div class="unit">​</div></div>
             <div class="numTile" id="t-k"><div class="lab">K⁺ 血钾</div><div class="val">--</div><div class="unit">mmol/L</div></div>
+            <div class="numTile" id="t-etco2"><div class="lab">etCO₂</div><div class="val" id="etco2v">--</div><div class="unit">mmHg</div></div>
             <div class="numTile" id="t-gcs"><div class="lab">GCS 意识</div><div class="val">--</div><div class="unit">/15</div></div>
             <div class="numTile" id="t-rhy"><div class="lab">心律</div><div class="val">窦性</div><div class="unit">​</div></div>
-            <div class="numTile" id="t-empty" aria-hidden="true"></div>
           </div>
           </div>
           <div class="pat-under">

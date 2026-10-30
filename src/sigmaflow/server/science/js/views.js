@@ -326,7 +326,7 @@
           <div class="pat-waves">
           <div class="lane"><canvas id="ecgCv"></canvas><div class="laneNum l0" id="n-hr"><div class="lab">HR 心率</div><div class="val">--</div><div class="unit">bpm</div></div></div>
           <div class="lane"><canvas id="plethCv"></canvas><div class="laneNum l1" id="n-spo2"><div class="lab">SpO₂ 脉搏血氧</div><div class="val">--</div><div class="unit">%</div></div></div>
-          <div class="lane"><canvas id="co2Cv"></canvas><div class="laneNum l2" id="n-rr"><div class="lab">RESP 呼吸 · etCO₂</div><div class="val">--</div><div class="unit">bpm</div><div style="font-size:11px" id="etco2v"></div></div></div>
+          <div class="lane"><canvas id="co2Cv"></canvas><div class="laneNum l2" id="n-rr"><div class="lab">RESP 呼吸</div><div class="val">--</div><div class="unit">bpm</div></div></div>
           </div>
           <div id="numCols">
             <div class="numTile" id="t-map"><div class="lab">ART MAP</div><div class="val">--</div><div class="unit">mmHg</div></div>
@@ -335,9 +335,9 @@
             <div class="numTile" id="t-paco2"><div class="lab">PaCO₂</div><div class="val">--</div><div class="unit">mmHg</div></div>
             <div class="numTile" id="t-ph"><div class="lab">pH 酸碱</div><div class="val">--</div><div class="unit">​</div></div>
             <div class="numTile" id="t-k"><div class="lab">K⁺ 血钾</div><div class="val">--</div><div class="unit">mmol/L</div></div>
+            <div class="numTile" id="t-etco2"><div class="lab">etCO₂</div><div class="val" id="etco2v">--</div><div class="unit">mmHg</div></div>
             <div class="numTile" id="t-gcs"><div class="lab">GCS 意识</div><div class="val">--</div><div class="unit">/15</div></div>
             <div class="numTile" id="t-rhy"><div class="lab">心律</div><div class="val">窦性</div><div class="unit">​</div></div>
-            <div class="numTile" id="t-empty" aria-hidden="true"></div>
           </div>
           </div>
           <div class="pat-under">
