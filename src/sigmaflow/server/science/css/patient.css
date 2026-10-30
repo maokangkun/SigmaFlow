@@ -7,6 +7,10 @@
  *     波形写头颜色在 js/patient.js mkSweep(底色 #0c1220/刻度 #223454)
  * 结构: .pat-topbar / .pat-mid(监护仪+3D 卡) / .pat-aside(事件+治疗台卡)
  * =========================================================================== */
+/* 监护页铺满视口: 覆盖 .page 的列宽/内边距(27px 44px 50px 会把页面顶起,
+   底部 50px 内边距即页面下方的"空白行"); 桌面端顶栏 menu 形态高度为 0,
+   根容器直接取整幅视口高 —— 窄屏走媒体查询的 height:auto 纵向滚动 */
+.page.patient-page{max-width:none;margin:0;padding:0}
 #patient-root{
   --pat-ink:#cfd9ea;            /* 深屏上的主文字 */
   --pat-ink-dim:#7e8ba6;        /* 深屏上的次要文字 */
@@ -19,7 +23,7 @@
   --pat-bezel-a:#3a4356;
   --pat-bezel-b:#252d3f;
   display:flex;flex-direction:column;gap:10px;
-  height:calc(100vh - 75px);min-height:560px;
+  height:100vh;min-height:560px;
   padding:10px 12px 12px;
   background:var(--bg);color:var(--ink);
   font:14px/1.45 -apple-system,'PingFang SC',Consolas,'Microsoft YaHei',sans-serif}
@@ -324,6 +328,7 @@
 @media(max-width:1000px){
   .page.patient-page{padding:0}
   #patient-root{height:auto;min-height:0}
+  /* 窄屏顶栏(移动菜单按钮行)存在, 页面改纵向滚动后无需消除 */
   #patient-root .pat-main{grid-template-columns:1fr}
   #patient-root .pat-mid #body3d{min-height:380px}
   #patient-root .pat-logpanel{flex:none;max-height:230px}

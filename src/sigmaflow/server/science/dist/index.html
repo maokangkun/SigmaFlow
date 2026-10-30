@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="01729187">
+<meta name="build" content="462240f0">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1212,6 +1212,10 @@ html[data-motion="reduced"] #anchor-tip{display:none}
  *     波形写头颜色在 js/patient.js mkSweep(底色 #0c1220/刻度 #223454)
  * 结构: .pat-topbar / .pat-mid(监护仪+3D 卡) / .pat-aside(事件+治疗台卡)
  * =========================================================================== */
+/* 监护页铺满视口: 覆盖 .page 的列宽/内边距(27px 44px 50px 会把页面顶起,
+   底部 50px 内边距即页面下方的"空白行"); 桌面端顶栏 menu 形态高度为 0,
+   根容器直接取整幅视口高 —— 窄屏走媒体查询的 height:auto 纵向滚动 */
+.page.patient-page{max-width:none;margin:0;padding:0}
 #patient-root{
   --pat-ink:#cfd9ea;            /* 深屏上的主文字 */
   --pat-ink-dim:#7e8ba6;        /* 深屏上的次要文字 */
@@ -1224,7 +1228,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
   --pat-bezel-a:#3a4356;
   --pat-bezel-b:#252d3f;
   display:flex;flex-direction:column;gap:10px;
-  height:calc(100vh - 75px);min-height:560px;
+  height:100vh;min-height:560px;
   padding:10px 12px 12px;
   background:var(--bg);color:var(--ink);
   font:14px/1.45 -apple-system,'PingFang SC',Consolas,'Microsoft YaHei',sans-serif}
@@ -1529,6 +1533,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 @media(max-width:1000px){
   .page.patient-page{padding:0}
   #patient-root{height:auto;min-height:0}
+  /* 窄屏顶栏(移动菜单按钮行)存在, 页面改纵向滚动后无需消除 */
   #patient-root .pat-main{grid-template-columns:1fr}
   #patient-root .pat-mid #body3d{min-height:380px}
   #patient-root .pat-logpanel{flex:none;max-height:230px}
@@ -12697,6 +12702,9 @@ V.ctxRing = () => {
       const fresh = document.getElementById('patient-root');
       if (patKeep && fresh && fresh !== patKeep) fresh.replaceWith(patKeep);
       else if (!patKeep) CS.mountPatientPage();  // 首次进入: 引擎 init + 3D 视图挂载
+      // 界面缩放(body zoom)只在渲染时同步: 每次渲染后按当前 zoom 精确补齐高度,
+      // 防 100vh 不感知 zoom 在页面下方露空白带/截断内容
+      if (CS._patientFit) CS._patientFit();
     } else if (CS._patientLive) {
       CS.unmountPatientPage();  // 离开页面: 停引擎定时器 + 释放 WebGL
     }
@@ -13082,6 +13090,22 @@ V.ctxRing = () => {
   CS.mountPatientPage = () => {
     const root = document.getElementById('patient-root');
     if (!root) return;
+    // 高度适配: CSS 的 100vh 不感知 body zoom(界面缩放≠100 时会在页面下方
+    // 露空白带或内容出界), 用视觉坐标精确补齐 —— 布局高 = 可视余量 / zoom
+    const fit = () => {
+      const el = document.getElementById('patient-root');
+      if (!el) return;
+      if (window.matchMedia('(max-width:1000px)').matches) { el.style.height = ''; return; }
+      const zoom = parseFloat(document.body.style.zoom) || 1;
+      const top = el.getBoundingClientRect().top;
+      el.style.height = Math.max(560, (window.innerHeight - top) / zoom) + 'px';
+    };
+    CS._patientFit = fit;
+    fit();
+    if (!CS._patientFitBound) {
+      CS._patientFitBound = true;
+      window.addEventListener('resize', () => { if (document.getElementById('patient-root') && CS._patientFit) CS._patientFit(); });
+    }
     if (window.PatientSim) PatientSim.mount();
     const cv = document.getElementById('h3d');
     if (window.PatientViewer && cv) PatientViewer.mount(cv);

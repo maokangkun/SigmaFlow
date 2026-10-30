@@ -199,6 +199,9 @@
       const fresh = document.getElementById('patient-root');
       if (patKeep && fresh && fresh !== patKeep) fresh.replaceWith(patKeep);
       else if (!patKeep) CS.mountPatientPage();  // 首次进入: 引擎 init + 3D 视图挂载
+      // 界面缩放(body zoom)只在渲染时同步: 每次渲染后按当前 zoom 精确补齐高度,
+      // 防 100vh 不感知 zoom 在页面下方露空白带/截断内容
+      if (CS._patientFit) CS._patientFit();
     } else if (CS._patientLive) {
       CS.unmountPatientPage();  // 离开页面: 停引擎定时器 + 释放 WebGL
     }
@@ -584,6 +587,22 @@
   CS.mountPatientPage = () => {
     const root = document.getElementById('patient-root');
     if (!root) return;
+    // 高度适配: CSS 的 100vh 不感知 body zoom(界面缩放≠100 时会在页面下方
+    // 露空白带或内容出界), 用视觉坐标精确补齐 —— 布局高 = 可视余量 / zoom
+    const fit = () => {
+      const el = document.getElementById('patient-root');
+      if (!el) return;
+      if (window.matchMedia('(max-width:1000px)').matches) { el.style.height = ''; return; }
+      const zoom = parseFloat(document.body.style.zoom) || 1;
+      const top = el.getBoundingClientRect().top;
+      el.style.height = Math.max(560, (window.innerHeight - top) / zoom) + 'px';
+    };
+    CS._patientFit = fit;
+    fit();
+    if (!CS._patientFitBound) {
+      CS._patientFitBound = true;
+      window.addEventListener('resize', () => { if (document.getElementById('patient-root') && CS._patientFit) CS._patientFit(); });
+    }
     if (window.PatientSim) PatientSim.mount();
     const cv = document.getElementById('h3d');
     if (window.PatientViewer && cv) PatientViewer.mount(cv);
