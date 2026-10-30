@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="80a42684">
+<meta name="build" content="4151f6df">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1422,6 +1422,9 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 #patient-root #pumpGrid button{padding:7px 4px;font-size:11.5px;background:var(--surface);color:var(--ink);
   border-radius:11px;box-shadow:var(--shadow-small);display:flex;align-items:center;gap:6px;justify-content:center}
 #patient-root #pumpGrid button img{height:16px}
+/* 采血化验: Blood.png 白色血滴染红, 与按钮文字同显 */
+#patient-root #pumpGrid #btnLab img{filter:brightness(0) saturate(100%) invert(15%) sepia(97%)
+  saturate(7463%) hue-rotate(340deg) brightness(92%) contrast(110%)}
 #patient-root #pumpGrid button.on{background:var(--green-bg);color:var(--green);font-weight:650;box-shadow:var(--shadow-inset)}
 #patient-root #pumpGrid button:active{box-shadow:var(--shadow-inset)}
 #patient-root #foodZone{padding:9px 14px 12px;display:flex;flex-direction:column;gap:7px}
