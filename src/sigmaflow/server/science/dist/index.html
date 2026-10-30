@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="8b9a3fa7">
+<meta name="build" content="01729187">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1204,287 +1204,335 @@ html[data-motion="reduced"] #anchor-tip{display:none}
   <style>
 /* css/patient.css */
 /* =============================================================================
- * 虚拟患者页样式 —— 全部选择器收敛在 #patient-root 下, 不外泄到主应用。
- * 布局(与侧栏之后的页面内三区一致):
- *   .pat-topbar    患者标识 + 报警横幅 + 时钟 + 页面操作
- *   .pat-mid       监护仪表盘(#waves) + 3D 全身器官(#body3d) 上下两栏
- *   .pat-aside     事件记录(.pat-logpanel) + 治疗控制台(.pat-console) 上下两栏
- * 原版为独立单页应用(smlife/web), 保持其 ICU 监护仪视觉, 只做容器化适配。
+ * 虚拟患者页 —— 与主应用一致的轻新拟态(neumorphic)语言 + 监护仪拟物机身。
+ * 设计约定(与 css/tokens.css 全局对齐):
+ *   · 页面底 = var(--bg), 面板 = var(--surface) + 柔和双向阴影(--shadow-small)
+ *   · 输入类控件 = 内凹(var(--shadow-inset)), 按钮类 = 柔浮起(品牌绿/红/中性三系)
+ *   · 监护仪表盘 = 深色塑料机身(bezel) + 熄灯玻璃屏(screen) + LED 数字辉光;
+ *     波形写头颜色在 js/patient.js mkSweep(底色 #0c1220/刻度 #223454)
+ * 结构: .pat-topbar / .pat-mid(监护仪+3D 卡) / .pat-aside(事件+治疗台卡)
  * =========================================================================== */
-/* 监护仪风格整屏铺满: 覆盖 .page 的居中列宽与内边距, 高度锁定视口减顶栏 */
-.page.patient-page{max-width:none;padding:0;margin:0}
-#patient-root{--pat-bg:#eef1f5;--pat-panel:#fff;--pat-line:#d7dee8;--pat-tx:#1c2b3a;
-  --ecg:#009a44;--pleth:#0077c2;--co2:#c07800;--num:#12303f;--alarm:#d81f2a;--warn:#c56a00;
-  display:flex;flex-direction:column;height:calc(100vh - 75px);min-height:520px;
-  background:var(--pat-bg);color:var(--pat-tx);
-  font:14px/1.4 -apple-system,'PingFang SC',Consolas,'Microsoft YaHei',sans-serif}
+#patient-root{
+  --pat-ink:#cfd9ea;            /* 深屏上的主文字 */
+  --pat-ink-dim:#7e8ba6;        /* 深屏上的次要文字 */
+  --pat-led-ecg:#22e07e;        /* LED 配色与引擎扫掠线一致 */
+  --pat-led-pleth:#4fc3ff;
+  --pat-led-co2:#ffd15e;
+  --pat-led-warn:#ffb347;
+  --pat-led-crit:#ff5a68;
+  --pat-screen:#0c1220;
+  --pat-bezel-a:#3a4356;
+  --pat-bezel-b:#252d3f;
+  display:flex;flex-direction:column;gap:10px;
+  height:calc(100vh - 75px);min-height:560px;
+  padding:10px 12px 12px;
+  background:var(--bg);color:var(--ink);
+  font:14px/1.45 -apple-system,'PingFang SC',Consolas,'Microsoft YaHei',sans-serif}
 #patient-root *{box-sizing:border-box;margin:0;padding:0}
-/* ===== 顶栏 ===== */
-#patient-root .pat-topbar{display:flex;align-items:center;gap:12px;min-height:46px;padding:0 12px;
-  background:#fff;border-bottom:1px solid var(--pat-line)}
-#patient-root .pat-logo{height:30px}
-#patient-root .pat-id #patName{font-size:15px;font-weight:600;color:#12303f}
-#patient-root .pat-id #patTag{font-size:11px;color:#7d8db0}
-#patient-root #clock{font-family:Consolas,monospace;font-size:15px;color:#44576b;margin-left:auto}
-#patient-root .alarmBanner{flex:0 0 250px;text-align:center;font-size:12px;padding:4px 10px;border-radius:4px;
-  background:#e8f5ec;color:#137a44;border:1px solid #9bd4b3}
-#patient-root .alarmBanner.warn{background:#fdf3e3;color:#9a5a06;border-color:#e3c186}
-#patient-root .alarmBanner.crit{background:#fdecec;color:#b3121c;border-color:#e79aa0;animation:patBlink .9s infinite}
-#patient-root .pat-topbtns{display:flex;gap:6px}
-#patient-root .pat-topbtns button{background:#f0f4f8;border:1px solid #c9d6e3;color:#0b6e3f;border-radius:4px;
-  padding:5px 10px;font-size:12px;cursor:pointer;white-space:nowrap}
-#patient-root .pat-topbtns button:hover{background:#e2ebf3}
-/* ===== 主区: 左(监护+3D) / 右(事件+控制台) ===== */
-#patient-root .pat-main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) clamp(340px,30vw,470px);min-height:0}
-#patient-root .pat-mid{display:flex;flex-direction:column;min-width:0;min-height:0}
-#patient-root .pat-aside{display:flex;flex-direction:column;min-width:0;min-height:0;border-left:1px solid var(--pat-line);background:var(--pat-panel)}
-/* —— 监护仪表盘 —— */
-#patient-root #waves{display:flex;flex-direction:column;flex:1.15;min-height:0;border-bottom:1px solid var(--pat-line);background:#fff}
-#patient-root .lane{flex:1;display:flex;min-height:80px;border-bottom:1px solid #e4eaf1}
-#patient-root .lane canvas{flex:1;height:100%;min-width:0;display:block;background:#fff}
-#patient-root .laneNum{width:132px;border-left:1px solid var(--pat-line);display:flex;flex-direction:column;
-  justify-content:center;padding:0 10px;background:#f7f9fc}
-#patient-root .laneNum .lab{font-size:11px;color:#5b7288;letter-spacing:1px}
-#patient-root .laneNum .val{font-family:Consolas,'SF Mono',monospace;font-size:34px;font-weight:600}
-#patient-root .laneNum .unit{font-size:11px;color:#8395a8}
-#patient-root .l0{color:var(--ecg)} #patient-root .l1{color:var(--pleth)} #patient-root .l2{color:var(--co2)}
-#patient-root .laneNum.crit .val{color:var(--alarm)!important;animation:patBlink .9s infinite}
-#patient-root .laneNum.warn .val{color:var(--warn)!important}
-#patient-root #numCols{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--pat-line);border-top:1px solid var(--pat-line)}
-#patient-root .numTile{background:#fff;padding:6px 10px}
-#patient-root .numTile .lab{font-size:11px;color:#5b7288;letter-spacing:.5px}
-#patient-root .numTile .val{font-family:Consolas,monospace;font-size:24px;font-weight:600;color:var(--num)}
-#patient-root .numTile .unit{font-size:10px;color:#8395a8}
-#patient-root .numTile.crit .val{color:var(--alarm);animation:patBlink .9s infinite}
-#patient-root .numTile.warn .val{color:var(--warn)}
-#patient-root #statusStrip{display:flex;align-items:center;gap:8px;padding:5px 10px;background:#f7f9fc;
-  border-top:1px solid var(--pat-line);min-height:44px}
-#patient-root #statusStrip img{height:30px}
-#patient-root #statusStrip .none{color:#8395a8;font-size:12px}
-#patient-root #frsInfo{font-size:11px;color:#0e7490;background:#eef7fa;border:1px solid #cfe6ee;border-radius:4px;
-  padding:3px 8px;margin:5px 10px;line-height:1.6}
+#patient-root button{font:inherit;color:inherit;cursor:pointer}
+#patient-root h3{font:600 11px/1 -apple-system,'PingFang SC',sans-serif;letter-spacing:1.6px;color:var(--muted)}
+
+/* ===== 顶栏(新拟态长条卡) ===== */
+#patient-root .pat-topbar{display:flex;align-items:center;gap:10px;flex:none;flex-wrap:wrap;
+  background:var(--surface);border-radius:14px;padding:8px 12px;box-shadow:var(--shadow-small)}
+#patient-root .pat-logo{height:26px;border-radius:6px;box-shadow:var(--shadow-inset);padding:3px;background:var(--inset)}
+#patient-root .pat-id #patName{font-size:13.5px;font-weight:650;color:var(--ink-strong)}
+#patient-root .pat-id #patTag{font-size:10px;color:var(--faint)}
+#patient-root .alarmBanner{flex:1 1 auto;min-width:130px;text-align:center;font-size:11.5px;font-weight:550;
+  padding:5px 12px;border-radius:999px;background:var(--green-bg);color:var(--green);box-shadow:var(--shadow-inset)}
+#patient-root .alarmBanner.warn{background:var(--amber-bg);color:var(--amber)}
+#patient-root .alarmBanner.crit{background:var(--red-bg);color:var(--red);animation:patBlink .9s infinite}
+#patient-root #clock{flex:none;font-family:var(--mono);font-size:13.5px;color:var(--ink);
+  background:var(--inset);border-radius:8px;padding:4px 10px;box-shadow:var(--shadow-inset)}
+#patient-root .pat-topbtns{display:flex;gap:8px;flex-wrap:wrap}
+#patient-root .pat-topbtns button{background:var(--surface);border-radius:9px;padding:5px 11px;font-size:11.5px;
+  color:var(--ink);box-shadow:var(--shadow-small);white-space:nowrap;transition:box-shadow .15s,transform .15s}
+#patient-root .pat-topbtns button:hover{transform:translateY(-1px)}
+#patient-root .pat-topbtns button:active{box-shadow:var(--shadow-inset);transform:none}
+
+/* ===== 主区两栏 ===== */
+#patient-root .pat-main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) clamp(320px,26vw,430px);gap:10px;min-height:0}
+#patient-root .pat-mid{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
+#patient-root .pat-aside{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
+
+/* ===== 监护仪表盘(拟物机身) ===== */
+#patient-root #waves{display:flex;flex-direction:column;gap:6px;min-height:0;flex:none}
+#patient-root .pat-bezel{background:linear-gradient(180deg,var(--pat-bezel-a),var(--pat-bezel-b));
+  border-radius:16px;padding:8px 8px 4px;position:relative;
+  box-shadow:0 14px 28px rgba(23,31,49,.24),inset 0 1px 0 rgba(255,255,255,.12),inset 0 -2px 0 rgba(0,0,0,.32)}
+#patient-root .pat-screen{background:var(--pat-screen);border-radius:10px;padding:4px;overflow:hidden;
+  box-shadow:inset 0 3px 14px rgba(0,0,0,.6),inset 0 0 0 1px #1a2436;display:flex;flex-direction:column}
+#patient-root .pat-bezel-brand{display:flex;align-items:center;justify-content:space-between;
+  padding:4px 6px 2px;font-size:8px;letter-spacing:2px;color:#9aa5bb}
+#patient-root .pat-bezel-brand::before{content:'VITALS MONITOR · SIM-PATIENT'}
+#patient-root .pat-bezel-brand::after{content:'';width:44px;height:8px;flex:none;
+  background:radial-gradient(circle,#171d29 1.5px,transparent 1.6px) 0 0/7px 8px;opacity:.85}  /* 扬声器栅格 */
+#patient-root .lane{height:60px;flex:none;display:flex;min-height:0;background:var(--pat-screen);
+  border-bottom:1px solid #1a2434}
+#patient-root .lane canvas{flex:1;height:100%;min-width:0;display:block;background:transparent}
+#patient-root .laneNum{width:118px;flex:none;display:flex;flex-direction:column;justify-content:center;
+  gap:1px;padding:0 9px;background:#0e1626;border-left:1px solid #1a2434}
+#patient-root .laneNum .lab{font-size:8.5px;letter-spacing:1px;color:var(--pat-ink-dim);line-height:1.15}
+#patient-root .laneNum .val{font-family:var(--mono);font-size:19px;font-weight:600;line-height:1.02;
+  text-shadow:0 0 9px currentColor}
+#patient-root .laneNum .unit{font-size:9px;color:var(--pat-ink-dim);line-height:1.1}
+#patient-root .l0{color:var(--pat-led-ecg)} #patient-root .l1{color:var(--pat-led-pleth)} #patient-root .l2{color:var(--pat-led-co2)}
+#patient-root #etco2v{font-size:10px;color:var(--pat-ink-dim)}
+#patient-root .laneNum.crit .val{color:var(--pat-led-crit)!important;animation:patBlink .9s infinite}
+#patient-root .laneNum.warn .val{color:var(--pat-led-warn)!important}
+#patient-root #numCols{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;padding-top:3px;flex:none}
+#patient-root .numTile{background:#0e1626;border-radius:7px;padding:2px 8px 3px}
+#patient-root .numTile .lab{font-size:8.5px;letter-spacing:.5px;color:var(--pat-ink-dim);line-height:1.15}
+#patient-root .numTile .val{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--pat-ink);line-height:1.1}
+#patient-root .numTile .unit{font-size:8px;color:#5c6a84;line-height:1.1}
+#patient-root .numTile.crit .val{color:var(--pat-led-crit);animation:patBlink .9s infinite}
+#patient-root .numTile.warn .val{color:var(--pat-led-warn)}
+/* 机身下方: 状态图标条 / 周期提示 / 诊断行 */
+#patient-root #statusStrip{display:flex;align-items:center;gap:9px;padding:4px 10px;min-height:30px;
+  background:var(--surface);border-radius:11px;box-shadow:var(--shadow-inset);overflow-x:auto}
+#patient-root #statusStrip img{height:22px;filter:drop-shadow(0 2px 3px rgba(30,40,60,.25))}
+#patient-root #statusStrip .none{color:var(--faint);font-size:11px}
+#patient-root #frsInfo{font-size:11px;color:var(--accent-dark);background:var(--accent-bg);
+  border-radius:9px;padding:4px 10px;line-height:1.6;box-shadow:var(--shadow-inset)}
 #patient-root #frsInfo:empty{display:none}
-#patient-root #diagBar{display:flex;gap:6px;align-items:center;padding:6px 10px;border-top:1px solid var(--pat-line);background:#f7f9fc}
-#patient-root #diagBar button{background:#f0f4f8;border:1px solid #c9d6e3;color:#0e7490;border-radius:4px;
-  padding:5px 12px;font-size:12px;cursor:pointer;font-weight:600}
-#patient-root #diagBar button:hover{background:#e2ebf3}
-#patient-root #diagBar .hint{font-size:11px;color:#8395a8}
-/* —— 3D 全身器官 —— */
-#patient-root #body3d{display:flex;flex-direction:column;background:#fff;min-height:0;flex:1}
-#patient-root #body3d .bhead{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--pat-line)}
-#patient-root #body3d h3{font-size:12px;letter-spacing:2px;color:#0e7490}
-#patient-root #body3d .bhead button{margin-left:auto;background:#f0f4f8;border:1px solid #c9d6e3;color:#0b6e7f;
-  border-radius:4px;padding:3px 10px;font-size:12px;cursor:pointer}
-#patient-root #heartBox{flex:1;width:100%;min-height:120px;background:radial-gradient(#ffffff,#e7edf4);position:relative}
-#patient-root #heartBox .tag{position:absolute;left:10px;bottom:8px;font-size:11px;color:#7d93a8;z-index:2}
+#patient-root #diagBar{display:flex;gap:8px;align-items:center;padding:2px 4px 0}
+#patient-root #diagBar button{flex:none;background:var(--surface);border-radius:9px;padding:5px 12px;
+  font-size:11.5px;font-weight:600;color:var(--accent-dark);box-shadow:var(--shadow-small)}
+#patient-root #diagBar button:active{box-shadow:var(--shadow-inset)}
+#patient-root #diagBar .hint{font-size:10.5px;color:var(--faint)}
+
+/* ===== 3D 全身器官(新拟态卡) ===== */
+#patient-root #body3d{display:flex;flex-direction:column;background:var(--surface);border-radius:16px;
+  box-shadow:var(--shadow-small);min-height:0;flex:1;overflow:hidden}
+#patient-root #body3d .bhead{display:flex;align-items:center;gap:8px;padding:10px 14px 6px}
+#patient-root #body3d .bhead h3{color:var(--ink);font-size:11.5px}
+#patient-root #body3d .bhead button{margin-left:auto;background:var(--surface);border-radius:8px;
+  padding:4px 10px;font-size:11px;color:var(--muted);box-shadow:var(--shadow-small)}
+#patient-root #body3d .bhead button:active{box-shadow:var(--shadow-inset)}
+#patient-root #heartBox{flex:1;width:100%;min-height:120px;position:relative;
+  background:radial-gradient(circle at 50% 42%,#ffffff,#e8ecf2);border-radius:12px;margin:0 10px;
+  box-shadow:inset 0 2px 10px #dfe2e966,inset 0 -2px 10px #ffffffb3}
+#patient-root #heartBox .tag{position:absolute;left:10px;bottom:8px;font-size:10px;color:var(--faint);z-index:2}
 #patient-root #heartBox canvas{width:100%;height:100%;display:block}
-#patient-root #organStrip{display:flex;flex-wrap:wrap;gap:5px;padding:10px;background:#f4f7fa;
-  border-top:1px solid var(--pat-line);overflow:auto;max-height:150px}
-#patient-root #organStrip button,#patient-root #organStripBig button{display:flex;align-items:center;gap:3px;background:#fff;
-  border:1px solid #c9d6e3;color:#3d5266;border-radius:4px;padding:3px 7px;font-size:12px;cursor:pointer}
-#patient-root #organStrip button img,#patient-root #organStripBig button img{height:18px}
-#patient-root #organStrip button .dot,#patient-root #organStripBig button .dot{width:9px;height:9px;border-radius:5px}
-#patient-root #organStrip button.sel,#patient-root #organStripBig button.sel{background:#dff2e6;border-color:#2a8a4a;color:#0b6e3f;font-weight:600}
-#patient-root #organStrip button.removed,#patient-root #organStripBig button.removed{background:#e6e6e6;border-color:#aeb4ba;color:#8a9199}
+#patient-root #organStrip{display:flex;flex-wrap:wrap;gap:6px;padding:10px;margin:8px 10px 10px;
+  background:var(--inset);border-radius:12px;overflow:auto;max-height:132px;box-shadow:var(--shadow-inset)}
+#patient-root #organStrip button,#patient-root #organStripBig button{display:flex;align-items:center;gap:4px;
+  background:var(--surface);border-radius:8px;padding:3px 8px;font-size:11px;color:var(--ink);box-shadow:var(--shadow-small)}
+#patient-root #organStrip button img,#patient-root #organStripBig button img{height:16px}
+#patient-root #organStrip button .dot,#patient-root #organStripBig button .dot{width:8px;height:8px;border-radius:5px}
+#patient-root #organStrip button.sel,#patient-root #organStripBig button.sel{color:var(--green);
+  box-shadow:var(--shadow-inset);background:var(--green-bg)}
+#patient-root #organStrip button.removed,#patient-root #organStripBig button.removed{color:var(--faint);background:var(--inset);box-shadow:var(--shadow-inset)}
 #patient-root #organStrip button.removed .zhName,#patient-root #organStripBig button.removed .zhName{text-decoration:line-through}
-#patient-root .ectTag{font-size:9px;background:#c0504d;color:#fff;border-radius:3px;padding:1px 3px;margin-right:2px;font-weight:600}
-#patient-root .ectBtn{width:100%;margin-top:8px;padding:8px 4px;font-size:13px;font-weight:600;background:#fdecec;
-  border:1px solid #e79aa0;color:#b3121c;border-radius:4px;cursor:pointer}
-#patient-root .ectBtn:hover{background:#f9d8d8}
-#patient-root .ectDone{margin-top:8px;padding:8px;background:#f4f0e6;border:1px solid #d8c9a3;border-radius:4px;font-size:12px;color:#7a5c1e}
-#patient-root .ectInfo{margin-top:6px;padding:6px 8px;background:#eef4f9;border:1px solid #c9d6e3;border-radius:4px;font-size:12px;color:#3d5266}
-/* ===== 右栏: 事件记录 + 治疗控制台 ===== */
-#patient-root .pat-logpanel{display:flex;flex-direction:column;flex:0 0 32%;min-height:120px;border-bottom:1px solid var(--pat-line)}
-#patient-root .pat-console{flex:1;overflow-y:auto;min-height:0;display:flex;flex-direction:column}
-#patient-root .pat-logpanel h3,#patient-root .pat-console h3{font-size:12px;letter-spacing:2px;color:#0e7490;
-  padding:8px 12px;border-bottom:1px solid var(--pat-line);background:#fff}
-#patient-root #logBox{flex:1;overflow:auto;padding:8px 12px;font-size:12px;background:var(--pat-panel)}
-#patient-root #logBox .ev{padding:3px 0;border-bottom:1px dashed #dfe7ee;color:#44576b}
-#patient-root #logBox .ev b{color:#12303f}
-#patient-root #logBox .ev.crit{color:#c01320}
-#patient-root #rxZone{padding:10px 12px;display:flex;flex-direction:column;gap:7px}
-#patient-root select,#patient-root input{background:#fff;border:1px solid #c9d6e3;color:#1c2b3a;border-radius:4px;
-  padding:6px 8px;font-size:12px;width:100%}
-#patient-root #rxRow{display:flex;gap:6px}
-#patient-root #rxRow button{flex:1;padding:7px 4px;font-size:12px;background:#e6f4ec;border:1px solid #9bd4b3;
-  color:#137a44;border-radius:4px;cursor:pointer}
-#patient-root #rxRow button:hover{background:#d8eedf}
-#patient-root #rxRow button.clear{background:#f3ecfa;border-color:#cbb2e8;color:#6b32b8}
-#patient-root #pumpGrid{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:0 12px 10px}
-#patient-root #pumpGrid button{padding:8px 4px;font-size:12px;background:#fff;border:1px solid #c9d6e3;color:#0b6e3f;
-  border-radius:4px;cursor:pointer;display:flex;align-items:center;gap:6px;justify-content:center}
-#patient-root #pumpGrid button img{height:20px}
-#patient-root #pumpGrid button.on{background:#dff2e6;border-color:#2a8a4a;font-weight:600}
-#patient-root #pumpGrid button:hover{background:#eef4f9}
-#patient-root #foodZone{padding:10px 12px;display:flex;flex-direction:column;gap:7px;border-bottom:1px solid var(--pat-line)}
-#patient-root #foodZone .frow{display:flex;gap:6px;align-items:center}
-#patient-root #foodZone select{flex:1;padding:5px 6px;border:1px solid #c9d6e3;border-radius:4px;font-size:12px;background:#fff;color:#1c2b3a}
-#patient-root #foodZone button{padding:7px 4px;font-size:12px;font-weight:600;background:#e6f4ec;border:1px solid #9bd4b3;
-  color:#137a44;border-radius:4px;cursor:pointer;flex:1.2}
-#patient-root #foodZone button:hover{background:#d8efe2}
-#patient-root #foodInfo{font-size:11px;color:#56718a;background:#f4f7fa;border:1px dashed #c9d6e3;border-radius:4px;
-  padding:5px 7px;line-height:1.5}
-#patient-root #emZone,#patient-root #ventZone{padding:10px 12px;display:flex;flex-direction:column;gap:7px;border-bottom:1px solid var(--pat-line)}
-#patient-root .emRow{display:flex;align-items:center;gap:7px;font-size:11px;color:#56718a}
-#patient-root .emRow .emLab{min-width:52px}
-#patient-root .emRow input[type=range]{flex:1;width:auto;padding:0;height:20px}
-#patient-root .emVal{font-family:Consolas,monospace;font-size:12px;color:#1c2b3a;min-width:34px;text-align:right}
-#patient-root .emUnit{font-size:10px;color:#8395a8}
-#patient-root .enBtns{display:flex;gap:5px;flex:1}
-#patient-root .enBtn{flex:1;padding:5px 0;font-size:11px;background:#fff;border:1px solid #c9d6e3;color:#3d5266;border-radius:4px;cursor:pointer}
-#patient-root .enBtn:hover{background:#eef4f9}
-#patient-root .enBtn.sel{background:#fdecec;border-color:#e79aa0;color:#b3121c;font-weight:600}
-#patient-root .shockBtn{padding:8px 4px;font-size:13px;font-weight:600;background:#fdecec;border:1px solid #e79aa0;
-  color:#b3121c;border-radius:4px;cursor:pointer}
-#patient-root .shockBtn:hover{background:#fbdfdf}
-#patient-root .emAct{padding:7px 4px;font-size:12px;font-weight:600;background:#e6f4ec;border:1px solid #9bd4b3;
-  color:#137a44;border-radius:4px;cursor:pointer}
-#patient-root .emAct.on{background:#dff2e6;border-color:#2a8a4a}
-#patient-root .emSub{font-size:11px;font-family:Consolas,monospace;color:#56718a}
-#patient-root .cprBarWrap{height:6px;background:#e8eef5;border-radius:3px;overflow:hidden}
-#patient-root .cprBar{height:100%;background:linear-gradient(90deg,#e79aa0,#2a8a4a);width:0%}
-#patient-root .swLab{display:flex;align-items:center;gap:5px;font-size:12px;color:#1c2b3a;cursor:pointer;font-weight:600}
-#patient-root .swLab input{width:auto}
-#patient-root #confirmCard{background:#fff;border:1px solid var(--pat-line);border-radius:10px;padding:18px;
-  width:min(360px,90vw);box-shadow:0 8px 40px rgba(20,40,70,.25)}
-#patient-root #confirmCard .cmsg{font-size:13px;color:#1c2b3a;margin-bottom:14px;line-height:1.6}
-#patient-root #confirmCard .cbtns{display:flex;gap:8px;justify-content:flex-end}
-#patient-root #confirmCard .cbtns button{padding:5px 14px;font-size:12px;border-radius:4px;cursor:pointer;
-  background:#f0f4f8;border:1px solid #c9d6e3;color:#1c2b3a}
-#patient-root #confirmCard .cbtns button.ok{background:#fdecec;border-color:#e79aa0;color:#b3121c;font-weight:600}
-#patient-root #drugBox{padding:4px 12px 8px;font-size:11px;font-family:Consolas,monospace;border-bottom:1px solid var(--pat-line)}
-#patient-root #drugBox .row{display:flex;justify-content:space-between;color:#0b7a45}
-/* ===== 百科弹窗 ===== */
-#patient-root #modal{position:fixed;inset:0;background:rgba(30,42,58,.45);display:none;align-items:center;
-  justify-content:center;z-index:50}
-#patient-root #modalCard{background:#fff;border:1px solid var(--pat-line);border-radius:10px;width:min(680px,92vw);
-  max-height:82vh;display:flex;flex-direction:column;padding:16px;box-shadow:0 8px 40px rgba(20,40,70,.25)}
-#patient-root #modalCard h4{color:#0e7490;margin-bottom:8px}
-#patient-root #searchRow{display:flex;gap:6px;margin-bottom:10px}
-#patient-root #searchRow button{background:#f0f4f8;border:1px solid #c9d6e3;color:#1c2b3a;border-radius:4px;
-  padding:5px 12px;cursor:pointer}
-#patient-root #modalBody{overflow:auto;font-size:13px;white-space:pre-wrap;color:#1c2b3a}
+#patient-root .ectTag{font-size:8.5px;background:var(--red);color:#fff;border-radius:3px;padding:1px 4px;margin-right:3px;font-weight:700}
+#patient-root .ectBtn{width:100%;margin-top:8px;padding:8px 4px;font-size:12.5px;font-weight:650;
+  background:var(--red-bg);color:var(--red);border-radius:10px;box-shadow:var(--shadow-small)}
+#patient-root .ectBtn:active{box-shadow:var(--shadow-inset)}
+#patient-root .ectDone{margin-top:8px;padding:8px 10px;background:var(--amber-bg);color:var(--amber);border-radius:9px;font-size:11.5px}
+#patient-root .ectInfo{margin-top:6px;padding:6px 9px;background:var(--inset);color:var(--muted);border-radius:9px;font-size:11.5px;box-shadow:var(--shadow-inset)}
+
+/* ===== 右栏: 事件记录卡 + 治疗台卡 ===== */
+#patient-root .pat-logpanel{display:flex;flex-direction:column;flex:0 0 30%;min-height:110px;
+  background:var(--surface);border-radius:16px;box-shadow:var(--shadow-small);min-width:0;overflow:hidden}
+#patient-root .pat-console{flex:1;min-height:0;display:flex;flex-direction:column;overflow-y:auto;
+  overflow-x:hidden;background:var(--surface);border-radius:16px;box-shadow:var(--shadow-small)}
+#patient-root .pat-logpanel h3,#patient-root .pat-console h3{flex:none;padding:10px 14px 0;letter-spacing:1.8px}
+#patient-root #logBox{flex:1;overflow:auto;margin:8px 12px 12px;padding:6px 10px;font-size:11.5px;
+  background:var(--inset);border-radius:12px;box-shadow:var(--shadow-inset)}
+#patient-root #logBox .ev{padding:3px 0;border-bottom:1px dashed var(--line-soft);color:var(--muted)}
+#patient-root #logBox .ev b{color:var(--ink)}
+#patient-root #logBox .ev.crit{color:var(--red)}
+
+/* ===== 治疗台通用控件 ===== */
+#patient-root select,#patient-root input{background:var(--inset);border:none;color:var(--ink);
+  border-radius:9px;padding:6px 9px;font-size:11.5px;width:100%;box-shadow:var(--shadow-inset);font-family:inherit}
+#patient-root input::placeholder{color:var(--faint)}
+#patient-root input[type=checkbox]{width:auto;accent-color:var(--accent);box-shadow:none;background:none}
+#patient-root input[type=range]{width:auto;flex:1;-webkit-appearance:none;appearance:none;height:18px;
+  background:transparent;box-shadow:none;padding:0}
+#patient-root input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:3px;background:var(--inset);box-shadow:var(--shadow-inset)}
+#patient-root input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;
+  background:var(--surface);box-shadow:var(--shadow-small);margin-top:-4.5px;border:1px solid var(--line)}
+#patient-root #rxZone{padding:9px 14px 11px;display:flex;flex-direction:column;gap:7px}
+#patient-root #rxRow{display:flex;gap:8px}
+#patient-root #rxRow button{flex:1;padding:7px 4px;font-size:11.5px;font-weight:600;border-radius:10px;
+  background:var(--green-bg);color:var(--green);box-shadow:var(--shadow-small)}
+#patient-root #rxRow button.clear{background:var(--accent-bg);color:var(--accent-dark)}
+#patient-root #rxRow button:active{box-shadow:var(--shadow-inset)}
+#patient-root #pumpGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 14px 12px}
+#patient-root #pumpGrid button{padding:7px 4px;font-size:11.5px;background:var(--surface);color:var(--ink);
+  border-radius:11px;box-shadow:var(--shadow-small);display:flex;align-items:center;gap:6px;justify-content:center}
+#patient-root #pumpGrid button img{height:16px}
+#patient-root #pumpGrid button.on{background:var(--green-bg);color:var(--green);font-weight:650;box-shadow:var(--shadow-inset)}
+#patient-root #pumpGrid button:active{box-shadow:var(--shadow-inset)}
+#patient-root #foodZone{padding:9px 14px 12px;display:flex;flex-direction:column;gap:7px}
+#patient-root #foodZone .frow{display:flex;gap:7px;align-items:center}
+#patient-root #foodZone button{padding:7px 4px;font-size:11.5px;font-weight:600;border-radius:10px;
+  background:var(--green-bg);color:var(--green);box-shadow:var(--shadow-small)}
+#patient-root #foodZone button:active{box-shadow:var(--shadow-inset)}
+#patient-root #foodInfo{font-size:10.5px;color:var(--faint);background:var(--inset);border-radius:9px;
+  padding:5px 8px;line-height:1.55;box-shadow:var(--shadow-inset)}
+#patient-root #emZone,#patient-root #ventZone{padding:9px 14px 12px;display:flex;flex-direction:column;gap:7px}
+#patient-root .emRow{display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--muted)}
+#patient-root .emRow .emLab{min-width:50px}
+#patient-root .emVal{font-family:var(--mono);font-size:11.5px;color:var(--ink);min-width:34px;text-align:right}
+#patient-root .emUnit{font-size:9.5px;color:var(--faint)}
+#patient-root .enBtns{display:flex;gap:6px;flex:1}
+#patient-root .enBtn{flex:1;padding:5px 0;font-size:10.5px;background:var(--surface);color:var(--muted);
+  border-radius:8px;box-shadow:var(--shadow-small)}
+#patient-root .enBtn.sel{background:var(--red-bg);color:var(--red);font-weight:650;box-shadow:var(--shadow-inset)}
+#patient-root .shockBtn{padding:8px 4px;font-size:12.5px;font-weight:700;background:var(--red-bg);color:var(--red);
+  border-radius:11px;box-shadow:var(--shadow-small)}
+#patient-root .shockBtn:active{box-shadow:var(--shadow-inset)}
+#patient-root .emAct{padding:7px 4px;font-size:11.5px;font-weight:600;background:var(--surface);color:var(--ink);
+  border-radius:11px;box-shadow:var(--shadow-small)}
+#patient-root .emAct.on{background:var(--green-bg);color:var(--green);box-shadow:var(--shadow-inset)}
+#patient-root .emAct:active{box-shadow:var(--shadow-inset)}
+#patient-root .emSub{font-size:10.5px;font-family:var(--mono);color:var(--faint)}
+#patient-root .cprBarWrap{height:5px;background:var(--inset);border-radius:3px;overflow:hidden;box-shadow:var(--shadow-inset)}
+#patient-root .cprBar{height:100%;background:linear-gradient(90deg,var(--red),var(--green));width:0%}
+#patient-root .swLab{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink);cursor:pointer;font-weight:600}
+#patient-root #btnWithdraw{background:var(--red-bg)!important;color:var(--red)!important;box-shadow:var(--shadow-inset)!important;font-weight:650;border-radius:10px}
+#patient-root #drugBox{padding:3px 14px 12px;padding-top:0;font-size:10.5px;font-family:var(--mono);color:var(--muted)}
+#patient-root #drugBox .row{display:flex;justify-content:space-between;color:var(--green)}
+
+/* ===== 弹层(与主应用一致的卡片) ===== */
+#patient-root #modal{position:fixed;inset:0;background:rgba(30,42,58,.45);display:none;align-items:center;justify-content:center;z-index:50}
+#patient-root #modalCard{background:var(--surface);border-radius:16px;width:min(680px,92vw);max-height:82vh;
+  display:flex;flex-direction:column;padding:16px;box-shadow:0 18px 50px rgba(20,30,50,.35)}
+#patient-root #modalCard h4{color:var(--ink-strong);margin-bottom:8px;font-size:14px}
+#patient-root #searchRow{display:flex;gap:8px;margin-bottom:10px}
+#patient-root #searchRow button{background:var(--surface);border-radius:9px;padding:5px 12px;font-size:11.5px;
+  color:var(--muted);box-shadow:var(--shadow-small)}
+#patient-root #modalBody{overflow:auto;font-size:13px;white-space:pre-wrap;color:var(--ink);
+  background:var(--inset);border-radius:12px;padding:10px 12px;box-shadow:var(--shadow-inset)}
+#patient-root #modalBody > div b{color:var(--accent-dark)}
 #patient-root #shockFlash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:70}
-/* ===== 3D 大图弹层 ===== */
-#patient-root #big3d{position:fixed;inset:2.5%;background:#fff;border:1px solid var(--pat-line);border-radius:12px;
-  display:none;flex-direction:column;z-index:60;box-shadow:0 10px 60px rgba(20,40,70,.35)}
-#patient-root #big3d .bhead{display:flex;align-items:center;padding:8px 14px;border-bottom:1px solid var(--pat-line)}
-#patient-root #big3d h3{font-size:13px;color:#0e7490}
-#patient-root #big3d .bhead button{margin-left:auto;background:#fdecec;border:1px solid #e79aa0;color:#b3121c;
-  border-radius:4px;padding:4px 12px;cursor:pointer}
-#patient-root #big3d #glSlot{flex:1;min-height:0;position:relative}
+#patient-root #big3d{position:fixed;inset:2.5%;background:var(--surface);border-radius:16px;display:none;
+  flex-direction:column;z-index:60;box-shadow:0 18px 60px rgba(20,30,50,.4);padding:6px}
+#patient-root #big3d .bhead{display:flex;align-items:center;padding:8px 14px}
+#patient-root #big3d h3{font-size:12px;color:var(--ink)}
+#patient-root #big3d .bhead button{margin-left:auto;background:var(--red-bg);color:var(--red);border-radius:9px;
+  padding:4px 12px;font-size:11.5px;box-shadow:var(--shadow-small)}
+#patient-root #big3d .bhead button:active{box-shadow:var(--shadow-inset)}
+#patient-root #big3d #glSlot{flex:1;min-height:0;position:relative;background:radial-gradient(circle at 50% 42%,#ffffff,#e8ecf2);
+  border-radius:12px;margin:0 12px}
 #patient-root #big3d #glSlot canvas{width:100%;height:100%;display:block;position:absolute;inset:0}
-#patient-root #organStripBig{display:flex;flex-wrap:wrap;gap:5px;padding:10px 14px;background:#f4f7fa;
-  border-top:1px solid var(--pat-line);overflow:auto;max-height:120px}
-/* ===== 采血化验 / 诊断 报告卡 ===== */
-#patient-root #diagBar .hint{font-size:11px;color:#8395a8}
-#patient-root #labBox,#patient-root #diagBox{position:fixed;inset:0;background:rgba(30,42,58,.45);display:none;
-  align-items:center;justify-content:center;z-index:70}
-#patient-root #labCard,#patient-root #diagCard{background:#fff;border:1px solid var(--pat-line);border-radius:10px;
-  width:min(560px,92vw);max-height:84vh;overflow:auto;padding:14px 16px;box-shadow:0 8px 40px rgba(20,40,70,.25);
-  font-size:13px;color:#1c2b3a}
+#patient-root #organStripBig{display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px 12px;background:var(--inset);
+  border-radius:12px;margin:0 12px 12px;overflow:auto;max-height:110px;box-shadow:var(--shadow-inset)}
+#patient-root #labBox,#patient-root #diagBox,#patient-root #caseBox,#patient-root #caseEndBox{position:fixed;inset:0;
+  background:rgba(30,42,58,.45);display:none;align-items:center;justify-content:center;z-index:70}
+#patient-root #labCard,#patient-root #diagCard,#patient-root #caseCard{background:var(--surface);border-radius:16px;
+  width:min(560px,92vw);max-height:84vh;overflow:auto;padding:14px 16px;box-shadow:0 18px 50px rgba(20,30,50,.35);
+  font-size:13px;color:var(--ink)}
 #patient-root #labCard .rhead,#patient-root #diagCard .rhead{display:flex;align-items:center;gap:10px;margin-bottom:8px;
-  border-bottom:1px solid var(--pat-line);padding-bottom:6px}
-#patient-root #labCard h4,#patient-root #diagCard h4{color:#0e7490;font-size:14px;margin:0}
-#patient-root #labCard .rt,#patient-root #diagCard .rt{font-size:11px;color:#8395a8;font-family:Consolas,monospace}
-#patient-root #labCard .rhead button,#patient-root #diagCard .rhead button{margin-left:auto;background:#f0f4f8;
-  border:1px solid #c9d6e3;color:#3d5266;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px}
-#patient-root .labSect{font-size:11px;letter-spacing:1.5px;color:#0e7490;margin:8px 0 3px;font-weight:700}
-#patient-root .labRow{display:flex;align-items:baseline;gap:8px;padding:3px 2px;border-bottom:1px dashed #e4eaf1;
-  font-family:Consolas,'SF Mono',monospace}
-#patient-root .labRow .labN{flex:1;font-family:inherit;color:#3d5266}
-#patient-root .labRow .labR{font-size:11px;color:#8395a8;min-width:72px;text-align:right}
-#patient-root .labRow .labU{font-size:10px;color:#8395a8;min-width:46px}
-#patient-root .labAbn{font-size:12px;margin:8px 0;padding:6px 8px;background:#fdf3e3;border:1px solid #e3c186;
-  border-radius:4px;color:#9a5a06}
-#patient-root .labAbn b{color:#b3121c}
-#patient-root table.labTb{width:100%;border-collapse:collapse;margin-top:3px;font-family:Consolas,monospace;font-size:12px}
-#patient-root table.labTb th{font-size:11px;color:#8395a8;font-weight:400;text-align:right;padding:2px 6px;
-  border-bottom:1px solid var(--pat-line)}
-#patient-root table.labTb td{text-align:right;padding:2px 6px;border-bottom:1px dashed #e4eaf1;color:#3d5266}
+  border-bottom:1px solid var(--line-soft);padding-bottom:8px}
+#patient-root #labCard h4,#patient-root #diagCard h4{color:var(--ink-strong);font-size:14px;margin:0}
+#patient-root #labCard .rt,#patient-root #diagCard .rt{font-size:10.5px;color:var(--faint);font-family:var(--mono)}
+#patient-root #labCard .rhead button,#patient-root #diagCard .rhead button{margin-left:auto;background:var(--surface);
+  color:var(--muted);border-radius:8px;padding:3px 10px;cursor:pointer;font-size:11.5px;box-shadow:var(--shadow-small)}
+#patient-root .labSect{font-size:10px;letter-spacing:1.8px;color:var(--accent-dark);margin:10px 0 3px;font-weight:700}
+#patient-root .labRow{display:flex;align-items:baseline;gap:8px;padding:3px 2px;border-bottom:1px dashed var(--line-soft);
+  font-family:var(--mono)}
+#patient-root .labRow .labN{flex:1;color:var(--ink)}
+#patient-root .labRow .labR{font-size:10.5px;color:var(--faint);min-width:76px;text-align:right}
+#patient-root .labRow .labU{font-size:9.5px;color:var(--faint);min-width:46px}
+#patient-root .labAbn{font-size:11.5px;margin:8px 0;padding:6px 9px;background:var(--amber-bg);color:var(--amber);border-radius:9px}
+#patient-root .labAbn b{color:var(--red)}
+#patient-root table.labTb{width:100%;border-collapse:collapse;margin-top:3px;font-family:var(--mono);font-size:11.5px}
+#patient-root table.labTb th{font-size:10px;color:var(--faint);font-weight:400;text-align:right;padding:2px 6px;
+  border-bottom:1px solid var(--line-soft)}
+#patient-root table.labTb td{text-align:right;padding:2px 6px;border-bottom:1px dashed var(--line-soft);color:var(--ink)}
 #patient-root table.labTb td:first-child,#patient-root table.labTb th:first-child{text-align:left}
-#patient-root .diagItem{padding:7px 8px;border-left:3px solid #e3c186;background:#fdfcf7;border-radius:0 4px 4px 0;margin:6px 0}
-#patient-root .diagItem.crit{border-left-color:#e79aa0;background:#fdf5f5}
-#patient-root .diagItem .dname{font-weight:700;color:#1c2b3a}
-#patient-root .diagItem.crit .dname{color:#b3121c}
-#patient-root .diagItem .dcrit{font-size:10px;color:#b3121c;border:1px solid #e79aa0;border-radius:3px;padding:0 4px;margin-left:5px}
-#patient-root .diagItem .dmech{font-size:12px;color:#44576b;margin-top:2px}
-#patient-root .diagItem .dact{font-size:12px;color:#0b6e3f;margin-top:2px}
-#patient-root .diagNone{color:#0b7a45;font-size:13px;line-height:1.7;padding:8px 2px}
-#patient-root .diagNone .sub{color:#8395a8;font-size:11px}
-/* ===== 死亡 ===== */
-#patient-root #death{position:fixed;inset:0;background:rgba(253,240,240,.97);display:none;align-items:center;
+#patient-root .diagItem{padding:7px 10px;border-left:3px solid var(--line);background:var(--surface-hover);
+  border-radius:0 9px 9px 0;margin:6px 0;box-shadow:var(--shadow-inset)}
+#patient-root .diagItem.crit{border-left-color:var(--red)}
+#patient-root .diagItem .dname{font-weight:700;color:var(--ink)}
+#patient-root .diagItem.crit .dname{color:var(--red)}
+#patient-root .diagItem .dcrit{font-size:9px;color:var(--red);border:1px solid var(--red);border-radius:3px;padding:0 4px;margin-left:5px}
+#patient-root .diagItem .dmech{font-size:11.5px;color:var(--muted);margin-top:2px}
+#patient-root .diagItem .dact{font-size:11.5px;color:var(--green);margin-top:2px}
+#patient-root .diagNone{color:var(--green);font-size:12.5px;line-height:1.7;padding:8px 2px}
+#patient-root .diagNone .sub{color:var(--faint);font-size:10.5px}
+/* ===== 确认弹窗 / 死亡卡 ===== */
+#patient-root #confirmCard{background:var(--surface);border-radius:16px;padding:18px;width:min(360px,90vw);
+  box-shadow:0 18px 50px rgba(20,30,50,.35)}
+#patient-root #confirmCard .cmsg{font-size:13px;color:var(--ink);margin-bottom:14px;line-height:1.6}
+#patient-root #confirmCard .cbtns{display:flex;gap:8px;justify-content:flex-end}
+#patient-root #confirmCard .cbtns button{padding:6px 14px;font-size:12px;border-radius:9px;
+  background:var(--surface);color:var(--ink);box-shadow:var(--shadow-small)}
+#patient-root #confirmCard .cbtns button.ok{background:var(--red-bg);color:var(--red);font-weight:650}
+#patient-root #death{position:fixed;inset:0;background:rgba(250,238,240,.97);display:none;align-items:center;
   justify-content:center;flex-direction:column;z-index:100}
-#patient-root #death h2{color:#b3121c;font-size:42px;letter-spacing:10px;margin-bottom:6px}
-#patient-root #death .dsub{font-size:11px;letter-spacing:3px;color:#a06a72;margin-bottom:14px}
-#patient-root #death .cause{color:#7a3038;margin-bottom:22px}
-#patient-root #death button{background:#fff;border:1px solid #c9d6e3;color:#137a44;border-radius:4px;padding:8px 22px;
-  font-size:14px;cursor:pointer}
+#patient-root #death h2{color:var(--red);font-size:40px;letter-spacing:10px;margin-bottom:6px}
+#patient-root #death .dsub{font-size:10.5px;letter-spacing:3px;color:#a06a72;margin-bottom:12px}
+#patient-root #death .cause{color:#7a3038;margin-bottom:20px;font-size:13px}
+#patient-root #death button{background:var(--surface);border-radius:10px;padding:9px 22px;font-size:13px;
+  color:var(--green);box-shadow:var(--shadow-small)}
+#patient-root #death button:active{box-shadow:var(--shadow-inset)}
 #patient-root #death .dbtns{display:flex;gap:12px;margin-top:16px}
-#patient-root #death #btnWithdrawD{background:#fdecec;border-color:#e79aa0;color:#b3121c;font-weight:600}
-#patient-root #deathCard{background:#fff;border:1px solid #e9cdd0;border-radius:10px;box-shadow:0 8px 40px rgba(120,20,30,.18);
-  width:min(660px,92vw);max-height:62vh;overflow:auto;padding:14px 18px;font-size:13px;color:#1c2b3a;text-align:left}
+#patient-root #death #btnWithdrawD{background:var(--red-bg);color:var(--red);font-weight:650}
+#patient-root #deathCard{background:var(--surface);border-radius:16px;box-shadow:0 18px 60px rgba(120,20,30,.22);
+  width:min(660px,92vw);max-height:62vh;overflow:auto;padding:14px 18px;font-size:12.5px;color:var(--ink);text-align:left}
 #patient-root #deathCard .drow{margin:7px 0;display:flex;gap:10px;align-items:flex-start;line-height:1.6}
-#patient-root #deathCard .dlabel{flex:0 0 92px;font-weight:700;color:#b3121c;font-size:12px;letter-spacing:1px;padding-top:1px}
+#patient-root #deathCard .dlabel{flex:0 0 92px;font-weight:700;color:var(--red);font-size:11.5px;letter-spacing:1px;padding-top:1px}
 #patient-root #deathCard .dval{flex:1}
-#patient-root #deathCard .dchain{font-size:12px;color:#7a3038;margin-top:3px;line-height:1.7}
-#patient-root #deathCard .dtl{margin-top:10px;border-top:1px dashed #e9cdd0;padding-top:8px}
-#patient-root #deathCard .dtl h5{margin:0 0 6px;font-size:12px;color:#0e7490;letter-spacing:1px}
-#patient-root #deathCard .dline{font-size:11.5px;color:#44576b;line-height:1.8}
-#patient-root #deathCard .dline.crit{color:#b3121c}
-#patient-root #btnWithdraw{border-color:#e79aa0!important;background:#fdecec!important;color:#b3121c!important;font-weight:600}
+#patient-root #deathCard .dchain{font-size:11.5px;color:#7a3038;margin-top:3px;line-height:1.7}
+#patient-root #deathCard .dtl{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
+#patient-root #deathCard .dtl h5{margin:0 0 6px;font-size:11.5px;color:var(--accent-dark);letter-spacing:1px}
+#patient-root #deathCard .dline{font-size:11px;color:var(--muted);line-height:1.8}
+#patient-root #deathCard .dline.crit{color:var(--red)}
 /* ===== 病例玩法 ===== */
-#patient-root #caseBox{position:fixed;inset:0;background:rgba(30,42,58,.45);display:none;align-items:center;
-  justify-content:center;z-index:90}
-#patient-root #caseCard{background:#fff;border:1px solid var(--pat-line);border-radius:12px;width:min(880px,94vw);
-  max-height:86vh;overflow:auto;padding:16px 18px;box-shadow:0 8px 40px rgba(20,40,70,.25);color:#1c2b3a}
-#patient-root #caseCard h4{font-size:16px;color:#12303f;margin:0 0 2px}
-#patient-root #caseCard .sub{font-size:11px;color:#7d8db0;margin:0 0 12px;line-height:1.6}
+#patient-root #caseCard{width:min(880px,94vw)}
+#patient-root #caseCard h4{font-size:16px;color:var(--ink-strong);margin:0 0 2px}
+#patient-root #caseCard .sub{font-size:10.5px;color:var(--faint);margin:0 0 12px;line-height:1.6}
 #patient-root #caseGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
-#patient-root .caseCard{background:#f7fafd;border:1px solid #d7e2ee;border-radius:10px;padding:10px 12px;cursor:pointer}
-#patient-root .caseCard:hover{box-shadow:0 4px 14px rgba(20,60,110,.15);border-color:#9bc0dd}
+#patient-root .caseCard{background:var(--surface-hover);border-radius:12px;padding:10px 12px;cursor:pointer;
+  box-shadow:var(--shadow-small)}
+#patient-root .caseCard:hover{transform:translateY(-1px);box-shadow:var(--shadow)}
 #patient-root .caseCard.lock{opacity:.45;cursor:not-allowed}
-#patient-root .caseCard h5{font-size:13.5px;color:#12303f;margin:0 0 4px}
-#patient-root .caseCard .diff{color:#e8a13a;letter-spacing:1px}
-#patient-root .caseCard .won{color:#0b7a45;font-size:11px}
-#patient-root .caseCard .best{color:#44576b;font-size:11px}
-#patient-root .caseCard .desc{color:#7d8db0;font-size:11px;line-height:1.5;margin-top:4px}
-#patient-root #caseHUD{position:fixed;right:10px;top:54px;width:300px;background:#fff;border:1px solid var(--pat-line);
-  border-radius:10px;box-shadow:0 8px 40px rgba(20,40,70,.25);padding:10px 12px;font-size:12px;z-index:70;display:none;color:#1c2b3a}
-#patient-root #caseHUD h5{font-size:13px;color:#12303f;margin:0 0 2px}
-#patient-root #caseHUD .caseTime{font-family:Consolas,monospace;color:#44576b;margin-bottom:6px}
+#patient-root .caseCard h5{font-size:13px;color:var(--ink-strong);margin:0 0 4px}
+#patient-root .caseCard .diff{color:var(--amber);letter-spacing:1px}
+#patient-root .caseCard .won{color:var(--green);font-size:10.5px}
+#patient-root .caseCard .best{color:var(--muted);font-size:10.5px}
+#patient-root .caseCard .desc{color:var(--faint);font-size:10.5px;line-height:1.5;margin-top:4px}
+#patient-root #caseHUD{position:fixed;right:12px;top:60px;width:290px;background:var(--surface);border-radius:14px;
+  box-shadow:var(--shadow);padding:10px 12px;font-size:11.5px;z-index:70;display:none;color:var(--ink)}
+#patient-root #caseHUD h5{font-size:13px;color:var(--ink-strong);margin:0 0 2px}
+#patient-root #caseHUD button{margin-top:8px;width:100%;background:var(--surface);border-radius:9px;padding:6px;
+  color:var(--muted);box-shadow:var(--shadow-small)}
+#patient-root #caseHUD .caseTime{font-family:var(--mono);color:var(--muted);margin-bottom:6px}
 #patient-root #caseHUD .goalItem{display:flex;align-items:center;gap:6px;padding:2px 0}
 #patient-root #caseHUD .goalItem .gz{width:16px;text-align:center}
-#patient-root #caseHUD .goalItem .gbar{flex:1;height:5px;background:#e8eef5;border-radius:3px;overflow:hidden;min-width:56px}
-#patient-root #caseHUD .goalItem .gfill{height:100%;background:#37b26f;width:0}
-#patient-root #caseHUD .goalItem.done .gtxt{color:#0b7a45}
-#patient-root #caseHUD .hintCase{color:#7d8db0;font-size:10.5px;margin-top:4px;line-height:1.5}
-#patient-root #caseEndBox{position:fixed;inset:0;background:rgba(30,42,58,.5);display:none;align-items:center;
-  justify-content:center;z-index:130}
-#patient-root #caseEndCard{background:#fff;border-radius:12px;width:min(540px,92vw);max-height:86vh;overflow:auto;
-  padding:18px 20px;box-shadow:0 8px 40px rgba(20,40,70,.3);text-align:center;color:#1c2b3a}
-#patient-root #caseEndCard.win{border:2px solid #9bd4b3}
-#patient-root #caseEndCard.lose{border:2px solid #e79aa0}
-#patient-root #caseEndCard h2{font-size:22px;margin:2px 0 6px}
-#patient-root #caseEndCard.win h2{color:#0b7a45}
-#patient-root #caseEndCard.lose h2{color:#b3121c}
-#patient-root #caseEndCard .row2{display:flex;justify-content:center;gap:26px;font-size:13px;margin:8px 0 10px;color:#44576b}
-#patient-root #caseEndCard .row2 b{font-family:Consolas,monospace;font-size:17px;color:#12303f;display:block}
-#patient-root #caseEndCard .stars{font-size:22px;letter-spacing:3px;color:#e8a13a;margin:2px 0 8px}
-#patient-root #caseGoalList{text-align:left;font-size:12.5px;line-height:2;border-top:1px dashed var(--pat-line);padding-top:8px}
-#patient-root #caseGoalList .ok{color:#0b7a45}
-#patient-root #caseGoalList .no{color:#b3121c}
-#patient-root #caseEndCard button{margin:12px 4px 0;background:#f0f4f8;border:1px solid #c9d6e3;color:#1c2b3a;
-  border-radius:6px;padding:7px 18px;font-size:13px;cursor:pointer}
-#patient-root #caseEndCard button.pri{background:#e6f4ec;border-color:#9bd4b3;color:#0b6e3f;font-weight:600}
+#patient-root #caseHUD .goalItem .gbar{flex:1;height:5px;background:var(--inset);border-radius:3px;overflow:hidden;min-width:56px;box-shadow:var(--shadow-inset)}
+#patient-root #caseHUD .goalItem .gfill{height:100%;background:var(--green);width:0}
+#patient-root #caseHUD .goalItem.done .gtxt{color:var(--green)}
+#patient-root #caseHUD .hintCase{color:var(--faint);font-size:10px;margin-top:4px;line-height:1.5}
+#patient-root #caseEndCard{background:var(--surface);border-radius:16px;width:min(540px,92vw);max-height:86vh;
+  overflow:auto;padding:18px 20px;box-shadow:0 18px 60px rgba(20,30,50,.4);text-align:center;color:var(--ink)}
+#patient-root #caseEndCard.win{box-shadow:0 0 0 2px var(--green),0 18px 60px rgba(20,30,50,.4)}
+#patient-root #caseEndCard.lose{box-shadow:0 0 0 2px var(--red),0 18px 60px rgba(20,30,50,.4)}
+#patient-root #caseEndCard h2{font-size:22px;margin:2px 0 6px;color:var(--ink-strong)}
+#patient-root #caseEndCard.win h2{color:var(--green)}
+#patient-root #caseEndCard.lose h2{color:var(--red)}
+#patient-root #caseEndCard .row2{display:flex;justify-content:center;gap:26px;font-size:12.5px;margin:8px 0 10px;color:var(--muted)}
+#patient-root #caseEndCard .row2 b{font-family:var(--mono);font-size:17px;color:var(--ink-strong);display:block}
+#patient-root #caseEndCard .stars{font-size:22px;letter-spacing:3px;color:var(--amber);margin:2px 0 8px}
+#patient-root #caseGoalList{text-align:left;font-size:12px;line-height:2;border-top:1px dashed var(--line);padding-top:8px}
+#patient-root #caseGoalList .ok{color:var(--green)}
+#patient-root #caseGoalList .no{color:var(--red)}
+#patient-root #caseEndCard button{margin:12px 4px 0;background:var(--surface);border-radius:10px;padding:7px 18px;
+  font-size:12.5px;color:var(--ink);box-shadow:var(--shadow-small)}
+#patient-root #caseEndCard button.pri{background:var(--green-bg);color:var(--green);font-weight:650}
 @keyframes patBlink{50%{opacity:.4}}
-/* ===== 窄屏回退: 右栏折到下方 ===== */
-@media(max-width:940px){
-  #patient-root{height:auto}
+/* ===== 窄屏: 两栏折纵排, 监护仅不再锁高 ===== */
+@media(max-width:1000px){
+  .page.patient-page{padding:0}
+  #patient-root{height:auto;min-height:0}
   #patient-root .pat-main{grid-template-columns:1fr}
-  #patient-root .pat-aside{border-left:none;border-top:1px solid var(--pat-line)}
-  #patient-root .pat-logpanel{flex:none;max-height:220px}
-  #patient-root .pat-topbtns{flex-wrap:wrap}
+  #patient-root .pat-mid #body3d{min-height:380px}
+  #patient-root .pat-logpanel{flex:none;max-height:230px}
+  #patient-root .lane{height:64px}
 }
 
 </style>
@@ -5858,8 +5906,9 @@ function mkSweep(cv,color,speed=100){ // speed px/s
   const ctx=cv.getContext('2d');
   let x=0,lastY=null;
   function resize(){cv.width=cv.clientWidth*2;cv.height=cv.clientHeight*2;ctx.font='20px Consolas';x=0;}
-  function clearCol(px){ctx.fillStyle='#ffffff';ctx.fillRect(px,0,14*2,cv.height);
-    ctx.strokeStyle='#dde5ee';ctx.lineWidth=1;
+  // 深色监护屏配色(拟物机身内): 写头擦除列=屏幕底色, 网格=暗蓝刻度
+  function clearCol(px){ctx.fillStyle='#0c1220';ctx.fillRect(px,0,14*2,cv.height);
+    ctx.strokeStyle='#223454';ctx.lineWidth=1;
     for(let gy=0;gy<cv.height;gy+=40){ctx.beginPath();ctx.moveTo(px,gy+.5);ctx.lineTo(px+28,gy+.5);ctx.stroke();}}
   return{resize,draw(fn,dt){
     const w=cv.width,h=cv.height,step=Math.max(2,Math.round(speed*dt*2));
@@ -6536,7 +6585,7 @@ function patientEngineInit(){
   ROUTES.forEach(r=>{const o=document.createElement('option');o.value=r;o.textContent={Muscle:'肌注',ContinuousInfusion:'持续输注',Oral:'口服',IVPush:'静推',Inhale:'吸入'}[r]||r;rs.appendChild(o);});
   rs.value='IVPush';
   document.querySelectorAll('#waves .lane canvas').forEach(c=>c.dataset.r=1);
-  ecgSw=mkSweep(document.getElementById('ecgCv'),'#009a44');plSw=mkSweep(document.getElementById('plethCv'),'#0077c2');co2Sw=mkSweep(document.getElementById('co2Cv'),'#c07800');
+  ecgSw=mkSweep(document.getElementById('ecgCv'),'#22e07e');plSw=mkSweep(document.getElementById('plethCv'),'#4fc3ff');co2Sw=mkSweep(document.getElementById('co2Cv'),'#ffd15e');
   try { ecgSw.resize(); plSw.resize(); co2Sw.resize(); } catch (e) {}
   loadHeart();
   patientRegisterPathogens();
@@ -11601,6 +11650,7 @@ CS.audio = (function () {
     <div class="pat-main">
       <div class="pat-mid">
         <section id="waves">
+          <div class="pat-bezel"><div class="pat-screen">
           <div class="lane"><canvas id="ecgCv"></canvas><div class="laneNum l0" id="n-hr"><div class="lab">HR 心率</div><div class="val">--</div><div class="unit">bpm</div></div></div>
           <div class="lane"><canvas id="plethCv"></canvas><div class="laneNum l1" id="n-spo2"><div class="lab">SpO₂ 脉搏血氧</div><div class="val">--</div><div class="unit">%</div></div></div>
           <div class="lane"><canvas id="co2Cv"></canvas><div class="laneNum l2" id="n-rr"><div class="lab">RESP 呼吸 · etCO₂</div><div class="val">--</div><div class="unit">bpm</div><div style="font-size:11px" id="etco2v"></div></div></div>
@@ -11613,7 +11663,7 @@ CS.audio = (function () {
             <div class="numTile" id="t-paco2"><div class="lab">PaCO₂</div><div class="val">--</div><div class="unit">mmHg</div></div>
             <div class="numTile" id="t-gcs"><div class="lab">GCS 意识</div><div class="val">--</div><div class="unit">/15</div></div>
             <div class="numTile" id="t-rhy"><div class="lab">心律</div><div class="val" style="font-size:15px">窦性</div><div class="unit">​</div></div>
-          </div>
+          </div></div><div class="pat-bezel-brand" aria-hidden="true"></div></div>
           <div id="statusStrip"><span class="none">状态正常 · 图标为游戏原素材</span></div>
           <div id="frsInfo"></div>
           <div id="diagBar"><button type="button" onclick="showDiagnosis()">🩺 诊断 · 病理判定</button><span class="hint">引擎监测 20+ 病理状态 → LIDiagnosis 风格判定；采血化验在右侧急救台</span></div>

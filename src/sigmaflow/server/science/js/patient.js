@@ -751,8 +751,9 @@ function mkSweep(cv,color,speed=100){ // speed px/s
   const ctx=cv.getContext('2d');
   let x=0,lastY=null;
   function resize(){cv.width=cv.clientWidth*2;cv.height=cv.clientHeight*2;ctx.font='20px Consolas';x=0;}
-  function clearCol(px){ctx.fillStyle='#ffffff';ctx.fillRect(px,0,14*2,cv.height);
-    ctx.strokeStyle='#dde5ee';ctx.lineWidth=1;
+  // 深色监护屏配色(拟物机身内): 写头擦除列=屏幕底色, 网格=暗蓝刻度
+  function clearCol(px){ctx.fillStyle='#0c1220';ctx.fillRect(px,0,14*2,cv.height);
+    ctx.strokeStyle='#223454';ctx.lineWidth=1;
     for(let gy=0;gy<cv.height;gy+=40){ctx.beginPath();ctx.moveTo(px,gy+.5);ctx.lineTo(px+28,gy+.5);ctx.stroke();}}
   return{resize,draw(fn,dt){
     const w=cv.width,h=cv.height,step=Math.max(2,Math.round(speed*dt*2));
@@ -1429,7 +1430,7 @@ function patientEngineInit(){
   ROUTES.forEach(r=>{const o=document.createElement('option');o.value=r;o.textContent={Muscle:'肌注',ContinuousInfusion:'持续输注',Oral:'口服',IVPush:'静推',Inhale:'吸入'}[r]||r;rs.appendChild(o);});
   rs.value='IVPush';
   document.querySelectorAll('#waves .lane canvas').forEach(c=>c.dataset.r=1);
-  ecgSw=mkSweep(document.getElementById('ecgCv'),'#009a44');plSw=mkSweep(document.getElementById('plethCv'),'#0077c2');co2Sw=mkSweep(document.getElementById('co2Cv'),'#c07800');
+  ecgSw=mkSweep(document.getElementById('ecgCv'),'#22e07e');plSw=mkSweep(document.getElementById('plethCv'),'#4fc3ff');co2Sw=mkSweep(document.getElementById('co2Cv'),'#ffd15e');
   try { ecgSw.resize(); plSw.resize(); co2Sw.resize(); } catch (e) {}
   loadHeart();
   patientRegisterPathogens();
