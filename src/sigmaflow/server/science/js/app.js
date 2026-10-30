@@ -588,13 +588,15 @@
   CS.mountPatientPage = () => {
     const root = document.getElementById('patient-root');
     if (!root) return;
-    // 生理引擎(js/patient.js, ~300KB)按需加载: 首屏不下载, 进本页才取。
-    if (!window.PatientSim) {
+    // 生理引擎(~300KB)与 3D 内核(cell3d ~700KB, 人体器官视图依赖它)按需加载:
+    // 首屏不下载, 进本页才取; 两者齐了才挂载, 否则 3D 会静默跳过。
+    if (!window.PatientSim || !window.CellViewer) {
       if (CS._patientLazyBusy) return;
       CS._patientLazyBusy = true;
-      CS.ensureLazy('patient').then(() => {
+      CS.ensureLazy('cell3d.min', 'patient').then(() => {
         CS._patientLazyBusy = false;
-        if (window.PatientSim && document.getElementById('patient-root')) CS.mountPatientPage();
+        const ready = window.PatientSim && window.CellViewer && document.getElementById('patient-root');
+        if (ready) CS.mountPatientPage();
       });
       return;
     }
