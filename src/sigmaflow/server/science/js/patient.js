@@ -904,7 +904,7 @@ function uiFrame(){
   // 状态图标
   const strip=document.getElementById('statusStrip');strip.innerHTML='';
   const shown=new Set();
-  if(!conds.length)strip.innerHTML='<span class="none">状态正常 · 图标为游戏原素材</span>';
+  if(!conds.length)strip.innerHTML='';   // 健康态无图标, 条随 :empty 收起(3D 拿回空间)
   conds.forEach(c=>{const ic=ICON_MAP[c.id];if(!ic||shown.has(ic))return;shown.add(ic);
     const img=document.createElement('img');img.src='patient/'+ic+'.png';img.title=c.n;strip.appendChild(img);});
   // 床旁机构音

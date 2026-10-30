@@ -324,9 +324,11 @@
       <div class="pat-mid">
         <section id="waves">
           <div class="pat-bezel"><div class="pat-screen">
+          <div class="pat-waves">
           <div class="lane"><canvas id="ecgCv"></canvas><div class="laneNum l0" id="n-hr"><div class="lab">HR 心率</div><div class="val">--</div><div class="unit">bpm</div></div></div>
           <div class="lane"><canvas id="plethCv"></canvas><div class="laneNum l1" id="n-spo2"><div class="lab">SpO₂ 脉搏血氧</div><div class="val">--</div><div class="unit">%</div></div></div>
           <div class="lane"><canvas id="co2Cv"></canvas><div class="laneNum l2" id="n-rr"><div class="lab">RESP 呼吸 · etCO₂</div><div class="val">--</div><div class="unit">bpm</div><div style="font-size:11px" id="etco2v"></div></div></div>
+          </div>
           <div id="numCols">
             <div class="numTile" id="t-map"><div class="lab">ART MAP</div><div class="val">--</div><div class="unit">mmHg</div></div>
             <div class="numTile" id="t-temp"><div class="lab">TEMP 体温</div><div class="val">--</div><div class="unit">°C</div></div>
@@ -337,7 +339,7 @@
             <div class="numTile" id="t-gcs"><div class="lab">GCS 意识</div><div class="val">--</div><div class="unit">/15</div></div>
             <div class="numTile" id="t-rhy"><div class="lab">心律</div><div class="val" style="font-size:15px">窦性</div><div class="unit">​</div></div>
           </div></div><div class="pat-bezel-brand" aria-hidden="true"></div></div>
-          <div id="statusStrip"><span class="none">状态正常 · 图标为游戏原素材</span></div>
+          <div id="statusStrip"></div>
           <div id="frsInfo"></div>
           <div id="diagBar"><button type="button" onclick="showDiagnosis()">🩺 诊断 · 病理判定</button><span class="hint">引擎监测 20+ 病理状态 → LIDiagnosis 风格判定；采血化验在右侧急救台</span></div>
         </section>

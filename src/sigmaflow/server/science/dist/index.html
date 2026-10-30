@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="462240f0">
+<meta name="build" content="6ed9cf00">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1265,7 +1265,9 @@ html[data-motion="reduced"] #anchor-tip{display:none}
   border-radius:16px;padding:8px 8px 4px;position:relative;
   box-shadow:0 14px 28px rgba(23,31,49,.24),inset 0 1px 0 rgba(255,255,255,.12),inset 0 -2px 0 rgba(0,0,0,.32)}
 #patient-root .pat-screen{background:var(--pat-screen);border-radius:10px;padding:4px;overflow:hidden;
-  box-shadow:inset 0 3px 14px rgba(0,0,0,.6),inset 0 0 0 1px #1a2436;display:flex;flex-direction:column}
+  box-shadow:inset 0 3px 14px rgba(0,0,0,.6),inset 0 0 0 1px #1a2436;display:flex;flex-direction:row}
+/* 波形列(左)与数字塔(右)并排: 原两行数字塔移到屏右侧, 机身↓高度让给 3D 预览 */
+#patient-root .pat-waves{flex:1;min-width:0;display:flex;flex-direction:column}
 #patient-root .pat-bezel-brand{display:flex;align-items:center;justify-content:space-between;
   padding:4px 6px 2px;font-size:8px;letter-spacing:2px;color:#9aa5bb}
 #patient-root .pat-bezel-brand::before{content:'VITALS MONITOR · SIM-PATIENT'}
@@ -1273,6 +1275,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
   background:radial-gradient(circle,#171d29 1.5px,transparent 1.6px) 0 0/7px 8px;opacity:.85}  /* 扬声器栅格 */
 #patient-root .lane{height:60px;flex:none;display:flex;min-height:0;background:var(--pat-screen);
   border-bottom:1px solid #1a2434}
+#patient-root .pat-waves .lane:last-child{border-bottom:none}
 #patient-root .lane canvas{flex:1;height:100%;min-width:0;display:block;background:transparent}
 #patient-root .laneNum{width:118px;flex:none;display:flex;flex-direction:column;justify-content:center;
   gap:1px;padding:0 9px;background:#0e1626;border-left:1px solid #1a2434}
@@ -1284,8 +1287,10 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 #patient-root #etco2v{font-size:10px;color:var(--pat-ink-dim)}
 #patient-root .laneNum.crit .val{color:var(--pat-led-crit)!important;animation:patBlink .9s infinite}
 #patient-root .laneNum.warn .val{color:var(--pat-led-warn)!important}
-#patient-root #numCols{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;padding-top:3px;flex:none}
-#patient-root .numTile{background:#0e1626;border-radius:7px;padding:2px 8px 3px}
+#patient-root #numCols{flex:none;width:252px;display:grid;grid-template-columns:1fr 1fr;
+  grid-auto-rows:1fr;gap:4px;padding-left:5px}
+#patient-root .numTile{background:#0e1626;border-radius:7px;padding:2px 8px 3px;
+  display:flex;flex-direction:column;justify-content:center}
 #patient-root .numTile .lab{font-size:8.5px;letter-spacing:.5px;color:var(--pat-ink-dim);line-height:1.15}
 #patient-root .numTile .val{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--pat-ink);line-height:1.1}
 #patient-root .numTile .unit{font-size:8px;color:#5c6a84;line-height:1.1}
@@ -1296,6 +1301,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
   background:var(--surface);border-radius:11px;box-shadow:var(--shadow-inset);overflow-x:auto}
 #patient-root #statusStrip img{height:22px;filter:drop-shadow(0 2px 3px rgba(30,40,60,.25))}
 #patient-root #statusStrip .none{color:var(--faint);font-size:11px}
+#patient-root #statusStrip:empty{display:none}   /* 健康态无图标: 不占空间 */
 #patient-root #frsInfo{font-size:11px;color:var(--accent-dark);background:var(--accent-bg);
   border-radius:9px;padding:4px 10px;line-height:1.6;box-shadow:var(--shadow-inset)}
 #patient-root #frsInfo:empty{display:none}
@@ -1533,6 +1539,10 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 @media(max-width:1000px){
   .page.patient-page{padding:0}
   #patient-root{height:auto;min-height:0}
+  #patient-root .pat-screen{flex-direction:column}
+  #patient-root #numCols{width:100%;grid-template-columns:repeat(4,1fr);grid-auto-rows:auto;
+    padding-left:0;padding-top:4px}
+  #patient-root .pat-waves .lane:last-child{border-bottom:1px solid #1a2434}
   /* 窄屏顶栏(移动菜单按钮行)存在, 页面改纵向滚动后无需消除 */
   #patient-root .pat-main{grid-template-columns:1fr}
   #patient-root .pat-mid #body3d{min-height:380px}
@@ -6064,7 +6074,7 @@ function uiFrame(){
   // 状态图标
   const strip=document.getElementById('statusStrip');strip.innerHTML='';
   const shown=new Set();
-  if(!conds.length)strip.innerHTML='<span class="none">状态正常 · 图标为游戏原素材</span>';
+  if(!conds.length)strip.innerHTML='';   // 健康态无图标, 条随 :empty 收起(3D 拿回空间)
   conds.forEach(c=>{const ic=ICON_MAP[c.id];if(!ic||shown.has(ic))return;shown.add(ic);
     const img=document.createElement('img');img.src='patient/'+ic+'.png';img.title=c.n;strip.appendChild(img);});
   // 床旁机构音
@@ -11656,9 +11666,11 @@ CS.audio = (function () {
       <div class="pat-mid">
         <section id="waves">
           <div class="pat-bezel"><div class="pat-screen">
+          <div class="pat-waves">
           <div class="lane"><canvas id="ecgCv"></canvas><div class="laneNum l0" id="n-hr"><div class="lab">HR 心率</div><div class="val">--</div><div class="unit">bpm</div></div></div>
           <div class="lane"><canvas id="plethCv"></canvas><div class="laneNum l1" id="n-spo2"><div class="lab">SpO₂ 脉搏血氧</div><div class="val">--</div><div class="unit">%</div></div></div>
           <div class="lane"><canvas id="co2Cv"></canvas><div class="laneNum l2" id="n-rr"><div class="lab">RESP 呼吸 · etCO₂</div><div class="val">--</div><div class="unit">bpm</div><div style="font-size:11px" id="etco2v"></div></div></div>
+          </div>
           <div id="numCols">
             <div class="numTile" id="t-map"><div class="lab">ART MAP</div><div class="val">--</div><div class="unit">mmHg</div></div>
             <div class="numTile" id="t-temp"><div class="lab">TEMP 体温</div><div class="val">--</div><div class="unit">°C</div></div>
@@ -11669,7 +11681,7 @@ CS.audio = (function () {
             <div class="numTile" id="t-gcs"><div class="lab">GCS 意识</div><div class="val">--</div><div class="unit">/15</div></div>
             <div class="numTile" id="t-rhy"><div class="lab">心律</div><div class="val" style="font-size:15px">窦性</div><div class="unit">​</div></div>
           </div></div><div class="pat-bezel-brand" aria-hidden="true"></div></div>
-          <div id="statusStrip"><span class="none">状态正常 · 图标为游戏原素材</span></div>
+          <div id="statusStrip"></div>
           <div id="frsInfo"></div>
           <div id="diagBar"><button type="button" onclick="showDiagnosis()">🩺 诊断 · 病理判定</button><span class="hint">引擎监测 20+ 病理状态 → LIDiagnosis 风格判定；采血化验在右侧急救台</span></div>
         </section>
