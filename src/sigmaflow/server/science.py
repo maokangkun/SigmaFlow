@@ -2004,8 +2004,12 @@ class ScienceAPI:
         @router.get("/system-prompt")
         async def get_system_prompt():
             def _builtin_text():
-                # 设置页展示模板版: 动态值(home/workdir/model/window/memory)按占位符显示
-                return _system_prompt_template()
+                # 设置页展示模板版: 动态值(home/workdir/model/window/memory)按占位符显示;
+                # 记忆已关闭时预览不再展示 # Memory 段(与实际发送的提示词一致)
+                tpl = _system_prompt_template()
+                if not _memory_recall_enabled():
+                    tpl = tpl.split("\n\n# Memory\n")[0]
+                return tpl
 
             builtin = await asyncio.to_thread(_builtin_text)
             cfg = _load_system_prompt_config()
