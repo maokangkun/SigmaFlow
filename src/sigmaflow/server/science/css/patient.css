@@ -160,8 +160,9 @@
 /* 手绘 SVG 器官图标(无素材条目) */
 #patient-root #heartBox #organStrip .svgIco{width:15px;height:15px;display:block}
 #patient-root #heartBox #organStrip .svgIco svg{width:100%;height:100%;display:block}
-/* 心脏图标(Blood.png 白色血滴)染成血红, 浅色 chip 上清晰可辨 */
-#patient-root #heartBox #organStrip button img.bloodTint{filter:brightness(0) saturate(100%) invert(24%) sepia(89%) saturate(5000%) hue-rotate(340deg) brightness(92%) contrast(88%)}
+/* 心脏图标(Blood.png 白色血滴)染成血红, 浅色 chip 上清晰可辨; 略小于通用图标 */
+#patient-root #heartBox #organStrip button img.bloodTint{height:12px;
+  filter:brightness(0) saturate(100%) invert(24%) sepia(89%) saturate(5000%) hue-rotate(340deg) brightness(92%) contrast(88%)}
 #patient-root #heartBox #organStrip button img{display:block;image-rendering:-webkit-optimize-contrast}
 #patient-root #organStripBig button img{height:16px}
 #patient-root #heartBox #organStrip button .dot{width:7px;height:7px;border-radius:4px}
@@ -217,6 +218,7 @@
 #patient-root #pumpGrid button{padding:7px 4px;font-size:11.5px;background:var(--surface);color:var(--ink);
   border-radius:11px;box-shadow:var(--shadow-small);display:flex;align-items:center;gap:6px;justify-content:center}
 #patient-root #pumpGrid button img{height:16px}
+#patient-root #pumpGrid #btnLab img{height:12px}
 /* 采血化验: Blood.png 白色血滴染红, 与按钮文字同显 */
 #patient-root #pumpGrid #btnLab img{filter:brightness(0) saturate(100%) invert(15%) sepia(97%)
   saturate(7463%) hue-rotate(340deg) brightness(92%) contrast(110%)}
