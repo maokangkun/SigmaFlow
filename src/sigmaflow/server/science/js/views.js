@@ -330,10 +330,10 @@
           </div>
           <div id="numCols">
             <div class="numTile" id="t-map"><div class="lab">ART MAP</div><div class="val">--</div><div class="unit">mmHg</div></div>
-            <div class="numTile" id="t-paco2"><div class="lab">PaCO₂</div><div class="val">--</div><div class="unit">mmHg</div></div>
             <div class="numTile" id="t-temp"><div class="lab">TEMP 体温</div><div class="val">--</div><div class="unit">°C</div></div>
-            <div class="numTile" id="t-ph"><div class="lab">pH 酸碱</div><div class="val">--</div><div class="unit">​</div></div>
             <div class="numTile" id="t-glu"><div class="lab">GLU 血糖</div><div class="val">--</div><div class="unit">mmol/L</div></div>
+            <div class="numTile" id="t-paco2"><div class="lab">PaCO₂</div><div class="val">--</div><div class="unit">mmHg</div></div>
+            <div class="numTile" id="t-ph"><div class="lab">pH 酸碱</div><div class="val">--</div><div class="unit">​</div></div>
             <div class="numTile" id="t-k"><div class="lab">K⁺ 血钾</div><div class="val">--</div><div class="unit">mmol/L</div></div>
             <div class="numTile" id="t-gcs"><div class="lab">GCS 意识</div><div class="val">--</div><div class="unit">/15</div></div>
             <div class="numTile" id="t-rhy"><div class="lab">心律</div><div class="val">窦性</div><div class="unit">​</div></div>

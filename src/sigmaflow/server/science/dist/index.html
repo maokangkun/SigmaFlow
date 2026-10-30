@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="8c699383">
+<meta name="build" content="36a3e891">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1288,17 +1288,13 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 #patient-root #etco2v{font-size:10px;color:var(--pat-ink-dim)}
 #patient-root .laneNum.crit .val{color:var(--pat-led-crit)!important;animation:patBlink .9s infinite}
 #patient-root .laneNum.warn .val{color:var(--pat-led-warn)!important}
-/* 数值塔: 3行x4列 —— 第1-3列(MAP/PaCO2 | TEMP/pH | GLU/K), 第4列(GCS/心律/空) */
-#patient-root #numCols{flex:1;min-width:0;display:grid;grid-template-columns:repeat(4,1fr);
+/* 数值塔: 3行x3列(波形读数列算整体 3x4 的第1列) —— 列语义 MAP/TEMP/GLU, PaCO2/pH/K, 末行 GCS/心律/空 */
+#patient-root #numCols{flex:1;min-width:0;display:grid;grid-template-columns:repeat(3,1fr);
   grid-template-rows:repeat(3,1fr);gap:4px;padding-left:4px}
-#patient-root #t-map{grid-area:1/1}#patient-root #t-paco2{grid-area:2/1}
-#patient-root #t-temp{grid-area:1/2}#patient-root #t-ph{grid-area:2/2}
-#patient-root #t-glu{grid-area:1/3}#patient-root #t-k{grid-area:2/3}
-#patient-root #t-gcs{grid-area:1/4}#patient-root #t-rhy{grid-area:2/4}
-#patient-root #t-empty{grid-area:3/4;visibility:hidden}
+#patient-root #t-empty{visibility:hidden}
 /* 屏内下带: 生殖周期 | 病理监测 | 血药/介质 三栏横排 */
-#patient-root .pat-under{flex:none;display:grid;grid-template-columns:1.05fr 1.25fr 1.7fr;
-  gap:0 10px;padding:5px 8px 6px;background:#0e1626;border-top:1px solid #1a2434}
+#patient-root .pat-under{flex:none;display:grid;grid-template-columns:1fr 1fr 1fr;
+  gap:0 12px;padding:5px 8px 6px;background:#0e1626;border-top:1px solid #1a2434}
 #patient-root .pat-col{min-width:0;overflow:hidden}
 #patient-root .pat-side-lab{font-size:8.5px;letter-spacing:1.5px;color:var(--pat-ink-dim);
   margin:0 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -12080,10 +12076,10 @@ CS.audio = (function () {
           </div>
           <div id="numCols">
             <div class="numTile" id="t-map"><div class="lab">ART MAP</div><div class="val">--</div><div class="unit">mmHg</div></div>
-            <div class="numTile" id="t-paco2"><div class="lab">PaCO₂</div><div class="val">--</div><div class="unit">mmHg</div></div>
             <div class="numTile" id="t-temp"><div class="lab">TEMP 体温</div><div class="val">--</div><div class="unit">°C</div></div>
-            <div class="numTile" id="t-ph"><div class="lab">pH 酸碱</div><div class="val">--</div><div class="unit">​</div></div>
             <div class="numTile" id="t-glu"><div class="lab">GLU 血糖</div><div class="val">--</div><div class="unit">mmol/L</div></div>
+            <div class="numTile" id="t-paco2"><div class="lab">PaCO₂</div><div class="val">--</div><div class="unit">mmHg</div></div>
+            <div class="numTile" id="t-ph"><div class="lab">pH 酸碱</div><div class="val">--</div><div class="unit">​</div></div>
             <div class="numTile" id="t-k"><div class="lab">K⁺ 血钾</div><div class="val">--</div><div class="unit">mmol/L</div></div>
             <div class="numTile" id="t-gcs"><div class="lab">GCS 意识</div><div class="val">--</div><div class="unit">/15</div></div>
             <div class="numTile" id="t-rhy"><div class="lab">心律</div><div class="val">窦性</div><div class="unit">​</div></div>
