@@ -63,7 +63,7 @@
 #patient-root .pat-screen{background:var(--pat-screen);border-radius:10px;padding:4px;overflow:hidden;
   box-shadow:inset 0 3px 14px rgba(0,0,0,.6),inset 0 0 0 1px #1a2436;display:flex;flex-direction:row}
 /* 波形列(左)与数字塔(右)并排: 原两行数字塔移到屏右侧, 机身↓高度让给 3D 预览 */
-#patient-root .pat-waves{flex:none;width:258px;min-width:0;display:flex;flex-direction:column}
+#patient-root .pat-waves{flex:none;flex:1 1 53%;min-width:200px;min-width:0;display:flex;flex-direction:column}
 #patient-root .pat-bezel-brand{display:flex;align-items:center;justify-content:space-between;
   padding:4px 6px 2px;font-size:8px;letter-spacing:2px;color:#9aa5bb}
 #patient-root .pat-bezel-brand::before{content:'VITALS MONITOR · SIM-PATIENT'}
@@ -84,7 +84,7 @@
 #patient-root .laneNum.crit .val{color:var(--pat-led-crit)!important;animation:patBlink .9s infinite}
 #patient-root .laneNum.warn .val{color:var(--pat-led-warn)!important}
 /* 数值塔: 3行x3列(波形读数列算整体 3x4 的第1列) —— 列语义 MAP/TEMP/GLU, PaCO2/pH/K, 末行 GCS/心律/空 */
-#patient-root #numCols{flex:1;min-width:0;display:grid;grid-template-columns:repeat(3,1fr);
+#patient-root #numCols{flex:1 1 47%;min-width:184px;display:grid;grid-template-columns:repeat(3,1fr);
   grid-template-rows:repeat(3,1fr);gap:0}
 #patient-root #t-empty{visibility:hidden}
 /* 塔块与波形读数盒同款: 紧排; 行分隔线与 lane 一样画在各盒底边(同锚不偏移), 列分隔线为左线 */

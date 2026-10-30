@@ -2598,7 +2598,11 @@ window.PatientSim = {
     if (window.PatientViewer && PatientViewer.unmount) PatientViewer.unmount();
   }
 };
-window.PatientSim_resizeGuard = window.PatientSim_resizeGuard || window.addEventListener('resize', function(){ try { ecgSw && ecgSw.resize(); plSw && plSw.resize(); co2Sw && co2Sw.resize(); } catch (e) {} });
+window.PatientSim_resizeGuard = window.PatientSim_resizeGuard || (function () {  // 波形画布随容器宽度重排(窗口 + 布局两路)
+  var f = function () { try { ecgSw && ecgSw.resize(); plSw && plSw.resize(); co2Sw && co2Sw.resize(); } catch (e) {} };
+  window.addEventListener('resize', f);
+  if (window.ResizeObserver) { try { var el = document.querySelector('.pat-waves'); el && new ResizeObserver(f).observe(el); } catch (e) {} }
+})();
 /* ================= 移植层: 3D 全身器官视图(window.PatientViewer) =================
  * 原单页版为独立的 importmap module(three + GLTF/DRACO + OrbitControls); 本站
  * 复用虚拟细胞页的 vendor 内核 window.CellViewer —— 与 hum GLB(body.glb, Draco
