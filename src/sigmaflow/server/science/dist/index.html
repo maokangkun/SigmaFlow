@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="35b63e29">
+<meta name="build" content="c3048964">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -6503,6 +6503,59 @@ function labValues(){
 }
 function labFlag(v,ref){const[lo,hi]=ref;return v<lo?'lo':v>hi?'hi':'ok';}
 function labAbnCount(vals){return Object.keys(LAB_REF).filter(k=>labFlag(vals[k],LAB_REF[k])!=='ok').length;}
+// ================= 影像检查: 胸部X光 / 心脏超声 / 胸部CT —— 由当前生理状态即时生成影像学报告 =================
+function imagingSfx(){
+ playTone(520,.12,.8);
+ if(typeof sfx==='function')sfx('Bop_2',{gain:.5});
+}
+function lungInflamLoad(){
+ // 肺部炎性负荷: 汇总趋向于呼吸道(urt/lrt)病原的载量
+ let s=0,n=0;
+ for(const k in S.pathogens){const P=PATH_LIB[k];const p=S.pathogens[k];if(P&&['lrt','urt'].includes(P.trop)&&p&&p.load>0){s+=p.load;n++;}}
+ return {load:s,germs:n};
+}
+function doXray(){
+ if(S.dead){log('患者已死亡，影像检查无意义');return;}
+ imagingSfx();
+ const f=[];
+ const lung=lungInflamLoad();
+ if(S.ardsT>10)f.push('双肺弥漫磨玻璃影伴外周分布（符合 ARDS 表现）');
+ else if(lung.load>0.5)f.push('大片实变影，累及'+(lung.germs>1?'多叶':'单叶')+'（重症渗出）');
+ else if(lung.load>0.2)f.push('双肺多发斑片状渗出影（炎性浸润）');
+ else if(lung.load>0.02)f.push('双肺纹理增粗（轻度支气管周围炎）');
+ if(S.contract<0.75&&S.fluid>1.05)f.push('心影扩大+双肺门蝶翼样阴影（静水压性肺水肿）');
+ if(S.miT>0&&S.miLoad>0.3)f.push('心影轻度扩大（左心功能减退）');
+ if(S.airwayR>1.3)f.push('双肺透亮度增高、膈肌低平（过度充气，提示阻塞性通气障碍）');
+ if(!f.length)f.push('心肺膈未见明显异常');
+ log('📷 <b>胸部 X 光</b>（DR 立位）：'+f.join('；')+'。');
+}
+function doEcho(){
+ if(S.dead){log('患者已死亡，影像检查无意义');return;}
+ imagingSfx();
+ const ef=Math.round(clamp(68*S.contract,5,88));
+ const f=[];
+ if(S.tamponade>0.02)f.push('心包积液（液性暗区约 '+Math.round(S.tamponade*14)+'mm）'+(S.tamponade>0.25?'，右室舒张期塌陷——填塞征象':''));
+ if(S.miT>0&&S.miLoad>0.3)f.push('前壁节段性运动减低（收缩期增厚率下降）');
+ if(S.svt)f.push('二尖瓣舒张期频谱单峰（舒张充盈时间缩短）');
+ if(S.contract<0.7&&!S.miT)f.push('整体室壁运动弥漫减低');
+ f.push('左室收缩功能估算 EF≈'+ef+'%');
+ log('🩻 <b>心脏超声</b>（床旁 POCUS）：'+f.join('；')+'。');
+}
+function doChestCT(){
+ if(S.dead){log('患者已死亡，影像检查无意义');return;}
+ imagingSfx();
+ const f=[];
+ const lung=lungInflamLoad();
+ const pct=Math.round(clamp(lung.load*92,0,95));
+ if(S.ardsT>10)f.push('双肺广泛磨玻璃影伴实变，累及约 '+Math.max(60,pct)+'% 肺野（CT 评分重度——ARDS）');
+ else if(lung.load>0.02)f.push((lung.germs>1?'两肺多发病灶':'肺野单发病变')+'——磨玻璃影与实变混合，累及约 '+pct+'% 肺野');
+ if(S.contract<0.75&&S.fluid>1.05)f.push('肺门血管影增宽、小叶间隔增厚（间质性肺水肿）；双侧胸腔少量积液');
+ if(S.airwayR>1.3)f.push('支气管壁增厚+马赛克征（空气滞留）');
+ if(S.miT>0&&S.miLoad>0.3)f.push('冠状动脉走行区高密度影（钙化灶）');
+ if(S.tamponade>0.02)f.push('心包腔环形液性密度影');
+ if(!f.length)f.push('双肺野清晰，纵隔窗未见增大淋巴结，心包无积液');
+ log('🖥 <b>胸部 CT</b>（平扫 5mm 层厚）：'+f.join('；')+'。');
+}
 function drawBlood(){
   playTone(440,.12,1);
   if(typeof sfx==='function')sfx('Bop_2',{gain:.5});   // 阶段4: 采血 UI 原声
@@ -12068,6 +12121,9 @@ CS.audio = (function () {
             <button type="button" onclick="doPericardial()" id="btnPeri">🩹 心包穿刺</button>
             <button type="button" onclick="doCooling(this)" id="btnCool">❄ 物理降温</button>
             <button type="button" onclick="drawBlood()" id="btnLab"><img src="patient/Blood.png" alt="采血化验">采血化验</button>
+            <button type="button" onclick="doXray()">📷 胸部X光</button>
+            <button type="button" onclick="doEcho()">🩻 心脏超声</button>
+            <button type="button" onclick="doChestCT()">🖥 胸部CT</button>
           </div>
           <h3>饮食摄入（LIFood · 24 种）</h3>
           <div id="foodZone">

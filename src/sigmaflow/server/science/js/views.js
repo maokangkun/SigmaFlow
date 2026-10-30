@@ -383,6 +383,9 @@
             <button type="button" onclick="doPericardial()" id="btnPeri">🩹 心包穿刺</button>
             <button type="button" onclick="doCooling(this)" id="btnCool">❄ 物理降温</button>
             <button type="button" onclick="drawBlood()" id="btnLab"><img src="patient/Blood.png" alt="采血化验">采血化验</button>
+            <button type="button" onclick="doXray()">📷 胸部X光</button>
+            <button type="button" onclick="doEcho()">🩻 心脏超声</button>
+            <button type="button" onclick="doChestCT()">🖥 胸部CT</button>
           </div>
           <h3>饮食摄入（LIFood · 24 种）</h3>
           <div id="foodZone">
