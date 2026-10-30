@@ -131,7 +131,7 @@
   align-items:baseline;line-height:1.4}
 #patient-root .pat-under #drugList .row span:first-child{flex:1;min-width:0}
 /* 数值与单位右对齐(波形行读数列 + 数字塔): 仿真实监护仪 LED 数字盒 */
-#patient-root .laneNum .val,#patient-root .laneNum .unit,#patient-root #etco2v,
+#patient-root .laneNum .val,#patient-root .laneNum .unit,
 #patient-root .numTile .val,#patient-root .numTile .unit{text-align:right}
 #patient-root #frsInfo:empty{display:none}
 #patient-root #body3d .bhead button.btnDiag:active{box-shadow:var(--shadow-inset)}
