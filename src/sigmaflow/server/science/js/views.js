@@ -344,6 +344,8 @@
             <div id="frsInfo"></div>
             <div class="pat-side-lab">病理监测</div>
             <div id="pathList"></div>
+            <div class="pat-side-lab">血药/介质</div>
+            <div id="drugBox"><div id="drugList">无</div></div>
           </div></div><div class="pat-bezel-brand" aria-hidden="true"></div></div>
           <div id="statusStrip"></div>
         </section>
@@ -398,7 +400,6 @@
             <div class="frow"><button type="button" onclick="eatFood()">🍽 摄入（经口）</button></div>
             <div id="foodInfo">选择食物查看营养构成——经口入 S.gut 肠腔房室吸收（LMFood→LMSmallIntestine AbsorptionRate）。</div>
           </div>
-          <div id="drugBox"><div style="color:#56718a;margin-bottom:2px">血药/介质浓度</div><div id="drugList">无</div></div>
         </div>
         <div class="pat-console">
           <h3>急救台</h3>

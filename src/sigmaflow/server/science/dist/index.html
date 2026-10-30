@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="1d6155b2">
+<meta name="build" content="22af1acb">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1317,6 +1317,12 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 #patient-root #statusStrip:empty{display:none}   /* 健康态无图标: 不占空间 */
 #patient-root #frsInfo{font-size:11px;color:var(--accent-dark);background:var(--accent-bg);
   border-radius:9px;padding:4px 10px;line-height:1.6;box-shadow:var(--shadow-inset)}
+/* drugBox(血药/介质浓度+胰岛素等内源激素) 位于监护屏侧列: 深色小字双列行 */
+#patient-root .pat-side #drugBox{padding:0;font-size:9px;font-family:inherit;color:var(--pat-ink)}
+#patient-root .pat-side #drugList{color:var(--pat-ink-dim)}
+#patient-root .pat-side #drugList .row{display:flex;justify-content:space-between;gap:4px;
+  align-items:baseline;line-height:1.4}
+#patient-root .pat-side #drugList .row span:first-child{flex:1;min-width:0}
 /* 数值与单位右对齐(波形行读数列 + 数字塔): 仿真实监护仪 LED 数字盒 */
 #patient-root .laneNum .val,#patient-root .laneNum .unit,#patient-root #etco2v,
 #patient-root .numTile .val,#patient-root .numTile .unit{text-align:right}
@@ -1363,7 +1369,13 @@ html[data-motion="reduced"] #anchor-tip{display:none}
   background:var(--surface);border-radius:16px;box-shadow:var(--shadow-small);min-width:0;overflow:hidden}
 #patient-root #treatZone{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:10px;min-width:0}
 #patient-root .pat-console{min-height:0;display:flex;flex-direction:column;overflow-y:auto;
-  overflow-x:hidden;background:var(--surface);border-radius:16px;box-shadow:var(--shadow-small)}
+  overflow-x:hidden;background:var(--surface);border-radius:16px;box-shadow:var(--shadow-small);
+  scrollbar-width:thin;scrollbar-color:rgba(120,140,170,.26) transparent}
+#patient-root #treatZone .pat-console::-webkit-scrollbar{width:5px;height:5px}
+#patient-root #treatZone .pat-console::-webkit-scrollbar-thumb{background:rgba(120,140,170,.26);
+  border-radius:4px}
+#patient-root #treatZone .pat-console::-webkit-scrollbar-thumb:hover{background:rgba(120,140,170,.42)}
+#patient-root #treatZone .pat-console::-webkit-scrollbar-track{background:transparent}
 #patient-root .pat-logpanel h3,#patient-root .pat-console h3{flex:none;padding:10px 14px 0;letter-spacing:1.8px}
 #patient-root #logBox{flex:1;overflow:auto;margin:8px 12px 12px;padding:6px 10px;font-size:11.5px;
   background:var(--inset);border-radius:12px;box-shadow:var(--shadow-inset)}
@@ -11726,6 +11738,8 @@ CS.audio = (function () {
             <div id="frsInfo"></div>
             <div class="pat-side-lab">病理监测</div>
             <div id="pathList"></div>
+            <div class="pat-side-lab">血药/介质</div>
+            <div id="drugBox"><div id="drugList">无</div></div>
           </div></div><div class="pat-bezel-brand" aria-hidden="true"></div></div>
           <div id="statusStrip"></div>
         </section>
@@ -11780,7 +11794,6 @@ CS.audio = (function () {
             <div class="frow"><button type="button" onclick="eatFood()">🍽 摄入（经口）</button></div>
             <div id="foodInfo">选择食物查看营养构成——经口入 S.gut 肠腔房室吸收（LMFood→LMSmallIntestine AbsorptionRate）。</div>
           </div>
-          <div id="drugBox"><div style="color:#56718a;margin-bottom:2px">血药/介质浓度</div><div id="drugList">无</div></div>
         </div>
         <div class="pat-console">
           <h3>急救台</h3>
