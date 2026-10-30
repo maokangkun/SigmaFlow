@@ -4151,8 +4151,23 @@ def _system_prompt_template() -> str:
     {memory} 处注入与当前请求召回相关的记忆条目。
     """
     base, _sub = _effective_system_prompts()
+    # 动态真值反替为占位符: 首句服务 cwd 与 skills 目录随部署环境变化, 预览不再写死
+    try:
+        skills_dir = str(_agent_tools_module().skill_loader.skills_dir)
+    except Exception:
+        skills_dir = ""
+    t2 = re.sub(
+        r"agent at " + re.escape(str(_agent_conf.WORKDIR)),
+        "agent at {workdir}",
+        base,
+        count=1,
+    )
+    if skills_dir:
+        t2 = t2.replace(
+            f"Skills dir: {skills_dir}", "Skills dir: {skills_dir}"
+        )
     return (
-        f"{base}\n\n{_DIRECTORY_BLOCK}"
+        f"{t2}\n\n{_DIRECTORY_BLOCK}"
         f"{_MODEL_BLOCK}"
         "\n\n# Memory\nSelected memory records recalled for the current request are injected here. ({memory})"
     )

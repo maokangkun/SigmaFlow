@@ -572,7 +572,8 @@ class _ScienceSkillView:
         self.skills = skills
 
     def get_descriptions(self) -> str:
-        skill_prompt = f"Use `load_skill` to access specialized knowledge before tackling unfamiliar topics.\nSkills dir: {self.skills_dir}\nSkills available:\n"
+        # # Skills 标题与 tools.SkillLoader.get_descriptions 同构(标题发给模型, 模板侧占位)
+        skill_prompt = f"# Skills\nUse `load_skill` to access specialized knowledge before tackling unfamiliar topics.\nSkills dir: {self.skills_dir}\nSkills available:\n"
         if not self.skills:
             return skill_prompt + "(no skills available)"
         lines = []
