@@ -8,6 +8,13 @@
   CS.formatBytes = bytes => { if (!bytes) return '0 B'; const units = ['B', 'KB', 'MB', 'GB']; const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), 3); return `${(bytes / 1024 ** i).toFixed(i ? 1 : 0)} ${units[i]}`; };
   CS.today = () => new Date().toISOString().slice(0, 10);
   CS.time = value => new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+// 素材 URL 加版本戳(构建号): 配合服务端 immutable 长缓存, 刷新不再重下 10MB 级素材,
+// 素材更新后构建号变化自然换 URL。
+CS.assetUrl = p => {
+  const v = (typeof window !== 'undefined') ? window.__ASSETV : null;
+  if (!v || !p || /^data:|^https?:|\?v=/.test(p)) return p;
+  return p + (p.indexOf('?') >= 0 ? '&' : '?') + 'v=' + v;
+};
 // 按需加载重型脚本(cell3d 3D 内核/xterm 终端/patient 生理引擎): 首屏不下载,
 // 走进用到它们的页面时再注入; 同一 key 只注入一次, 并发调用共享同一个 Promise。
 CS._lazy = {};

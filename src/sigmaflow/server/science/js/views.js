@@ -246,22 +246,22 @@
   // 本站 assets/cell(build 拷入 dist/cell), 3D 内核与 Draco 解码器都在 js/vendor/
   CS.CELL_MODELS = [
     { key: 'animal', name: '动物细胞', en: 'Animal Cell', icon: 'spark',
-      img: 'cell/images/animal-cell.jpg', glb: 'cell/models/animal-cell.glb',
+      img: CS.assetUrl('cell/images/animal-cell.jpg'), glb: CS.assetUrl('cell/models/animal-cell.glb'),
       tags: ['细胞核', '线粒体', '内质网', '高尔基体', '溶酶体', '核糖体'],
       facts: [['直径', '10–100 μm'], ['营养方式', '异养（摄取有机物）'], ['代表组织', '上皮 · 肌肉 · 神经'], ['能量来源', '线粒体氧化磷酸化']],
       quick: ['动物细胞与植物细胞有哪些关键区别？', '线粒体如何通过氧化磷酸化供能？', '内膜系统的细胞器之间如何协作？'] },
     { key: 'plant', name: '植物细胞', en: 'Plant Cell', icon: 'leaf',
-      img: 'cell/images/plant-cell.jpg', glb: 'cell/models/plant-cell.glb',
+      img: CS.assetUrl('cell/images/plant-cell.jpg'), glb: CS.assetUrl('cell/models/plant-cell.glb'),
       tags: ['细胞壁', '叶绿体', '中央液泡', '细胞核', '内质网'],
       facts: [['直径', '20–100 μm'], ['营养方式', '自养（光合作用）'], ['代表部位', '叶片 · 根 · 茎'], ['特有结构', '细胞壁 · 叶绿体 · 液泡']],
       quick: ['叶绿体的光合作用分为哪两个阶段？', '液泡对植物细胞有什么作用？', '细胞壁的纤维素如何维持细胞形态？'] },
     { key: 'neuron', name: '神经元', en: 'Neuron', icon: 'network',
-      img: 'cell/images/neuron.jpg', glb: 'cell/models/neuron.glb',
+      img: CS.assetUrl('cell/images/neuron.jpg'), glb: CS.assetUrl('cell/models/neuron.glb'),
       tags: ['胞体', '树突', '轴突', '髓鞘', '突触末梢'],
       facts: [['胞体直径', '4–120 μm'], ['轴突长度', '最长 >1 m'], ['传导速度', '0.5–120 m/s'], ['关键机制', '动作电位 · 突触传递']],
       quick: ['动作电位的离子机制是什么？', '髓鞘如何让信号传导更快？', '神经元之间如何通过突触传递信息？'] },
     { key: 'virus', name: '病毒颗粒', en: 'Virus Particle', icon: 'alert',
-      img: 'cell/images/virus.jpg', glb: 'cell/models/virus-particle.glb',
+      img: CS.assetUrl('cell/images/virus.jpg'), glb: CS.assetUrl('cell/models/virus-particle.glb'),
       tags: ['衣壳', '刺突蛋白', '核酸基因组', '包膜'],
       facts: [['直径', '20–300 nm'], ['基因组', 'DNA 或 RNA'], ['繁殖方式', '依赖宿主细胞'], ['对抗手段', '疫苗 · 抗病毒药物']],
       quick: ['病毒为什么不被视为完整生命？', '刺突蛋白在病毒入侵中起什么作用？', '抗生素为什么对病毒无效？'] }
@@ -369,7 +369,7 @@
             <div id="rxRow"><button type="button" class="act" onclick="administer()">输液/给药</button><button type="button" class="clear" onclick="clearDrug()">代谢清除</button></div>
           </div>
           <div id="pumpGrid">
-            <button type="button" onclick="doDefib()"><img src="patient/Electric.png" alt="除颤">除颤</button>
+            <button type="button" onclick="doDefib()"><img src="${CS.assetUrl('patient/Electric.png')}" alt="除颤">除颤</button>
             <button type="button" onclick="doPace(this)" id="btnPace">起搏</button>
             <button type="button" onclick="doVent(this)" id="btnVent">机械通气</button>
             <button type="button" onclick="doO2(this)" id="btnO2">吸氧</button>
@@ -380,7 +380,7 @@
             <button type="button" onclick="toggleAdm()" id="btnAdm">拟交感支持</button>
             <button type="button" onclick="doPericardial()" id="btnPeri">🩹 心包穿刺</button>
             <button type="button" onclick="doCooling(this)" id="btnCool">❄ 物理降温</button>
-            <button type="button" onclick="drawBlood()" id="btnLab"><img src="patient/Blood.png" alt="采血化验">采血化验</button>
+            <button type="button" onclick="drawBlood()" id="btnLab"><img src="${CS.assetUrl('patient/Blood.png')}" alt="采血化验">采血化验</button>
             <button type="button" onclick="doXray()">📷 胸部X光</button>
             <button type="button" onclick="doEcho()">🩻 心脏超声</button>
             <button type="button" onclick="doChestCT()">🖥 胸部CT</button>

@@ -51,6 +51,15 @@ class PipelineServer:
             # 文件名一改即失效, 因此可以放心长缓存: 弱网下重载只重新协商入口页。
             if request.url.path.startswith("/science/a/"):
                 response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            # 素材(细胞 GLB/预览图、患者贴图与音效、3D 解码器)体积大(单文件可达 10MB+),
+            # 文件名不带哈希, 用 ETag 协商 + 先缓存后后台校验: 刷新即命中缓存,
+            # 素材更新后最多一小时被后台重新验证替换。
+            if request.url.path.startswith(
+                ("/science/patient/", "/science/cell/", "/science/vendor/")
+            ):
+                response.headers["Cache-Control"] = (
+                    "public, max-age=31536000, immutable"
+                )
             return response
 
         api = PipelineAPI(pipeline_manager)

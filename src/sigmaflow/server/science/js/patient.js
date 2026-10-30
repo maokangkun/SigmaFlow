@@ -975,7 +975,7 @@ function renderOrganStrip(){
     const b=document.createElement('button');
     const rm=!!e.removed;
     const dotC='rgb('+Math.round(e.color[0]*255)+','+Math.round(e.color[1]*255)+','+Math.round(e.color[2]*255)+')';
-    b.innerHTML=(rm?'<span class="ectTag">已切除</span>':'')+(e.ic?('<img src="patient/'+e.ic+'.png"'+(e.key==='heart'?' class="bloodTint"':'')+'>'):(organSvgIco(e.key)||organSvgIco(e.ids[0])||('<span class="dot" style="background:'+dotC+'"></span>')))+'<span class="zhName">'+e.zh+'</span>';
+    b.innerHTML=(rm?'<span class="ectTag">已切除</span>':'')+(e.ic?('<img src="'+CS.assetUrl('patient/'+e.ic+'.png')+'"'+(e.key==='heart'?' class="bloodTint"':'')+'>'):(organSvgIco(e.key)||organSvgIco(e.ids[0])||('<span class="dot" style="background:'+dotC+'"></span>')))+'<span class="zhName">'+e.zh+'</span>';
     if(BW.sel===e.key&&!rm)b.classList.add('sel');
     if(rm)b.classList.add('removed');
     strips.forEach(strip=>strip.appendChild(b.cloneNode(true)));
@@ -1780,7 +1780,7 @@ function sfx(name,opt){                      // opt:{gain 0..1, loop}
   if(buf){if(audRunning())_audPlay(a,buf,name,opt);return true;}   // 挂起期: 只预载不播放
   AUDSTATS.files[name]='loading';
   try{
-    fetch('patient/audio/'+fn+'.wav').then(function(r){if(!r.ok)throw new Error('http');return r.arrayBuffer();})
+    fetch(CS.assetUrl('patient/audio/'+fn+'.wav')).then(function(r){if(!r.ok)throw new Error('http');return r.arrayBuffer();})
       .then(function(b){return a.decodeAudioData(b);})
       .then(function(b2){AUDSTATS.files[name]=b2;if(opt.loop&&audRunning())_audPlay(a,b2,name,opt);})
       .catch(function(){AUDSTATS.files[name]=null;});
@@ -2678,7 +2678,7 @@ window.PatientViewer = (function () {
     var organs = {};
     var BODY_C = new THREE.Vector3(0, -0.08, 0);
 
-    loader.load('patient/models/body.glb', function (g) {
+    loader.load(CS.assetUrl('patient/models/body.glb'), function (g) {
       if (!v) { return; }  // 载入期间页面已卸载
       scene.add(g.scene);
       for (var ni = 0; ni < g.scene.children.length; ni++) {

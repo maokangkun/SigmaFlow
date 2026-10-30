@@ -57,6 +57,26 @@ async function minify(code, loader) {
 const read = (rel) => fs.readFile(path.join(root, rel), 'utf8');
 const hash8 = (s) => crypto.createHash('md5').update(s).digest('hex').slice(0, 8);
 
+// ---- 素材版本戳: 素材按文件名计数(不改名)但带 ?v=<戳> 请求, 更新后自动换 URL ----
+// 这样浏览器可以对这些大文件(单个 GLB 可达 10MB+)长期缓存(immutable),
+// 而素材真被替换时构建号变化会让 URL 变化, 不会读到旧图旧音。
+async function assetFingerprint(dirs) {
+  const parts = [];
+  async function walk(dir, prefix) {
+    let entries = [];
+    try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) { await walk(full, prefix + e.name + '/'); continue; }
+      const st = await fs.stat(full);
+      parts.push(`${prefix}${e.name}:${st.size}`);
+    }
+  }
+  for (const d of dirs) await walk(path.join(root, d), '');
+  return crypto.createHash('md5').update(parts.join('|')).digest('hex').slice(0, 8);
+}
+const assetV = await assetFingerprint(['assets/patient', 'assets/cell', 'js/vendor/draco']);
+
 let html = await read('index.html');
 
 const emitted = []; // { rel, out, raw, min }
@@ -105,7 +125,8 @@ for (const m of [...html.matchAll(/<script([^>]*?)\ssrc="([^"]+)"([^>]*)><\/scri
 }
 html = html.replace(
   /<\/head>/i,
-  () => `  <script>window.__LAZY=${JSON.stringify(lazyMap)};</script>\n</head>`
+  () =>
+    `  <script>window.__LAZY=${JSON.stringify(lazyMap)};window.__ASSETV='${assetV}';</script>\n</head>`
 );
 
 // ---- 静态资产: 不内联, 由 StaticFiles 随站点提供 ----
