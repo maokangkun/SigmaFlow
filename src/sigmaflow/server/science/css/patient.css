@@ -123,8 +123,6 @@
 #patient-root .laneNum .val,#patient-root .laneNum .unit,#patient-root #etco2v,
 #patient-root .numTile .val,#patient-root .numTile .unit{text-align:right}
 #patient-root #frsInfo:empty{display:none}
-#patient-root #body3d .bhead button.btnDiag{background:var(--accent-bg);color:var(--accent-dark);
-  font-weight:650}
 #patient-root #body3d .bhead button.btnDiag:active{box-shadow:var(--shadow-inset)}
 #patient-root #diagBar .hint{font-size:10.5px;color:var(--faint)}
 
@@ -133,11 +131,13 @@
   box-shadow:var(--shadow-small);min-height:0;flex:1;overflow:hidden}
 /* 3D 预览卡与监护设备同宽, 左缘对齐 */
 #patient-root #body3d{width:var(--pat-dev-w);align-self:flex-start;position:relative}
-/* 按钮组悬浮在 3D 视图右上角(视图本身即精确区域) */
-#patient-root #body3d .bhead{position:absolute;top:10px;right:12px;z-index:5;display:flex;
-  align-items:center;gap:6px}
+/* 按钮组悬浮在 3D 视图右上角: 网格两列, 诊断按钮置于大图正下方且同宽 */
+#patient-root #body3d .bhead{position:absolute;top:10px;right:12px;z-index:5;display:grid;
+  grid-template-columns:auto auto;gap:6px;justify-content:end}
 #patient-root #body3d .bhead button{background:var(--surface);border-radius:8px;
   padding:4px 9px;font-size:11px;color:var(--muted);box-shadow:var(--shadow-small);white-space:nowrap}
+#patient-root #body3d .bhead .btnDiag{grid-column:2;grid-row:2;justify-self:stretch;
+  background:var(--surface);color:var(--muted);font-weight:inherit}
 #patient-root #body3d .bhead button:active{box-shadow:var(--shadow-inset)}
 #patient-root #heartBox{flex:1;width:100%;min-height:120px;position:relative;
   background:none;border-radius:12px;margin:0 10px;box-shadow:none}
@@ -149,14 +149,15 @@
   overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
 #patient-root #heartBox #organStrip::-webkit-scrollbar{display:none}
 #patient-root #heartBox #organStrip button{flex-direction:column;gap:2px;padding:3px 6px;font-size:9px;
-  height:32px;justify-content:center;min-width:36px;flex:none;
+  height:36px;justify-content:center;min-width:36px;flex:none;
   background:rgba(255,255,255,.72);border-radius:7px}
 #patient-root #heartBox #organStrip button:active{box-shadow:var(--shadow-inset)}
 #patient-root #organStrip{display:flex;flex-wrap:wrap;gap:6px;padding:10px;margin:8px 10px 10px;
   background:var(--inset);border-radius:12px;overflow:auto;max-height:132px;box-shadow:var(--shadow-inset)}
 #patient-root #organStrip button,#patient-root #organStripBig button{display:flex;align-items:center;gap:4px;
   background:var(--surface);border-radius:8px;padding:3px 8px;font-size:11px;color:var(--ink);box-shadow:var(--shadow-small)}
-#patient-root #heartBox #organStrip button img{height:13px}
+#patient-root #heartBox #organStrip button img{height:15px}
+#patient-root #heartBox #organStrip button img{display:block;image-rendering:-webkit-optimize-contrast}
 #patient-root #organStripBig button img{height:16px}
 #patient-root #heartBox #organStrip button .dot{width:7px;height:7px;border-radius:4px}
 #patient-root #heartBox #organStrip button .zhName{font-size:9px;line-height:1.25;white-space:nowrap}

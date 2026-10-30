@@ -829,7 +829,7 @@ function waveFrame(dt){
 var MESH=null;
 var BW={sel:null};
 // 肺/肾左右两叶在器官条折叠为一枚(组键): 3D 高亮/压暗经 selHits 换算
-var ORGAN_GROUP={lungL:'lung',lungR:'lung',kidneyL:'kidney',kidneyR:'kidney'};
+var ORGAN_GROUP={lungL:'lung',lungR:'lung',kidneyL:'kidney',kidneyR:'kidney',adrenalL:'adrenal',adrenalR:'adrenal'};
 function selHits(id){if(!BW.sel)return false;if(BW.sel===id)return true;var g=ORGAN_GROUP[id];return !!g&&BW.sel===g;}
 var ORGANS=[];
 var SPREAD=1.45;
@@ -843,7 +843,7 @@ function renderOrganStrip(){
   OrgansLoop: for(const o of ORGANS){
     const g=ORGAN_GROUP[o.id],key=g||o.id;
     let e=seen[key];
-    if(!e){e=seen[key]={key,ids:[],zh:g?(g==='lung'?'肺':'肾'):o.zh,ic:ORGAN_ICONS[o.id],color:o.color};entries.push(e);}
+    if(!e){const gzh={lung:'肺',kidney:'肾',adrenal:'肾上腺'};e=seen[key]={key,ids:[],zh:g?gzh[g]:o.zh,ic:ORGAN_ICONS[o.id],color:o.color};entries.push(e);}
     e.ids.push(o.id);
     const rm=!!(S.ect&&S.ect[o.id]);
     e.removed=(e.removed===undefined)?rm:(e.removed&&rm);
@@ -2441,7 +2441,7 @@ window.PatientViewer = (function () {
           node: node, mats: mats,
           anim: (node.userData && node.userData.anim) || '',
           home: node.position.clone(),
-          zh: (node.userData && node.userData.zh) || id,
+          zh: (node.name === 'airway' ? '支气管' : (node.userData && node.userData.zh) || id),
           homeScale: node.scale.clone(),
           id: id
         };
