@@ -51,15 +51,13 @@
 
 /* ===== 主区两栏 ===== */
 #patient-root .pat-main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;min-height:0}
-#patient-root .pat-mid{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
+#patient-root .pat-mid{display:flex;flex-direction:column;gap:0;min-width:0;min-height:0}
 #patient-root{--pat-dev-w:494px;--pat-tile-w:84px}
 #patient-root .pat-aside{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
 
 /* ===== 监护仪表盘(拟物机身) ===== */
 #patient-root #waves{display:flex;flex-direction:column;gap:6px;min-height:0;flex:none;width:100%}
-#patient-root .pat-bezel{background:linear-gradient(180deg,var(--pat-bezel-a),var(--pat-bezel-b));
-  border-radius:16px;padding:8px 8px 4px;position:relative;
-  box-shadow:0 14px 28px rgba(23,31,49,.24),inset 0 1px 0 rgba(255,255,255,.12),inset 0 -2px 0 rgba(0,0,0,.32)}
+#patient-root #waves .pat-bezel{border-radius:16px 16px 0 0}
 #patient-root .pat-screen{background:var(--pat-screen);border-radius:10px;padding:4px;overflow:hidden;
   box-shadow:inset 0 3px 14px rgba(0,0,0,.6),inset 0 0 0 1px #1a2436;display:flex;flex-direction:row}
 /* 波形列(左)与数字塔(右)并排: 原两行数字塔移到屏右侧, 机身↓高度让给 3D 预览 */
@@ -75,12 +73,12 @@
 #patient-root .lane canvas{flex:1;height:100%;min-width:0;display:block;background:transparent}
 /* ===== 读数盒统一样式: 波形读数(laneNum)与数值塔(numTile)共用同一套外观 ===== */
 #patient-root .laneNum,#patient-root .numTile{background:#0e1626;border-radius:0;
-  display:flex;flex-direction:column;justify-content:center;gap:1px;padding:0 6px}
+  display:flex;flex-direction:column;justify-content:space-between;gap:1px;padding:3px 6px}
 #patient-root .laneNum .lab,#patient-root .numTile .lab{font-size:8.5px;letter-spacing:1px;color:var(--pat-ink-dim);line-height:1.15;white-space:nowrap;overflow:hidden}
 #patient-root .laneNum .val,#patient-root .numTile .val{font-family:var(--mono);font-size:19px;font-weight:600;line-height:1.02;
   text-shadow:0 0 9px currentColor}
 #patient-root .numTile .val{color:var(--led,var(--pat-ink))}
-#patient-root .laneNum .unit,#patient-root .numTile .unit{font-size:9px;color:var(--pat-ink-dim);line-height:1.1}
+#patient-root .laneNum .unit,#patient-root .numTile .unit{font-size:9px;color:var(--pat-ink-dim);line-height:1.1;align-self:flex-end;white-space:nowrap}
 #patient-root .laneNum{width:var(--pat-tile-w);flex:none;border-left:1px solid #1a2434}
 #patient-root .l0{color:var(--pat-led-ecg)} #patient-root .l1{color:var(--pat-led-pleth)} #patient-root .l2{color:var(--pat-led-co2)}
 #patient-root .laneNum.crit .val{color:var(--pat-led-crit)!important;animation:patBlink .9s infinite}
