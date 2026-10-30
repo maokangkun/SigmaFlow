@@ -223,7 +223,8 @@
 #patient-root #foodZone .frow{display:flex;gap:7px;align-items:center}
 /* 食物/份数行: grid 2fr:1fr 精确比例(flex 对 select 有最小内容偏移怪癖) */
 #patient-root #foodZone .selrow{display:grid;grid-template-columns:2fr 1fr;gap:7px}
-#patient-root #foodZone .selrow select{min-width:0;width:100%}
+#patient-root #foodZone .selrow select{min-width:0;width:100%;appearance:none;-webkit-appearance:none;
+  padding-right:9px}
 #patient-root #foodZone button{padding:7px 4px;font-size:11.5px;font-weight:600;border-radius:10px;
   background:var(--green-bg);color:var(--green);box-shadow:var(--shadow-small)}
 #patient-root #foodZone .frow button{width:100%}
