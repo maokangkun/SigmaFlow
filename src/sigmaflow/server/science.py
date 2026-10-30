@@ -70,7 +70,6 @@ from .science_admin import (
     _builtin_mcp_servers,
     _compaction_config_path,
     _compaction_defaults,
-    _default_system_prompts,
     _discover_skills,
     _effective_agent_tools,
     _effective_compaction,
@@ -2044,7 +2043,9 @@ class ScienceAPI:
 
         @router.get("/memory-settings")
         async def get_memory_settings():
-            return {"memory": {"recall": await asyncio.to_thread(_memory_recall_enabled)}}
+            return {
+                "memory": {"recall": await asyncio.to_thread(_memory_recall_enabled)}
+            }
 
         @router.post("/memory-settings")
         async def save_memory_settings(payload: MemorySettingsIn, request: Request):
@@ -2053,7 +2054,9 @@ class ScienceAPI:
                 await asyncio.to_thread(
                     _save_memory_config, {"recall": bool(payload.recall)}
                 )
-            return {"memory": {"recall": await asyncio.to_thread(_memory_recall_enabled)}}
+            return {
+                "memory": {"recall": await asyncio.to_thread(_memory_recall_enabled)}
+            }
 
         @router.get("/tool-result-limit")
         async def get_tool_result_limit():
@@ -2490,9 +2493,10 @@ class ScienceAPI:
             except Exception:
                 _off = _lim = 0
             if _lim:
-                out["content"] = content[_off:_off + _lim]
+                out["content"] = content[_off : _off + _lim]
                 out["offset"] = _off
                 out["limit"] = _lim
+
             # 传输瘦身: 超长工具结果在回放视图只展示前 600 字, 存档里的 3 万字
             # 正文分段加载后照样把单包拖到兆级——传输端按 4000 字截短(rc 标记),
             # 存储不动, 展开详情/Trace 的完整版走各自的数据通路
@@ -2502,7 +2506,12 @@ class ScienceAPI:
                 changed = False
                 shaped = []
                 for b in m["blocks"]:
-                    if isinstance(b, dict) and b.get("t") == "tool" and isinstance(b.get("r"), str) and len(b["r"]) > 4000:
+                    if (
+                        isinstance(b, dict)
+                        and b.get("t") == "tool"
+                        and isinstance(b.get("r"), str)
+                        and len(b["r"]) > 4000
+                    ):
                         b2 = dict(b)
                         b2["r"] = b["r"][:4000]
                         b2["rc"] = 1
@@ -2515,6 +2524,7 @@ class ScienceAPI:
                     m2["blocks"] = shaped
                     return m2
                 return m
+
             out["content"] = [_shape(x) for x in out["content"]]
             return out
 
@@ -4167,9 +4177,7 @@ def _system_prompt_template() -> str:
         count=1,
     )
     if skills_dir:
-        t2 = t2.replace(
-            f"Skills dir: {skills_dir}", "Skills dir: {skills_dir}"
-        )
+        t2 = t2.replace(f"Skills dir: {skills_dir}", "Skills dir: {skills_dir}")
     return (
         f"{t2}\n\n{_DIRECTORY_BLOCK}"
         f"{_MODEL_BLOCK}"
@@ -4229,9 +4237,7 @@ def _bind_main_system(
     # 目录段模板: 用户目录 + 项目工作目录 + 仅在工作目录内操作; 占位符由 _fill_dynamic_blocks 填值
     bound_system += "\n\n" + _DIRECTORY_BLOCK.replace(
         "{home}", os.path.expanduser("~")
-    ).replace(
-        "{workdir}", active_dir
-    )
+    ).replace("{workdir}", active_dir)
     # 当前模型段: 名称/形态/窗口; 私网模型靠 store 显式配置的 contextWindow
     # 兜住 LiteLLM 库缺条目的精度(否则会落到 131072 默认值误导)
     bound_system += _model_caption(model_name, model_ctx)
@@ -4247,7 +4253,9 @@ def _bind_main_system(
             if _memory_block:
                 bound_system += f"\n\n# Memory\n{_memory_block}"
         except Exception as _mem_err:
-            logging.getLogger("uvicorn.error").info("memory recall skipped: %s", _mem_err)
+            logging.getLogger("uvicorn.error").info(
+                "memory recall skipped: %s", _mem_err
+            )
     return bound_system
 
 

@@ -274,7 +274,9 @@ class Agent:
             self.client,
             max_model_len,
             model=self.model,
-            on_event=lambda ev: (self.on_tool(ev) if getattr(self, "on_tool", None) else None),
+            on_event=lambda ev: (
+                self.on_tool(ev) if getattr(self, "on_tool", None) else None
+            ),
         )
 
         self.config = {
