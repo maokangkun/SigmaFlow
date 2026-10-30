@@ -73,12 +73,15 @@
   border-bottom:1px solid #1a2434}
 #patient-root .pat-waves .lane:last-child{border-bottom:none}
 #patient-root .lane canvas{flex:1;height:100%;min-width:0;display:block;background:transparent}
-#patient-root .laneNum{width:68px;flex:none;display:flex;flex-direction:column;justify-content:center;
-  gap:1px;padding:0 6px;background:#0e1626;border-left:1px solid #1a2434}
-#patient-root .laneNum .lab{font-size:8.5px;letter-spacing:1px;color:var(--pat-ink-dim);line-height:1.15}
-#patient-root .laneNum .val{font-family:var(--mono);font-size:19px;font-weight:600;line-height:1.02;
+/* ===== 读数盒统一样式: 波形读数(laneNum)与数值塔(numTile)共用同一套外观 ===== */
+#patient-root .laneNum,#patient-root .numTile{background:#0e1626;border-radius:0;
+  display:flex;flex-direction:column;justify-content:center;gap:1px;padding:0 6px}
+#patient-root .laneNum .lab,#patient-root .numTile .lab{font-size:8.5px;letter-spacing:1px;color:var(--pat-ink-dim);line-height:1.15}
+#patient-root .laneNum .val,#patient-root .numTile .val{font-family:var(--mono);font-size:19px;font-weight:600;line-height:1.02;
   text-shadow:0 0 9px currentColor}
-#patient-root .laneNum .unit{font-size:9px;color:var(--pat-ink-dim);line-height:1.1}
+#patient-root .numTile .val{color:var(--led,var(--pat-ink))}
+#patient-root .laneNum .unit,#patient-root .numTile .unit{font-size:9px;color:var(--pat-ink-dim);line-height:1.1}
+#patient-root .laneNum{width:68px;flex:none;border-left:1px solid #1a2434}
 #patient-root .l0{color:var(--pat-led-ecg)} #patient-root .l1{color:var(--pat-led-pleth)} #patient-root .l2{color:var(--pat-led-co2)}
 #patient-root #etco2v{font-size:10px;color:var(--pat-ink-dim)}
 #patient-root .laneNum.crit .val{color:var(--pat-led-crit)!important;animation:patBlink .9s infinite}
@@ -88,7 +91,7 @@
   grid-template-rows:repeat(3,1fr);gap:0}
 #patient-root #t-empty{visibility:hidden}
 /* 塔块与波形读数盒同款: 紧排; 行分隔线与 lane 一样画在各盒底边(同锚不偏移), 列分隔线为左线 */
-#patient-root .numTile{border-left:1px solid #1a2434;border-top:none;border-bottom:1px solid #1a2434}
+#patient-root .numTile{border-left:1px solid #1a2434;border-bottom:1px solid #1a2434}
 #patient-root #numCols .numTile:nth-child(3n+1){border-left:none}
 /* 屏内下带: 生殖周期 | 病理监测 | 血药/介质 三栏横排 */
 #patient-root .pat-under{flex:none;display:grid;grid-template-columns:1fr 1fr 1fr;
@@ -102,9 +105,7 @@
   border-bottom:1px dashed #1a2434;padding-bottom:2px}
 #patient-root .pat-under .pathItem.crit{color:var(--pat-led-crit);font-weight:600}
 #patient-root .pat-under .pathNone{font-size:9.5px;color:var(--pat-ink-dim);line-height:1.5}
-#patient-root .numTile{background:#0e1626;border-radius:0;padding:2px 7px 3px;
-  display:flex;flex-direction:column;justify-content:center}
-#patient-root .numTile .lab{font-size:8.5px;letter-spacing:.5px;color:var(--pat-ink-dim);line-height:1.15}
+/* 塔块外观已并入上方读数盒统一段 */
 /* 数值塔与波形读数同风格: LED 辉光 + 逐项配色(通过 --led 变量, crit/warn 类仍可覆盖) */
 #patient-root #t-map{--led:#22e07e}#patient-root #t-temp{--led:#ffd15e}
 #patient-root #t-glu{--led:#f6a86a}#patient-root #t-k{--led:#8fa0f0}
@@ -112,9 +113,6 @@
 #patient-root #t-gcs{--led:#9fd4ec}#patient-root #t-rhy{--led:#22e07e}
 #patient-root #t-rhy .val{letter-spacing:1px}
 #patient-root #drugList .row.none{color:var(--pat-ink-dim)}
-#patient-root .numTile .val{font-family:var(--mono);font-size:17px;font-weight:600;
-  color:var(--led,var(--pat-ink));line-height:1.1;text-shadow:0 0 9px currentColor}
-#patient-root .numTile .unit{font-size:8px;color:#5c6a84;line-height:1.1}
 #patient-root #t-rhy .val{font-size:12.5px;letter-spacing:2px}
 #patient-root .numTile.crit .val{color:var(--pat-led-crit);animation:patBlink .9s infinite}
 #patient-root .numTile.warn .val{color:var(--pat-led-warn)}
