@@ -1356,6 +1356,36 @@ function doEctomy(id){
   openOrganModal(id,document.getElementById('modalTitle').textContent.split(' · ')[0],null);
 }
 function openEncyclopedia(){openModal('医学百科（'+Object.keys(ENCYC).length+' 条 · 游戏文本）','');renderEncList();}
+function openChemPicker(){
+ openModal('药典 · 全部药物','');document.getElementById('encSearch').style.display='none';
+ const body=document.getElementById('modalBody');body.style.whiteSpace='normal';
+ body.innerHTML='<input id="chemQ" type="text" placeholder="搜索 中文名 / 英文名…" style="width:100%;box-sizing:border-box;padding:7px 10px;border-radius:9px;border:none;background:var(--surface);box-shadow:var(--shadow-inset);font-size:12.5px;margin-bottom:6px" oninput="renderChemPicker()"><div id="chemListBody"></div>';
+ renderChemPicker();
+}
+function renderChemPicker(){
+ const list=document.getElementById('chemListBody');if(!list)return;
+ const q=(document.getElementById('chemQ')||{value:''}).value.trim().toLowerCase();
+ const cur=document.getElementById('chemSel').value;
+ const used=new Set();
+ const chip=c=>'<button type="button" style="text-align:left;padding:6px 9px;border-radius:8px;border:none;background:var(--surface);box-shadow:var(--shadow-small);font-size:11.5px;cursor:pointer;color:var(--ink)'+(c===cur?';box-shadow:var(--shadow-inset);background:var(--green-bg);color:var(--green);font-weight:650':'')+'" onclick="pickChem(\''+c+'\')"><b>'+zhOf(c)+'</b> <span style="color:var(--faint);font-size:10px">'+c+'</span></button>';
+ let html='';
+ Object.entries(CATS).forEach(([cat,arr])=>{
+   const items=arr.filter(c=>(CHEMS.includes(c)||HORMONES.includes(c))&&!used.has(c)&&(!q||c.toLowerCase().includes(q)||zhOf(c).includes(q)||zhOf(c).toLowerCase().includes(q)));
+   if(!items.length)return;
+   items.forEach(c=>used.add(c));
+   html+='<div style="font-size:10px;letter-spacing:1.5px;color:var(--faint);margin:10px 0 4px">'+cat+'</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:6px">'+items.map(chip).join('')+'</div>';
+ });
+ const rest=CHEMS.filter(c=>c!=='Null'&&!used.has(c)&&(!q||c.toLowerCase().includes(q)||zhOf(c).includes(q)));
+ if(rest.length)html+='<div style="font-size:10px;letter-spacing:1.5px;color:var(--faint);margin:10px 0 4px">其他（全量）</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:6px">'+rest.map(chip).join('')+'</div>';
+ list.innerHTML=html||'<div style="color:var(--faint);padding:8px 0">无匹配药物</div>';
+}
+function pickChem(c){
+ const sel=document.getElementById('chemSel');
+ const o=[...sel.options].find(o=>o.value===c);
+ if(o)sel.value=c;
+ closeModal();
+ log('🧪 药典选择：<b>'+zhOf(c)+'</b>（'+c+'）');
+}
 function showEngineDoc(){
 const H='<div style="font-size:12.5px;line-height:1.8;color:#33404f;max-height:62vh;overflow-y:auto;padding-right:6px">'
 +'<h4 style="margin:2px 0 4px;color:#0e7490;font-size:13.5px">① 引擎概览</h4>'

@@ -362,7 +362,7 @@
         <div class="pat-console">
           <h3>输注工作站</h3>
           <div id="rxZone">
-            <select id="chemSel"></select>
+            <select id="chemSel" onmousedown="event.preventDefault()" onclick="openChemPicker()" title="点击打开药典选择"></select>
             <select id="routeSel"></select>
             <div style="display:flex;gap:6px;align-items:center">
               <input id="doseIn" type="number" value="1" min="0.1" max="50" step="0.5" style="flex:1" title="剂量">
