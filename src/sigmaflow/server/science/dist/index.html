@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="74b6ec15">
+<meta name="build" content="1d6155b2">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1255,15 +1255,13 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 #patient-root .pat-topbtns button:active{box-shadow:var(--shadow-inset);transform:none}
 
 /* ===== 主区两栏 ===== */
-#patient-root .pat-main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) clamp(280px,23vw,380px);gap:10px;min-height:0}
+#patient-root .pat-main{flex:1;display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;min-height:0}
 #patient-root .pat-mid{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
 #patient-root{--pat-dev-w:494px}
 #patient-root .pat-aside{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
 
 /* ===== 监护仪表盘(拟物机身) ===== */
-#patient-root #waves{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;min-height:0;flex:none}
-#patient-root #waves .pat-bezel{grid-column:1;grid-row:1;align-self:start;justify-self:start}
-#patient-root #waves #statusStrip{grid-column:2;grid-row:1;align-self:start}
+#patient-root #waves{display:flex;flex-direction:column;gap:6px;min-height:0;flex:none;width:var(--pat-dev-w)}
 #patient-root .pat-bezel{background:linear-gradient(180deg,var(--pat-bezel-a),var(--pat-bezel-b));
   border-radius:16px;padding:8px 8px 4px;position:relative;
   box-shadow:0 14px 28px rgba(23,31,49,.24),inset 0 1px 0 rgba(255,255,255,.12),inset 0 -2px 0 rgba(0,0,0,.32)}
@@ -1363,7 +1361,8 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 /* ===== 右栏: 事件记录卡 + 治疗台卡 ===== */
 #patient-root .pat-logpanel{display:flex;flex-direction:column;flex:0 0 30%;min-height:110px;
   background:var(--surface);border-radius:16px;box-shadow:var(--shadow-small);min-width:0;overflow:hidden}
-#patient-root .pat-console{flex:1;min-height:0;display:flex;flex-direction:column;overflow-y:auto;
+#patient-root #treatZone{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:10px;min-width:0}
+#patient-root .pat-console{min-height:0;display:flex;flex-direction:column;overflow-y:auto;
   overflow-x:hidden;background:var(--surface);border-radius:16px;box-shadow:var(--shadow-small)}
 #patient-root .pat-logpanel h3,#patient-root .pat-console h3{flex:none;padding:10px 14px 0;letter-spacing:1.8px}
 #patient-root #logBox{flex:1;overflow:auto;margin:8px 12px 12px;padding:6px 10px;font-size:11.5px;
@@ -1571,7 +1570,6 @@ html[data-motion="reduced"] #anchor-tip{display:none}
   #patient-root .laneNum .unit{font-size:8px}
   #patient-root .laneNum .lab{font-size:7.5px;letter-spacing:.5px}
   #patient-root #etco2v{font-size:8px}
-  #patient-root .pat-main{grid-template-columns:minmax(0,1fr) clamp(232px,20vw,380px)}
 }
 /* ===== ≤1080px: 治疗台折到下方, 监护屏内部保持一行(读数|数字塔|病理) ===== */
 @media(max-width:1080px){
@@ -11742,6 +11740,7 @@ CS.audio = (function () {
           <h3>事件记录</h3>
           <div id="logBox"></div>
         </div>
+        <div id="treatZone">
         <div class="pat-console">
           <h3>输注工作站</h3>
           <div id="rxZone">
@@ -11781,6 +11780,9 @@ CS.audio = (function () {
             <div class="frow"><button type="button" onclick="eatFood()">🍽 摄入（经口）</button></div>
             <div id="foodInfo">选择食物查看营养构成——经口入 S.gut 肠腔房室吸收（LMFood→LMSmallIntestine AbsorptionRate）。</div>
           </div>
+          <div id="drugBox"><div style="color:#56718a;margin-bottom:2px">血药/介质浓度</div><div id="drugList">无</div></div>
+        </div>
+        <div class="pat-console">
           <h3>急救台</h3>
           <div id="emZone">
             <div class="emRow"><span class="emLab">⚡ 能量</span>
@@ -11811,7 +11813,7 @@ CS.audio = (function () {
             <div class="emRow"><span class="emLab">FiO₂</span><input type="range" id="ventFi" min="21" max="100" value="60" oninput="ventSet()"><span class="emVal" id="ventFiv">60</span><span class="emUnit">%</span></div>
             <div class="emSub" id="ventInfo">待机</div>
           </div>
-          <div id="drugBox"><div style="color:#56718a;margin-bottom:2px">血药/介质浓度</div><div id="drugList">无</div></div>
+        </div>
         </div>
       </div>
     </div>

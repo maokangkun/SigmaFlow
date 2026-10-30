@@ -358,6 +358,7 @@
           <h3>事件记录</h3>
           <div id="logBox"></div>
         </div>
+        <div id="treatZone">
         <div class="pat-console">
           <h3>输注工作站</h3>
           <div id="rxZone">
@@ -397,6 +398,9 @@
             <div class="frow"><button type="button" onclick="eatFood()">🍽 摄入（经口）</button></div>
             <div id="foodInfo">选择食物查看营养构成——经口入 S.gut 肠腔房室吸收（LMFood→LMSmallIntestine AbsorptionRate）。</div>
           </div>
+          <div id="drugBox"><div style="color:#56718a;margin-bottom:2px">血药/介质浓度</div><div id="drugList">无</div></div>
+        </div>
+        <div class="pat-console">
           <h3>急救台</h3>
           <div id="emZone">
             <div class="emRow"><span class="emLab">⚡ 能量</span>
@@ -427,7 +431,7 @@
             <div class="emRow"><span class="emLab">FiO₂</span><input type="range" id="ventFi" min="21" max="100" value="60" oninput="ventSet()"><span class="emVal" id="ventFiv">60</span><span class="emUnit">%</span></div>
             <div class="emSub" id="ventInfo">待机</div>
           </div>
-          <div id="drugBox"><div style="color:#56718a;margin-bottom:2px">血药/介质浓度</div><div id="drugList">无</div></div>
+        </div>
         </div>
       </div>
     </div>
