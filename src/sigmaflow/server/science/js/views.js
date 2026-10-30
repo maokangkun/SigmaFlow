@@ -411,11 +411,8 @@
               </div>
             </div>
             <button type="button" class="shockBtn" onclick="doShock()">⚡ 除颤电击（<span id="enNow">200</span>J）</button>
-            <div class="emRow"><label class="swLab"><input type="checkbox" id="paceOn" onchange="paceToggle(this)">🩺 起搏</label>
-              <span class="emLab">频率</span>
-              <input type="range" id="paceRate" min="60" max="180" value="80" oninput="paceSet(this)">
-              <span class="emVal" id="paceRateV">80</span><span class="emUnit">bpm</span>
-            </div>
+            <label class="swLab"><input type="checkbox" id="paceOn" onchange="paceToggle(this)">🩺 起搏</label>
+            <div class="emRow"><span class="emLab">频率</span><input type="range" id="paceRate" min="60" max="180" value="80" oninput="paceSet(this)"><span class="emVal" id="paceRateV">80</span><span class="emUnit">bpm</span></div>
             <button type="button" class="emAct" id="cprBtn" onclick="doCPR(this)">🫀 胸外按压 CPR</button>
             <div class="cprBarWrap"><div class="cprBar" id="cprBar"></div></div>
             <div class="emSub" id="cprPerf">冠脉灌注线 —</div>
