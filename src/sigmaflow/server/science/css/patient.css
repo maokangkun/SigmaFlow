@@ -102,6 +102,7 @@
 #patient-root .numTile .lab{font-size:8.5px;letter-spacing:.5px;color:var(--pat-ink-dim);line-height:1.15}
 #patient-root .numTile .val{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--pat-ink);line-height:1.1}
 #patient-root .numTile .unit{font-size:8px;color:#5c6a84;line-height:1.1}
+#patient-root #t-rhy .val{font-size:12.5px;letter-spacing:2px}
 #patient-root .numTile.crit .val{color:var(--pat-led-crit);animation:patBlink .9s infinite}
 #patient-root .numTile.warn .val{color:var(--pat-led-warn)}
 /* 机身下方: 状态图标条 / 周期提示 / 诊断行 */
@@ -372,6 +373,7 @@
   #patient-root .pat-side-lab{font-size:7.5px;letter-spacing:1px}
   #patient-root .numTile .lab{font-size:7.5px}
   #patient-root .numTile .val{font-size:13px}
+  #patient-root #t-rhy .val{font-size:11px;letter-spacing:1.5px}
   #patient-root .numTile .unit{font-size:7px}
   #patient-root .laneNum .val{font-size:17px}
   #patient-root .laneNum .unit{font-size:8px}
