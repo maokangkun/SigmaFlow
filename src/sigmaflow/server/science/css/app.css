@@ -726,7 +726,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .tb-body{display:block;margin:0 0 7px 44px}
 .tb-body pre{margin:0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:color-mix(in srgb,var(--accent-bg) 30%,transparent);font-size:10.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;color:var(--ink)}
 .tb-item .tk-user,.tb-item .tk-reply,.tb-item .tk-think,.tb-item .tk-tool,.tb-item .tk-system,.tb-item .tk-error,.tb-item .tk-sysnote,.tb-item .tk-compact{flex-shrink:0;width:44px;padding:2px 0;text-align:center;font-size:9px;font-weight:570}
-.tb-txt{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-txt{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 
 /* 聊天/trace 主列铺满主区: 解除 .page 与宽屏 media 给出的 max-width, 供 flex width:100% 生效(置于所有 media 之后以确保覆盖) */
 .chat-page,.trace-page{max-width:none}

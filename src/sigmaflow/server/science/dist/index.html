@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="c9d2d2a0">
+<meta name="build" content="2f518b94">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1081,7 +1081,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .tb-body{display:block;margin:0 0 7px 44px}
 .tb-body pre{margin:0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:color-mix(in srgb,var(--accent-bg) 30%,transparent);font-size:10.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;color:var(--ink)}
 .tb-item .tk-user,.tb-item .tk-reply,.tb-item .tk-think,.tb-item .tk-tool,.tb-item .tk-system,.tb-item .tk-error,.tb-item .tk-sysnote,.tb-item .tk-compact{flex-shrink:0;width:44px;padding:2px 0;text-align:center;font-size:9px;font-weight:570}
-.tb-txt{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-txt{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 
 /* 聊天/trace 主列铺满主区: 解除 .page 与宽屏 media 给出的 max-width, 供 flex width:100% 生效(置于所有 media 之后以确保覆盖) */
 .chat-page,.trace-page{max-width:none}
@@ -8974,7 +8974,7 @@ CS.audio = (function () {
       }
       return b.text || '';
     };
-      const detail = isOpen ? `<div class="trace-detail"><div class="trace-props">${props.map(([k, v]) => `<span class="tpair"><span class="tk">${e(k)}</span><span class="tv mono">${e(v)}</span></span>`).join('')}</div>${blocks.length ? `<div class="trace-blocks">${blocks.map((b, ri) => { const ms = b.ms || 0; const raw = b.raw || (b.t ? { type: 'text', text: b.t } : null); const bkey = idx + ':' + ri; const bOpen = blockOpen.has(bkey); return `<span class="tb-item clickable${bOpen ? ' open' : ''}" role="button" data-action="toggle-trace-block" data-id="${bkey}" aria-expanded="${bOpen}" title="点击展开完整输入/输出"><span class="tk-${b.k}">${KIND[b.k]}</span><span class="tb-txt" title="${prev(b.t, 240)}">${prev(b.t, 110)}</span>${ms > 0 ? `<span class="tb-dur mono">${CS.elapsedMs(ms)}</span>` : ''}</span>${bOpen ? `<span class="tb-body"><pre>${e(bFull(raw))}</pre></span>` : ''}`; }).join('')}</div>` : ''}</div>` : '';
+      const detail = isOpen ? `<div class="trace-detail"><div class="trace-props">${props.map(([k, v]) => `<span class="tpair"><span class="tk">${e(k)}</span><span class="tv mono">${e(v)}</span></span>`).join('')}</div>${blocks.length ? `<div class="trace-blocks">${blocks.map((b, ri) => { const ms = b.ms || 0; const raw = b.raw || (b.t ? { type: 'text', text: b.t } : null); const bkey = idx + ':' + ri; const bOpen = blockOpen.has(bkey); return `<span class="tb-item clickable${bOpen ? ' open' : ''}" role="button" data-action="toggle-trace-block" data-id="${bkey}" aria-expanded="${bOpen}" title="点击展开完整输入/输出"><span class="tk-${b.k}">${KIND[b.k]}</span><span class="tb-txt" title="${prev(b.t, 140)}">${prev(b.t, 70)}</span>${ms > 0 ? `<span class="tb-dur mono">${CS.elapsedMs(ms)}</span>` : ''}</span>${bOpen ? `<span class="tb-body"><pre>${e(bFull(raw))}</pre></span>` : ''}`; }).join('')}</div>` : ''}</div>` : '';
       return `<div class="trace-row${isOpen ? ' open' : ''}"><button type="button" class="trace-main" data-action="toggle-trace-row" data-id="${idx}" aria-expanded="${isOpen}"><span class="trace-idx mono">#${idx}</span><span class="trace-kind tk-${kind}">${KIND[kind]}${kind === 'reply' && streaming ? ' · 生成中' : ''}</span><span class="trace-preview" title="${prev(kind === 'error' && !(m.content || '').trim() ? errText : m.content, 140)}">${prev(kind === 'error' && !(m.content || '').trim() ? errText : m.content)}</span><span class="trace-tools mono">${nTools || ''}</span><span class="trace-tok mono">${tok}</span><span class="trace-dur mono">${dur > 0 ? CS.elapsedMs(dur) : ''}</span><span class="trace-bar">${barHtml}</span></button>${detail}</div>`;
     }).join('');
   };
