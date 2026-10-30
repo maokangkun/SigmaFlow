@@ -1045,12 +1045,6 @@ function uiFrame(){
   banner.className='alarmBanner'+(crit?' crit':warn?' warn':'');
   // 阶段4收尾: 床旁报警器游戏原声（Vital-Warning 间隙循环 / Vital-Zero / GoodCondition）
   if(typeof sfxAlarms==='function')sfxAlarms(conds);
-  // 状态图标
-  const strip=document.getElementById('statusStrip');strip.innerHTML='';
-  const shown=new Set();
-  if(!conds.length)strip.innerHTML='';   // 健康态无图标, 条随 :empty 收起(3D 拿回空间)
-  conds.forEach(c=>{const ic=ICON_MAP[c.id];if(!ic||shown.has(ic))return;shown.add(ic);
-    const img=document.createElement('img');img.src='patient/'+ic+'.png';img.title=c.n;strip.appendChild(img);});
   // 病理清单: 与报警横幅同源的 collectConds 实时列到屏幕右侧列(临界标红)
   const pl=document.getElementById('pathList');
   if(pl)pl.innerHTML=conds.length?conds.map(c=>'<div class="pathItem'+(c.c2?' crit':'')+'">'+c.n+'</div>').join(''):'<div class="pathNone">无活动病理 · 引擎监测 20+ 项</div>';

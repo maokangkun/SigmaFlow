@@ -104,7 +104,6 @@
             <div class="pat-col"><div class="pat-side-lab">病理监测</div><div id="pathList"></div></div>
             <div class="pat-col"><div class="pat-side-lab">血药/介质</div><div id="drugBox"><div id="drugList">无</div></div></div>
           </div><div class="pat-bezel-brand" aria-hidden="true"></div></div>
-          <div id="statusStrip"></div>
         </section>
         <section id="body3d">
           <div class="bhead"><button type="button" id="btnSpread" onclick="toggleSpread()">⇔ 分离</button><button type="button" onclick="toggleBig3d()">⛶ 大图</button><button type="button" class="btnDiag" onclick="showDiagnosis()">🩺 诊断</button></div>

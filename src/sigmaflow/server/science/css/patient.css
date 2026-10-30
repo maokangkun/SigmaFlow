@@ -116,12 +116,7 @@
 #patient-root #t-rhy .val{font-size:12.5px;letter-spacing:2px}
 #patient-root .numTile.crit .val{color:var(--pat-led-crit);animation:patBlink .9s infinite}
 #patient-root .numTile.warn .val{color:var(--pat-led-warn)}
-/* 机身下方: 状态图标条 / 周期提示 / 诊断行 */
-#patient-root #statusStrip{display:flex;align-items:center;gap:9px;padding:4px 10px;min-height:30px;
-  background:var(--surface);border-radius:11px;box-shadow:var(--shadow-inset);overflow-x:auto}
-#patient-root #statusStrip img{height:22px;filter:drop-shadow(0 2px 3px rgba(30,40,60,.25))}
-#patient-root #statusStrip .none{color:var(--faint);font-size:11px}
-#patient-root #statusStrip:empty{display:none}   /* 健康态无图标: 不占空间 */
+/* 机身下方: 周期提示 / 诊断行 */
 #patient-root #frsInfo{font-size:11px;color:var(--accent-dark);background:var(--accent-bg);
   border-radius:9px;padding:4px 10px;line-height:1.6;box-shadow:var(--shadow-inset)}
 /* drugBox(血药/介质浓度+胰岛素等内源激素) 位于监护屏侧列: 深色小字双列行 */
