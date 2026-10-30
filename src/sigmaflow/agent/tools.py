@@ -322,7 +322,7 @@ class SkillLoader:
 
     def get_descriptions(self) -> str:
         # # Skills 标题: 系统提示词大纲化(与 # Working directory/# Current model 同风格)
-        skill_prompt = f"# Skills\nUse `load_skill` to access specialized knowledge before tackling unfamiliar topics.\nSkills dir: {self.skills_dir}\nSkills available:\n"
+        skill_prompt = f"\n# Skills\nUse `load_skill` to access specialized knowledge before tackling unfamiliar topics.\nSkills dir: {self.skills_dir}\nSkills available:\n"
 
         """Layer 1: short descriptions for the system prompt."""
         if not self.skills:
