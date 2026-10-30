@@ -308,7 +308,6 @@
   // 钩子会在重渲染时把活的 DOM 节点原样搬回(保 canvas/WebGL 上下文与表单状态)。
   V.patient = () => `<section class="page patient-page"><div id="patient-root">
     <div class="pat-topbar">
-      <img class="pat-logo" src="patient/Logo.png" alt="LIFE">
       <div class="pat-id"><div id="patName">模拟患者</div><div id="patTag">SIM-PATIENT · 成人 · 70kg</div></div>
       <div class="alarmBanner" id="alarmBanner">监护中</div>
       <div id="clock">00:00</div>
@@ -316,8 +315,8 @@
         <button type="button" onclick="openCaseSelect()">📋 病例</button>
         <button type="button" onclick="toggleSound()" id="sndBtn">🔊 音效开</button>
         <button type="button" onclick="togglePause()" id="pauseBtn">⏸ 暂停</button>
-        <button type="button" onclick="openEncyclopedia()">📖 百科</button>
         <button type="button" onclick="resetSim()">↺ 复苏重置</button>
+        <button type="button" onclick="showEngineDoc()">⚙ 引擎</button>
       </div>
     </div>
     <div class="pat-main">

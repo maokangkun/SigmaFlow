@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="22af1acb">
+<meta name="build" content="dce56a8e">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -6539,6 +6539,35 @@ function doEctomy(id){
   openOrganModal(id,document.getElementById('modalTitle').textContent.split(' · ')[0],null);
 }
 function openEncyclopedia(){openModal('医学百科（'+Object.keys(ENCYC).length+' 条 · 游戏文本）','');renderEncList();}
+function showEngineDoc(){
+ const H=
+ '<div style="font-size:12.5px;line-height:1.75;color:#33404f;max-height:62vh;overflow-y:auto;padding-right:6px">'
+ +'<h4 style="margin:6px 0 4px;color:#0e7490">引擎是什么</h4>'
+ +'<p>虚拟患者引擎是一个单文件生理模拟器，复刻自游戏二进制逆向得到的真实常量表（Il2CppDumper + capstone 反汇编，见 CAL 常量库）。'
+ +'页面以纯全局函数驱动：<b>每 250ms 做一次生理步进</b>，每 50ms 刷新 ECG/脉搏/etCO₂ 三道波形扫掠，心跳音频同步心搏。</p>'
+ +'<h4 style="margin:10px 0 4px;color:#0e7490">生理模型</h4>'
+ +'<ul style="margin:0 0 0 18px;padding:0"><li>心血管：窦房结/房室结级联起搏、Frank-Starling 每搏量、压力与容量双重反射、外周阻力按血管活性受体分配。</li>'
+ +'<li>呼吸：中枢+外周化学感受器（CO₂ 增益、SpO₂ 膝点），通气机可为有自主呼吸与控制通气两种模式。</li>'
+ +'<li>肾脏与内分泌：GFR/肾素-醛固酮/抗利尿排水，胰岛 α/β 双轴（血糖↔胰岛素/胰高血糖素）、甲状腺轴与 HPA 应激轴。</li>'
+ +'<li>LMFRS 生殖周期：月经→卵泡→排卵→黄体→黄体晚期的激素闭环，可在监护屏侧列实时读相位。</li>'
+ +'<li>全身 23 个器官房室（点 3D 预览中的器官可查百科），血液按房室分发 O₂/CO₂、血糖、电解质、血药。</li></ul>'
+ +'<h4 style="margin:10px 0 4px;color:#0e7490">药理与清除</h4>'
+ +'<p>给药沿受房室→血液→靶器官房室扩散，受体按结合速率/解离池建模（肾上腺素、去甲、血管加压素、胰岛素等 160+ 药物词条）；'
+ +'「代谢清除」按钮按半衰期加速衰减。</p>'
+ +'<h4 style="margin:10px 0 4px;color:#0e7490">病理与死亡</h4>'
+ +'<p>collectConds() 每拍从生理量与化验值成型 20+ 项病理判定，驱动报警横幅、状态图标条与「🩺 诊断」判定卡；'
+ +'室颤、心搏骤停、失血性休克、低血糖昏迷等可致死，死亡后走复苏流程（人人按压 CPR / 除颤 / 肾上腺素）可复活，'
+ +'或「撤除生命维持」宣告临床死亡。</p>'
+ +'<h4 style="margin:10px 0 4px;color:#0e7490">病例系统</h4>'
+ +'<p>内置 22 个预设病例（心肌梗死、过敏性休克、糖尿病酮症…），顶部「📋 病例」选择，进度存 localStorage；'
+ +'治疗区（输注/饮食/急救）与采血化验均可自由组合干预。</p>'
+ +'<h4 style="margin:10px 0 4px;color:#0e7490">监护屏读法</h4>'
+ +'<p>左侧波形: ECG 绿 / 脉搏紫蓝 / etCO₂ 黄；四列数字塔+读数为实时生命体征（数值与单位右对齐）；'
+ +'侧列自上而下为 LMFRS 生殖周期、病理监测、血药/介质（含内源胰岛素）。</p>'
+ +'</div>';
+ openModal('虚拟患者引擎 · 说明文档','');
+ document.getElementById('modalBody').innerHTML=H;
+}
 function renderEncList(){
   const q=document.getElementById('encSearch').value.trim();
   const body=document.getElementById('modalBody');
@@ -11702,7 +11731,6 @@ CS.audio = (function () {
   // 钩子会在重渲染时把活的 DOM 节点原样搬回(保 canvas/WebGL 上下文与表单状态)。
   V.patient = () => `<section class="page patient-page"><div id="patient-root">
     <div class="pat-topbar">
-      <img class="pat-logo" src="patient/Logo.png" alt="LIFE">
       <div class="pat-id"><div id="patName">模拟患者</div><div id="patTag">SIM-PATIENT · 成人 · 70kg</div></div>
       <div class="alarmBanner" id="alarmBanner">监护中</div>
       <div id="clock">00:00</div>
@@ -11710,8 +11738,8 @@ CS.audio = (function () {
         <button type="button" onclick="openCaseSelect()">📋 病例</button>
         <button type="button" onclick="toggleSound()" id="sndBtn">🔊 音效开</button>
         <button type="button" onclick="togglePause()" id="pauseBtn">⏸ 暂停</button>
-        <button type="button" onclick="openEncyclopedia()">📖 百科</button>
         <button type="button" onclick="resetSim()">↺ 复苏重置</button>
+        <button type="button" onclick="showEngineDoc()">⚙ 引擎</button>
       </div>
     </div>
     <div class="pat-main">
