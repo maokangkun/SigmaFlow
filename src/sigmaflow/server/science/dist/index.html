@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="942aac72">
+<meta name="build" content="59de1467">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1261,7 +1261,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 #patient-root .pat-aside{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
 
 /* ===== 监护仪表盘(拟物机身) ===== */
-#patient-root #waves{display:flex;flex-direction:column;gap:6px;min-height:0;flex:none;width:min(494px,100%)}
+#patient-root #waves{display:flex;flex-direction:column;gap:6px;min-height:0;flex:none;width:100%}
 #patient-root .pat-bezel{background:linear-gradient(180deg,var(--pat-bezel-a),var(--pat-bezel-b));
   border-radius:16px;padding:8px 8px 4px;position:relative;
   box-shadow:0 14px 28px rgba(23,31,49,.24),inset 0 1px 0 rgba(255,255,255,.12),inset 0 -2px 0 rgba(0,0,0,.32)}
@@ -1349,7 +1349,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 #patient-root #body3d{display:flex;flex-direction:column;background:var(--surface);border-radius:16px;
   box-shadow:var(--shadow-small);min-height:0;flex:1;overflow:hidden}
 /* 3D 预览卡与监护设备同宽, 左缘对齐 */
-#patient-root #body3d{width:min(494px,100%);align-self:flex-start;position:relative}
+#patient-root #body3d{width:100%;align-self:flex-start;position:relative}
 /* 按钮组悬浮在 3D 视图右上角: 网格两列, 诊断按钮置于大图正下方且同宽 */
 #patient-root #body3d .bhead{position:absolute;top:10px;right:12px;z-index:5;display:grid;
   grid-template-columns:auto auto;gap:6px;justify-content:end}
