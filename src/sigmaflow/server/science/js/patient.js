@@ -1760,7 +1760,7 @@ const AUD_FILES={
   'Vital-Pulse':'Vital-Pulse','Vital-Warning':'Vital-Warning','Vital-Zero':'Vital-Zero','GoodCondition':'GoodCondition',
   'Life':'Life','Bop_2':'Bop_2','Bop_3':'Bop_3'
 };
-var AUDSTATS={counts:{},files:{},loops:{},ac:null,master:null,ventOn:false,inhFlip:false,uiFlip:false,lastWarn:-99,lastZero:-99,prevCondN:0,goodT:0,dubPend:false};
+var AUDSTATS={starts:0,counts:{},files:{},loops:{},ac:null,master:null,ventOn:false,inhFlip:false,uiFlip:false,lastWarn:-99,lastZero:-99,prevCondN:0,goodT:0,dubPend:false};
 if(typeof window!=='undefined')window.AUDSTATS=AUDSTATS;
 function audAC(){
   if(AUDSTATS.ac)return AUDSTATS.ac;
@@ -1772,6 +1772,7 @@ function audAC(){
   }catch(e){AUDSTATS.ac=null;}
   return AUDSTATS.ac;
 }
+function audRunning(){const a=AUDSTATS.ac;return !!a&&a.state==='running';}
 function audResume(){const a=audAC();if(a&&a.state==='suspended'&&a.resume){try{a.resume().catch(()=>{});}catch(e){}}}
 function sfx(name,opt){                      // opt:{gain 0..1, loop}
   opt=opt||{};
@@ -1782,26 +1783,40 @@ function sfx(name,opt){                      // opt:{gain 0..1, loop}
   const fn=AUD_FILES[name]||name.replace(/\.wav$/,'');
   const buf=AUDSTATS.files[name];
   if(buf==='loading')return true;                           // 首次请求在途——本次跳过(下一拍重试)
-  if(buf){_audPlay(a,buf,name,opt);return true;}
+  if(buf){if(audRunning())_audPlay(a,buf,name,opt);return true;}   // 挂起期: 只预载不播放
   AUDSTATS.files[name]='loading';
   try{
     fetch('patient/audio/'+fn+'.wav').then(function(r){if(!r.ok)throw new Error('http');return r.arrayBuffer();})
       .then(function(b){return a.decodeAudioData(b);})
-      .then(function(b2){AUDSTATS.files[name]=b2;if(opt.loop)_audPlay(a,b2,name,opt);})
+      .then(function(b2){AUDSTATS.files[name]=b2;if(opt.loop&&audRunning())_audPlay(a,b2,name,opt);})
       .catch(function(){AUDSTATS.files[name]=null;});
   }catch(e){AUDSTATS.files[name]=null;}
   return true;
 }
 function _audPlay(a,buf,name,opt){
+  if(a.state!=='running')return null;              // 上下文未运行: 不排播, 杜绝积压齐发
   const src=a.createBufferSource();src.buffer=buf;
-  const g=a.createGain();g.gain.value=(opt.gain!==undefined?opt.gain:0.5);
+  const g=a.createGain();
+  const lvl=(opt.gain!==undefined?opt.gain:0.5);
   try{src.connect(g);g.connect(AUDSTATS.master||a.destination);}catch(e){}
+  // 5ms 淡入消除起播咔哒; 非循环源末尾 10ms 淡出消除截断爆音.
+  const t0=a.currentTime;
+  try{
+    g.gain.setValueAtTime(0.0001,t0);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002,lvl),t0+0.005);
+    if(!opt.loop){
+      const dur=(buf&&buf.duration)||0.25;const tEnd=t0+dur;
+      g.gain.setValueAtTime(Math.max(0.0002,lvl),Math.max(t0+0.006,tEnd-0.012));
+      g.gain.exponentialRampToValueAtTime(0.0001,tEnd);
+    }
+  }catch(e){g.gain.value=lvl;}
   if(opt.loop){
     src.loop=true;
     if(AUDSTATS.loops[name]){try{AUDSTATS.loops[name].stop();}catch(e){}}
     AUDSTATS.loops[name]=src;
   }
   try{src.start();}catch(e){}
+  AUDSTATS.starts=(AUDSTATS.starts||0)+1;
   return src;
 }
 function sfxStopLoop(name){if(AUDSTATS.loops[name]){try{AUDSTATS.loops[name].stop();}catch(e){}delete AUDSTATS.loops[name];}}
