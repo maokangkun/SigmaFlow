@@ -179,3 +179,6 @@ cython_debug/
 # science 站点静态资产拷贝产物(build 时从 js/vendor/draco 与 assets/cell 生成, 源已被跟踪)
 src/sigmaflow/server/science/dist/vendor/
 src/sigmaflow/server/science/dist/cell/
+
+# 科学工作台离线单文件产物: 由 scripts/build.mjs 生成, 不入库(拆分版 dist/a 需要入库)
+src/sigmaflow/server/science/dist/standalone.html

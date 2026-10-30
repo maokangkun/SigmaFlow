@@ -414,7 +414,14 @@ CS.agent.pty = {
   term: null, fit: null, attached: null, dead: false, resizing: 0,
 
   ensure() {
-    if (typeof Terminal === 'undefined') return false;
+    if (typeof Terminal === 'undefined') {          // 终端内核按需加载(~490KB), 拉到后重试
+      if (!this._lazyPending) {
+        this._lazyPending = true;
+        CS.ensureLazySeq('xterm', 'fit').then(() => { this._lazyPending = false; if (this._waiting) this.ensure(); });
+        this._waiting = true;
+      }
+      return false;
+    }
     if (!this.term) {
       const t = new Terminal({
         fontSize: 12, fontFamily: 'Menlo, Consolas, "DejaVu Sans Mono", monospace',

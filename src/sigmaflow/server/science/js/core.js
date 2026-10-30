@@ -8,6 +8,26 @@
   CS.formatBytes = bytes => { if (!bytes) return '0 B'; const units = ['B', 'KB', 'MB', 'GB']; const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), 3); return `${(bytes / 1024 ** i).toFixed(i ? 1 : 0)} ${units[i]}`; };
   CS.today = () => new Date().toISOString().slice(0, 10);
   CS.time = value => new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+// 按需加载重型脚本(cell3d 3D 内核/xterm 终端/patient 生理引擎): 首屏不下载,
+// 走进用到它们的页面时再注入; 同一 key 只注入一次, 并发调用共享同一个 Promise。
+CS._lazy = {};
+CS.ensureLazy = (...keys) => {
+  const loads = keys.filter(k => !CS._lazy[k]).map(k => {
+    const url = (window.__LAZY || {})[k];
+    if (!url) return Promise.resolve(false);
+    CS._lazy[k] = new Promise(resolve => {
+      const s = document.createElement('script');
+      s.src = url; s.async = false;
+      s.onload = () => resolve(true);
+      s.onerror = () => { CS._lazy[k] = null; resolve(false); };
+      document.head.appendChild(s);
+    });
+    return CS._lazy[k];
+  });
+  return Promise.all(loads).then(() => true);
+};
+// 串行版: 有依赖顺序的脚本(先 xterm 再 fit 插件)按序注入
+CS.ensureLazySeq = async (...keys) => { for (const k of keys) await CS.ensureLazy(k); return true; };
 CS.elapsedMs = ms => {
   // 不足一秒时用 ms 呈现, 避免 trace 里常见的小耗时被整成 0s
   const n = Math.max(0, Number(ms) || 0);

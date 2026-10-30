@@ -588,6 +588,16 @@
   CS.mountPatientPage = () => {
     const root = document.getElementById('patient-root');
     if (!root) return;
+    // 生理引擎(js/patient.js, ~300KB)按需加载: 首屏不下载, 进本页才取。
+    if (!window.PatientSim) {
+      if (CS._patientLazyBusy) return;
+      CS._patientLazyBusy = true;
+      CS.ensureLazy('patient').then(() => {
+        CS._patientLazyBusy = false;
+        if (window.PatientSim && document.getElementById('patient-root')) CS.mountPatientPage();
+      });
+      return;
+    }
     // 高度适配: CSS 的 100vh 不感知 body zoom(界面缩放≠100 时会在页面下方
     // 露空白带或内容出界), 用视觉坐标精确补齐 —— 布局高 = 可视余量 / zoom
     const fit = () => {
@@ -663,6 +673,16 @@
     CS.cellViewerDispose();
     const stage = document.getElementById('cell-stage');
     if (!stage) return;
+    // 3D 内核(cell3d.min.js, ~700KB)按需加载: 首屏不下载, 进细胞页才取。
+    if (!window.CellViewer) {
+      if (CS._cellLazyBusy) return;
+      CS._cellLazyBusy = true;
+      CS.ensureLazy('cell3d.min').then(() => {
+        CS._cellLazyBusy = false;
+        if (window.CellViewer && document.getElementById('cell-stage')) CS.mountCellViewer();
+      });
+      return;
+    }
     const CV = window.CellViewer;
     const model = (CS.CELL_MODELS || []).find(m => m.key === CS.ui.cellModel) || (CS.CELL_MODELS || [])[0];
     const loadEl = stage.querySelector('.cell-load');
@@ -3107,6 +3127,15 @@
   };
   CS.mountPresent3D = (stageId, url) => {
     CS.present3dDispose();
+    if (!window.CellViewer) {
+      if (CS._presentLazyBusy) return;
+      CS._presentLazyBusy = true;
+      CS.ensureLazy('cell3d.min').then(() => {
+        CS._presentLazyBusy = false;
+        if (window.CellViewer) CS.mountPresent3D(stageId, url);
+      });
+      return;
+    }
     const CV = window.CellViewer;
     const stage = document.getElementById(stageId);
     if (!stage || !CV) { if (stage) stage.innerHTML = '<p class="small muted" style="padding:20px">3D 预览不可用。</p>'; return; }

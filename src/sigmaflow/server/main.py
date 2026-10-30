@@ -47,6 +47,10 @@ class PipelineServer:
                 or request.url.path.rstrip("/") == "/science"
             ):
                 response.headers["Cache-Control"] = "no-cache"
+            # 科学工作台的构建产物带内容哈希(/science/a/<name>.<hash>.js|css),
+            # 文件名一改即失效, 因此可以放心长缓存: 弱网下重载只重新协商入口页。
+            if request.url.path.startswith("/science/a/"):
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
             return response
 
         api = PipelineAPI(pipeline_manager)
