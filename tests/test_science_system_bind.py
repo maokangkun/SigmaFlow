@@ -27,13 +27,18 @@ def test_agent_model_max_len_litellm_first(monkeypatch):
 def test_bind_main_system_plain():
     base = _bind_main_system(None, False, "")
     assert "You are" in base or base  # 内置提示词存在
-    assert "# Working directory" not in base
+    # 目录段始终存在: 未绑定项目时回落服务进程工作目录
+    assert "# Directories" in base
+    assert "The user's home directory is" in base
+    assert "{workdir}" not in base and "{home}" not in base
 
 
 def test_bind_main_system_with_workdir():
     bound = _bind_main_system("/tmp/proj", False, "")
-    assert "# Working directory" in bound
+    assert "# Directories" in bound
     assert "/tmp/proj" in bound
+    # 只在工作目录内操作的约束语
+    assert "operate only inside" in bound
 
 
 def test_bind_main_system_plan_mode_appends():
@@ -65,8 +70,9 @@ def test_conversation_system_or_bind_prefers_stored(tmp_path):
 
 def test_bind_main_system_expands_workdir():
     bound = _bind_main_system("/data/proj-x", False, "")
-    assert "run inside the project working directory `/data/proj-x`" in bound
-    assert "`{workdir}`" not in bound
+    assert "The active project working directory is `/data/proj-x`" in bound
+    assert "operate only inside `/data/proj-x`" in bound
+    assert "{workdir}" not in bound and "{home}" not in bound
 
 
 def test_stored_prompt_with_literal_workdir_is_rebound(tmp_path):
