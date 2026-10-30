@@ -1077,13 +1077,14 @@ function uiFrame(){
   if(!items.length){const d=document.createElement('div');d.className='row none';d.style.gridColumn='1/-1';d.textContent='无';dl.appendChild(d);}
   items.forEach(([k,v])=>{const d=document.createElement('div');d.className='row';d.innerHTML=`<span>${zhOf(k)}</span><span>${(v*100).toFixed(0)}%</span>`;
     d.style.color=v>.8?'#ff8d99':v>.3?'#f6c46a':'#7ce2a0';dl.appendChild(d);});
-  extras.forEach(([n,v])=>{if(v>0.03){const d=document.createElement('div');d.className='row';d.innerHTML=`<span>${n}</span><span>${(v*100).toFixed(0)}%</span>`;d.style.color='#8fa0f0';dl.appendChild(d);}});
+  extras.forEach(([n,v])=>{if(v>0.03){const d=document.createElement('div');d.className='row';d.innerHTML=`<span>${n}</span><span>${(v*100).toFixed(0)}%</span>`;
+    d.style.color='#8fa0f0';d.style.gridColumn='1/-1';dl.appendChild(d);}});   // 内源激素整行(避免窄格折行)
   // 阶段2: BAC 数值展示（血液酒精浓度 ‰）；食物摄入窗口
   const foodWin=document.getElementById('foodInfo');
   if(foodWin&&document.getElementById('foodZone')&&foodWin.innerHTML.indexOf('当前 BAC')>=0)foodHint();
   if(S.bac>0.03||S.alcGut>0){const d=document.createElement('div');d.className='row';
     d.innerHTML=`<span>BAC 血液酒精(‰)</span><span>${S.bac.toFixed(2)}${S.alcGut>0.01?' ↗':''}</span>`;
-    d.style.color=S.bac>=1.0?'#ff8d99':S.bac>=0.5?'#f6c46a':'#e0905a';dl.appendChild(d);}
+    d.style.color=S.bac>=1.0?'#ff8d99':S.bac>=0.5?'#f6c46a':'#e0905a';d.style.gridColumn='1/-1';dl.appendChild(d);}
   // 阶段3: LMFRS 生殖周期提示条（"月经第 2 天（量中）"式相位文案）
   const fi=document.getElementById('frsInfo');
   if(fi){if(!S.frs)fi.style.display='none';else{fi.style.display='block';fi.innerHTML=frsStageText();}}
