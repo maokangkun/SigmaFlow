@@ -848,8 +848,8 @@ function renderOrganStrip(){
   strips.forEach(strip=>strip.querySelectorAll('button').forEach((b,idx)=>{
     b.onclick=()=>{
       const org=ORGANS[idx];
-      if(S.ect&&S.ect[org.id]){BW.sel=null;renderOrganStrip();showEnc(org.zh);return;}   // 已切除: 不可再选中, 仅展示术后状态
-      BW.sel=(BW.sel===org.id?null:org.id);renderOrganStrip();showEnc(org.zh);
+      if(S.ect&&S.ect[org.id]){BW.sel=null;renderOrganStrip();return;}   // 已切除: 不可再选中, 仅展示术后状态
+      BW.sel=(BW.sel===org.id?null:org.id);renderOrganStrip();
     };
   }));
 }

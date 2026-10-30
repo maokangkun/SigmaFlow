@@ -350,8 +350,7 @@
         </section>
         <section id="body3d">
           <div class="bhead"><button type="button" id="btnSpread" onclick="toggleSpread()">⇔ 分离</button><button type="button" onclick="toggleBig3d()">⛶ 大图</button><button type="button" class="btnDiag" onclick="showDiagnosis()">🩺 诊断</button></div>
-          <div id="heartBox"><canvas id="h3d"></canvas></div>
-          <div id="organStrip"></div>
+          <div id="heartBox"><canvas id="h3d"></canvas><div id="organStrip"></div></div>
         </section>
       </div>
       <div class="pat-aside">
