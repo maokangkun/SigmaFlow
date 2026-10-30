@@ -52,6 +52,7 @@
 /* ===== 主区两栏 ===== */
 #patient-root .pat-main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) clamp(280px,23vw,380px);gap:10px;min-height:0}
 #patient-root .pat-mid{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
+#patient-root{--pat-dev-w:494px}
 #patient-root .pat-aside{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
 
 /* ===== 监护仪表盘(拟物机身) ===== */
@@ -125,6 +126,8 @@
 /* ===== 3D 全身器官(新拟态卡) ===== */
 #patient-root #body3d{display:flex;flex-direction:column;background:var(--surface);border-radius:16px;
   box-shadow:var(--shadow-small);min-height:0;flex:1;overflow:hidden}
+/* 3D 预览卡与监护设备同宽, 左缘对齐 */
+#patient-root #body3d{width:var(--pat-dev-w);align-self:flex-start}
 #patient-root #body3d .bhead{display:flex;align-items:center;gap:8px;padding:10px 14px 6px}
 #patient-root #body3d .bhead h3{color:var(--ink);font-size:11.5px}
 #patient-root #body3d .bhead button{margin-left:auto;background:var(--surface);border-radius:8px;
@@ -348,6 +351,7 @@
 @keyframes patBlink{50%{opacity:.4}}
 /* ===== 笔记本档(≤1420px): 四右列统一 58px, 波形仍是主角 ===== */
 @media(max-width:1420px){
+  #patient-root{--pat-dev-w:427px}
   #patient-root .pat-waves{width:221px}
   #patient-root .laneNum{width:58px;padding:0 4px}
   #patient-root #numCols{width:124px}
