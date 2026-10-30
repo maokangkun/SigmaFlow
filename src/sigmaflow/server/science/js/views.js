@@ -386,9 +386,9 @@
           </div>
           <h3>饮食摄入（LIFood · 24 种）</h3>
           <div id="foodZone">
-            <div class="frow">
-              <select id="foodSel" onchange="foodHint()" style="flex:2 1 0;width:0"></select>
-              <select id="foodPortion" onchange="foodHint()" style="flex:1 1 0;width:0">
+            <div class="frow selrow">
+              <select id="foodSel" onchange="foodHint()"></select>
+              <select id="foodPortion" onchange="foodHint()">
                 <option value="0.5">半份</option>
                 <option value="1" selected>1 份</option>
                 <option value="2">2 份</option>
