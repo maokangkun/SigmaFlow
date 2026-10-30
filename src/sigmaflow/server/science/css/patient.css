@@ -51,7 +51,7 @@
 
 /* ===== 主区两栏 ===== */
 #patient-root .pat-main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;min-height:0}
-#patient-root .pat-mid{display:flex;flex-direction:column;gap:0;min-width:0;min-height:0}
+#patient-root .pat-mid{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
 #patient-root{--pat-dev-w:494px;--pat-tile-w:84px}
 #patient-root .pat-aside{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
 
