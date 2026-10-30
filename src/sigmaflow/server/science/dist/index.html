@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="fb641771">
+<meta name="build" content="8c699383">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1288,20 +1288,26 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 #patient-root #etco2v{font-size:10px;color:var(--pat-ink-dim)}
 #patient-root .laneNum.crit .val{color:var(--pat-led-crit)!important;animation:patBlink .9s infinite}
 #patient-root .laneNum.warn .val{color:var(--pat-led-warn)!important}
-#patient-root #numCols{flex:none;width:144px;display:grid;grid-template-columns:1fr 1fr;
-  grid-auto-rows:1fr;gap:4px;padding-left:4px}
-/* 第三列: 生殖周期 + 病理监测(与数字塔同色系的暗玻璃栏) */
-#patient-root .pat-side{flex:none;width:68px;padding:5px 7px;overflow-y:auto;background:#0e1626;
-  border-left:1px solid #1a2434;display:flex;flex-direction:column;gap:2px}
+/* 数值塔: 3行x4列 —— 第1-3列(MAP/PaCO2 | TEMP/pH | GLU/K), 第4列(GCS/心律/空) */
+#patient-root #numCols{flex:1;min-width:0;display:grid;grid-template-columns:repeat(4,1fr);
+  grid-template-rows:repeat(3,1fr);gap:4px;padding-left:4px}
+#patient-root #t-map{grid-area:1/1}#patient-root #t-paco2{grid-area:2/1}
+#patient-root #t-temp{grid-area:1/2}#patient-root #t-ph{grid-area:2/2}
+#patient-root #t-glu{grid-area:1/3}#patient-root #t-k{grid-area:2/3}
+#patient-root #t-gcs{grid-area:1/4}#patient-root #t-rhy{grid-area:2/4}
+#patient-root #t-empty{grid-area:3/4;visibility:hidden}
+/* 屏内下带: 生殖周期 | 病理监测 | 血药/介质 三栏横排 */
+#patient-root .pat-under{flex:none;display:grid;grid-template-columns:1.05fr 1.25fr 1.7fr;
+  gap:0 10px;padding:5px 8px 6px;background:#0e1626;border-top:1px solid #1a2434}
+#patient-root .pat-col{min-width:0;overflow:hidden}
 #patient-root .pat-side-lab{font-size:8.5px;letter-spacing:1.5px;color:var(--pat-ink-dim);
-  margin:2px 0 1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#patient-root .pat-side .pat-side-lab:not(:first-child){margin-top:6px}
-#patient-root .pat-side #frsInfo{font-size:9.5px;line-height:1.5;color:#9fd4ec;background:none;
+  margin:0 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#patient-root .pat-under #frsInfo{font-size:9.5px;line-height:1.5;color:#9fd4ec;background:none;
   box-shadow:none;padding:0;border-radius:0}
-#patient-root .pat-side .pathItem{font-size:9.5px;color:#ffb347;line-height:1.5;
+#patient-root .pat-under .pathItem{font-size:9.5px;color:#ffb347;line-height:1.5;
   border-bottom:1px dashed #1a2434;padding-bottom:2px}
-#patient-root .pat-side .pathItem.crit{color:var(--pat-led-crit);font-weight:600}
-#patient-root .pat-side .pathNone{font-size:9.5px;color:var(--pat-ink-dim);line-height:1.5}
+#patient-root .pat-under .pathItem.crit{color:var(--pat-led-crit);font-weight:600}
+#patient-root .pat-under .pathNone{font-size:9.5px;color:var(--pat-ink-dim);line-height:1.5}
 #patient-root .numTile{background:#0e1626;border-radius:7px;padding:2px 7px 3px;
   display:flex;flex-direction:column;justify-content:center}
 #patient-root .numTile .lab{font-size:8.5px;letter-spacing:.5px;color:var(--pat-ink-dim);line-height:1.15}
@@ -1319,11 +1325,12 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 #patient-root #frsInfo{font-size:11px;color:var(--accent-dark);background:var(--accent-bg);
   border-radius:9px;padding:4px 10px;line-height:1.6;box-shadow:var(--shadow-inset)}
 /* drugBox(血药/介质浓度+胰岛素等内源激素) 位于监护屏侧列: 深色小字双列行 */
-#patient-root .pat-side #drugBox{padding:0;font-size:9px;font-family:inherit;color:var(--pat-ink)}
-#patient-root .pat-side #drugList{color:var(--pat-ink-dim)}
-#patient-root .pat-side #drugList .row{display:flex;justify-content:space-between;gap:4px;
+#patient-root .pat-under #drugBox{padding:0;font-size:9px;font-family:inherit;color:var(--pat-ink)}
+#patient-root .pat-under #drugList{color:var(--pat-ink-dim);display:grid;grid-template-columns:1fr 1fr;
+  gap:0 10px;align-content:start}
+#patient-root .pat-under #drugList .row{display:flex;justify-content:space-between;gap:4px;
   align-items:baseline;line-height:1.4}
-#patient-root .pat-side #drugList .row span:first-child{flex:1;min-width:0}
+#patient-root .pat-under #drugList .row span:first-child{flex:1;min-width:0}
 /* 数值与单位右对齐(波形行读数列 + 数字塔): 仿真实监护仪 LED 数字盒 */
 #patient-root .laneNum .val,#patient-root .laneNum .unit,#patient-root #etco2v,
 #patient-root .numTile .val,#patient-root .numTile .unit{text-align:right}
@@ -1619,10 +1626,8 @@ html[data-motion="reduced"] #anchor-tip{display:none}
   #patient-root{--pat-dev-w:427px}
   #patient-root .pat-waves{width:221px}
   #patient-root .laneNum{width:58px;padding:0 4px}
-  #patient-root #numCols{width:124px}
-  #patient-root .pat-side{width:58px;padding:4px 5px}
-  #patient-root .pat-side #frsInfo,#patient-root .pat-side .pathItem,
-  #patient-root .pat-side .pathNone{font-size:8.5px}
+  #patient-root .pat-under #frsInfo,#patient-root .pat-under .pathItem,
+  #patient-root .pat-under .pathNone{font-size:8.5px}
   #patient-root .pat-side-lab{font-size:7.5px;letter-spacing:1px}
   #patient-root .numTile .lab{font-size:7.5px}
   #patient-root .numTile .val{font-size:13px}
@@ -12075,22 +12080,21 @@ CS.audio = (function () {
           </div>
           <div id="numCols">
             <div class="numTile" id="t-map"><div class="lab">ART MAP</div><div class="val">--</div><div class="unit">mmHg</div></div>
+            <div class="numTile" id="t-paco2"><div class="lab">PaCO₂</div><div class="val">--</div><div class="unit">mmHg</div></div>
             <div class="numTile" id="t-temp"><div class="lab">TEMP 体温</div><div class="val">--</div><div class="unit">°C</div></div>
+            <div class="numTile" id="t-ph"><div class="lab">pH 酸碱</div><div class="val">--</div><div class="unit">​</div></div>
             <div class="numTile" id="t-glu"><div class="lab">GLU 血糖</div><div class="val">--</div><div class="unit">mmol/L</div></div>
             <div class="numTile" id="t-k"><div class="lab">K⁺ 血钾</div><div class="val">--</div><div class="unit">mmol/L</div></div>
-            <div class="numTile" id="t-ph"><div class="lab">pH 酸碱</div><div class="val">--</div><div class="unit">​</div></div>
-            <div class="numTile" id="t-paco2"><div class="lab">PaCO₂</div><div class="val">--</div><div class="unit">mmHg</div></div>
             <div class="numTile" id="t-gcs"><div class="lab">GCS 意识</div><div class="val">--</div><div class="unit">/15</div></div>
             <div class="numTile" id="t-rhy"><div class="lab">心律</div><div class="val">窦性</div><div class="unit">​</div></div>
+            <div class="numTile" id="t-empty" aria-hidden="true"></div>
           </div>
-          <div class="pat-side">
-            <div class="pat-side-lab">生殖周期</div>
-            <div id="frsInfo"></div>
-            <div class="pat-side-lab">病理监测</div>
-            <div id="pathList"></div>
-            <div class="pat-side-lab">血药/介质</div>
-            <div id="drugBox"><div id="drugList">无</div></div>
-          </div></div><div class="pat-bezel-brand" aria-hidden="true"></div></div>
+          </div>
+          <div class="pat-under">
+            <div class="pat-col"><div class="pat-side-lab">生殖周期</div><div id="frsInfo"></div></div>
+            <div class="pat-col"><div class="pat-side-lab">病理监测</div><div id="pathList"></div></div>
+            <div class="pat-col"><div class="pat-side-lab">血药/介质</div><div id="drugBox"><div id="drugList">无</div></div></div>
+          </div><div class="pat-bezel-brand" aria-hidden="true"></div></div>
           <div id="statusStrip"></div>
         </section>
         <section id="body3d">
