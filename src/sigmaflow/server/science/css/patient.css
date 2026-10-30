@@ -52,7 +52,7 @@
 /* ===== 主区两栏 ===== */
 #patient-root .pat-main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;min-height:0}
 #patient-root .pat-mid{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
-#patient-root{--pat-dev-w:494px;--pat-tile-w:100px}
+#patient-root{--pat-dev-w:494px;--pat-tile-w:84px}
 #patient-root .pat-aside{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
 
 /* ===== 监护仪表盘(拟物机身) ===== */
@@ -76,7 +76,7 @@
 /* ===== 读数盒统一样式: 波形读数(laneNum)与数值塔(numTile)共用同一套外观 ===== */
 #patient-root .laneNum,#patient-root .numTile{background:#0e1626;border-radius:0;
   display:flex;flex-direction:column;justify-content:center;gap:1px;padding:0 6px}
-#patient-root .laneNum .lab,#patient-root .numTile .lab{font-size:8.5px;letter-spacing:1px;color:var(--pat-ink-dim);line-height:1.15}
+#patient-root .laneNum .lab,#patient-root .numTile .lab{font-size:8.5px;letter-spacing:1px;color:var(--pat-ink-dim);line-height:1.15;white-space:nowrap;overflow:hidden}
 #patient-root .laneNum .val,#patient-root .numTile .val{font-family:var(--mono);font-size:19px;font-weight:600;line-height:1.02;
   text-shadow:0 0 9px currentColor}
 #patient-root .numTile .val{color:var(--led,var(--pat-ink))}
@@ -89,7 +89,8 @@
 /* 数值塔: 3行x3列(波形读数列算整体 3x4 的第1列) —— 列语义 MAP/TEMP/GLU, PaCO2/pH/K, 末行 GCS/心律/空 */
 #patient-root #numCols{flex:none;display:grid;grid-template-columns:repeat(3,var(--pat-tile-w));
   grid-template-rows:repeat(3,1fr);gap:0}
-#patient-root #t-empty{visibility:hidden}
+#patient-root #t-empty{visibility:visible}
+#patient-root #t-empty .lab,#patient-root #t-empty .val,#patient-root #t-empty .unit{visibility:hidden}
 /* 塔块与波形读数盒同款: 紧排; 行分隔线与 lane 一样画在各盒底边(同锚不偏移), 列分隔线为左线 */
 #patient-root .numTile{border-left:1px solid #1a2434;border-bottom:1px solid #1a2434}
 #patient-root #numCols .numTile:nth-child(3n+1){border-left:none}
@@ -423,7 +424,7 @@
 @keyframes patBlink{50%{opacity:.4}}
 /* ===== 笔记本档(≤1420px): 四右列统一 58px, 波形仍是主角 ===== */
 @media(max-width:1420px){
-  #patient-root{--pat-dev-w:427px;--pat-tile-w:66px}
+  #patient-root{--pat-dev-w:427px;--pat-tile-w:56px}
   #patient-root .pat-waves{flex:none;width:221px}
   #patient-root .laneNum{padding:0 4px}
   #patient-root .pat-under #frsInfo,#patient-root .pat-under .pathItem,
