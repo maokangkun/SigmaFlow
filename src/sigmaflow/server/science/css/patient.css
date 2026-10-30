@@ -425,7 +425,7 @@
 /* ===== 笔记本档(≤1420px): 四右列统一 58px, 波形仍是主角 ===== */
 @media(max-width:1420px){
   #patient-root{--pat-dev-w:427px;--pat-tile-w:56px}
-  #patient-root .pat-waves{flex:none;width:221px}
+  #patient-root .pat-waves{flex:1 1 auto;min-width:0}
   #patient-root .laneNum{padding:0 4px}
   #patient-root .pat-under #frsInfo,#patient-root .pat-under .pathItem,
   #patient-root .pat-under .pathNone{font-size:8.5px}
