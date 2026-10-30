@@ -1375,7 +1375,7 @@ function renderDiag(){
   const items=diagItems();
   let html='<div class="rhead"><h4>🩺 诊断 · 病理判定（LIDiagnosis）</h4><span class="rt">'+fmtT(S.t)+' · 监测 '+Object.keys(DIAG_LIB).length+' 项</span><button onclick="closeDiag()">✕ 关闭</button></div>';
   if(!items.length){
-    html+='<div class="diagNone">目前未见异常 —— LIDiagnosis GoodCondition'+LAB_ARROW.ok+'<div class="sub">HR '+Math.round(S.hr)+' bpm · MAP '+Math.round(S.map)+' mmHg · SpO₂ '+Math.round(S.spo2)+'% · GCS '+S.gcs+'；引擎未检出活动性病理状态（对应游戏 ConditionType 的健康分支）。</div></div>';
+    html+='<div class="diagNone">目前未见异常 —— LIDiagnosis GoodCondition'+LAB_ARROW.ok+'<div class="sub">HR '+Math.round(S.hr)+' bpm · MAP '+Math.round(S.map)+' mmHg · SpO₂ '+Math.round(S.spo2)+'% · GCS '+S.gcs+'；引擎未检出活动性病理状态。</div></div>';
   }else{
     items.forEach(d=>{html+='<div class="diagItem'+(d.crit?' crit':'')+'"><div class="dname">【'+d.name+'】'+(d.crit?'<span class="dcrit">危急</span>':'')+'</div><div class="dmech">机制：'+d.mech+'</div><div class="dact">处理：'+d.act+'</div></div>';});
     html+='<div class="diagNone" style="color:#8395a8;font-size:11px">共 '+items.length+' 项活动性病理判定 —— 危急项优先处理；采样化疗可证实（cTnI/电解质/血气）。</div>';
