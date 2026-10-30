@@ -325,8 +325,11 @@ html:has(.auth-page){scrollbar-gutter:auto}
 .sys-gpu{display:inline-flex;align-items:center;gap:3px;flex:1 1 0;min-width:0;cursor:default}
 .sys-gpu b{font-size:9px;font-weight:600;color:var(--faint);width:7px;text-align:center;flex-shrink:0}
 .sys-gpu .sys-bar{width:auto;flex:1 1 0}
-.sys-seg.sys-grow{flex:1 1 0;min-width:0}
-.sys-seg.sys-grow .sys-bar{width:auto;flex:1 1 0}
+/* 首行带条的段: 标签/数字列宽固定, 条列吸余 —— 各段条长相等 */
+.sys-seg.sys-grow{display:grid;grid-template-columns:minmax(0,108px) minmax(0,1fr) 32px;column-gap:4px;flex:1 1 0;min-width:0}
+.sys-seg.sys-grow .sys-lab{font-style:normal;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sys-seg.sys-grow .sys-bar{width:auto;flex:none}
+.sys-seg.sys-grow .sys-pct{font-style:normal;text-align:right;font-variant-numeric:tabular-nums}
 .sys-gpu .sys-bar.mem>span{background:var(--green)}
 .sys-gpu .sys-bar.util>span{background:var(--accent)}
 /* 消息内错误提示块(复用 think-root 结构), 红色告警, 可展开看详情 */
