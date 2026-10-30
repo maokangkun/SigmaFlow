@@ -436,8 +436,7 @@
     </div>
     <div id="big3d">
       <div class="bhead"><h3>3D 全身器官视图</h3><button type="button" onclick="toggleBig3d()">✕ 关闭</button></div>
-      <div id="glSlot"></div>
-      <div id="organStripBig"></div>
+      <div id="glSlot"><div id="organStripBig"></div></div>
     </div>
     <div id="modal" onclick="if(event.target===this)closeModal()"><div id="modalCard"><button type="button" id="modalClose" onclick="closeModal()">✕</button><h4 id="modalTitle"></h4><div id="searchRow"><input id="encSearch" placeholder="搜索词条…" oninput="renderEncList()"></div><div id="modalBody"></div></div><div id="tipCard"></div></div>
     <div id="confirmBox" style="position:fixed;inset:0;background:rgba(30,42,58,.45);display:none;align-items:center;justify-content:center;z-index:80"><div id="confirmCard"><div class="cmsg" id="confirmMsg"></div><div class="cbtns"><button type="button" onclick="cancelConfirm()">取消</button><button type="button" class="ok" onclick="okConfirm()">确认电击</button></div></div></div>
