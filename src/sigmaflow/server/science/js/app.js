@@ -151,14 +151,21 @@
     if (!el) return;
     try {
       const s = await CS.api.request('/system');
+      // 首行布局: OS | 条区(sys-bars) | 网速, 条区内部共享网格 —— 各条列平分剩余空间,
+      // 条既等长又随输入框宽度伸缩; 标签/数字列按内容宽度完整显示, 窄时条先收缩(下限 16px)
+      const barCells = (lab, pct, tip, val) =>
+        `<i class="sys-lab" title="${tip}">${lab}</i>${sysBar(val)}<i class="sys-pct">${pct}%</i>`;
+      const diskCells = (s.disks || [s.disk]).map((d, i) =>
+        barCells(`${i ? CS.escape(d.path) : '磁盘'} ${d.used_gb}/${d.total_gb}GB`, Math.round(d.percent),
+          `磁盘占用 (${CS.escape(d.path)}) ${d.used_gb}/${d.total_gb}GB`, d.percent)).join('');
       const segs = [
         `<span class="sys-seg sys-os" title="${CS.escape(s.os)}">${CS.escape(s.os)}</span>`,
-        // sys-grow: 带进度条的段随输入框宽度弹性伸展(与 GPU 行一致), 纯文本段(OS/网速)保持原样;
-        // 标签/数字固定列宽(grid), 条吸全部剩余空间 —— 段等宽时四条严格等长
-        `<span class="sys-seg sys-grow" title="${CS.escape(s.cpu.model)}"><i class="sys-lab">CPU ${s.cpu.cores}核</i>${sysBar(s.cpu.usage)}<i class="sys-pct">${Math.round(s.cpu.usage)}%</i></span>`,
-        `<span class="sys-seg sys-grow" title="内存 ${s.memory.used_gb}/${s.memory.total_gb}GB (${Math.round(s.memory.percent)}%)"><i class="sys-lab">内存 ${s.memory.used_gb}/${s.memory.total_gb}GB</i>${sysBar(s.memory.percent)}<i class="sys-pct">${Math.round(s.memory.percent)}%</i></span>`,
-        ...((s.disks || [s.disk]).map((d, i) =>
-          `<span class="sys-seg sys-grow" title="${i ? CS.escape(d.path) : '磁盘'} ${d.used_gb}/${d.total_gb}GB (${Math.round(d.percent)}%)"><i class="sys-lab">${i ? CS.escape(d.path) : '磁盘'} ${d.used_gb}/${d.total_gb}GB</i>${sysBar(d.percent)}<i class="sys-pct">${Math.round(d.percent)}%</i></span>`)),
+        `<span class="sys-bars">`
+        + barCells(`CPU ${s.cpu.cores}核`, Math.round(s.cpu.usage), CS.escape(s.cpu.model), s.cpu.usage)
+        + barCells(`内存 ${s.memory.used_gb}/${s.memory.total_gb}GB`, Math.round(s.memory.percent),
+          `内存 ${s.memory.used_gb}/${s.memory.total_gb}GB (${Math.round(s.memory.percent)}%)`, s.memory.percent)
+        + diskCells
+        + `</span>`,
         `<span class="sys-seg sys-net" title="网速(上传/下载)">网速 ↑${fmtBps(s.net.up_bps)} ↓${fmtBps(s.net.down_bps)}</span>`,
       ].join('');
       const gpus = (s.gpus || []).map((g, idx) =>
