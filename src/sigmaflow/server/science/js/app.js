@@ -153,10 +153,11 @@
       const s = await CS.api.request('/system');
       const segs = [
         `<span class="sys-seg sys-os" title="${CS.escape(s.os)}">${CS.escape(s.os)}</span>`,
-        `<span class="sys-seg" title="${CS.escape(s.cpu.model)}">CPU ${s.cpu.cores}核 ${sysBar(s.cpu.usage)} ${Math.round(s.cpu.usage)}%</span>`,
-        `<span class="sys-seg" title="内存占用">内存 ${s.memory.used_gb}/${s.memory.total_gb}GB ${sysBar(s.memory.percent)}</span>`,
+        // sys-grow: 带进度条的段随输入框宽度弹性伸展(与 GPU 行一致), 纯文本段(OS/网速)保持原样
+        `<span class="sys-seg sys-grow" title="${CS.escape(s.cpu.model)}">CPU ${s.cpu.cores}核 ${sysBar(s.cpu.usage)} ${Math.round(s.cpu.usage)}%</span>`,
+        `<span class="sys-seg sys-grow" title="内存占用">内存 ${s.memory.used_gb}/${s.memory.total_gb}GB ${sysBar(s.memory.percent)}</span>`,
         ...((s.disks || [s.disk]).map((d, i) =>
-          `<span class="sys-seg" title="磁盘占用 (${CS.escape(d.path)})">${i ? CS.escape(d.path) : '磁盘'} ${d.used_gb}/${d.total_gb}GB ${sysBar(d.percent)}</span>`)),
+          `<span class="sys-seg sys-grow" title="磁盘占用 (${CS.escape(d.path)})">${i ? CS.escape(d.path) : '磁盘'} ${d.used_gb}/${d.total_gb}GB ${sysBar(d.percent)}</span>`)),
         `<span class="sys-seg sys-net" title="网速(上传/下载)">网速 ↑${fmtBps(s.net.up_bps)} ↓${fmtBps(s.net.down_bps)}</span>`,
       ].join('');
       const gpus = (s.gpus || []).map((g, idx) =>
