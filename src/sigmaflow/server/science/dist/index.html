@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="157fdb18">
+<meta name="build" content="3bbcdead">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1362,6 +1362,8 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 #patient-root #organStrip button,#patient-root #organStripBig button{display:flex;align-items:center;gap:4px;
   background:var(--surface);border-radius:8px;padding:3px 8px;font-size:11px;color:var(--ink);box-shadow:var(--shadow-small)}
 #patient-root #heartBox #organStrip button img{height:15px}
+/* 心脏图标(Blood.png 白色血滴)染成血红, 浅色 chip 上清晰可辨 */
+#patient-root #heartBox #organStrip button img.bloodTint{filter:brightness(0) saturate(100%) invert(24%) sepia(89%) saturate(5000%) hue-rotate(340deg) brightness(92%) contrast(88%)}
 #patient-root #heartBox #organStrip button img{display:block;image-rendering:-webkit-optimize-contrast}
 #patient-root #organStripBig button img{height:16px}
 #patient-root #heartBox #organStrip button .dot{width:7px;height:7px;border-radius:4px}
@@ -6086,7 +6088,7 @@ function renderOrganStrip(){
     const b=document.createElement('button');
     const rm=!!e.removed;
     const dotC='rgb('+Math.round(e.color[0]*255)+','+Math.round(e.color[1]*255)+','+Math.round(e.color[2]*255)+')';
-    b.innerHTML=(rm?'<span class="ectTag">已切除</span>':'')+(e.ic?('<img src="patient/'+e.ic+'.png">'):('<span class="dot" style="background:'+dotC+'"></span>'))+'<span class="zhName">'+e.zh+'</span>';
+    b.innerHTML=(rm?'<span class="ectTag">已切除</span>':'')+(e.ic?('<img src="patient/'+e.ic+'.png"'+(e.key==='heart'?' class="bloodTint"':'')+'>'):('<span class="dot" style="background:'+dotC+'"></span>'))+'<span class="zhName">'+e.zh+'</span>';
     if(BW.sel===e.key&&!rm)b.classList.add('sel');
     if(rm)b.classList.add('removed');
     strips.forEach(strip=>strip.appendChild(b.cloneNode(true)));

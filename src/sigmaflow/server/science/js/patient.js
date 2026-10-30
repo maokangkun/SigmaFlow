@@ -852,7 +852,7 @@ function renderOrganStrip(){
     const b=document.createElement('button');
     const rm=!!e.removed;
     const dotC='rgb('+Math.round(e.color[0]*255)+','+Math.round(e.color[1]*255)+','+Math.round(e.color[2]*255)+')';
-    b.innerHTML=(rm?'<span class="ectTag">已切除</span>':'')+(e.ic?('<img src="patient/'+e.ic+'.png">'):('<span class="dot" style="background:'+dotC+'"></span>'))+'<span class="zhName">'+e.zh+'</span>';
+    b.innerHTML=(rm?'<span class="ectTag">已切除</span>':'')+(e.ic?('<img src="patient/'+e.ic+'.png"'+(e.key==='heart'?' class="bloodTint"':'')+'>'):('<span class="dot" style="background:'+dotC+'"></span>'))+'<span class="zhName">'+e.zh+'</span>';
     if(BW.sel===e.key&&!rm)b.classList.add('sel');
     if(rm)b.classList.add('removed');
     strips.forEach(strip=>strip.appendChild(b.cloneNode(true)));
