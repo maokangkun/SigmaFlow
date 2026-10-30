@@ -223,6 +223,7 @@
 #patient-root #foodZone .frow{display:flex;gap:7px;align-items:center}
 #patient-root #foodZone button{padding:7px 4px;font-size:11.5px;font-weight:600;border-radius:10px;
   background:var(--green-bg);color:var(--green);box-shadow:var(--shadow-small)}
+#patient-root #foodZone .frow button{width:100%}
 #patient-root #foodZone button:active{box-shadow:var(--shadow-inset)}
 #patient-root #foodInfo{font-size:10.5px;color:var(--faint);background:var(--inset);border-radius:9px;
   padding:5px 8px;line-height:1.55;box-shadow:var(--shadow-inset)}

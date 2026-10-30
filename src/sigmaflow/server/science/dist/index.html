@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="c14bc2ff">
+<meta name="build" content="b4fef7fa">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1428,6 +1428,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 #patient-root #foodZone .frow{display:flex;gap:7px;align-items:center}
 #patient-root #foodZone button{padding:7px 4px;font-size:11.5px;font-weight:600;border-radius:10px;
   background:var(--green-bg);color:var(--green);box-shadow:var(--shadow-small)}
+#patient-root #foodZone .frow button{width:100%}
 #patient-root #foodZone button:active{box-shadow:var(--shadow-inset)}
 #patient-root #foodInfo{font-size:10.5px;color:var(--faint);background:var(--inset);border-radius:9px;
   padding:5px 8px;line-height:1.55;box-shadow:var(--shadow-inset)}
@@ -11876,8 +11877,8 @@ CS.audio = (function () {
           <h3>饮食摄入（LIFood · 24 种）</h3>
           <div id="foodZone">
             <div class="frow">
-              <select id="foodSel" onchange="foodHint()"></select>
-              <select id="foodPortion" onchange="foodHint()" style="flex:0 0 84px">
+              <select id="foodSel" onchange="foodHint()" style="flex:2 1 0;width:0"></select>
+              <select id="foodPortion" onchange="foodHint()" style="flex:1 1 0;width:0">
                 <option value="0.5">半份</option>
                 <option value="1" selected>1 份</option>
                 <option value="2">2 份</option>
