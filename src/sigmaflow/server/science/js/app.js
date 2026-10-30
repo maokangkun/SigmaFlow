@@ -202,6 +202,7 @@
       // 界面缩放(body zoom)只在渲染时同步: 每次渲染后按当前 zoom 精确补齐高度,
       // 防 100vh 不感知 zoom 在页面下方露空白带/截断内容
       if (CS._patientFit) CS._patientFit();
+      if (CS._patLogSync) CS._patLogSync();
     } else if (CS._patientLive) {
       CS.unmountPatientPage();  // 离开页面: 停引擎定时器 + 释放 WebGL
     }
@@ -599,9 +600,25 @@
     };
     CS._patientFit = fit;
     fit();
+    function zoomOf(){ return parseFloat(document.body.style.zoom) || 1; }
+    // 事件记录卡与监护屏卡(#waves: 设备+状态图标条)等高, 卡片行底边对齐;
+    // #waves 高度随状态图标条出现/消失而变, ResizeObserver 稳态同步; zoom 换算保证缩放下也对齐
+    CS._patLogSync = () => {
+      const w = document.querySelector('#patient-root #waves');
+      const l = document.querySelector('#patient-root .pat-logpanel');
+      if (!w || !l) return;
+      const h = w.getBoundingClientRect().height / zoomOf();
+      l.style.flex = 'none';
+      l.style.height = Math.round(h) + 'px';
+    };
+    CS._patLogSync();
     if (!CS._patientFitBound) {
       CS._patientFitBound = true;
-      window.addEventListener('resize', () => { if (document.getElementById('patient-root') && CS._patientFit) CS._patientFit(); });
+      window.addEventListener('resize', () => { if (document.getElementById('patient-root') && CS._patientFit) { CS._patientFit(); if (CS._patLogSync) CS._patLogSync(); } });
+      if (window.ResizeObserver) {
+        const obs = new ResizeObserver(() => { if (document.getElementById('patient-root') && CS._patLogSync) CS._patLogSync(); });
+        if (document.querySelector('#patient-root #waves')) obs.observe(document.querySelector('#patient-root #waves'));
+      }
     }
     if (window.PatientSim) PatientSim.mount();
     const cv = document.getElementById('h3d');
