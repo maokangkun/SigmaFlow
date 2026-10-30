@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="e84823fc">
+<meta name="build" content="6ec26a89">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1337,16 +1337,16 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 #patient-root #body3d{display:flex;flex-direction:column;background:var(--surface);border-radius:16px;
   box-shadow:var(--shadow-small);min-height:0;flex:1;overflow:hidden}
 /* 3D 预览卡与监护设备同宽, 左缘对齐 */
-#patient-root #body3d{width:var(--pat-dev-w);align-self:flex-start}
-#patient-root #body3d .bhead{display:flex;align-items:center;gap:8px;padding:10px 14px 6px}
-#patient-root #body3d .bhead h3{color:var(--ink);font-size:11.5px}
-#patient-root #body3d .bhead button{margin-left:auto;background:var(--surface);border-radius:8px;
-  padding:4px 10px;font-size:11px;color:var(--muted);box-shadow:var(--shadow-small)}
+#patient-root #body3d{width:var(--pat-dev-w);align-self:flex-start;position:relative}
+/* 按钮组悬浮在 3D 视图右上角(视图本身即精确区域) */
+#patient-root #body3d .bhead{position:absolute;top:10px;right:12px;z-index:5;display:flex;
+  align-items:center;gap:6px}
+#patient-root #body3d .bhead button{background:var(--surface);border-radius:8px;
+  padding:4px 9px;font-size:11px;color:var(--muted);box-shadow:var(--shadow-small);white-space:nowrap}
 #patient-root #body3d .bhead button:active{box-shadow:var(--shadow-inset)}
 #patient-root #heartBox{flex:1;width:100%;min-height:120px;position:relative;
   background:radial-gradient(circle at 50% 42%,#ffffff,#e8ecf2);border-radius:12px;margin:0 10px;
   box-shadow:inset 0 2px 10px #dfe2e966,inset 0 -2px 10px #ffffffb3}
-#patient-root #heartBox .tag{position:absolute;left:10px;bottom:8px;font-size:10px;color:var(--faint);z-index:2}
 #patient-root #heartBox canvas{width:100%;height:100%;display:block}
 #patient-root #organStrip{display:flex;flex-wrap:wrap;gap:6px;padding:10px;margin:8px 10px 10px;
   background:var(--inset);border-radius:12px;overflow:auto;max-height:132px;box-shadow:var(--shadow-inset)}
@@ -11782,8 +11782,8 @@ CS.audio = (function () {
           <div id="statusStrip"></div>
         </section>
         <section id="body3d">
-          <div class="bhead"><h3>3D 全身器官</h3><button type="button" id="btnSpread" onclick="toggleSpread()">⇔ 分离</button><button type="button" class="btnDiag" onclick="showDiagnosis()">🩺 诊断</button><button type="button" onclick="toggleBig3d()">⛶ 大图</button></div>
-          <div id="heartBox"><canvas id="h3d"></canvas><div class="tag">WebGL 渲染 · 拖拽旋转 / 滚轮缩放 · 心搏呼吸同步 · 点器官查百科</div></div>
+          <div class="bhead"><button type="button" id="btnSpread" onclick="toggleSpread()">⇔ 分离</button><button type="button" onclick="toggleBig3d()">⛶ 大图</button><button type="button" class="btnDiag" onclick="showDiagnosis()">🩺 诊断</button></div>
+          <div id="heartBox"><canvas id="h3d"></canvas></div>
           <div id="organStrip"></div>
         </section>
       </div>

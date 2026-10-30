@@ -349,8 +349,8 @@
           <div id="statusStrip"></div>
         </section>
         <section id="body3d">
-          <div class="bhead"><h3>3D 全身器官</h3><button type="button" id="btnSpread" onclick="toggleSpread()">⇔ 分离</button><button type="button" class="btnDiag" onclick="showDiagnosis()">🩺 诊断</button><button type="button" onclick="toggleBig3d()">⛶ 大图</button></div>
-          <div id="heartBox"><canvas id="h3d"></canvas><div class="tag">WebGL 渲染 · 拖拽旋转 / 滚轮缩放 · 心搏呼吸同步 · 点器官查百科</div></div>
+          <div class="bhead"><button type="button" id="btnSpread" onclick="toggleSpread()">⇔ 分离</button><button type="button" onclick="toggleBig3d()">⛶ 大图</button><button type="button" class="btnDiag" onclick="showDiagnosis()">🩺 诊断</button></div>
+          <div id="heartBox"><canvas id="h3d"></canvas></div>
           <div id="organStrip"></div>
         </section>
       </div>
