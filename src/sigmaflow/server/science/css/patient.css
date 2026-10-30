@@ -57,7 +57,11 @@
 
 /* ===== 监护仪表盘(拟物机身) ===== */
 #patient-root #waves{display:flex;flex-direction:column;gap:6px;min-height:0;flex:none;width:100%}
+#patient-root .pat-bezel{background:linear-gradient(180deg,var(--pat-bezel-a),var(--pat-bezel-b));
+  border-radius:16px;padding:8px 8px 4px;position:relative;
+  box-shadow:0 14px 28px rgba(23,31,49,.24),inset 0 1px 0 rgba(255,255,255,.12),inset 0 -2px 0 rgba(0,0,0,.32)}
 #patient-root #waves .pat-bezel{border-radius:16px 16px 0 0}
+#patient-root #waves .pat-screen,#patient-root #waves .pat-bezel-brand{border-bottom-left-radius:0;border-bottom-right-radius:0}
 #patient-root .pat-screen{background:var(--pat-screen);border-radius:10px;padding:4px;overflow:hidden;
   box-shadow:inset 0 3px 14px rgba(0,0,0,.6),inset 0 0 0 1px #1a2436;display:flex;flex-direction:row}
 /* 波形列(左)与数字塔(右)并排: 原两行数字塔移到屏右侧, 机身↓高度让给 3D 预览 */
