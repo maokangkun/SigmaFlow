@@ -338,9 +338,14 @@
             <div class="numTile" id="t-paco2"><div class="lab">PaCO₂</div><div class="val">--</div><div class="unit">mmHg</div></div>
             <div class="numTile" id="t-gcs"><div class="lab">GCS 意识</div><div class="val">--</div><div class="unit">/15</div></div>
             <div class="numTile" id="t-rhy"><div class="lab">心律</div><div class="val" style="font-size:15px">窦性</div><div class="unit">​</div></div>
+          </div>
+          <div class="pat-side">
+            <div class="pat-side-lab">生殖周期 · LMFRS</div>
+            <div id="frsInfo"></div>
+            <div class="pat-side-lab">病理监测</div>
+            <div id="pathList"></div>
           </div></div><div class="pat-bezel-brand" aria-hidden="true"></div></div>
           <div id="statusStrip"></div>
-          <div id="frsInfo"></div>
           <div id="diagBar"><button type="button" onclick="showDiagnosis()">🩺 诊断 · 病理判定</button><span class="hint">引擎监测 20+ 病理状态 → LIDiagnosis 风格判定；采血化验在右侧急救台</span></div>
         </section>
         <section id="body3d">

@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="6ed9cf00">
+<meta name="build" content="c8c5fbac">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1289,6 +1289,18 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 #patient-root .laneNum.warn .val{color:var(--pat-led-warn)!important}
 #patient-root #numCols{flex:none;width:252px;display:grid;grid-template-columns:1fr 1fr;
   grid-auto-rows:1fr;gap:4px;padding-left:5px}
+/* 第三列: 生殖周期 + 病理监测(与数字塔同色系的暗玻璃栏) */
+#patient-root .pat-side{flex:none;width:186px;padding:7px 10px;overflow-y:auto;background:#0e1626;
+  border-left:1px solid #1a2434;display:flex;flex-direction:column;gap:3px}
+#patient-root .pat-side-lab{font-size:8.5px;letter-spacing:1.5px;color:var(--pat-ink-dim);
+  margin:2px 0 1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#patient-root .pat-side .pat-side-lab:not(:first-child){margin-top:6px}
+#patient-root .pat-side #frsInfo{font-size:10.5px;line-height:1.55;color:#9fd4ec;background:none;
+  box-shadow:none;padding:0;border-radius:0}
+#patient-root .pat-side .pathItem{font-size:10.5px;color:#ffb347;line-height:1.55;
+  border-bottom:1px dashed #1a2434;padding-bottom:2px}
+#patient-root .pat-side .pathItem.crit{color:var(--pat-led-crit);font-weight:600}
+#patient-root .pat-side .pathNone{font-size:10.5px;color:var(--pat-ink-dim);line-height:1.55}
 #patient-root .numTile{background:#0e1626;border-radius:7px;padding:2px 8px 3px;
   display:flex;flex-direction:column;justify-content:center}
 #patient-root .numTile .lab{font-size:8.5px;letter-spacing:.5px;color:var(--pat-ink-dim);line-height:1.15}
@@ -1304,6 +1316,9 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 #patient-root #statusStrip:empty{display:none}   /* 健康态无图标: 不占空间 */
 #patient-root #frsInfo{font-size:11px;color:var(--accent-dark);background:var(--accent-bg);
   border-radius:9px;padding:4px 10px;line-height:1.6;box-shadow:var(--shadow-inset)}
+/* 数值与单位右对齐(波形行读数列 + 数字塔): 仿真实监护仪 LED 数字盒 */
+#patient-root .laneNum .val,#patient-root .laneNum .unit,#patient-root #etco2v,
+#patient-root .numTile .val,#patient-root .numTile .unit{text-align:right}
 #patient-root #frsInfo:empty{display:none}
 #patient-root #diagBar{display:flex;gap:8px;align-items:center;padding:2px 4px 0}
 #patient-root #diagBar button{flex:none;background:var(--surface);border-radius:9px;padding:5px 12px;
@@ -1542,6 +1557,8 @@ html[data-motion="reduced"] #anchor-tip{display:none}
   #patient-root .pat-screen{flex-direction:column}
   #patient-root #numCols{width:100%;grid-template-columns:repeat(4,1fr);grid-auto-rows:auto;
     padding-left:0;padding-top:4px}
+  #patient-root .pat-side{width:100%;border-left:none;border-top:1px solid #1a2434;
+    padding-left:0;padding-right:0}
   #patient-root .pat-waves .lane:last-child{border-bottom:1px solid #1a2434}
   /* 窄屏顶栏(移动菜单按钮行)存在, 页面改纵向滚动后无需消除 */
   #patient-root .pat-main{grid-template-columns:1fr}
@@ -6077,6 +6094,9 @@ function uiFrame(){
   if(!conds.length)strip.innerHTML='';   // 健康态无图标, 条随 :empty 收起(3D 拿回空间)
   conds.forEach(c=>{const ic=ICON_MAP[c.id];if(!ic||shown.has(ic))return;shown.add(ic);
     const img=document.createElement('img');img.src='patient/'+ic+'.png';img.title=c.n;strip.appendChild(img);});
+  // 病理清单: 与报警横幅同源的 collectConds 实时列到屏幕右侧列(临界标红)
+  const pl=document.getElementById('pathList');
+  if(pl)pl.innerHTML=conds.length?conds.map(c=>'<div class="pathItem'+(c.c2?' crit':'')+'">'+c.n+'</div>').join(''):'<div class="pathNone">无活动病理 · 引擎监测 20+ 项</div>';
   // 床旁机构音
   document.getElementById('patTag').textContent='SIM-PATIENT · 成人 · '+(S.rhythm==='arrest'?'⚠ 已停搏':'监护中');
   // 急救台: 冠脉灌注线(CPP≈主动脉舒张压-右房压)
@@ -6108,7 +6128,7 @@ function uiFrame(){
     d.style.color=S.bac>=1.0?'#ff8d99':S.bac>=0.5?'#f6c46a':'#e0905a';dl.appendChild(d);}
   // 阶段3: LMFRS 生殖周期提示条（"月经第 2 天（量中）"式相位文案）
   const fi=document.getElementById('frsInfo');
-  if(fi){if(!S.frs)fi.style.display='none';else{fi.style.display='block';fi.innerHTML='生殖周期 · LMFRS：'+frsStageText();}}
+  if(fi){if(!S.frs)fi.style.display='none';else{fi.style.display='block';fi.innerHTML=frsStageText();}}
   // 阶段3: 撤除生命维持按钮——呼吸机/CPR/起搏任一在用时显示（LIDeath.MachineWithdrawal 宣告入口）
   const bw=document.getElementById('btnWithdraw');
   if(bw)bw.style.display=((S.vent||S.pace||S.cpr)&&!S.dead)?'block':'none';
@@ -11680,9 +11700,14 @@ CS.audio = (function () {
             <div class="numTile" id="t-paco2"><div class="lab">PaCO₂</div><div class="val">--</div><div class="unit">mmHg</div></div>
             <div class="numTile" id="t-gcs"><div class="lab">GCS 意识</div><div class="val">--</div><div class="unit">/15</div></div>
             <div class="numTile" id="t-rhy"><div class="lab">心律</div><div class="val" style="font-size:15px">窦性</div><div class="unit">​</div></div>
+          </div>
+          <div class="pat-side">
+            <div class="pat-side-lab">生殖周期 · LMFRS</div>
+            <div id="frsInfo"></div>
+            <div class="pat-side-lab">病理监测</div>
+            <div id="pathList"></div>
           </div></div><div class="pat-bezel-brand" aria-hidden="true"></div></div>
           <div id="statusStrip"></div>
-          <div id="frsInfo"></div>
           <div id="diagBar"><button type="button" onclick="showDiagnosis()">🩺 诊断 · 病理判定</button><span class="hint">引擎监测 20+ 病理状态 → LIDiagnosis 风格判定；采血化验在右侧急救台</span></div>
         </section>
         <section id="body3d">

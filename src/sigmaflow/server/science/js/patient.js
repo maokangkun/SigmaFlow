@@ -907,6 +907,9 @@ function uiFrame(){
   if(!conds.length)strip.innerHTML='';   // 健康态无图标, 条随 :empty 收起(3D 拿回空间)
   conds.forEach(c=>{const ic=ICON_MAP[c.id];if(!ic||shown.has(ic))return;shown.add(ic);
     const img=document.createElement('img');img.src='patient/'+ic+'.png';img.title=c.n;strip.appendChild(img);});
+  // 病理清单: 与报警横幅同源的 collectConds 实时列到屏幕右侧列(临界标红)
+  const pl=document.getElementById('pathList');
+  if(pl)pl.innerHTML=conds.length?conds.map(c=>'<div class="pathItem'+(c.c2?' crit':'')+'">'+c.n+'</div>').join(''):'<div class="pathNone">无活动病理 · 引擎监测 20+ 项</div>';
   // 床旁机构音
   document.getElementById('patTag').textContent='SIM-PATIENT · 成人 · '+(S.rhythm==='arrest'?'⚠ 已停搏':'监护中');
   // 急救台: 冠脉灌注线(CPP≈主动脉舒张压-右房压)
@@ -938,7 +941,7 @@ function uiFrame(){
     d.style.color=S.bac>=1.0?'#ff8d99':S.bac>=0.5?'#f6c46a':'#e0905a';dl.appendChild(d);}
   // 阶段3: LMFRS 生殖周期提示条（"月经第 2 天（量中）"式相位文案）
   const fi=document.getElementById('frsInfo');
-  if(fi){if(!S.frs)fi.style.display='none';else{fi.style.display='block';fi.innerHTML='生殖周期 · LMFRS：'+frsStageText();}}
+  if(fi){if(!S.frs)fi.style.display='none';else{fi.style.display='block';fi.innerHTML=frsStageText();}}
   // 阶段3: 撤除生命维持按钮——呼吸机/CPR/起搏任一在用时显示（LIDeath.MachineWithdrawal 宣告入口）
   const bw=document.getElementById('btnWithdraw');
   if(bw)bw.style.display=((S.vent||S.pace||S.cpr)&&!S.dead)?'block':'none';
