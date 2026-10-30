@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="81e2ab9f">
+<meta name="build" content="d39c0880">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -5953,7 +5953,7 @@ function administer(){
   if(!chem||chem==='Null'||chem==='HCl2'&&route!=='Oral')return;
   const doseAdj=dose/10, logN=zhOf(chem);
   if(typeof PATH_LIB!=='undefined'&&PATH_LIB[chem]){pathInoculate(chem,dose);return;}   // 阶段6: 病原体接种通道(剂量=接种量)
-  if(chem==='ImmunGlobulin'&&route!=='Inhale')log('🧪 <b>免疫球蛋白</b>（新增非原生制剂·构建获得——非游戏 ChemicalType）: 被动免疫支持, 病原清除率↑（不属抗病毒药, 游戏治疗哲学=支持疗法+免疫系统自身）');
+  if(chem==='ImmunGlobulin'&&route!=='Inhale')log('🧪 <b>免疫球蛋白</b>（免疫系统支持制剂）: 被动免疫支持, 病原清除率↑（不属抗病毒药, 游戏治疗哲学=支持疗法+免疫系统自身）');
   switch(route){
     case'Oral':S.gut[chem]=(S.gut[chem]||0)+doseAdj;break;
     case'IVPush':S.blood[chem]=(S.blood[chem]||0)+doseAdj*1.6;break;
@@ -6600,11 +6600,11 @@ const DIAG_LIB={
   VentHypo:{n:'机械通气不足',g:'Hypercapnia',m:'当前通气设置下 pCO₂>50mmHg，分钟通气量相对不足 → 呼吸性酸中毒。',a:'上调呼吸机 RR 或 Vt，复查血气确认 pCO₂ 回落。'},
   VentHyper:{n:'机械通气过度',g:'Apnea/Bradypnea',m:'机械通气下 pCO₂<30mmHg，过度通气 → 呼吸性碱中毒，脑血流下降。',a:'下调呼吸机 RR 或 Vt，允许 pCO₂ 回升到生理区间。'},
   VentO2:{n:'机械通气氧合不佳',g:'Hypoxemia',m:'机械通气中 SpO₂<90%，FiO₂ 不足以维持氧合（通气-血流失调/低灌注）。',a:'上调 FiO₂、优化 PEEP 肺泡复张，检查气道与循环灌注。'},
-  Anaphylaxis:{n:'过敏样反应',g:'(游戏 ConditionType 无 AAnaphylaxis 项·以 Histamine 释放模拟)',m:'组胺大量入血 → 气道痉挛（airwayR↑）+ 血管扩张性低血压。',a:'肾上腺素肌注为一线，抗组胺药（Diphenhydramine）、激素，畅通气道。'},
+  Anaphylaxis:{n:'过敏样反应',g:'',m:'组胺大量入血 → 气道痉挛（airwayR↑）+ 血管扩张性低血压。',a:'肾上腺素肌注为一线，抗组胺药（Diphenhydramine）、激素，畅通气道。'},
   // ---- 阶段2: 术后/摄入新增病理键 ----
   PostSplenectomy:{n:'脾切除术后',g:'(LMOrgan.OperationEctomy·Spleen)',m:'脾滤血与免疫监视缺失：荚膜菌(肺炎链球菌等)易感风险终生升高；血小板储存池丢失致反应性血小板增多（可达 400-600×10⁹/L），静脉血栓风险上升。',a:'接种肺炎链球菌/脑膜炎球菌/流感嗜血杆菌疫苗；血小板>500×10⁹/L 时评估血栓预防。'},
   CholeFat:{n:'脂餐不耐受(胆囊切除术后)',g:'(LMOrgan.OperationEctomy·Gallbladder)',m:'胆囊储存/浓缩胆汁功能缺失，CCK 无囊可收缩；胆汁由肝持续低流量排入小肠，脂餐时乳化不足 → 腹胀、脂肪消化吸收不良、脂泻。',a:'低脂分餐；症状多在数月内随胆管代偿性扩张缓解；补充中链甘油三酯。'},
-  Alcohol:{n:'急性酒精中毒',g:'(ChemicalType Ethanol·血液酒精浓度 BAC)',m:'乙醇增强 GABAA、拮抗 NMDA → 镇静/共济失调；BAC>0.5‰ 呼吸中枢对 CO₂ 敏感性钝化 → 通气不足、高碳酸血症；>2.5‰ 可致呼吸循环衰竭。',a:'保持气道通畅、侧卧防误吸，监测 SpO₂/PaCO₂；通气不足时机械通气支持；乙醇氧化为零级动力学(~0.15‰/h)，无解毒药。'},
+  Alcohol:{n:'急性酒精中毒',g:'',m:'乙醇增强 GABAA、拮抗 NMDA → 镇静/共济失调；BAC>0.5‰ 呼吸中枢对 CO₂ 敏感性钝化 → 通气不足、高碳酸血症；>2.5‰ 可致呼吸循环衰竭。',a:'保持气道通畅、侧卧防误吸，监测 SpO₂/PaCO₂；通气不足时机械通气支持；乙醇氧化为零级动力学(~0.15‰/h)，无解毒药。'},
   RenalInsuff:{n:'肾功能不全(肾切除术后)',g:'(LMOrgan.OperationEctomy·Kidney·GFR)',m:'肾单位分数下降：GFR 先降至对侧肾代偿水平(单肾约 50%→渐进回升至 ~70%)，肌酐按 1/GFR^1.3 上移；排钾/排水能力下降 → 高钾与容量敏感。',a:'限制钾/钠负荷与液体入量，监测肌酐与 K⁺；双肾切除为不可存活状态（透析替代）。'},
   // ---- 阶段3: LMFRS 生殖周期新增病理键 ----
   Menstruation:{n:'月经期',g:'(LMFRS.UterusPhase.Menstruation)',m:'黄体溶解 → 雌/孕激素撤退 → 前列腺素(PGF2α)介导子宫收缩与血管挛缩 → 功能层内膜脱落出血（4-5 天，量先少后多再收尾）。前列腺素过高致子宫缺血性痉挛为原发痛经机制；经期 Hb 缓慢下降伴铁流失。',a:'痛经与经量过多：NSAIDs（布洛芬 Ibuprofen / 萘普生 Naproxen——抑制 COX 减少前列腺素合成）为一线；必要时加用对乙酰氨基酚；周期第 13-14 天为 LH 峰/排卵窗（受孕期）。'},
@@ -6632,7 +6632,7 @@ function closeDiag(){document.getElementById('diagBox').style.display='none';}
 function renderDiag(){
   const card=document.getElementById('diagCard');
   const items=diagItems();
-  let html='<div class="rhead"><h4>🩺 诊断 · 病理判定（LIDiagnosis）</h4><span class="rt">'+fmtT(S.t)+' · 监测 '+Object.keys(DIAG_LIB).length+' 项</span><button onclick="closeDiag()">✕ 关闭</button></div>';
+  let html='<div class="rhead"><h4>🩺 诊断 · 病理判定</h4><span class="rt">'+fmtT(S.t)+' · 监测 '+Object.keys(DIAG_LIB).length+' 项</span><button onclick="closeDiag()">✕ 关闭</button></div>';
   if(!items.length){
     html+='<div class="diagNone">目前未见异常 —— LIDiagnosis GoodCondition'+LAB_ARROW.ok+'<div class="sub">HR '+Math.round(S.hr)+' bpm · MAP '+Math.round(S.map)+' mmHg · SpO₂ '+Math.round(S.spo2)+'% · GCS '+S.gcs+'；引擎未检出活动性病理状态。</div></div>';
   }else{
@@ -6691,13 +6691,13 @@ function openOrganModal(id,name,text){
   if(S.ect&&S.ect[id]){
     html+='<div class="ectDone">✂ 已行<b>'+ECT_LIB[id].op+'</b>（LMOrganBase.OrganEctomy · 不可逆）<br>'+ectStatus(id)+'</div>';
   }else{
-    html+='<div class="ectInfo">🔧 游戏术式：<b>'+ECT_LIB[id].op+'</b> · '+ECT_LIB[id].desc+'</div>';
+    html+='<div class="ectInfo">🔧 术式：<b>'+ECT_LIB[id].op+'</b> · '+ECT_LIB[id].desc+'</div>';
     html+='<button class="ectBtn" onclick="ectAsk(\''+id+'\')">🔪 行'+ECT_LIB[id].op+'（不可逆）</button>';
   }
   document.getElementById('modalBody').innerHTML=html;
 }
 function ectAsk(id){
-  showConfirm('确认行 <b>'+ECT_LIB[id].op+'</b>？<br>术后改变<b style="color:#b3121c">不可逆</b>（游戏 OrganEctomy 语义——无法移植回植）。',()=>doEctomy(id));
+  showConfirm('确认行 <b>'+ECT_LIB[id].op+'</b>？<br>术后改变<b style="color:#b3121c">不可逆</b>（器官切除语义——无法移植回植）。',()=>doEctomy(id));
 }
 function doEctomy(id){
   if(!id||!ECT_LIB[id]||(S.ect&&S.ect[id]))return;
@@ -6722,7 +6722,7 @@ function doEctomy(id){
   if(typeof renderOrganStrip==='function')renderOrganStrip();
   openOrganModal(id,document.getElementById('modalTitle').textContent.split(' · ')[0],null);
 }
-function openEncyclopedia(){openModal('医学百科（'+Object.keys(ENCYC).length+' 条 · 游戏文本）','');renderEncList();}
+function openEncyclopedia(){openModal('医学百科（'+Object.keys(ENCYC).length+' 条）','');renderEncList();}
 function openChemPicker(){
  openModal('药典 · 全部药物','');document.getElementById('encSearch').style.display='none';
  const body=document.getElementById('modalBody');body.style.whiteSpace='normal';
@@ -7497,16 +7497,16 @@ function collectPathConds(add){
 // ---- 诊断目录/图标映射注册(DIAG_LIB·ICON_LIB 运行期挂载) ----
 if(typeof DIAG_LIB!=='undefined'){
   Object.assign(DIAG_LIB,{
-    ViralInfection:{n:'病毒感染(病原血症)',g:'(ConditionType 无病毒血症项·以 CellType 病原体通道承载——新增非原生,构建获得)',m:'病原体接种后指数复制,经组织趋向播散;免疫应答(淋巴细胞/中性粒细胞动员)产生致热源→发热,清除率 ∝ 免疫强度×(1-免疫抑制)。',a:'游戏治疗哲学=支持疗法:退热(对乙酰氨基酚/物理降温)、补液、氧疗;免疫球蛋白(新增非原生制剂)提供被动免疫支持提升清除率;免疫低下者(ponents HIV/脾切除)清除 slower——防机会性感染。'},
-    LRTI:{n:'下呼吸道感染(病毒性肺炎)',g:'(ConditionType 无 LRTI 项·CellType Influenza/Coronavirus/RSV 下呼吸道趋向)',m:'肺实质炎症:气道水肿(airwayR↑)+通气-血流失衡 → SpO₂ 下降、呼吸驱动代偿受限;重症需呼吸支持。',a:'氧疗:高流量吸氧;重症机械通气(FiO₂+PEEP 肺泡复张);退热;哮鸣可闻时 β2 激动剂缓解气道痉挛——等待免疫清除,无抗病毒药。'},
-    URTI:{n:'上呼吸道感染',g:'(CellType Rhinovirus/Adenovirus 上呼吸道趋向·自限性)',m:'鼻咽黏膜炎症:咳嗽/喷嚏为飞沫排出机制(传染载体);自限性病程,免疫清除后症状消退。',a:'对症:镇咳/退热;飞沫隔离(口罩)阻断传播;无需特异性治疗。'},
-    Gastroenteritis:{n:'急性胃肠炎(吐泻)',g:'(ConditionType Vomitting/Nausea 载体·CellType Rotavirus/Norovirus 消化道趋向)',m:'肠黏膜炎症→分泌性腹泻+呕吐:大量等渗液丢失 → 低血容量、Hb 浓缩、失钾(低钾血症)。',a:'核心=补液:口服补液(水/电解质)或静脉补液,目标纠正浓缩与血钾;吐泻期自限,支持度过免疫清除期。'},
-    LiverInjury:{n:'急性肝损伤(肝炎)',g:'(CellType HAV/HBV/HCV/HDV 肝脏趋向)',m:'肝细胞损伤:凝血因子合成↓(出血倾向)、糖异生↓(低血糖倾向)、解毒能力↓(代谢性酸中毒倾向)。',a:'支持疗法:维持血糖(葡萄糖供给)、监测凝血,避免肝毒性药物;甲肝多为自限性,免疫清除后肝功能恢复。'},
-    Sepsis:{n:'脓毒症(感染性)',g:'(ChemicalType 无抗生素·以"免疫支持+器官支持"路径承载——游戏治疗哲学)',m:'病原播散入血:内毒素样效应 → 血管扩张性低血压(SVR↓)+高热+多器官灌注不足。',a:'器官支持:液体复苏+血管活性药(去甲肾上腺素)维持 MAP≥65;免疫球蛋白(新增非原生)被动免疫助清除;纠正电解质(补钾);体温管理。'},
-    ImmunOsuppressed:{n:'免疫抑制(淋巴细胞耗竭)',g:'(ConditionType 无对应项·HIV CD4⁺ 耗竭/脾切除术后免疫低下——新增非原生)',m:'HIV 感染淋巴细胞:CD4⁺ 池进行性耗竭 → 病原清除率下降、机会性感染复制加速,轻症病原体亦可致重症。',a:'免疫球蛋白被动支持;严格防机会性感染;病原接种后需更积极的支持疗法与更长观察期。'},
-    Immunosuppressed:{n:'免疫抑制(淋巴细胞耗竭)',g:'(ConditionType 无对应项·HIV CD4⁺ 耗竭/脾切除术后免疫低下——新增非原生)',m:'HIV 感染淋巴细胞:CD4⁺ 池进行性耗竭 → 病原清除率下降、机会性感染复制加速,轻症病原体亦可致重症。',a:'免疫球蛋白被动支持;严格防机会性感染;病原接种后需更积极的支持疗法与更长观察期。'},
-    Coughing:{n:'咳嗽(进行中)',g:'(ConditionType 无症状键·CellType 病原气道刺激——症状键,新增非原生)',m:'气流高速冲出携带病原飞沫——呼吸道传染病核心传播机制(可视化为口鼻锥形白色粒子团)。',a:'飞沫隔离;对症镇咳(右美沙芬 Dextromethorphan);治疗 underlying 感染靠免疫清除。'},
-    Sneezing:{n:'喷嚏(进行中)',g:'(ConditionType 无症状键——症状键,新增非原生)',m:'上呼吸道刺激反射:气流>30m/s 播散飞沫核——传染性气溶胶主要来源。',a:'飞沫隔离(口罩/负压);对症处理鼻咽刺激源。'},
+    ViralInfection:{n:'病毒感染(病原血症)',g:'',m:'病原体接种后指数复制,经组织趋向播散;免疫应答(淋巴细胞/中性粒细胞动员)产生致热源→发热,清除率 ∝ 免疫强度×(1-免疫抑制)。',a:'游戏治疗哲学=支持疗法:退热(对乙酰氨基酚/物理降温)、补液、氧疗;免疫球蛋白(新增非原生制剂)提供被动免疫支持提升清除率;免疫低下者(ponents HIV/脾切除)清除 slower——防机会性感染。'},
+    LRTI:{n:'下呼吸道感染(病毒性肺炎)',g:'',m:'肺实质炎症:气道水肿(airwayR↑)+通气-血流失衡 → SpO₂ 下降、呼吸驱动代偿受限;重症需呼吸支持。',a:'氧疗:高流量吸氧;重症机械通气(FiO₂+PEEP 肺泡复张);退热;哮鸣可闻时 β2 激动剂缓解气道痉挛——等待免疫清除,无抗病毒药。'},
+    URTI:{n:'上呼吸道感染',g:'',m:'鼻咽黏膜炎症:咳嗽/喷嚏为飞沫排出机制(传染载体);自限性病程,免疫清除后症状消退。',a:'对症:镇咳/退热;飞沫隔离(口罩)阻断传播;无需特异性治疗。'},
+    Gastroenteritis:{n:'急性胃肠炎(吐泻)',g:'',m:'肠黏膜炎症→分泌性腹泻+呕吐:大量等渗液丢失 → 低血容量、Hb 浓缩、失钾(低钾血症)。',a:'核心=补液:口服补液(水/电解质)或静脉补液,目标纠正浓缩与血钾;吐泻期自限,支持度过免疫清除期。'},
+    LiverInjury:{n:'急性肝损伤(肝炎)',g:'',m:'肝细胞损伤:凝血因子合成↓(出血倾向)、糖异生↓(低血糖倾向)、解毒能力↓(代谢性酸中毒倾向)。',a:'支持疗法:维持血糖(葡萄糖供给)、监测凝血,避免肝毒性药物;甲肝多为自限性,免疫清除后肝功能恢复。'},
+    Sepsis:{n:'脓毒症(感染性)',g:'',m:'病原播散入血:内毒素样效应 → 血管扩张性低血压(SVR↓)+高热+多器官灌注不足。',a:'器官支持:液体复苏+血管活性药(去甲肾上腺素)维持 MAP≥65;免疫球蛋白(新增非原生)被动免疫助清除;纠正电解质(补钾);体温管理。'},
+    ImmunOsuppressed:{n:'免疫抑制(淋巴细胞耗竭)',g:'',m:'HIV 感染淋巴细胞:CD4⁺ 池进行性耗竭 → 病原清除率下降、机会性感染复制加速,轻症病原体亦可致重症。',a:'免疫球蛋白被动支持;严格防机会性感染;病原接种后需更积极的支持疗法与更长观察期。'},
+    Immunosuppressed:{n:'免疫抑制(淋巴细胞耗竭)',g:'',m:'HIV 感染淋巴细胞:CD4⁺ 池进行性耗竭 → 病原清除率下降、机会性感染复制加速,轻症病原体亦可致重症。',a:'免疫球蛋白被动支持;严格防机会性感染;病原接种后需更积极的支持疗法与更长观察期。'},
+    Coughing:{n:'咳嗽(进行中)',g:'',m:'气流高速冲出携带病原飞沫——呼吸道传染病核心传播机制(可视化为口鼻锥形白色粒子团)。',a:'飞沫隔离;对症镇咳(右美沙芬 Dextromethorphan);治疗 underlying 感染靠免疫清除。'},
+    Sneezing:{n:'喷嚏(进行中)',g:'',m:'上呼吸道刺激反射:气流>30m/s 播散飞沫核——传染性气溶胶主要来源。',a:'飞沫隔离(口罩/负压);对症处理鼻咽刺激源。'},
     Vomiting:{n:'呕吐(进行中)',g:'ConditionType Vomitting(病理键对齐既有枚举)',m:'消化道病原刺激呕吐中枢/胃黏膜→胃内容物排出:体液与电解质急性丢失。',a:'停止经口进食、防误吸;少量多次补液;频发时止吐(组胺 H1/D2 类,本引擎 Diphenhydramine 可用)。'}
   });
 }
@@ -7723,7 +7723,7 @@ function patientRegisterPathogens(){
   const BACT=Object.keys(PATH_LIB).filter(k=>PATH_LIB[k].kind==='bacterium');
   mk('病原体接种·病毒（CellType '+VIRUS.length+' 种·剂量=接种量）',VIRUS.map(k=>[k,'🦠 '+PATH_LIB[k].zh+'（'+k+'）·'+TROP_ZH[PATH_LIB[k].trop]]));
   mk('病原体接种·细菌（CellType '+BACT.length+' 种）',BACT.map(k=>[k,'🧫 '+PATH_LIB[k].zh+'（'+k+'）·'+TROP_ZH[PATH_LIB[k].trop]]));
-  mk('免疫支持（新增非原生·构建获得）',[['ImmunGlobulin','🧪 免疫球蛋白（ImmunGlobulin）·被动免疫支持——非游戏原生 ChemicalType,构建新增;不属抗病毒药']]);
+  mk('免疫支持（新增制剂）',[['ImmunGlobulin','🧪 免疫球蛋白（ImmunGlobulin）·被动免疫支持——免疫支持疗法;不属抗病毒药']]);
 }
 
 // ================= 阶段6 新病例 17~22(全部可玩赢: 支持疗法+时机; 胜利路径入断言) =================
@@ -7769,7 +7769,7 @@ CASES.push(
     {txt:'中枢保护: GCS ≥12 持续',hold:20,test:function(){return pathPeaked('MeaslesVIrus')&&S.gcs>=12;}},
     {txt:'免疫清除: 麻疹病毒负荷 <10%(峰值后)',hold:10,test:function(){return pathPeaked('MeaslesVIrus')&&pathFrac('MeaslesVIrus')<0.10;}}]},
  {id:'sepsis',name:'混合感染·脓毒症',diff:5,limit:540,
-  desc:'大肠杆菌播散入血:感染性血管扩张性低血压(MAP 崩)+高热+吐泻失钾(K⁺ 2.9)。无抗生素时代(游戏 ChemicalType 无抗生素)——液体复苏+去甲肾上腺素+被动免疫+补钾的器官支持组合拳。',
+  desc:'大肠杆菌播散入血:感染性血管扩张性低血压(MAP 崩)+高热+吐泻失钾(K⁺ 2.9)。当前时代无抗生素可用——液体复苏+去甲肾上腺素+被动免疫+补钾的器官支持组合拳。',
   apply:function(){pathInoculate('EColi',18);S.pathogens['EColi'].load=0.55;S.k=2.9;S.imm.act=0.1;},
   failIf:function(){return S.dead?('患者死亡：'+S.deathCause):((S.shkT||0)>90?('脓毒性休克失代偿：MAP<50 持续 '+Math.round(S.shkT)+'s——未液体复苏+血管活性药维持灌注'):null);},
   goals:[
