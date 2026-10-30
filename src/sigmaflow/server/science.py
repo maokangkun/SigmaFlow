@@ -74,6 +74,8 @@ from .science_admin import (
     _effective_compaction,
     _effective_system_prompts,
     _load_compaction_config,
+    _memory_recall_enabled,
+    _save_memory_config,
     _load_skill_overrides,
     _load_system_prompt_config,
     _load_tool_overrides,
@@ -302,6 +304,11 @@ class MCPIn(BaseModel):
 class SystemPromptIn(BaseModel):
     prompt: Optional[str] = None
     enabled: Optional[bool] = None
+
+
+class MemorySettingsIn(BaseModel):
+    # 跨会话记忆: recall=None 表示不修改
+    recall: Optional[bool] = None
 
 
 class CompactionIn(BaseModel):
@@ -2034,6 +2041,19 @@ class ScienceAPI:
         @router.get("/compaction")
         async def get_compaction():
             return {"compaction": await asyncio.to_thread(_effective_compaction)}
+
+        @router.get("/memory-settings")
+        async def get_memory_settings():
+            return {"memory": {"recall": await asyncio.to_thread(_memory_recall_enabled)}}
+
+        @router.post("/memory-settings")
+        async def save_memory_settings(payload: MemorySettingsIn, request: Request):
+            _check_origin(request)
+            if payload.recall is not None:
+                await asyncio.to_thread(
+                    _save_memory_config, {"recall": bool(payload.recall)}
+                )
+            return {"memory": {"recall": await asyncio.to_thread(_memory_recall_enabled)}}
 
         @router.get("/tool-result-limit")
         async def get_tool_result_limit():
@@ -4169,15 +4189,17 @@ def _bind_main_system(
     bound_system += _model_caption(model_name, model_ctx)
     if plan_mode:
         bound_system = bound_system + _PLAN_MODE_PROMPT
-    # s09 记忆注入: 索引常驻 + 与当前请求关键词相关的记录(零模型调用, 纯词法召回)
-    try:
-        from sigmaflow.agent import harness as _harness
+    if _memory_recall_enabled():
+        # s09 记忆注入: 索引常驻 + 与当前请求关键词相关的记录(零模型调用, 纯词法召回);
+        # 设置页 memory.json 可整体关闭(recall=false 时不注入 # Memory 段)
+        try:
+            from sigmaflow.agent import harness as _harness
 
-        _memory_block = _harness.memory_recall_for(last_user)
-        if _memory_block:
-            bound_system += f"\n\n# Memory\n{_memory_block}"
-    except Exception as _mem_err:
-        logging.getLogger("uvicorn.error").info("memory recall skipped: %s", _mem_err)
+            _memory_block = _harness.memory_recall_for(last_user)
+            if _memory_block:
+                bound_system += f"\n\n# Memory\n{_memory_block}"
+        except Exception as _mem_err:
+            logging.getLogger("uvicorn.error").info("memory recall skipped: %s", _mem_err)
     return bound_system
 
 

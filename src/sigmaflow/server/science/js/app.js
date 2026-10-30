@@ -805,7 +805,11 @@
   };
   // 系统提示词设置: 懒加载内置默认与自定义配置; 草稿仅含 prompt/enabled
   CS.loadSystemPrompt = async () => {
-    if (CS.ui.systemPrompt) return;
+    if (!CS.ui.memSettings) {
+      try { CS.ui.memSettings = (await CS.api.request('/memory-settings')).memory || { recall: true }; }
+      catch { CS.ui.memSettings = { recall: true }; }
+    }
+    if (CS.ui.systemPrompt) { CS.render(); return; }
     try {
       const d = await CS.api.request('/system-prompt');
       CS.ui.systemPrompt = d;
@@ -2356,6 +2360,15 @@
         CS.render();
         CS.toast('已恢复默认压缩参数。');
       } catch (error) { CS.toast('恢复失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'memory-recall-toggle': async () => {
+      const on = !(CS.ui.memSettings && CS.ui.memSettings.recall);
+      try {
+        const r = await CS.api.request('/memory-settings', { method: 'POST', body: JSON.stringify({ recall: on }) });
+        CS.ui.memSettings = r.memory || { recall: on };
+        CS.render();
+        CS.toast(on ? '跨会话记忆已开启，下一轮生效。' : '跨会话记忆已关闭，下一轮生效。');
+      } catch (error) { CS.toast('保存失败：' + CS.api.friendlyError(error), 'error'); }
     },
     'sysprompt-toggle': () => {
       const d = CS.ui.syspromptDraft || (CS.ui.syspromptDraft = { prompt: '', enabled: false });

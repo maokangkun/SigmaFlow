@@ -953,6 +953,34 @@ def _compaction_config_path() -> str:
     return os.path.join(_science_data_root(), "compaction.json")
 
 
+def _memory_config_path() -> str:
+    return os.path.join(_science_data_root(), "memory.json")
+
+
+def _load_memory_config() -> dict:
+    try:
+        with open(_memory_config_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_memory_config(cfg: dict) -> None:
+    path = _memory_config_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+
+
+def _memory_recall_enabled() -> bool:
+    # 跨会话记忆开关: 未配置默认开启; memory.json {"recall": false} 时
+    # _bind_main_system 跳过 # Memory 段注入
+    return bool(_load_memory_config().get("recall", True))
+
+
 def _load_compaction_config() -> dict:
     try:
         with open(_compaction_config_path(), encoding="utf-8") as fh:
