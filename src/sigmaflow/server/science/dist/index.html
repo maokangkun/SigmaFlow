@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="c8c5fbac">
+<meta name="build" content="aeee5ae1">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1255,7 +1255,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 #patient-root .pat-topbtns button:active{box-shadow:var(--shadow-inset);transform:none}
 
 /* ===== 主区两栏 ===== */
-#patient-root .pat-main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) clamp(320px,26vw,430px);gap:10px;min-height:0}
+#patient-root .pat-main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) clamp(300px,24vw,400px);gap:10px;min-height:0}
 #patient-root .pat-mid{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
 #patient-root .pat-aside{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
 
@@ -1277,8 +1277,8 @@ html[data-motion="reduced"] #anchor-tip{display:none}
   border-bottom:1px solid #1a2434}
 #patient-root .pat-waves .lane:last-child{border-bottom:none}
 #patient-root .lane canvas{flex:1;height:100%;min-width:0;display:block;background:transparent}
-#patient-root .laneNum{width:118px;flex:none;display:flex;flex-direction:column;justify-content:center;
-  gap:1px;padding:0 9px;background:#0e1626;border-left:1px solid #1a2434}
+#patient-root .laneNum{width:96px;flex:none;display:flex;flex-direction:column;justify-content:center;
+  gap:1px;padding:0 7px;background:#0e1626;border-left:1px solid #1a2434}
 #patient-root .laneNum .lab{font-size:8.5px;letter-spacing:1px;color:var(--pat-ink-dim);line-height:1.15}
 #patient-root .laneNum .val{font-family:var(--mono);font-size:19px;font-weight:600;line-height:1.02;
   text-shadow:0 0 9px currentColor}
@@ -1287,21 +1287,21 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 #patient-root #etco2v{font-size:10px;color:var(--pat-ink-dim)}
 #patient-root .laneNum.crit .val{color:var(--pat-led-crit)!important;animation:patBlink .9s infinite}
 #patient-root .laneNum.warn .val{color:var(--pat-led-warn)!important}
-#patient-root #numCols{flex:none;width:252px;display:grid;grid-template-columns:1fr 1fr;
-  grid-auto-rows:1fr;gap:4px;padding-left:5px}
+#patient-root #numCols{flex:none;width:206px;display:grid;grid-template-columns:1fr 1fr;
+  grid-auto-rows:1fr;gap:4px;padding-left:4px}
 /* 第三列: 生殖周期 + 病理监测(与数字塔同色系的暗玻璃栏) */
-#patient-root .pat-side{flex:none;width:186px;padding:7px 10px;overflow-y:auto;background:#0e1626;
+#patient-root .pat-side{flex:none;width:148px;padding:6px 8px;overflow-y:auto;background:#0e1626;
   border-left:1px solid #1a2434;display:flex;flex-direction:column;gap:3px}
 #patient-root .pat-side-lab{font-size:8.5px;letter-spacing:1.5px;color:var(--pat-ink-dim);
   margin:2px 0 1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #patient-root .pat-side .pat-side-lab:not(:first-child){margin-top:6px}
-#patient-root .pat-side #frsInfo{font-size:10.5px;line-height:1.55;color:#9fd4ec;background:none;
+#patient-root .pat-side #frsInfo{font-size:10px;line-height:1.5;color:#9fd4ec;background:none;
   box-shadow:none;padding:0;border-radius:0}
-#patient-root .pat-side .pathItem{font-size:10.5px;color:#ffb347;line-height:1.55;
+#patient-root .pat-side .pathItem{font-size:10px;color:#ffb347;line-height:1.5;
   border-bottom:1px dashed #1a2434;padding-bottom:2px}
 #patient-root .pat-side .pathItem.crit{color:var(--pat-led-crit);font-weight:600}
-#patient-root .pat-side .pathNone{font-size:10.5px;color:var(--pat-ink-dim);line-height:1.55}
-#patient-root .numTile{background:#0e1626;border-radius:7px;padding:2px 8px 3px;
+#patient-root .pat-side .pathNone{font-size:10px;color:var(--pat-ink-dim);line-height:1.5}
+#patient-root .numTile{background:#0e1626;border-radius:7px;padding:2px 7px 3px;
   display:flex;flex-direction:column;justify-content:center}
 #patient-root .numTile .lab{font-size:8.5px;letter-spacing:.5px;color:var(--pat-ink-dim);line-height:1.15}
 #patient-root .numTile .val{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--pat-ink);line-height:1.1}
@@ -1550,16 +1550,24 @@ html[data-motion="reduced"] #anchor-tip{display:none}
   font-size:12.5px;color:var(--ink);box-shadow:var(--shadow-small)}
 #patient-root #caseEndCard button.pri{background:var(--green-bg);color:var(--green);font-weight:650}
 @keyframes patBlink{50%{opacity:.4}}
-/* ===== 窄屏: 两栏折纵排, 监护仅不再锁高 ===== */
-@media(max-width:1000px){
-  .page.patient-page{padding:0}
-  #patient-root{height:auto;min-height:0}
+/* ===== 笔记本档(≤1420px): 指标列再收窄——波形列保住可用宽度 ===== */
+@media(max-width:1420px){
+  #patient-root .laneNum{width:88px;padding:0 6px}
+  #patient-root #numCols{width:176px}
+  #patient-root .pat-side{width:122px;padding:6px}
+}
+/* ===== ≤1200px: 屏内改纵向堆叠(波形→数字塔→侧列), 波形拿回全宽 ===== */
+@media(max-width:1200px){
   #patient-root .pat-screen{flex-direction:column}
   #patient-root #numCols{width:100%;grid-template-columns:repeat(4,1fr);grid-auto-rows:auto;
     padding-left:0;padding-top:4px}
-  #patient-root .pat-side{width:100%;border-left:none;border-top:1px solid #1a2434;
-    padding-left:0;padding-right:0}
+  #patient-root .pat-side{width:100%;border-left:none;border-top:1px solid #1a2434}
   #patient-root .pat-waves .lane:last-child{border-bottom:1px solid #1a2434}
+}
+/* ===== 窄屏: 两栏折纵排, 监护仪不再锁高 ===== */
+@media(max-width:1000px){
+  .page.patient-page{padding:0}
+  #patient-root{height:auto;min-height:0}
   /* 窄屏顶栏(移动菜单按钮行)存在, 页面改纵向滚动后无需消除 */
   #patient-root .pat-main{grid-template-columns:1fr}
   #patient-root .pat-mid #body3d{min-height:380px}
