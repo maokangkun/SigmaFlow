@@ -239,12 +239,12 @@
 #patient-root #foodInfo{font-size:10.5px;color:var(--faint);background:var(--inset);border-radius:9px;
   padding:5px 8px;line-height:1.55;box-shadow:var(--shadow-inset)}
 #patient-root #emZone,#patient-root #ventZone{padding:9px 14px 12px;display:flex;flex-direction:column;gap:7px}
-#patient-root .emRow{display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--muted)}
+#patient-root .emRow{display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--muted);min-width:0}
 #patient-root .emRow .emLab{min-width:auto;letter-spacing:0}
 /* 急救台滑杆: 轨道定长, 圆圈位置贴近数值读数; 标签列定宽令五条滑轨左缘成列, 禁止折行(窄卡下 CJK 会逐字竖排) */
-#patient-root .emRow .emLab{white-space:nowrap;width:66px;min-width:66px;flex:0 0 66px}
-#patient-root .emRow input[type=range]{flex:0 1 128px;max-width:128px;min-width:64px}
-#patient-root .emVal{font-family:var(--mono);font-size:11.5px;color:var(--ink);min-width:34px;text-align:right}
+#patient-root .emRow .emLab{white-space:nowrap;width:52px;min-width:52px;flex:0 0 52px}
+#patient-root .emRow input[type=range]{flex:0 1 96px;max-width:96px;min-width:64px}
+#patient-root .emVal{font-family:var(--mono);font-size:11.5px;color:var(--ink);min-width:28px;text-align:right;white-space:nowrap}
 #patient-root .emUnit{font-size:9.5px;color:var(--faint)}
 #patient-root .enBtns{display:flex;gap:6px;flex:1}
 #patient-root .enBtn{flex:1;padding:5px 0;font-size:10.5px;background:var(--surface);color:var(--muted);
