@@ -161,7 +161,7 @@
 #patient-root #heartBox #organStrip .svgIco{width:15px;height:15px;display:block}
 #patient-root #heartBox #organStrip .svgIco svg{width:100%;height:100%;display:block}
 /* 心脏图标(Blood.png 白色血滴)染成血红, 浅色 chip 上清晰可辨; 略小于通用图标 */
-#patient-root #heartBox #organStrip button img.bloodTint{height:12px;
+#patient-root #heartBox #organStrip button img.bloodTint{height:14px;
   filter:brightness(0) saturate(100%) invert(24%) sepia(89%) saturate(5000%) hue-rotate(340deg) brightness(92%) contrast(88%)}
 #patient-root #heartBox #organStrip button img{display:block;image-rendering:-webkit-optimize-contrast}
 #patient-root #organStripBig button img{height:16px}
