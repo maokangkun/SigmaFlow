@@ -346,10 +346,9 @@
             <div id="pathList"></div>
           </div></div><div class="pat-bezel-brand" aria-hidden="true"></div></div>
           <div id="statusStrip"></div>
-          <div id="diagBar"><button type="button" onclick="showDiagnosis()">🩺 诊断 · 病理判定</button><span class="hint">引擎监测 20+ 病理状态 → LIDiagnosis 风格判定；采血化验在右侧急救台</span></div>
         </section>
         <section id="body3d">
-          <div class="bhead"><h3>3D 全身器官</h3><button type="button" id="btnSpread" onclick="toggleSpread()">⇔ 分离</button><button type="button" onclick="toggleBig3d()">⛶ 大图</button></div>
+          <div class="bhead"><h3>3D 全身器官</h3><button type="button" id="btnSpread" onclick="toggleSpread()">⇔ 分离</button><button type="button" class="btnDiag" onclick="showDiagnosis()">🩺 诊断 · 病理判定</button><button type="button" onclick="toggleBig3d()">⛶ 大图</button></div>
           <div id="heartBox"><canvas id="h3d"></canvas><div class="tag">WebGL 渲染 · 拖拽旋转 / 滚轮缩放 · 心搏呼吸同步 · 点器官查百科</div></div>
           <div id="organStrip"></div>
         </section>

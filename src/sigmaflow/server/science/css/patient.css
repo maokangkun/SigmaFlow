@@ -58,7 +58,6 @@
 #patient-root #waves{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;min-height:0;flex:none}
 #patient-root #waves .pat-bezel{grid-column:1;grid-row:1;align-self:start;justify-self:start}
 #patient-root #waves #statusStrip{grid-column:2;grid-row:1;align-self:start}
-#patient-root #waves #diagBar{grid-column:2;grid-row:2;align-self:start;flex-wrap:wrap}
 #patient-root .pat-bezel{background:linear-gradient(180deg,var(--pat-bezel-a),var(--pat-bezel-b));
   border-radius:16px;padding:8px 8px 4px;position:relative;
   box-shadow:0 14px 28px rgba(23,31,49,.24),inset 0 1px 0 rgba(255,255,255,.12),inset 0 -2px 0 rgba(0,0,0,.32)}
@@ -118,10 +117,9 @@
 #patient-root .laneNum .val,#patient-root .laneNum .unit,#patient-root #etco2v,
 #patient-root .numTile .val,#patient-root .numTile .unit{text-align:right}
 #patient-root #frsInfo:empty{display:none}
-#patient-root #diagBar{display:flex;gap:8px;align-items:center;padding:2px 4px 0}
-#patient-root #diagBar button{flex:none;background:var(--surface);border-radius:9px;padding:5px 12px;
-  font-size:11.5px;font-weight:600;color:var(--accent-dark);box-shadow:var(--shadow-small)}
-#patient-root #diagBar button:active{box-shadow:var(--shadow-inset)}
+#patient-root #body3d .bhead button.btnDiag{background:var(--accent-bg);color:var(--accent-dark);
+  font-weight:650}
+#patient-root #body3d .bhead button.btnDiag:active{box-shadow:var(--shadow-inset)}
 #patient-root #diagBar .hint{font-size:10.5px;color:var(--faint)}
 
 /* ===== 3D 全身器官(新拟态卡) ===== */
