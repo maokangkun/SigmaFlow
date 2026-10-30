@@ -72,7 +72,7 @@
   border-bottom:1px solid #1a2434}
 #patient-root .pat-waves .lane:last-child{border-bottom:none}
 #patient-root .lane canvas{flex:1;height:100%;min-width:0;display:block;background:transparent}
-#patient-root .laneNum{width:76px;flex:none;display:flex;flex-direction:column;justify-content:center;
+#patient-root .laneNum{width:68px;flex:none;display:flex;flex-direction:column;justify-content:center;
   gap:1px;padding:0 6px;background:#0e1626;border-left:1px solid #1a2434}
 #patient-root .laneNum .lab{font-size:8.5px;letter-spacing:1px;color:var(--pat-ink-dim);line-height:1.15}
 #patient-root .laneNum .val{font-family:var(--mono);font-size:19px;font-weight:600;line-height:1.02;
@@ -82,11 +82,11 @@
 #patient-root #etco2v{font-size:10px;color:var(--pat-ink-dim)}
 #patient-root .laneNum.crit .val{color:var(--pat-led-crit)!important;animation:patBlink .9s infinite}
 #patient-root .laneNum.warn .val{color:var(--pat-led-warn)!important}
-#patient-root #numCols{flex:none;width:160px;display:grid;grid-template-columns:1fr 1fr;
+#patient-root #numCols{flex:none;width:144px;display:grid;grid-template-columns:1fr 1fr;
   grid-auto-rows:1fr;gap:4px;padding-left:4px}
 /* 第三列: 生殖周期 + 病理监测(与数字塔同色系的暗玻璃栏) */
-#patient-root .pat-side{flex:none;width:112px;padding:6px 7px;overflow-y:auto;background:#0e1626;
-  border-left:1px solid #1a2434;display:flex;flex-direction:column;gap:3px}
+#patient-root .pat-side{flex:none;width:68px;padding:5px 7px;overflow-y:auto;background:#0e1626;
+  border-left:1px solid #1a2434;display:flex;flex-direction:column;gap:2px}
 #patient-root .pat-side-lab{font-size:8.5px;letter-spacing:1.5px;color:var(--pat-ink-dim);
   margin:2px 0 1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #patient-root .pat-side .pat-side-lab:not(:first-child){margin-top:6px}
@@ -345,13 +345,21 @@
   font-size:12.5px;color:var(--ink);box-shadow:var(--shadow-small)}
 #patient-root #caseEndCard button.pri{background:var(--green-bg);color:var(--green);font-weight:650}
 @keyframes patBlink{50%{opacity:.4}}
-/* ===== 笔记本档(≤1420px): 三右列压到最小, 波形仍是主角 ===== */
+/* ===== 笔记本档(≤1420px): 四右列统一 58px, 波形仍是主角 ===== */
 @media(max-width:1420px){
-  #patient-root .laneNum{width:66px;padding:0 5px}
-  #patient-root #numCols{width:146px}
-  #patient-root .pat-side{width:96px;padding:5px 6px}
+  #patient-root .laneNum{width:58px;padding:0 4px}
+  #patient-root #numCols{width:124px}
+  #patient-root .pat-side{width:58px;padding:4px 5px}
   #patient-root .pat-side #frsInfo,#patient-root .pat-side .pathItem,
-  #patient-root .pat-side .pathNone{font-size:9px}
+  #patient-root .pat-side .pathNone{font-size:8.5px}
+  #patient-root .pat-side-lab{font-size:7.5px;letter-spacing:1px}
+  #patient-root .numTile .lab{font-size:7.5px}
+  #patient-root .numTile .val{font-size:13px}
+  #patient-root .numTile .unit{font-size:7px}
+  #patient-root .laneNum .val{font-size:17px}
+  #patient-root .laneNum .unit{font-size:8px}
+  #patient-root .laneNum .lab{font-size:7.5px;letter-spacing:.5px}
+  #patient-root #etco2v{font-size:8px}
   #patient-root .pat-main{grid-template-columns:minmax(0,1fr) clamp(232px,20vw,380px)}
 }
 /* ===== ≤1080px: 治疗台折到下方, 监护屏内部保持一行(读数|数字塔|病理) ===== */

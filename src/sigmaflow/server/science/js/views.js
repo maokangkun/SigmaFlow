@@ -340,7 +340,7 @@
             <div class="numTile" id="t-rhy"><div class="lab">心律</div><div class="val" style="font-size:15px">窦性</div><div class="unit">​</div></div>
           </div>
           <div class="pat-side">
-            <div class="pat-side-lab">生殖周期 · LMFRS</div>
+            <div class="pat-side-lab">生殖周期</div>
             <div id="frsInfo"></div>
             <div class="pat-side-lab">病理监测</div>
             <div id="pathList"></div>
