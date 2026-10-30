@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="dce56a8e">
+<meta name="build" content="aa0acb76">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -6540,31 +6540,41 @@ function doEctomy(id){
 }
 function openEncyclopedia(){openModal('医学百科（'+Object.keys(ENCYC).length+' 条 · 游戏文本）','');renderEncList();}
 function showEngineDoc(){
- const H=
- '<div style="font-size:12.5px;line-height:1.75;color:#33404f;max-height:62vh;overflow-y:auto;padding-right:6px">'
- +'<h4 style="margin:6px 0 4px;color:#0e7490">引擎是什么</h4>'
- +'<p>虚拟患者引擎是一个单文件生理模拟器，复刻自游戏二进制逆向得到的真实常量表（Il2CppDumper + capstone 反汇编，见 CAL 常量库）。'
- +'页面以纯全局函数驱动：<b>每 250ms 做一次生理步进</b>，每 50ms 刷新 ECG/脉搏/etCO₂ 三道波形扫掠，心跳音频同步心搏。</p>'
- +'<h4 style="margin:10px 0 4px;color:#0e7490">生理模型</h4>'
- +'<ul style="margin:0 0 0 18px;padding:0"><li>心血管：窦房结/房室结级联起搏、Frank-Starling 每搏量、压力与容量双重反射、外周阻力按血管活性受体分配。</li>'
- +'<li>呼吸：中枢+外周化学感受器（CO₂ 增益、SpO₂ 膝点），通气机可为有自主呼吸与控制通气两种模式。</li>'
- +'<li>肾脏与内分泌：GFR/肾素-醛固酮/抗利尿排水，胰岛 α/β 双轴（血糖↔胰岛素/胰高血糖素）、甲状腺轴与 HPA 应激轴。</li>'
- +'<li>LMFRS 生殖周期：月经→卵泡→排卵→黄体→黄体晚期的激素闭环，可在监护屏侧列实时读相位。</li>'
- +'<li>全身 23 个器官房室（点 3D 预览中的器官可查百科），血液按房室分发 O₂/CO₂、血糖、电解质、血药。</li></ul>'
- +'<h4 style="margin:10px 0 4px;color:#0e7490">药理与清除</h4>'
- +'<p>给药沿受房室→血液→靶器官房室扩散，受体按结合速率/解离池建模（肾上腺素、去甲、血管加压素、胰岛素等 160+ 药物词条）；'
- +'「代谢清除」按钮按半衰期加速衰减。</p>'
- +'<h4 style="margin:10px 0 4px;color:#0e7490">病理与死亡</h4>'
- +'<p>collectConds() 每拍从生理量与化验值成型 20+ 项病理判定，驱动报警横幅、状态图标条与「🩺 诊断」判定卡；'
- +'室颤、心搏骤停、失血性休克、低血糖昏迷等可致死，死亡后走复苏流程（人人按压 CPR / 除颤 / 肾上腺素）可复活，'
- +'或「撤除生命维持」宣告临床死亡。</p>'
- +'<h4 style="margin:10px 0 4px;color:#0e7490">病例系统</h4>'
- +'<p>内置 22 个预设病例（心肌梗死、过敏性休克、糖尿病酮症…），顶部「📋 病例」选择，进度存 localStorage；'
- +'治疗区（输注/饮食/急救）与采血化验均可自由组合干预。</p>'
- +'<h4 style="margin:10px 0 4px;color:#0e7490">监护屏读法</h4>'
- +'<p>左侧波形: ECG 绿 / 脉搏紫蓝 / etCO₂ 黄；四列数字塔+读数为实时生命体征（数值与单位右对齐）；'
- +'侧列自上而下为 LMFRS 生殖周期、病理监测、血药/介质（含内源胰岛素）。</p>'
- +'</div>';
+const H='<div style="font-size:12.5px;line-height:1.8;color:#33404f;max-height:62vh;overflow-y:auto;padding-right:6px">'
++'<h4 style="margin:2px 0 4px;color:#0e7490;font-size:13.5px">① 引擎概览</h4>'
++'<p style="margin:4px 0">虚拟患者引擎是一个<b>纯函数、单文件</b>的人体生理拟真器。数据层为两张构建期内联表：<b>GAMEDATA</b>（442 个枚举词条、147 个中文译名、304 条百科）与 <b>CAL</b>——对原始数据包做深度反汇编校准得到的数值常量库（引擎以字段名引用，重新校准只换表不动逻辑）。<b>层间解耦</b>：数据 / 模型 / 表现三层互不依赖。</p>'
++'<p style="margin:4px 0">模拟时钟：<code style="background:#e7eef4;padding:0 4px;border-radius:5px;font-size:11.5px">生理 tick 250ms · 波形 50ms · UI 300ms · 3D 60ms</code>。所有子系统用一阶指数逼近 <code style="background:#e7eef4;padding:0 4px;border-radius:5px;font-size:11.5px">x += (target−x)·dt·k</code>，保证大步长不发散——2000 步连续长跑实测无 NaN。</p>'
++'<h4 style="margin:12px 0 4px;color:#0e7490;font-size:13.5px">② 生理模型</h4>'
++'<p style="margin:4px 0"><b>起搏与心率</b>——SA 结固有 60 bpm，肾上腺素经 β1 占据最高 ×3（180 bpm），叠加紧张性 +12、交感·20 / 迷走·30、胆碱能 M2 与阿托品（去抑制 +45）、烟碱 +12、甲状腺激素变时 +30；<code style="background:#e7eef4;padding:0 4px;border-radius:5px;font-size:11.5px">MAP = CO·SVR·18·fluid</code>，<code style="background:#e7eef4;padding:0 4px;border-radius:5px;font-size:11.5px">CO = hr·contract·0.071</code>（EF 0.68、每搏 0.35 房缩分量）。</p>'
++'<p style="margin:4px 0"><b>压力反射</b>——感受器应变 ±2.1、斜率 ×7：低血压→交感兴奋、高血压→迷走兴奋，时间常数 ≈2.5s。<b>血管树</b>按受体占据折算阻力：α1 −20 / β2 +35 / EP2 +35 / 血管紧张素 −20 / 加压素 −20 / ANP +15 / H1 +10 / 糖皮质 +20 / 胰高血糖素 +400，系数 ×0.028 反号进入 SVR；高剂量肾上腺素时 α1 主导缩管（升压以肌力与心排间接放大）。</p>'
++'<p style="margin:4px 0"><b>受体药理</b>——占据模型 <code style="background:#e7eef4;padding:0 4px;border-radius:5px;font-size:11.5px">occ = c·pot/(1+c·pot)</code>（结合速率 0.01、解离池 60、部分激动剂效能 0.5）；拮抗剂与激动剂按占据相减实现<b>竞争逆转</b>；单胺类以转运体占据语义再摄取（DAT/NET/SERT=10）。</p>'
++'<p style="margin:4px 0"><b>呼吸</b>——气道阻力：β2/EP2 舒张、H1 组胺痉挛（CYSLTR1 −0.95 最强收缩）；通气驱动 <code style="background:#e7eef4;padding:0 4px;border-radius:5px;font-size:11.5px">rrT = 14 + ΔPaCO2·0.35 + SpO2 拐点(92) 驱动·0.5</code>；μ 阿片 −0.8 呼吸抑制（核心校准值），GABA 增敏、肌松 ≤2、机械通气直接覆盖 RR；<b>etCO₂ = PaCO₂·0.7</b>。</p>'
++'<p style="margin:4px 0"><b>肾脏与内环境</b>——GFR 基线 60 ml/min × 滤过系数 1.45；K⁺ 慢动态（小时级，肾排钾生理）；<b>pH</b> = 7.42 − 呼吸酸(0.008/mmHg) − 代酸 + HCO₃ 缓冲。</p>'
++'<p style="margin:4px 0"><b>代谢内分泌</b>——mg/dL 尺度（血糖 100 = 5.5 mmol/L，×18 换算）：胰岛 β 细胞增益 −0.006×1000 → 胰岛素 <code style="background:#e7eef4;padding:0 4px;border-radius:5px;font-size:11.5px">clamp((血糖mg −100)·0.036, 1.2, 30)</code>；α 细胞 +0.004 胰升糖素；肝糖原 1e−05；<b>体温</b>设定点 37°C（阈值 35/38/40），≈50 s/°C。</p>'
++'<p style="margin:4px 0"><b>中枢神经</b>——<code style="background:#e7eef4;padding:0 4px;border-radius:5px;font-size:11.5px">cnsDep = 1.5·GABAA + 0.8·μ + 0.55·ΣcnsD + 0.4·α2 + 0.4·CB1</code> 折入 GCS（缺氧/高 CO₂/低灌注/高糖另有扣分）；血脑屏障通透 0.08 已在药表折减。</p>'
++'<h4 style="margin:12px 0 4px;color:#0e7490;font-size:13.5px">③ 心律状态机与死亡判定</h4>'
++'<table style="width:100%;border-collapse:collapse;font-size:11.5px"><tr style="color:#5b6b7d;text-align:left"><th style="padding:2px 6px 4px">转移</th><th style="padding:2px 6px 4px">触发</th></tr>'
++'<tr><td style="border-top:1px solid #e3ebf2;padding:3px 6px">窦律 ⇄ 房颤</td><td style="border-top:1px solid #e3ebf2;padding:3px 6px">心率风暴 (>150) 概率 0.004/s</td></tr>'
++'<tr><td style="border-top:1px solid #e3ebf2;padding:3px 6px">→ 室速</td><td style="border-top:1px solid #e3ebf2;padding:3px 6px">K&gt;6.8 渐进、K&gt;7.4 直接室颤、hr&gt;195、心梗源 0.012/s</td></tr>'
++'<tr><td style="border-top:1px solid #e3ebf2;padding:3px 6px">室速 → 室颤 → 停搏</td><td style="border-top:1px solid #e3ebf2;padding:3px 6px">0.02/s、0.003/s；心率&lt;20 未起搏立即停搏</td></tr>'
++'<tr><td style="border-top:1px solid #e3ebf2;padding:3px 6px">除颤</td><td style="border-top:1px solid #e3ebf2;padding:3px 6px">室颤/室速成功率 0.83（急救台 120–360J）</td></tr></table>'
++'<p style="margin:4px 0">死亡为<b>多通道窗口判定</b>：停搏未复苏 240s（按压中 600s）｜ MAP&lt;15 ×180s ｜ SpO₂&lt;35 ×120s ｜ 血糖&lt;1.0 ×90s ｜ pH&lt;6.75 ×150s ｜ T&gt;43 ×240s。宣告后弹死亡报告：<b>直接死因</b>（死前 80s 病理窗主导推断）＋<b>基础病变</b>＋<b>存活时长</b>＋<b>时间线摘要</b>；「↺ 复苏重置」恢复，呼吸机/CPR/起搏在用时可「撤除生命维持 · 宣告临床死亡」（需确认）。</p>'
++'<h4 style="margin:12px 0 4px;color:#0e7490;font-size:13.5px">④ LMFRS 生殖周期</h4>'
++'<p style="margin:4px 0">28 天五相位闭环：<b>月经(1–5)→卵泡(6–12)→排卵(13–14)→黄体(15–26)→黄体溶解(27–28)</b>。HPO 轴四激素（FSH/LH/E2/P4）按相位目标一阶趋近：卵泡期 FSH↑ 卵泡发育、E2 渐升；<b>E2≥170 pg/mL 正反馈触发 LH 峰（≈55 IU/L）</b>；黄体期 P4↑ 分泌期。化验「性激素」组的参考范围<b>随相位动态判定</b>（同一 LH 值在排卵期正常、卵泡期偏高）。周期第 1–5 天出血窗口（经量曲线 0.25→1→收尾），Hb/血容量生理流失并入内环境，痛经提示 NSAIDs（布洛芬/萘普生 COX 抑制）；子宫切除后周期<b>停摆</b>——日历冻结、FSH/LH 失负反馈抑制（化验标红）、E2/P4 低平、3D 子宫节点灰阶。时间标度：1 周期天 = 60 模拟秒，28 分钟完整玩一轮。相位实时显示在监护屏侧列。</p>'
++'<h4 style="margin:12px 0 4px;color:#0e7490;font-size:13.5px">⑤ 监护表现层</h4>'
++'<table style="width:100%;border-collapse:collapse;font-size:11.5px"><tr style="color:#5b6b7d;text-align:left"><th style="padding:2px 6px 4px">通道</th><th style="padding:2px 6px 4px">合成模型</th></tr>'
++'<tr><td style="border-top:1px solid #e3ebf2;padding:3px 6px">ECG Ⅱ（绿）</td><td style="border-top:1px solid #e3ebf2;padding:3px 6px">高斯波元 P/Q/R/S/T 叠加，传导时序=除极间隔组；T 波形态随血钾（高钾尖峰、低钾低平）</td></tr>'
++'<tr><td style="border-top:1px solid #e3ebf2;padding:3px 6px">PLETH（青）</td><td style="border-top:1px solid #e3ebf2;padding:3px 6px">双高斯+重搏切迹，波幅 ∝ MAP/95（心肺偶联）</td></tr>'
++'<tr><td style="border-top:1px solid #e3ebf2;padding:3px 6px">etCO₂（黄）</td><td style="border-top:1px solid #e3ebf2;padding:3px 6px">四段方波：快速上升→平台→吸气下降，平台 ∝ PaCO₂</td></tr>'
++'<tr><td style="border-top:1px solid #e3ebf2;padding:3px 6px">扫掠</td><td style="border-top:1px solid #e3ebf2;padding:3px 6px">逐列清除 14px 前瞻带（真实监护仪「写头」效果），导联丢失显示平线</td></tr>'
++'<tr><td style="border-top:1px solid #e3ebf2;padding:3px 6px">心搏音</td><td style="border-top:1px solid #e3ebf2;padding:3px 6px">QRS 同步 880+4·SpO₂ Hz 短音（血氧越低音调越低——真实监护仪行为）</td></tr></table>'
++'<p style="margin:4px 0"><b>报警双阈（warn / crit）</b>：HR &lt;50/&gt;110（&lt;35/&gt;160）｜ SpO₂ &lt;93/&lt;85 ｜ RR &lt;8/&gt;26 ｜ MAP &lt;68/&gt;110（&lt;50/&gt;140）｜ 体温 &gt;37.8/&gt;40、&lt;35.8/&lt;33 ｜ K &lt;3.3/&gt;5.6（&gt;6.8 临界）｜ pH &lt;7.32/7.15 ｜ GCS &lt;13/≤8 ｜ 血糖 &lt;3.5/&gt;11（&lt;2.2/&gt;25）。横幅与数字块同步闪烁；状态图标条使用内置 80×80 素材（窒息/发热/出血/过敏/炎症/感染/昏迷…）。</p>'
++'<h4 style="margin:12px 0 4px;color:#0e7490;font-size:13.5px">⑥ 3D 全身器官预览</h4>'
++'<p style="margin:4px 0">23 个解剖器官组（脑 6 区、心脏四腔、消化链、生殖系、动静脉树等 46 个网格部件，全量三角网格）经 three.js + Draco 渲染（GLB 仅 0.46 MB），PBR 材质 = 器官图集 × 器官区隔色，RoomEnvironment 环境光 + ACES 色调映射。<b>生理联动</b>：心脏收缩缩放 <code style="background:#e7eef4;padding:0 4px;border-radius:5px;font-size:11.5px">1+0.10·e^(−8φ)·contract</code>（与波形/心搏音同相位）；双肺呼吸缩放 ±0.035·sin（机械通气同源 RR）；<b>昏迷时脑模型变暗</b>（0.35+0.75·GCS/15）；肾低灌注（MAP&lt;65）去饱和；病理粒子特效沿 8 个器官锚点喷射。「⇔ 分离」按质心方向 1.45× 外扩；<b>点击器官弹出该器官的百科词条</b>（医学百科 304 条）。</p>'
++'<h4 style="margin:12px 0 4px;color:#0e7490;font-size:13.5px">⑦ 病例与教学系统</h4>'
++'<p style="margin:4px 0">内置 <b>22 个预设病例</b>（急性心梗、过敏性休克、糖尿病酮症、高钾血症以及 LMFRS 周期与妇科病例等），「📋 病例」选择、进度存 localStorage。治疗区覆盖 160+ 药物词条（途径吸收系数 输注50/静推40/肌注10/口服1/贴敷0.002）、24 种饮食摄入（经口入肠腔房室吸收）、采血化验面板（含随生理状态动态判定的参考范围）。所有干预写入<b>事件记录</b>时间线，死亡报告直接引用。</p>'
++'<h4 style="margin:12px 0 4px;color:#0e7490;font-size:13.5px">⑧ 常数与验证</h4>'
++'<p style="margin:4px 0">CAL 全部常量与原始数据包<b>同源</b>（校准置信度分高/中两级，路径依赖处按生理学方向校验）。验证矩阵：Node harness 全基线（静息 72/92；肾上腺素 SA×3+压力反射；μ 抑制 RR 14→11；纳洛酮竞争逆转；高钾 8.0→室颤→除颤复律；β 细胞分泌与外源胰岛素降糖；1000s 稳定长跑），加上服务端 77 项回归与浏览器端到端挂接测试（病理判定、死亡报告、周期相位、监护像素）。本页面向<b>医学教育与急救模拟</b>用途：死亡是终点，但随时可以复苏重来。</p>';
  openModal('虚拟患者引擎 · 说明文档','');
  document.getElementById('modalBody').innerHTML=H;
 }
