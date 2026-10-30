@@ -1362,23 +1362,58 @@ function openChemPicker(){
  body.innerHTML='<input id="chemQ" type="text" placeholder="搜索 中文名 / 英文名…" style="width:100%;box-sizing:border-box;padding:7px 10px;border-radius:9px;border:none;background:var(--surface);box-shadow:var(--shadow-inset);font-size:12.5px;margin-bottom:6px" oninput="renderChemPicker()"><div id="chemListBody"></div>';
  renderChemPicker();
 }
+// 分类色板:八组循环(浅底色/分类标题色)
+const CHEM_PAL=[['#eef5fb','#2a6db5'],['#ecf7ef','#2e8b57'],['#fdf3e7','#b3121c'],['#f4eefb','#7a4fc9'],
+  ['#eefafA','#128090'],['#fbf0f4','#b03a6e'],['#f5f1ea','#8a6d3b'],['#eff1f4','#5b6b7d']];
+function encOfChem(c){
+ const zh=zhOf(c);
+ for(const k of [c,zh]){if(ENCYC[k])return {k,t:ENCYC[k]};}
+ const hit=Object.keys(ENCYC).find(k=>k.includes(zh)||zh.includes(k));
+ return hit?{k:hit,t:ENCYC[hit]}:null;
+}
 function renderChemPicker(){
  const list=document.getElementById('chemListBody');if(!list)return;
  const q=(document.getElementById('chemQ')||{value:''}).value.trim().toLowerCase();
  const cur=document.getElementById('chemSel').value;
  const used=new Set();
- const chip=c=>'<button type="button" style="text-align:left;padding:6px 9px;border-radius:8px;border:none;background:var(--surface);box-shadow:var(--shadow-small);font-size:11.5px;cursor:pointer;color:var(--ink)'+(c===cur?';box-shadow:var(--shadow-inset);background:var(--green-bg);color:var(--green);font-weight:650':'')+'" onclick="pickChem(\''+c+'\')"><b>'+zhOf(c)+'</b> <span style="color:var(--faint);font-size:10px">'+c+'</span></button>';
- let html='';
+ const chip=(c,pi)=>{
+   const enc=encOfChem(c);
+   const pal=CHEM_PAL[pi%CHEM_PAL.length];
+   let st='text-align:left;padding:7px 10px;border-radius:9px;border:none;background:'+pal[0]+';font-size:11.5px;cursor:pointer;color:'+pal[1]+'';
+   if(c===cur)st+=';box-shadow:var(--shadow-inset);outline:2px solid '+pal[1]+'55;font-weight:650';
+   else st+=';box-shadow:var(--shadow-small)';
+   const tip=enc?(enc.k+'·'+enc.t).slice(0,240):'「'+zhOf(c)+'（'+c+'）」暂无百科词条';
+   return '<button type="button" data-enc="'+tip+'" style="'+st+'" onclick="pickChem(\''+c+'\')"><b>'+zhOf(c)+'</b> <span style="opacity:.6;font-size:10px">'+c+'</span></button>';
+ };
+ let html='',pi=0;
  Object.entries(CATS).forEach(([cat,arr])=>{
    const items=arr.filter(c=>(CHEMS.includes(c)||HORMONES.includes(c))&&!used.has(c)&&(!q||c.toLowerCase().includes(q)||zhOf(c).includes(q)||zhOf(c).toLowerCase().includes(q)));
    if(!items.length)return;
    items.forEach(c=>used.add(c));
-   html+='<div style="font-size:10px;letter-spacing:1.5px;color:var(--faint);margin:10px 0 4px">'+cat+'</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:6px">'+items.map(chip).join('')+'</div>';
+   const pal=CHEM_PAL[pi%CHEM_PAL.length];
+   html+='<div style="font-size:10.5px;letter-spacing:1.5px;color:'+pal[1]+';margin:14px 0 6px;padding-left:2px">'+cat+'<span style="color:var(--faint);letter-spacing:0">('+items.length+')</span></div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(152px,1fr));gap:8px">'+items.map(c=>chip(c,pi)).join('')+'</div>';
+   pi++;
  });
  const rest=CHEMS.filter(c=>c!=='Null'&&!used.has(c)&&(!q||c.toLowerCase().includes(q)||zhOf(c).includes(q)));
- if(rest.length)html+='<div style="font-size:10px;letter-spacing:1.5px;color:var(--faint);margin:10px 0 4px">其他（全量）</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:6px">'+rest.map(chip).join('')+'</div>';
+ if(rest.length){html+='<div style="font-size:10.5px;letter-spacing:1.5px;color:var(--faint);margin:14px 0 6px">其他（全量）('+rest.length+')</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(152px,1fr));gap:8px">'+rest.map(c=>chip(c,pi)).join('')+'</div>';}
  list.innerHTML=html||'<div style="color:var(--faint);padding:8px 0">无匹配药物</div>';
 }
+// 悬浮百科卡: 事件委托, chip data-enc 展示于光标附近
+document.addEventListener('mouseover',e=>{
+ const b=e.target.closest&&e.target.closest('#modalBody button[data-enc]');
+ const tip=document.getElementById('tipCard');
+ if(!tip)return;
+ if(!b){tip.style.display='none';return;}
+ tip.textContent='';
+ const i=b.getAttribute('data-enc').indexOf('·');
+ const k=b.getAttribute('data-enc').slice(0,i),t2=b.getAttribute('data-enc').slice(i+1);
+ tip.innerHTML='<b style="color:#0e7490">'+k+'</b><br>'+t2;
+ tip.style.display='block';
+ const r=b.getBoundingClientRect();
+ tip.style.left=Math.min(window.innerWidth-352,r.right+8)+'px';
+ tip.style.top=Math.max(8,r.top)+ 'px';
+});
+document.addEventListener('mouseout',e=>{const tip=document.getElementById('tipCard');if(tip&&!e.relatedTarget||e.relatedTarget&&!(e.relatedTarget.closest&&e.relatedTarget.closest('#modalBody button[data-enc]')))tip.style.display='none';});
 function pickChem(c){
  const sel=document.getElementById('chemSel');
  const o=[...sel.options].find(o=>o.value===c);

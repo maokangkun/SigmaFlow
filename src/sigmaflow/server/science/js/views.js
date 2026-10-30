@@ -439,7 +439,7 @@
       <div id="glSlot"></div>
       <div id="organStripBig"></div>
     </div>
-    <div id="modal" onclick="if(event.target===this)closeModal()"><div id="modalCard"><h4 id="modalTitle"></h4><div id="searchRow"><input id="encSearch" placeholder="搜索词条…" oninput="renderEncList()"><button type="button" onclick="closeModal()">关闭</button></div><div id="modalBody"></div></div></div>
+    <div id="modal" onclick="if(event.target===this)closeModal()"><div id="modalCard"><button type="button" id="modalClose" onclick="closeModal()">✕</button><h4 id="modalTitle"></h4><div id="searchRow"><input id="encSearch" placeholder="搜索词条…" oninput="renderEncList()"></div><div id="modalBody"></div></div><div id="tipCard"></div></div>
     <div id="confirmBox" style="position:fixed;inset:0;background:rgba(30,42,58,.45);display:none;align-items:center;justify-content:center;z-index:80"><div id="confirmCard"><div class="cmsg" id="confirmMsg"></div><div class="cbtns"><button type="button" onclick="cancelConfirm()">取消</button><button type="button" class="ok" onclick="okConfirm()">确认电击</button></div></div></div>
     <div id="labBox" onclick="if(event.target===this)closeLab()"><div id="labCard"></div></div>
     <div id="shockFlash"></div>
