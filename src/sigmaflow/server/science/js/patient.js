@@ -1072,8 +1072,9 @@ function uiFrame(){
   // 血药
   const dl=document.getElementById('drugList');dl.innerHTML='';
   const items=Object.entries(S.blood).filter(([k,v])=>v>0.01).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  const extras=[['肾上腺素(内源)',S.epiEndo],['皮质醇',S.cortisolEndo],['胰岛素(内源)',Math.min(1,S.insulinEndo/8)]];
-  if(!items.length)dl.innerHTML='无';
+  // 内源激素行: 胰岛素放最前(位于"无"行正下方), 皮质醇/肾上腺素随后
+  const extras=[['胰岛素(内源)',Math.min(1,S.insulinEndo/8)],['皮质醇',S.cortisolEndo],['肾上腺素(内源)',S.epiEndo]];
+  if(!items.length){const d=document.createElement('div');d.className='row none';d.style.gridColumn='1/-1';d.textContent='无';dl.appendChild(d);}
   items.forEach(([k,v])=>{const d=document.createElement('div');d.className='row';d.innerHTML=`<span>${zhOf(k)}</span><span>${(v*100).toFixed(0)}%</span>`;
     d.style.color=v>.8?'#ff8d99':v>.3?'#f6c46a':'#7ce2a0';dl.appendChild(d);});
   extras.forEach(([n,v])=>{if(v>0.03){const d=document.createElement('div');d.className='row';d.innerHTML=`<span>${n}</span><span>${(v*100).toFixed(0)}%</span>`;d.style.color='#8fa0f0';dl.appendChild(d);}});

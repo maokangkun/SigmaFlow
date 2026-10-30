@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta name="build" content="36a3e891">
+<meta name="build" content="85a839b7">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#f2f3f5">
@@ -1307,7 +1307,15 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 #patient-root .numTile{background:#0e1626;border-radius:7px;padding:2px 7px 3px;
   display:flex;flex-direction:column;justify-content:center}
 #patient-root .numTile .lab{font-size:8.5px;letter-spacing:.5px;color:var(--pat-ink-dim);line-height:1.15}
-#patient-root .numTile .val{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--pat-ink);line-height:1.1}
+/* 数值塔与波形读数同风格: LED 辉光 + 逐项配色(通过 --led 变量, crit/warn 类仍可覆盖) */
+#patient-root #t-map{--led:#22e07e}#patient-root #t-temp{--led:#ffd15e}
+#patient-root #t-glu{--led:#f6a86a}#patient-root #t-k{--led:#8fa0f0}
+#patient-root #t-ph{--led:#7ce2a0}#patient-root #t-paco2{--led:#4fc3ff}
+#patient-root #t-gcs{--led:#9fd4ec}#patient-root #t-rhy{--led:#22e07e}
+#patient-root #t-rhy .val{letter-spacing:1px}
+#patient-root #drugList .row.none{color:var(--pat-ink-dim)}
+#patient-root .numTile .val{font-family:var(--mono);font-size:17px;font-weight:600;
+  color:var(--led,var(--pat-ink));line-height:1.1;text-shadow:0 0 9px currentColor}
 #patient-root .numTile .unit{font-size:8px;color:#5c6a84;line-height:1.1}
 #patient-root #t-rhy .val{font-size:12.5px;letter-spacing:2px}
 #patient-root .numTile.crit .val{color:var(--pat-led-crit);animation:patBlink .9s infinite}
@@ -6342,8 +6350,9 @@ function uiFrame(){
   // 血药
   const dl=document.getElementById('drugList');dl.innerHTML='';
   const items=Object.entries(S.blood).filter(([k,v])=>v>0.01).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  const extras=[['肾上腺素(内源)',S.epiEndo],['皮质醇',S.cortisolEndo],['胰岛素(内源)',Math.min(1,S.insulinEndo/8)]];
-  if(!items.length)dl.innerHTML='无';
+  // 内源激素行: 胰岛素放最前(位于"无"行正下方), 皮质醇/肾上腺素随后
+  const extras=[['胰岛素(内源)',Math.min(1,S.insulinEndo/8)],['皮质醇',S.cortisolEndo],['肾上腺素(内源)',S.epiEndo]];
+  if(!items.length){const d=document.createElement('div');d.className='row none';d.style.gridColumn='1/-1';d.textContent='无';dl.appendChild(d);}
   items.forEach(([k,v])=>{const d=document.createElement('div');d.className='row';d.innerHTML=`<span>${zhOf(k)}</span><span>${(v*100).toFixed(0)}%</span>`;
     d.style.color=v>.8?'#ff8d99':v>.3?'#f6c46a':'#7ce2a0';dl.appendChild(d);});
   extras.forEach(([n,v])=>{if(v>0.03){const d=document.createElement('div');d.className='row';d.innerHTML=`<span>${n}</span><span>${(v*100).toFixed(0)}%</span>`;d.style.color='#8fa0f0';dl.appendChild(d);}});

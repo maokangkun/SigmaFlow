@@ -102,7 +102,15 @@
 #patient-root .numTile{background:#0e1626;border-radius:7px;padding:2px 7px 3px;
   display:flex;flex-direction:column;justify-content:center}
 #patient-root .numTile .lab{font-size:8.5px;letter-spacing:.5px;color:var(--pat-ink-dim);line-height:1.15}
-#patient-root .numTile .val{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--pat-ink);line-height:1.1}
+/* 数值塔与波形读数同风格: LED 辉光 + 逐项配色(通过 --led 变量, crit/warn 类仍可覆盖) */
+#patient-root #t-map{--led:#22e07e}#patient-root #t-temp{--led:#ffd15e}
+#patient-root #t-glu{--led:#f6a86a}#patient-root #t-k{--led:#8fa0f0}
+#patient-root #t-ph{--led:#7ce2a0}#patient-root #t-paco2{--led:#4fc3ff}
+#patient-root #t-gcs{--led:#9fd4ec}#patient-root #t-rhy{--led:#22e07e}
+#patient-root #t-rhy .val{letter-spacing:1px}
+#patient-root #drugList .row.none{color:var(--pat-ink-dim)}
+#patient-root .numTile .val{font-family:var(--mono);font-size:17px;font-weight:600;
+  color:var(--led,var(--pat-ink));line-height:1.1;text-shadow:0 0 9px currentColor}
 #patient-root .numTile .unit{font-size:8px;color:#5c6a84;line-height:1.1}
 #patient-root #t-rhy .val{font-size:12.5px;letter-spacing:2px}
 #patient-root .numTile.crit .val{color:var(--pat-led-crit);animation:patBlink .9s infinite}
