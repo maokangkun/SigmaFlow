@@ -1130,6 +1130,19 @@ function collectConds(){
   return c;
 }
 function fmtT(t){const m=Math.floor(t/60),s=Math.floor(t%60);return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');}
+// 事件记录是追加式 DOM(离开页面整页销毁), 重进时必须用常驻时间线 EVENTS 回填,
+// 否则历史事件只剩数据、面板空白。渲染顺序与 log() 的 prepend 对齐(新→旧), 上限 60 条。
+function renderLogBacklog(){
+  const box=document.getElementById('logBox');
+  if(!box)return;
+  box.textContent='';
+  const tail=EVENTS.slice(-60);
+  for(let i=tail.length-1;i>=0;i--){
+    const e=tail[i];const d=document.createElement('div');
+    d.className='ev '+(e.cls||'');d.innerHTML=`<span style="color:#4a5f8a">${fmtT(e.t)}</span> ${e.msg}`;
+    box.appendChild(d);
+  }
+}
 var EVENTS=[];   // 全局时间线（阶段3: 死亡报告"时间线摘要"数据源; resetSim 清空=按"本局"计）
 function log(msg,cls){
   const box=document.getElementById('logBox');const d=document.createElement('div');
@@ -1734,6 +1747,7 @@ function patientEngineInit(){
   try { ecgSw.resize(); plSw.resize(); co2Sw.resize(); } catch (e) {}
   loadHeart();
   patientRegisterPathogens();
+  renderLogBacklog();
   if (!window.PatientSim.booted) {
     log('床旁监护就绪。数值模型经生理学常数校准（SA起搏60/AV40 · 血管反应按 LMVascular 系数）。');
     log('场景：肾上腺素静推 → 血压心率；高钾 → 恶性心律 → 除颤；μ 阿片 → 呼吸抑制(-0.8) → 纳洛酮。');
