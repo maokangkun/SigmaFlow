@@ -1791,10 +1791,26 @@ function audAC(){
   return AUDSTATS.ac;
 }
 function audRunning(){const a=AUDSTATS.ac;return !!a&&a.state==='running';}
-function audResume(){const a=audAC();if(a&&a.state==='suspended'&&a.resume){try{a.resume().catch(()=>{});}catch(e){}}}
+function audResume(){const a=audAC();if(a&&a.state==='suspended'&&a.resume){try{a.resume().catch(()=>{});}catch(e){}}
+}
+// 切后台完全静音: 停掉所有循环源(呼吸机长音等)并挂起 AudioContext —— 挂起能连已排播的
+// 尾音一起掐断, 比逐个 setValueAtTime 更彻底; 回前台再 resume 并清空节流计时器,
+// 否则上次的 lastWarn/lastZero 会让报警音在回前台瞬间"补齐"连响。
+function audHidden(){return typeof document!=='undefined'&&document.hidden;}
+function audioMute(){
+  Object.keys(AUDSTATS.loops).forEach(function(n){sfxStopLoop(n);});
+  AUDSTATS.ventOn=false;
+  const a=AUDSTATS.ac;
+  if(a&&a.state==='running'&&a.suspend){try{const r=a.suspend();if(r&&r.catch)r.catch(()=>{});}catch(e){}}
+}
+function audioUnmute(){
+  AUDSTATS.lastWarn=-99;AUDSTATS.lastZero=-99;AUDSTATS.prevCondN=0;AUDSTATS.goodT=0;AUDSTATS.dubPend=false;
+  audResume();
+}
 function sfx(name,opt){                      // opt:{gain 0..1, loop}
   opt=opt||{};
   if(typeof S!=='undefined'&&S&&!S.soundOn)return false;    // 总开关: toggleSound
+  if(audHidden())return false;                              // 页面在后台: 完全静音
   if(!AUD_FILES[name]&&!/\.wav$/.test(name))return false;
   AUDSTATS.counts[name]=(AUDSTATS.counts[name]||0)+1;       // 统计(测试断言接线/静音用)
   const a=audAC();if(!a)return false;
@@ -1806,13 +1822,13 @@ function sfx(name,opt){                      // opt:{gain 0..1, loop}
   try{
     fetch(CS.assetUrl('patient/audio/'+fn+'.wav')).then(function(r){if(!r.ok)throw new Error('http');return r.arrayBuffer();})
       .then(function(b){return a.decodeAudioData(b);})
-      .then(function(b2){AUDSTATS.files[name]=b2;if(opt.loop&&audRunning())_audPlay(a,b2,name,opt);})
+      .then(function(b2){AUDSTATS.files[name]=b2;if(opt.loop&&audRunning()&&!audHidden())_audPlay(a,b2,name,opt);})
       .catch(function(){AUDSTATS.files[name]=null;});
   }catch(e){AUDSTATS.files[name]=null;}
   return true;
 }
 function _audPlay(a,buf,name,opt){
-  if(a.state!=='running')return null;              // 上下文未运行: 不排播, 杜绝积压齐发
+  if(a.state!=='running'||audHidden())return null; // 上下文未运行/页面在后台: 不排播, 杜绝积压齐发
   const src=a.createBufferSource();src.buffer=buf;
   const g=a.createGain();
   const lvl=(opt.gain!==undefined?opt.gain:0.5);
@@ -1839,7 +1855,7 @@ function _audPlay(a,buf,name,opt){
 }
 function sfxStopLoop(name){if(AUDSTATS.loops[name]){try{AUDSTATS.loops[name].stop();}catch(e){}delete AUDSTATS.loops[name];}}
 function sfxPhaseAudio(prevBeat,prevResp,dt){  // 由 tick() 每拍调用: 相位同步心音/呼吸音
-  if(!S||S.dead||!S.soundOn)return;
+  if(!S||S.dead||!S.soundOn||audHidden())return;
   // 心音: 收缩始(Lub)/舒张始(Dub), 频率自然跟随 S.hr —— 展开相位网格法, 大步长(dt×hr)不漏拍
   if((S.rhythm==='sinus'||S.rhythm==='afib')&&S.hr>20){
     let adv=(S.beatPhase-prevBeat)%1;if(adv<0)adv+=1;
@@ -1863,7 +1879,7 @@ function sfxPhaseAudio(prevBeat,prevResp,dt){  // 由 tick() 每拍调用: 相�
   else{if(AUDSTATS.ventOn)sfxStopLoop('Ventilator');AUDSTATS.ventOn=false;}
 }
 function sfxAlarms(conds){                     // 由 uiFrame() 调用: 报警循环(带间隙)/停搏音/完全恢复一次性
-  if(!S||S.dead||!S.soundOn){AUDSTATS.prevCondN=0;return;}
+  if(!S||S.dead||!S.soundOn||audHidden()){if(audHidden())return;AUDSTATS.prevCondN=0;return;}
   const mid=(S.rhythm==='arrest'||S.rhythm==='vf');
   if(mid){if(S.t-AUDSTATS.lastZero>4){AUDSTATS.lastZero=S.t;sfx('Vital-Zero',{gain:.8});}AUDSTATS.goodT=0;}
   else if(conds&&conds.length){
@@ -2628,9 +2644,17 @@ window.PatientSim = {
   unmount: function () {
     this.timers.forEach(clearInterval);
     this.timers = [];
+    if (typeof audioMute === 'function') audioMute();   // 切页静音: 停呼吸机长音等循环源
     if (window.PatientViewer && PatientViewer.unmount) PatientViewer.unmount();
   }
 };
+// 页面可见性 → 音频静音/恢复(常驻监听, 与路由无关: 后台不管在哪个页面都不发声)。
+window.PatientSim_visGuard = window.PatientSim_visGuard || (function () {
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) audioMute(); else audioUnmute();
+  });
+  return true;
+})();
 window.PatientSim_resizeGuard = window.PatientSim_resizeGuard || (function () {  // 波形画布随容器宽度重排(窗口 + 布局两路)
   var f = function () { try { ecgSw && ecgSw.resize(); plSw && plSw.resize(); co2Sw && co2Sw.resize(); } catch (e) {} };
   window.addEventListener('resize', f);
