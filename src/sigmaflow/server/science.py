@@ -56,6 +56,55 @@ from .science_auth import (
 )
 
 from sigmaflow.agent import conf as _agent_conf
+from .science_admin import (
+    _ScienceSkillView,
+    _TOOL_ALIASES,
+    _agent_agent_module,
+    _agent_tools_module,
+    _apply_compaction_to,
+    _apply_token_updates,
+    _build_mcp_servers,
+    _build_skill_overrides,
+    _build_tool_overrides,
+    _builtin_mcp_servers,
+    _compaction_config_path,
+    _compaction_defaults,
+    _discover_skills,
+    _effective_agent_tools,
+    _effective_compaction,
+    _effective_system_prompts,
+    _load_compaction_config,
+    _memory_recall_enabled,
+    _save_memory_config,
+    _load_skill_overrides,
+    _load_system_prompt_config,
+    _load_tool_overrides,
+    _mcp_listing,
+    _rebuild_agent_mcp,
+    _save_compaction_config,
+    _save_mcp_servers,
+    _save_skill_overrides,
+    _save_system_prompt_config,
+    _save_tool_overrides,
+    _seed_builtin_skills,
+    _seed_mcp_config,
+    _skill_listing,
+    _token_listing,
+    _tool_defaults,
+    _tool_listing,
+)
+
+from .science_fs import (
+    _PTY_SESSIONS_MAX,
+    _PtySession,
+    _fs_exec_payload,
+    _fs_file_payload,
+    _fs_op_payload,
+    _fs_tree_payload,
+    _fs_upload_payload,
+    _pty_key_of,
+)
+
 
 # 会话分页单页字节上限(shape 后序列化), 与前端传的 limit 条数参数并行兜底
 _CONVERSATION_PAGE_MAX_BYTES = 4_000_000
@@ -106,55 +155,6 @@ def _conversation_page_rows(content, offset, limit):
         if acc >= _CONVERSATION_PAGE_MAX_BYTES:
             break
     return out
-
-from .science_admin import (
-    _ScienceSkillView,
-    _TOOL_ALIASES,
-    _agent_agent_module,
-    _agent_tools_module,
-    _apply_compaction_to,
-    _apply_token_updates,
-    _build_mcp_servers,
-    _build_skill_overrides,
-    _build_tool_overrides,
-    _builtin_mcp_servers,
-    _compaction_config_path,
-    _compaction_defaults,
-    _discover_skills,
-    _effective_agent_tools,
-    _effective_compaction,
-    _effective_system_prompts,
-    _load_compaction_config,
-    _memory_recall_enabled,
-    _save_memory_config,
-    _load_skill_overrides,
-    _load_system_prompt_config,
-    _load_tool_overrides,
-    _mcp_listing,
-    _rebuild_agent_mcp,
-    _save_compaction_config,
-    _save_mcp_servers,
-    _save_skill_overrides,
-    _save_system_prompt_config,
-    _save_tool_overrides,
-    _seed_builtin_skills,
-    _seed_mcp_config,
-    _skill_listing,
-    _token_listing,
-    _tool_defaults,
-    _tool_listing,
-)
-
-from .science_fs import (
-    _PTY_SESSIONS_MAX,
-    _PtySession,
-    _fs_exec_payload,
-    _fs_file_payload,
-    _fs_op_payload,
-    _fs_tree_payload,
-    _fs_upload_payload,
-    _pty_key_of,
-)
 
 
 MAX_RUNS = 100
