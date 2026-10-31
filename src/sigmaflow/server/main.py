@@ -74,6 +74,7 @@ class PipelineServer:
         self.app.include_router(admin.router)
         self.app.include_router(science.router)
         self.app.include_router(science.ws_router)
+        self.app.include_router(science.mcp_router)
         self.app.include_router(science.auth_router)
 
         web_root = Path(f"{__file__[: __file__.rindex('/')]}/website/dist/")

@@ -1,0 +1,126 @@
+/* 虚拟患者 · 病例挑战 AI 面板(浮层)。
+ * 定位约定: 固定在患者页右侧下方, 不遮挡事件记录与急救台; 窄屏(<1280px)改为
+ * 贴右满高。面板内部分区: 头部(状态点/病例)/体征条/消息区/输入区。 */
+.pai {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  width: 420px;
+  max-width: calc(100vw - 36px);
+  height: min(70vh, 640px);
+  display: none;
+  flex-direction: column;
+  background: var(--surface, #fff);
+  border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(24, 38, 58, 0.28), 0 2px 6px rgba(24, 38, 58, 0.12);
+  border: 1px solid var(--line-soft, #e3ebf2);
+  overflow: hidden;
+  z-index: 70;
+  font-size: 12px;
+}
+.pai.on { display: flex; }
+
+.pai-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  background: linear-gradient(180deg, #f4f8fc, #eaf1f8);
+  border-bottom: 1px solid var(--line-soft, #e3ebf2);
+  font-size: 12.5px;
+  color: var(--ink, #1c2b3a);
+}
+.pai-head b { font-weight: 650; letter-spacing: 0.2px; }
+.pai-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #c9d4e0; flex: none;
+}
+.pai-dot.on { background: #22c07a; box-shadow: 0 0 0 3px rgba(34, 192, 122, 0.16); }
+.pai-case {
+  margin-left: auto; font-size: 11px; color: var(--muted, #64748b);
+  max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pai-x {
+  border: none; background: transparent; cursor: pointer; color: var(--muted, #64748b);
+  font-size: 13px; line-height: 1; padding: 4px 2px 4px 6px;
+}
+.pai-x:hover { color: var(--ink, #1c2b3a); }
+
+.pai-vitals {
+  display: flex; gap: 10px; flex-wrap: wrap;
+  padding: 6px 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted, #64748b);
+  background: #fbfdff;
+  border-bottom: 1px solid var(--line-soft, #eef3f8);
+}
+.pai-vitals .warn { color: #d97706; font-weight: 650; }
+.pai-vitals .rhy.crit { color: #b3121c; font-weight: 700; }
+
+.pai-body {
+  flex: 1; overflow-y: auto; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 8px;
+  background: #fdfefe;
+}
+.pai-empty { color: var(--faint, #94a3b8); line-height: 1.6; }
+
+.pai-m { border-radius: 10px; padding: 8px 10px; line-height: 1.55; word-break: break-word; }
+.pai-u { background: #eef4fb; color: #1b3550; align-self: flex-end; max-width: 92%; }
+.pai-a { background: #fff; border: 1px solid var(--line-soft, #e6eef6); }
+.pai-e { background: #fff2f3; border: 1px solid #f3c7cc; color: #9b1c27; }
+.pai-n { background: #f5f9f5; border: 1px dashed #cfe3d4; color: #3f6b4e; font-size: 11.5px; }
+.pai-text :is(p, ul, ol) { margin: 2px 0; }
+.pai-text :is(h1, h2, h3, h4) { margin: 6px 0 2px; font-size: 12.5px; }
+
+.pai-think { margin-bottom: 6px; }
+.pai-think summary { cursor: pointer; color: var(--muted, #64748b); font-size: 11px; }
+.pai-think summary::marker { color: #b0bccb; }
+.pai-think { color: #5b6b7d; font-size: 11.5px; white-space: pre-wrap; }
+
+.pai-tool {
+  margin: 6px 0; border-radius: 8px; overflow: hidden;
+  border: 1px solid #dbe7f1; background: #f8fbfe;
+}
+.pai-tool.run { border-color: #bfd7ea; }
+.pai-tool.bad { border-color: #f0c6cb; background: #fff7f8; }
+.pai-tool-h {
+  display: flex; gap: 6px; align-items: baseline;
+  padding: 5px 8px; background: #eff6fc; font-size: 11px; color: #33506e;
+}
+.pai-tool.bad .pai-tool-h { background: #fdeef0; color: #9b1c27; }
+.pai-tool-h code { font-weight: 650; font-size: 11px; }
+.pai-tool-h span { color: var(--muted, #6b7c90); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pai-tool pre {
+  margin: 0; padding: 6px 8px; max-height: 190px; overflow: auto;
+  font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+  color: #24384c;
+}
+
+.pai-ask { margin: 6px 0; border: 1px solid #f0d8a8; background: #fffbf1; border-radius: 8px; padding: 8px; }
+.pai-q { font-weight: 600; margin-bottom: 6px; }
+.pai-opts { display: flex; gap: 6px; flex-wrap: wrap; }
+.pai-opts button {
+  border: 1px solid #e3c98d; background: #fff; border-radius: 7px;
+  padding: 3px 9px; font-size: 11.5px; cursor: pointer; color: #7a5a12;
+}
+.pai-opts button:hover { background: #fff3d6; }
+
+.pai-input {
+  display: flex; gap: 8px; padding: 9px 12px; align-items: flex-end;
+  border-top: 1px solid var(--line-soft, #e3ebf2); background: #f9fbfd;
+}
+.pai-input textarea {
+  flex: 1; resize: none; border: 1px solid var(--line-soft, #dfe7ee); border-radius: 9px;
+  padding: 7px 9px; font-size: 12px; line-height: 1.45; font-family: inherit;
+  background: #fff; color: var(--ink, #1c2b3a); outline: none;
+}
+.pai-input textarea:focus { border-color: #b7cfe6; box-shadow: 0 0 0 3px rgba(120, 168, 210, 0.15); }
+.pai-input button {
+  border: none; border-radius: 9px; padding: 8px 14px; cursor: pointer;
+  background: #2c6ea6; color: #fff; font-size: 12px; font-weight: 600;
+}
+.pai-input button:disabled { background: #9db7cd; cursor: default; }
+
+@media (max-width: 1280px) {
+  .pai { right: 10px; bottom: 10px; width: 368px; height: min(76vh, 620px); }
+}

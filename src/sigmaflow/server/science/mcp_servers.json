@@ -11,6 +11,9 @@
     },
     "rcsb": {
       "url": "https://mcp-beta.rcsb.org/mcp"
+    },
+    "patenv": {
+      "url": "http://127.0.0.1:{port}/api/patenv/mcp"
     }
   }
 }

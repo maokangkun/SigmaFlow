@@ -56,6 +56,13 @@ from .science_auth import (
 )
 
 from sigmaflow.agent import conf as _agent_conf
+from .patenv import (
+    HUB as PATENV_HUB,
+    PATIENT_PROJECT_ID,
+    PATIENT_PROJECT_NAME,
+    TOOLS as PATENV_TOOLS,
+    patient_agent_prompt,
+)
 from .science_admin import (
     _ScienceSkillView,
     _TOOL_ALIASES,
@@ -1171,11 +1178,15 @@ class ScienceAPI:
         # 且 WS 端点内部已手动做同源与会话校验。
         ws_router = APIRouter(prefix="/api")
         auth_router = APIRouter(prefix="/api/auth")
+        # MCP 入口给工具客户端用(服务进程内直连 127.0.0.1), 不带 cookie 依赖;
+        # 端点内部自己做本机来源校验。
+        mcp_router = APIRouter(prefix="/api")
 
         self._register_auth_routes(auth_router)
 
         self.ws_router = ws_router
         self.auth_router = auth_router
+        self.mcp_router = mcp_router
 
         self._register_system_routes(router)
 
@@ -1187,11 +1198,19 @@ class ScienceAPI:
 
         self._register_conversation_routes(router)
 
+        self._register_patenv_routes(router, mcp_router)
+
         self._register_pty_routes(router, ws_router)
 
         @router.on_event("startup")
         async def startup_event():
             await self.manager.start()
+            # 侧栏「虚拟患者」项目启动即就位, 病例挑战会话才能落在固定项目里
+            self._patenv_ensure_project()
+            # MCP 工具在 tools 模块 import 时接线, 而本服务自托管的 patenv MCP
+            # 走 127.0.0.1:<自身端口>——此时端口可能还没监听, 首次列工具会落空。
+            # 监听就绪后再重挂一次, 顺便把远端 MCP(rcsb/anysearch) 的临时失败补上。
+            asyncio.create_task(asyncio.to_thread(_safe_rebuild_agent_mcp))
 
         @router.on_event("shutdown")
         async def shutdown_event():
@@ -2597,6 +2616,231 @@ class ScienceAPI:
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
             )
+
+    # ==================== 虚拟患者环境(病例挑战) ====================
+    def _patenv_ensure_project(self) -> str:
+        """侧栏固定项目「虚拟患者」: 所有病例挑战会话都归到这里。"""
+        try:
+            if PATIENT_PROJECT_ID not in self.project_store.projects:
+                self.project_store.upsert_project(
+                    ProjectIn(
+                        id=PATIENT_PROJECT_ID,
+                        name=PATIENT_PROJECT_NAME,
+                        description="AI 智能体在虚拟患者环境里做病例挑战的会话集合",
+                        tags=["虚拟患者", "病例挑战"],
+                        icon="patient",
+                    )
+                )
+        except Exception as err:  # 补种失败不影响运行
+            logging.getLogger("uvicorn.error").info(
+                "patenv project seed skipped: %s", err
+            )
+        return PATIENT_PROJECT_ID
+
+    def _register_patenv_routes(self, router: APIRouter, mcp_router: APIRouter) -> None:
+        """浏览器(环境宿主)侧路由 + 智能体侧 MCP 路由。
+
+        浏览器: 注册会话 → 长轮询取工具调用 → 在实时引擎上执行 → 回传结果。
+        智能体: MCP JSON-RPC, 每次 tools/call 都在等浏览器回传, 因此页面上
+        看到的心电/血压/事件记录就是智能体操作的同一份状态。
+        """
+
+        @router.post("/patenv/session")
+        async def patenv_session(request: Request):
+            _check_origin(request)
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+            if not isinstance(body, dict):
+                body = {}
+            project_id = self._patenv_ensure_project()
+            session = PATENV_HUB.register(_current_user())
+            cid = str(body.get("conversationId") or "")
+            conv = self.project_store.conversations.get(cid) if cid else None
+            if conv is None:
+                cid = ""
+            session.conversation_id = cid
+            content = (conv or {}).get("content") or []
+            return {
+                "sessionId": session.id,
+                "conversationId": cid,
+                "projectId": project_id,
+                "projectName": PATIENT_PROJECT_NAME,
+                "messages": [
+                    {
+                        "role": m.get("role"),
+                        "content": str(m.get("content") or ""),
+                        "tools": m.get("tools") or [],
+                    }
+                    for m in content
+                    if isinstance(m, dict) and m.get("role") in ("user", "assistant")
+                ],
+                "tools": [tool["name"] for tool in PATENV_TOOLS],
+            }
+
+        @router.get("/patenv/poll")
+        async def patenv_poll(request: Request, sessionId: str = "", wait: float = 20):
+            sid = sessionId.strip()
+            if not sid:
+                host = PATENV_HUB.host(_current_user())
+                sid = host.id if host else ""
+            if not sid:
+                raise HTTPException(status_code=400, detail="没有活动的环境会话")
+            call = await PATENV_HUB.next_call(sid, min(25.0, max(1.0, wait)))
+            return {"call": call}
+
+        @router.post("/patenv/result")
+        async def patenv_result(request: Request):
+            _check_origin(request)
+            body = await request.json()
+            accepted = PATENV_HUB.submit(
+                str(body.get("sessionId") or ""),
+                str(body.get("id") or ""),
+                {"ok": bool(body.get("ok")), "text": str(body.get("text") or "")},
+            )
+            return {"accepted": accepted}
+
+        @router.post("/patenv/chat")
+        async def patenv_chat(request: Request):
+            """跑一轮智能体: 用例挑战提示词 + MCP 工具, SSE 流式回传。"""
+            _check_origin(request)
+            body = await request.json()
+            cid = str(body.get("conversationId") or "")
+            text = str(body.get("text") or "").strip()
+            if not text:
+                raise HTTPException(status_code=400, detail="消息为空")
+            conv = self.project_store.conversations.get(cid) or {}
+            if not conv:
+                # 首轮才落库: 会话只在真有消息时出现在侧栏「虚拟患者」项目里
+                created = self.project_store.upsert_conversation(
+                    ConversationIn(
+                        title=text[:60],
+                        projectId=self._patenv_ensure_project(),
+                    )
+                )
+                cid = created["id"]
+                conv = self.project_store.conversations.get(cid) or {}
+            host_session = PATENV_HUB.host(_current_user())
+            if host_session is not None:
+                host_session.conversation_id = cid
+            history = [
+                {"role": m.get("role"), "content": str(m.get("content") or "")}
+                for m in (conv.get("content") or [])
+                if isinstance(m, dict)
+                and m.get("role") in ("user", "assistant")
+                and str(m.get("content") or "").strip()
+            ][-40:]
+            messages = history + [{"role": "user", "content": text}]
+            base_url, api_key, model_name = _resolve_chat(
+                self.model_store, body.get("modelId")
+            )
+            host = PATENV_HUB.host(_current_user())
+            loop = asyncio.get_running_loop()
+            aq: asyncio.Queue = asyncio.Queue()
+            stats: dict = {}
+            asks: list = []
+
+            def _emit(kind, value=None):
+                loop.call_soon_threadsafe(aq.put_nowait, (kind, value))
+
+            def _on_tool(ev):
+                # ask 轮次要记住 id, 面板作答时据此投递; 其余工具事件原样透传
+                if isinstance(ev, dict):
+                    if ev.get("kind") == "ask" and ev.get("id"):
+                        asks.append(str(ev["id"]))
+                    if ev.get("kind") == "progress":
+                        return  # 心跳不渲染
+                _emit("tool", ev)
+
+            extra = patient_agent_prompt() + (
+                "\n\n## 本轮环境\n- 患者页环境连接: "
+                + (
+                    "已连接, 工具直接读改浏览器里的实时引擎"
+                    if host
+                    else "未连接 —— 先请用户打开「虚拟患者」页并保持 AI 面板开着"
+                )
+                + "\n- 会话 ID: "
+                + (cid or "-")
+            )
+
+            def work():
+                try:
+                    _run_agent_chat(
+                        base_url,
+                        api_key,
+                        model_name,
+                        messages,
+                        on_delta=lambda d: _emit("delta", d),
+                        on_reasoning=lambda r: _emit("think", r),
+                        on_tool=_on_tool,
+                        stats=stats,
+                        workdir=None,
+                        plan_mode=False,
+                        conversation_id=cid,
+                        system_extra=extra,
+                    )
+                except Exception as err:
+                    _emit("error", str(err))
+                finally:
+                    _emit(
+                        "done",
+                        {
+                            "tokens": stats.get("completion_tokens") or 0,
+                            "promptTokens": stats.get("prompt_tokens") or 0,
+                            "askIds": asks,
+                            "conversationId": cid,
+                        },
+                    )
+
+            threading.Thread(target=work, daemon=True).start()
+
+            async def event_stream():
+                while True:
+                    try:
+                        kind, payload = await asyncio.wait_for(aq.get(), timeout=15)
+                    except asyncio.TimeoutError:
+                        yield ": keepalive\n\n"  # 长工具等待期间保活
+                        continue
+                    if kind == "done":
+                        yield f"event: done\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                        return
+                    if kind == "error":
+                        yield f"event: error\ndata: {json.dumps({'detail': payload}, ensure_ascii=False)}\n\n"
+                        continue
+                    yield f"event: {kind}\ndata: {json.dumps({'text': payload} if kind in ('delta', 'think') else payload, ensure_ascii=False)}\n\n"
+
+            return StreamingResponse(
+                event_stream(),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
+
+        @router.post("/patenv/answer")
+        async def patenv_answer(request: Request):
+            _check_origin(request)
+            body = await request.json()
+            try:
+                ok = _agent_tools_module().ASK.answer(
+                    str(body.get("id") or ""), body.get("answers")
+                )
+            except Exception:
+                ok = False
+            return {"answered": bool(ok)}
+
+        @mcp_router.post("/patenv/mcp")
+        async def patenv_mcp(request: Request):
+            """MCP 入口(仅本机): 服务进程内的 MCP 客户端直连 127.0.0.1。"""
+            client = getattr(request, "client", None)
+            host = getattr(client, "host", "") if client else ""
+            if host not in ("127.0.0.1", "::1", "localhost"):
+                raise HTTPException(status_code=403, detail="patenv MCP is local-only")
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                raise HTTPException(status_code=400, detail="invalid JSON-RPC payload")
+            if str(payload.get("method") or "") == "tools/call":
+                return await PATENV_HUB.mcp_call(_current_user(), payload)
+            return PATENV_HUB.mcp_handle(_current_user(), payload)
 
     def _register_pty_routes(self, router: APIRouter, ws_router: APIRouter) -> None:
         """Register routes for this domain (order preserved)."""
@@ -4381,6 +4625,7 @@ def _run_agent_chat(
     on_usage=None,
     model_ctx: Optional[int] = None,
     conversation_id: str = "",
+    system_extra: str = "",
 ) -> str:
     """Run a chat through the SigmaFlow agent/agent.Agent stack.
 
@@ -4495,6 +4740,10 @@ def _run_agent_chat(
         model_name=model_name,
         model_ctx=model_ctx,
     )
+    if system_extra:
+        # 场景化追加段(如虚拟患者病例挑战的角色与工具协议): 放在 bound system 末尾,
+        # 保证它比通用提示词更靠近对话, 模型优先遵循
+        bound_system = bound_system + "\n\n" + system_extra
     agent = Agent(
         method="openai",
         model=model_name,
@@ -4881,6 +5130,20 @@ def _sigma_usage(conversations: Dict[str, dict]) -> Dict[str, object]:
         "user": "sigmaflow",
         "version": "sigmaflow-1.0",
     }
+
+
+def _safe_rebuild_agent_mcp() -> None:
+    """Re-wire MCP tools once the listener is up (best effort, never raises)."""
+    try:
+        from .science_admin import _rebuild_agent_mcp
+
+        client = _rebuild_agent_mcp()
+        _AGENT_CONTEXT_SIZES.clear()  # 工具集变了, 固定开销需重新测量
+        logging.getLogger("uvicorn.error").info(
+            "mcp tools re-wired after startup: %d", len(getattr(client, "tools", {}) or {})
+        )
+    except Exception as err:
+        logging.getLogger("uvicorn.error").info("mcp rewire skipped: %s", err)
 
 
 def _agent_context_sizes() -> Dict[str, int]:

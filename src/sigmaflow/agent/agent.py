@@ -231,7 +231,7 @@ class Agent:
         self.nudge_threshold = nudge_threshold
         # 传入者(web 模型配置的真实上下文窗)优先, 空则回落 litellm
         self.max_model_len = (
-            int(max_model_len) if max_model_len else _model_max_len(model_name)
+            int(max_model_len) if max_model_len else _model_max_len(model)
         )
         self.tool_result_limit = int(tool_result_limit)
         self.debug = debug

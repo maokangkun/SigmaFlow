@@ -417,3 +417,69 @@ WebSocket `/api/ws` 还承载终端 actions（与聊天共用连接，前端通�
 7. 针对不同机构和研究场景的数据保护、留存与合规措施。
 
 当前模拟服务器将任务状态放在内存中；服务器重启后任务消失，空闲过期记录会被清理。它不是可直接公开部署的生产科研 Agent 后端。
+
+---
+
+# 虚拟患者环境桥（病例挑战 Agent）
+
+虚拟患者的生理引擎只存在于浏览器页面（`js/patient.js`）。为了让大模型能真的"操作这台监护仪"而不是复述教科书，服务端提供一层环境桥：**页面当环境宿主，服务端只转发工具调用**。
+
+```
+大模型 ⇄ MCP(tools/call) ⇄ /api/patenv/mcp ⇄ 队列 ⇄ 页面(长轮询) ⇄ 实时引擎
+                                    ⇅
+                        /api/patenv/chat (SSE, 流式对话)
+```
+
+因为每次工具调用都在页面上执行同一套函数（`administer()` / `applyShock()` / `ventToggle()` …），智能体读到的数值与用户看到的波形、事件记录、病例 HUD 是同一份状态。
+
+## 1. 页面侧（Cookie 会话 + 同源写保护）
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/patenv/session` | 注册环境会话（同一用户只保留最新一个页面实例），返回 `sessionId / projectId / conversationId / messages / tools` |
+| GET | `/api/patenv/poll?sessionId=&wait=20` | 长轮询领取工具调用，最多等 25s；返回 `{call:{id,tool,args}}` 或 `{call:null}` |
+| POST | `/api/patenv/result` | 回传执行结果 `{sessionId,id,ok,text}` |
+| POST | `/api/patenv/chat` | 跑一轮智能体（SSE）：`delta` / `think` / `tool` / `done` / `error`；首轮自动在项目「虚拟患者」建档，`done.conversationId` 回传会话 id |
+| POST | `/api/patenv/answer` | 回传 `ask` 工具的作答（面板上的选项卡） |
+
+## 2. 智能体侧（MCP，仅本机）
+
+`POST /api/patenv/mcp` — JSON-RPC 2.0，支持 `initialize` / `tools/list` / `tools/call` / `ping`。**只接受 127.0.0.1/::1**（MCP 客户端与服务同进程）；配置里写端口占位符 `{port}`，读取时替换为服务实际监听端口：
+
+```json
+{ "servers": { "patenv": { "url": "http://127.0.0.1:{port}/api/patenv/mcp" } } }
+```
+
+工具集（14 个，全部 `patient_` 前缀）：
+
+| 工具 | 作用 |
+| --- | --- |
+| `patient_observe` | 生命体征 / 血气电解质 / 心律 / 病理 / 血药 / 病例目标 / 近况事件 |
+| `patient_list_cases` | 病例清单（id、难度、限时、目标） |
+| `patient_case_start` | 复位并载入病例，开始计时 |
+| `patient_case_status` | 关卡时钟、每个目标的维持进度、操作数、结算结果 |
+| `patient_administer` | 给药（化学 id 或中文名 + 剂量 + 途径） |
+| `patient_shock` | 除颤（120/200/300/360J；窦性心律会拒答并说明风险） |
+| `patient_ventilate` | 机械通气开关与 RR/Vt/PEEP/FiO₂ |
+| `patient_oxygen` | 吸氧浓度 21–100% |
+| `patient_cpr` | 胸外按压开关 |
+| `patient_fluid` | 补液（正值）或放血（负值），按 500ml 步进 |
+| `patient_lab` | 采血化验（含相位动态参考范围与趋势） |
+| `patient_advance` | 快进 N 秒（≤120，引擎按 0.25s 步长实算，页面全程渲染） |
+| `patient_log` | 事件记录尾部 |
+| `patient_reset` | 复位到健康基线 |
+
+## 3. 智能体提示词与归档
+
+- 提示词：`science/prompts/patient_agent.md`，由 `/api/patenv/chat` 追加在 bound system 末尾（比通用提示词更靠近对话）。
+- 会话归档：项目 **「虚拟患者」**（固定 id `pr-patient-env`，服务启动时补种）。首轮对话才建会话，标题取首句用户消息，`tools` 轨迹随消息保存，可在侧栏打开回放。
+- 页面入口：虚拟患者页顶部「🤖 AI」按钮（`js/patenv.js`）；面板展示消息、工具卡、`ask` 卡片与实时体征条，每次执行都会在事件记录里留下 `🤖` 行。
+
+## 4. 失败语义
+
+| 情况 | 表现 |
+| --- | --- |
+| 页面没打开 | 工具调用立即返回"患者页没有打开…"，提示智能体让用户开页 |
+| 页面 120s 无响应 | 返回超时说明，`waiters` 清理，不残留在途调用 |
+| 页面重开 | 新会话顶替旧会话，旧的在途调用以"已被新页面实例替换"结束 |
+| 模型调用失败 | SSE `error` 事件，前端红块显示，不会静默断流 |

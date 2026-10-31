@@ -317,6 +317,7 @@
         <button type="button" onclick="togglePause()" id="pauseBtn">⏸ 暂停</button>
         <button type="button" onclick="resetSim()">↺ 复苏重置</button>
         <button type="button" onclick="showEngineDoc()">⚙ 引擎</button>
+        <button type="button" onclick="openPatAI()" id="btnPatAI" title="让智能体接管: 观测/处置/推进时间, 操作实时同步到本页">🤖 AI</button>
       </div>
     </div>
     <div class="pat-main">

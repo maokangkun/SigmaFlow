@@ -728,11 +728,24 @@ def _builtin_mcp_servers() -> Dict[str, dict]:
     servers = data.get("servers") if isinstance(data, dict) else None
     if not isinstance(servers, dict):
         return {}
-    return {
+    out = {
         str(k): dict(v)
         for k, v in servers.items()
         if isinstance(v, dict) and v.get("url")
     }
+    # 自托管 MCP(虚拟患者环境桥) 的端口取自服务自身: 配置文件里写占位符,
+    # 读取时替换成实际监听端口, 换端口部署不用改配置。
+    port = (
+        os.environ.get("SIGMAFLOW_SELF_PORT")
+        or os.environ.get("PORT")
+        or os.environ.get("UVICORN_PORT")
+        or "4110"
+    )
+    for cfg in out.values():
+        url = cfg.get("url")
+        if isinstance(url, str) and "{port}" in url:
+            cfg["url"] = url.replace("{port}", str(port))
+    return out
 
 
 def _load_mcp_servers() -> Dict[str, dict]:
