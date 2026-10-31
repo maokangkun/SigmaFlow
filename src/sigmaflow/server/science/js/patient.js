@@ -18,6 +18,14 @@ const ENUMS = GAMEDATA.enums, ZH = GAMEDATA.name_map, ENCYC = GAMEDATA.encyc;
 const CHEMS = ENUMS.ChemicalType, ROUTES = ENUMS.AdministrationType, HORMONES = ENUMS.HormoneType;
 const zhOf = n => ZH[n] || n;
 
+// ================= 文本安全 =================
+// 引擎常量当前都可信, 但病例/药物/百科数据将来可能外置成可编辑 JSON: 凡拼进 innerHTML
+// 的动态值统一经 CS.escape(纯文本) 或 rich(保留 <b>/<br>/<i>/<em> 白名单标签) 过一遍,
+// 外部文本里的 <img onerror=…> 之类就到不了 DOM。
+// 这里不取别名 e(): 本文件大量局部变量/循环变量复用 e(如器官条 for(const e of …)),
+// 顶层别名会被层层遮蔽, 反而看不出哪处漏转义。
+const rich = s => CS.escape(s).replace(/&lt;(\/?)(b|br|i|em)&gt;/gi, (m, close, tag) => '<' + close + tag.toLowerCase() + '>');
+
 const PHARM = {
   Epinephrine:{a:[['α1Adrenoceptor',1,1.2],['β1Adrenoceptor',1,1.1],['β2Adrenoceptor',1,.7]]},
   Norepinephrine:{a:[['α1Adrenoceptor',1,1.4],['β1Adrenoceptor',1,.6]]},
@@ -741,6 +749,8 @@ function applyShock(onSinus){
 }
 let confirmCb=null;
 function showConfirm(msg,cb){
+  // msg 由调用方以标记书写(每条都是本文件的字面量文案), 故此处不转义;
+  // 若将来把确认文案外置, 应改成 rich(msg) 并去掉行内 <span style>。
   document.getElementById('confirmMsg').innerHTML=msg;
   document.getElementById('confirmBox').style.display='flex';
   confirmCb=cb;
@@ -801,12 +811,12 @@ function renderDeathCard(){
   const rep=getDeathReport();
   const card=document.getElementById('deathCard');if(!card)return;
   const dt=new Date();const hm=('0'+dt.getHours()).slice(-2)+':'+('0'+dt.getMinutes()).slice(-2);
-  let h='<div class="drow"><span class="dlabel">直接死因</span><span class="dval"><b>'+rep.direct+'</b>'+
-    (rep.chain.length?'<div class="dchain">'+rep.chain.join('<br>')+'</div>':'')+'</span></div>';
-  h+='<div class="drow"><span class="dlabel">基础病变</span><span class="dval">'+rep.basis.map(x=>'· '+x).join('<br>')+'</span></div>';
-  h+='<div class="drow"><span class="dlabel">存活时长</span><span class="dval"><b>'+rep.dur+'</b>（宣布 '+hm+'，LIDeath.DeathTime）</span></div>';
+  let h='<div class="drow"><span class="dlabel">直接死因</span><span class="dval"><b>'+CS.escape(rep.direct)+'</b>'+
+    (rep.chain.length?'<div class="dchain">'+rep.chain.map(x=>CS.escape(x)).join('<br>')+'</div>':'')+'</span></div>';
+  h+='<div class="drow"><span class="dlabel">基础病变</span><span class="dval">'+rep.basis.map(x=>'· '+CS.escape(x)).join('<br>')+'</span></div>';
+  h+='<div class="drow"><span class="dlabel">存活时长</span><span class="dval"><b>'+CS.escape(rep.dur)+'</b>（宣布 '+hm+'，LIDeath.DeathTime）</span></div>';
   h+='<div class="dtl"><h5>时间线摘要 · 本局关键事件</h5>'+
-    (rep.timeline.length?rep.timeline.map(e=>'<div class="dline'+(e.cls==='crit'?' crit':'')+'">['+fmtT(e.t)+'] '+e.msg+'</div>').join(''):'<div class="dline">（无关键事件记录）</div>')+'</div>';
+    (rep.timeline.length?rep.timeline.map(e=>'<div class="dline'+(e.cls==='crit'?' crit':'')+'">['+fmtT(e.t)+'] '+rich(e.msg)+'</div>').join(''):'<div class="dline">（无关键事件记录）</div>')+'</div>';
   card.innerHTML=h;
   const dc=document.getElementById('deathCause');if(dc)dc.textContent=rep.direct;   // 兼容旧节点
   const bd=document.getElementById('btnWithdrawD');
@@ -975,7 +985,7 @@ function renderOrganStrip(){
     const b=document.createElement('button');
     const rm=!!e.removed;
     const dotC='rgb('+Math.round(e.color[0]*255)+','+Math.round(e.color[1]*255)+','+Math.round(e.color[2]*255)+')';
-    b.innerHTML=(rm?'<span class="ectTag">已切除</span>':'')+(e.ic?('<img src="'+CS.assetUrl('patient/'+e.ic+'.png')+'"'+(e.key==='heart'?' class="bloodTint"':'')+'>'):(organSvgIco(e.key)||organSvgIco(e.ids[0])||('<span class="dot" style="background:'+dotC+'"></span>')))+'<span class="zhName">'+e.zh+'</span>';
+    b.innerHTML=(rm?'<span class="ectTag">已切除</span>':'')+(e.ic?('<img src="'+CS.escape(CS.assetUrl('patient/'+e.ic+'.png'))+'"'+(e.key==='heart'?' class="bloodTint"':'')+'>'):(organSvgIco(e.key)||organSvgIco(e.ids[0])||('<span class="dot" style="background:'+dotC+'"></span>')))+'<span class="zhName">'+CS.escape(e.zh)+'</span>';
     if(BW.sel===e.key&&!rm)b.classList.add('sel');
     if(rm)b.classList.add('removed');
     strips.forEach(strip=>strip.appendChild(b.cloneNode(true)));
@@ -1047,7 +1057,7 @@ function uiFrame(){
   if(typeof sfxAlarms==='function')sfxAlarms(conds);
   // 病理清单: 与报警横幅同源的 collectConds 实时列到屏幕右侧列(临界标红)
   const pl=document.getElementById('pathList');
-  if(pl)pl.innerHTML=conds.length?conds.map(c=>'<div class="pathItem'+(c.c2?' crit':'')+'">'+c.n+'</div>').join(''):'<div class="pathNone">无活动病理 · 引擎监测 20+ 项</div>';
+  if(pl)pl.innerHTML=conds.length?conds.map(c=>'<div class="pathItem'+(c.c2?' crit':'')+'">'+CS.escape(c.n)+'</div>').join(''):'<div class="pathNone">无活动病理 · 引擎监测 20+ 项</div>';
   // 床旁机构音
   document.getElementById('patTag').textContent='SIM-PATIENT · 成人 · '+(S.rhythm==='arrest'?'⚠ 已停搏':'监护中');
   // 急救台: 冠脉灌注线(CPP≈主动脉舒张压-右房压)
@@ -1069,9 +1079,9 @@ function uiFrame(){
   // 内源激素行: 胰岛素放最前(位于"无"行正下方), 皮质醇/肾上腺素随后
   const extras=[['胰岛素(内源)',Math.min(1,S.insulinEndo/8)],['皮质醇',S.cortisolEndo],['肾上腺素(内源)',S.epiEndo]];
   if(!items.length){const d=document.createElement('div');d.className='row none';d.style.gridColumn='1/-1';d.textContent='无';dl.appendChild(d);}
-  items.forEach(([k,v])=>{const d=document.createElement('div');d.className='row';d.innerHTML=`<span>${zhOf(k)}</span><span>${(v*100).toFixed(0)}%</span>`;
+  items.forEach(([k,v])=>{const d=document.createElement('div');d.className='row';d.innerHTML=`<span>${CS.escape(zhOf(k))}</span><span>${(v*100).toFixed(0)}%</span>`;
     d.style.color=v>.8?'#ff8d99':v>.3?'#f6c46a':'#7ce2a0';dl.appendChild(d);});
-  extras.forEach(([n,v])=>{if(v>0.03){const d=document.createElement('div');d.className='row';d.innerHTML=`<span>${n}</span><span>${(v*100).toFixed(0)}%</span>`;
+  extras.forEach(([n,v])=>{if(v>0.03){const d=document.createElement('div');d.className='row';d.innerHTML=`<span>${CS.escape(n)}</span><span>${(v*100).toFixed(0)}%</span>`;
     d.style.color='#8fa0f0';d.style.gridColumn='1/-1';dl.appendChild(d);}});   // 内源激素整行(避免窄格折行)
   // 阶段2: BAC 数值展示（血液酒精浓度 ‰）；食物摄入窗口
   const foodWin=document.getElementById('foodInfo');
@@ -1139,14 +1149,14 @@ function renderLogBacklog(){
   const tail=EVENTS.slice(-60);
   for(let i=tail.length-1;i>=0;i--){
     const e=tail[i];const d=document.createElement('div');
-    d.className='ev '+(e.cls||'');d.innerHTML=`<span style="color:#4a5f8a">${fmtT(e.t)}</span> ${e.msg}`;
+    d.className='ev '+(e.cls||'');d.innerHTML=`<span style="color:#4a5f8a">${fmtT(e.t)}</span> ${rich(e.msg)}`;
     box.appendChild(d);
   }
 }
 var EVENTS=[];   // 全局时间线（阶段3: 死亡报告"时间线摘要"数据源; resetSim 清空=按"本局"计）
 function log(msg,cls){
   const box=document.getElementById('logBox');const d=document.createElement('div');
-  d.className='ev '+(cls||'');d.innerHTML=`<span style="color:#4a5f8a">${fmtT(S.t)}</span> ${msg}`;
+  d.className='ev '+(cls||'');d.innerHTML=`<span style="color:#4a5f8a">${fmtT(S.t)}</span> ${rich(msg)}`;
   box.prepend(d);while(box.children.length>60)box.lastChild.remove();
   EVENTS.push({t:S.t,msg:String(msg),cls:cls||''});
   if(EVENTS.length>300)EVENTS.shift();
@@ -1223,7 +1233,7 @@ function foodHint(){
   if(S.ect&&S.ect.stomach)tips+='<br>⚠ 胃切除术后：营养产出×0.6、吸收速率×0.35';
   if(S.ect&&S.ect.gallbladder&&F.fat)tips+='<br>⚠ 胆囊切除术后：脂肪餐将触发不耐受提示';
   tips+='<br>乙醇氧化 ~0.15‰/h(零级) · 咖啡因 t½≈5h';
-  info.innerHTML=tips;
+  info.innerHTML=rich(tips);
 }
 // ============ 采血化验面板（复刻 LIBloodwork: 名称/数值/参考范围 Range/超限 Warning） ============
 const LAB_REF={ph:[7.35,7.45],po2:[80,100],pco2:[35,45],hco3:[22,26],hb:[12,16],k:[3.5,5.1],na:[135,145],ca:[2.1,2.6],glu:[3.9,7.8],ctni:[0.0,0.04]};
@@ -1370,7 +1380,7 @@ function renderLab(){
   if(hist.length>1){
     html+='<div class="labSect"># 连续趋势（最近 '+hist.length+' 次采样）</div><table class="labTb"><tr><th>项目</th>'+hist.map(h=>'<th>'+fmtT(h.t)+'</th>').join('')+'</tr>';
     for(const key of Object.keys(LAB_REF)){
-      html+='<tr><td>'+key.toUpperCase()+'</td>'+hist.map(h=>{const f=labFlag(h.vals[key],LAB_REF[key]);
+      html+='<tr><td>'+CS.escape(key.toUpperCase())+'</td>'+hist.map(h=>{const f=labFlag(h.vals[key],LAB_REF[key]);
         return '<td style="color:'+LAB_COLOR[f]+';font-weight:700">'+h.vals[key].toFixed(LAB_DEC[key])+LAB_ARROW[f]+'</td>';}).join('')+'</tr>';
     }
     html+='</table>';
@@ -1439,7 +1449,7 @@ function renderDiag(){
   if(!items.length){
     html+='<div class="diagNone">目前未见异常 —— LIDiagnosis GoodCondition'+LAB_ARROW.ok+'<div class="sub">HR '+Math.round(S.hr)+' bpm · MAP '+Math.round(S.map)+' mmHg · SpO₂ '+Math.round(S.spo2)+'% · GCS '+S.gcs+'；引擎未检出活动性病理状态。</div></div>';
   }else{
-    items.forEach(d=>{html+='<div class="diagItem'+(d.crit?' crit':'')+'"><div class="dname">【'+d.name+'】'+(d.crit?'<span class="dcrit">危急</span>':'')+'</div><div class="dmech">机制：'+d.mech+'</div><div class="dact">处理：'+d.act+'</div></div>';});
+    items.forEach(d=>{html+='<div class="diagItem'+(d.crit?' crit':'')+'"><div class="dname">【'+CS.escape(d.name)+'】'+(d.crit?'<span class="dcrit">危急</span>':'')+'</div><div class="dmech">机制：'+CS.escape(d.mech)+'</div><div class="dact">处理：'+CS.escape(d.act)+'</div></div>';});
     html+='<div class="diagNone" style="color:#8395a8;font-size:11px">共 '+items.length+' 项活动性病理判定 —— 危急项优先处理；采样化疗可证实（cTnI/电解质/血气）。</div>';
   }
   card.innerHTML=html;
@@ -1490,17 +1500,17 @@ function openOrganModal(id,name,text){
   document.getElementById('modal').style.display='flex';
   document.getElementById('modalTitle').textContent=name+((S.ect&&S.ect[id])?'（已切除·不可逆）':' · 器官面板');
   document.getElementById('encSearch').style.display='none';
-  let html='<div style="font-size:13px;line-height:1.7;color:#1c2b3a">'+(text||'')+'</div>';
+  let html='<div style="font-size:13px;line-height:1.7;color:#1c2b3a">'+rich(text||'')+'</div>';
   if(S.ect&&S.ect[id]){
-    html+='<div class="ectDone">✂ 已行<b>'+ECT_LIB[id].op+'</b>（LMOrganBase.OrganEctomy · 不可逆）<br>'+ectStatus(id)+'</div>';
+    html+='<div class="ectDone">✂ 已行<b>'+CS.escape(ECT_LIB[id].op)+'</b>（LMOrganBase.OrganEctomy · 不可逆）<br>'+rich(ectStatus(id))+'</div>';
   }else{
-    html+='<div class="ectInfo">🔧 术式：<b>'+ECT_LIB[id].op+'</b> · '+ECT_LIB[id].desc+'</div>';
-    html+='<button class="ectBtn" onclick="ectAsk(\''+id+'\')">🔪 行'+ECT_LIB[id].op+'（不可逆）</button>';
+    html+='<div class="ectInfo">🔧 术式：<b>'+CS.escape(ECT_LIB[id].op)+'</b> · '+CS.escape(ECT_LIB[id].desc)+'</div>';
+    html+='<button class="ectBtn" onclick="ectAsk(\''+CS.escape(id)+'\')">🔪 行'+CS.escape(ECT_LIB[id].op)+'（不可逆）</button>';
   }
   document.getElementById('modalBody').innerHTML=html;
 }
 function ectAsk(id){
-  showConfirm('确认行 <b>'+ECT_LIB[id].op+'</b>？<br>术后改变<b style="color:#b3121c">不可逆</b>（器官切除语义——无法移植回植）。',()=>doEctomy(id));
+  showConfirm('确认行 <b>'+CS.escape(ECT_LIB[id].op)+'</b>？<br>术后改变<b style="color:#b3121c">不可逆</b>（器官切除语义——无法移植回植）。',()=>doEctomy(id));
 }
 function doEctomy(id){
   if(!id||!ECT_LIB[id]||(S.ect&&S.ect[id]))return;
@@ -1519,7 +1529,7 @@ function doEctomy(id){
   else if(id==='testis')extra='睾酮轴衰竭：垂体负反馈消失 → FSH/LH 上升，第二性征/生精不可逆受累';
   else if(id==='uterus')extra='生殖周期即刻停摆：FSH/LH 失抑制升高、E2/P4 低平（LMFRS 移除·绝经样内分泌状态），经期出血终止';
   else if(id==='prostate')extra='下尿路梗阻解除，排尿通畅';
-  log('🔪 行<b>'+e.op+'</b>（不可逆）'+(extra?'：'+extra:''),'crit');
+  log('🔪 行<b>'+CS.escape(e.op)+'</b>（不可逆）'+(extra?'：'+CS.escape(extra):''),'crit');
   if(typeof sfx==='function')sfx('Ectomy',{gain:.55});   // 阶段4: 器官切除原声
   BW.sel=null;                                        // 已切除器官不再保持选中
   if(typeof renderOrganStrip==='function')renderOrganStrip();
@@ -1553,7 +1563,7 @@ function renderChemPicker(){
    if(c===cur)st+=';box-shadow:var(--shadow-inset);outline:2px solid '+pal[1]+'55;font-weight:650';
    else st+=';box-shadow:var(--shadow-small)';
    const tip=enc?(enc.k+'·'+enc.t).slice(0,240):'「'+zhOf(c)+'（'+c+'）」暂无百科词条';
-   return '<button type="button" data-enc="'+tip+'" style="'+st+'" onclick="pickChem(\''+c+'\')"><b>'+zhOf(c)+'</b> <span style="opacity:.6;font-size:10px">'+c+'</span></button>';
+   return '<button type="button" data-enc="'+CS.escape(tip)+'" style="'+st+'" onclick="pickChem(\''+CS.escape(c)+'\')"><b>'+CS.escape(zhOf(c))+'</b> <span style="opacity:.6;font-size:10px">'+CS.escape(c)+'</span></button>';
  };
  let html='',pi=0;
  Object.entries(CATS).forEach(([cat,arr])=>{
@@ -1561,7 +1571,7 @@ function renderChemPicker(){
    if(!items.length)return;
    items.forEach(c=>used.add(c));
    const pal=CHEM_PAL[pi%CHEM_PAL.length];
-   html+='<div style="font-size:10.5px;letter-spacing:1.5px;color:'+pal[1]+';margin:14px 0 6px;padding-left:2px">'+cat+'<span style="color:var(--faint);letter-spacing:0">('+items.length+')</span></div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(152px,1fr));gap:8px">'+items.map(c=>chip(c,pi)).join('')+'</div>';
+   html+='<div style="font-size:10.5px;letter-spacing:1.5px;color:'+pal[1]+';margin:14px 0 6px;padding-left:2px">'+CS.escape(cat)+'<span style="color:var(--faint);letter-spacing:0">('+items.length+')</span></div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(152px,1fr));gap:8px">'+items.map(c=>chip(c,pi)).join('')+'</div>';
    pi++;
  });
  const rest=CHEMS.filter(c=>c!=='Null'&&!used.has(c)&&(!q||c.toLowerCase().includes(q)||zhOf(c).includes(q)));
@@ -1577,7 +1587,7 @@ document.addEventListener('mouseover',e=>{
  tip.textContent='';
  const i=b.getAttribute('data-enc').indexOf('·');
  const k=b.getAttribute('data-enc').slice(0,i),t2=b.getAttribute('data-enc').slice(i+1);
- tip.innerHTML='<b style="color:#0e7490">'+k+'</b><br>'+t2;
+ tip.innerHTML='<b style="color:#0e7490">'+CS.escape(k)+'</b><br>'+rich(t2);
  tip.style.display='block';
  const r=b.getBoundingClientRect();
  tip.style.left=Math.min(window.innerWidth-352,r.right+8)+'px';
@@ -1634,10 +1644,10 @@ function renderEncList(){
   const q=document.getElementById('encSearch').value.trim();
   const body=document.getElementById('modalBody');
   const keys=Object.keys(ENCYC).filter(k=>!q||k.includes(q)||ENCYC[k].includes(q)).slice(0,400);
-  if(!q||titleNotEncList()){if(!q){body.innerHTML='输入关键词搜索，或直接浏览：';keys.slice(0,12).forEach(k=>{const d=document.createElement('div');d.style.cssText='padding:6px 0;border-bottom:1px dashed #dfe7ee;cursor:pointer';d.innerHTML='<b style="color:#0e7490">'+k+'</b>：'+(ENCYC[k]||'').slice(0,100)+'…';d.onclick=()=>openModal(k,ENCYC[k]);body.appendChild(d);});}return;}
+  if(!q||titleNotEncList()){if(!q){body.innerHTML='输入关键词搜索，或直接浏览：';keys.slice(0,12).forEach(k=>{const d=document.createElement('div');d.style.cssText='padding:6px 0;border-bottom:1px dashed #dfe7ee;cursor:pointer';d.innerHTML='<b style="color:#0e7490">'+CS.escape(k)+'</b>：'+rich((ENCYC[k]||'').slice(0,100))+'…';d.onclick=()=>openModal(k,ENCYC[k]);body.appendChild(d);});}return;}
   body.innerHTML='';
   keys.forEach(k=>{const d=document.createElement('div');d.style.cssText='padding:6px 0;border-bottom:1px dashed #dfe7ee;cursor:pointer';
-    d.innerHTML='<b style="color:#0e7490">'+k+'</b>：'+ENCYC[k].slice(0,120)+'…';d.onclick=()=>openModal(k,ENCYC[k]);body.appendChild(d);});
+    d.innerHTML='<b style="color:#0e7490">'+CS.escape(k)+'</b>：'+rich(ENCYC[k].slice(0,120))+'…';d.onclick=()=>openModal(k,ENCYC[k]);body.appendChild(d);});
 }
 function titleNotEncList(){const t=document.getElementById('modalTitle').textContent;return !t.startsWith('医学百科');}
 function openModal(title,content){document.getElementById('modal').style.display='flex';document.getElementById('modalTitle').textContent=title;document.getElementById('modalBody').textContent=content!=''&&content!==undefined?content:title;
@@ -2086,10 +2096,10 @@ function showCaseEnd(){
     h+='<div class="row2"><span>已耗时 <b>'+fmtT(r.time)+'</b></span><span>操作/事件 <b>'+r.ops+'</b></span></div>';
   }
   h+='<div id="caseGoalList"><b>目标复盘：</b><br>';
-  (won?CASEC.result.goals||[]:r.goals||[]).forEach(function(g){h+='<span class="'+(g.done||won?'ok':'no')+'">'+(g.done||won?'✔':'✘')+' '+g.txt+'</span><br>';});
-  if(won)if(CASEC.idx+1<CASES.length)h+='<span class="ok">✔ 已解锁下一病例：'+CASES[CASEC.idx+1].name+'</span><br>';
+  (won?CASEC.result.goals||[]:r.goals||[]).forEach(function(g){h+='<span class="'+(g.done||won?'ok':'no')+'">'+(g.done||won?'✔':'✘')+' '+CS.escape(g.txt)+'</span><br>';});
+  if(won)if(CASEC.idx+1<CASES.length)h+='<span class="ok">✔ 已解锁下一病例：'+CS.escape(CASES[CASEC.idx+1].name)+'</span><br>';
   h+='</div>';
-  h+='<button class="pri" onclick="caseQuit()">返回自由模式</button>'+(won?'':'<button onclick="startCase(\''+c.id+'\')">重试本病例</button>');
+  h+='<button class="pri" onclick="caseQuit()">返回自由模式</button>'+(won?'':'<button onclick="startCase(\''+CS.escape(c.id)+'\')">重试本病例</button>');
   card.className=won?'win':'lose';
   card.innerHTML=h;
   const eb=document.getElementById('caseEndBox');if(eb)eb.style.display='flex';
@@ -2104,11 +2114,11 @@ function openCaseSelect(){
     CASES.forEach(function(c,i){
       const locked=false;   // 全部病例开放挑战
       const res=p.results[c.id];
-      h+='<div class="caseCard'+(locked?' lock':'')+'" '+(locked?'':'onclick="startCase(\''+c.id+'\')"')+
-        '><h5>'+(locked?'🔒 ':'')+'C'+(i+1)+' '+c.name+'</h5>'+
+      h+='<div class="caseCard'+(locked?' lock':'')+'" '+(locked?'':'onclick="startCase(\''+CS.escape(c.id)+'\')"')+
+        '><h5>'+(locked?'🔒 ':'')+'C'+(i+1)+' '+CS.escape(c.name)+'</h5>'+
         '<div class="diff">'+'★'.repeat(c.diff)+'☆'.repeat(5-c.diff)+'</div>'+
         '<div class="meta">'+(res?('✔ 已完成 · 最佳用时 <span class="best">'+fmtT(res.best)+'</span> · 评级 '+'★'.repeat(res.stars)):'未完成 · 待挑战')+'</div>'+
-        '<div class="desc">'+c.desc+'</div></div>';
+        '<div class="desc">'+CS.escape(c.desc)+'</div></div>';
     });
     grid.innerHTML=h;
   }
@@ -2129,7 +2139,7 @@ function renderCaseHUD(){
   CASEC.goals.forEach(function(g){
     const pct=g.done?100:Math.min(100,g.hold/g.hold_t*100);
     h+='<div class="goalItem'+(g.done?' done':'')+'"><span class="gz">'+(g.done?'✅':(pct>0?'⏳':'⬜'))+'</span>'+
-      '<span class="gtxt" style="flex:1">'+g.txt+(g.done?'':' <span style="color:#8aa">'+Math.ceil(g.hold_t-g.hold)+'s</span>')+'</span>'+
+      '<span class="gtxt" style="flex:1">'+CS.escape(g.txt)+(g.done?'':' <span style="color:#8aa">'+Math.ceil(g.hold_t-g.hold)+'s</span>')+'</span>'+
       '<span class="gbar"><span class="gfill" style="width:'+pct+'%"></span></span></div>';
   });
   document.getElementById('caseHudGoals').innerHTML=h;
