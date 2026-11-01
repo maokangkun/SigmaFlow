@@ -2687,6 +2687,11 @@ class ScienceAPI:
                 sid = host.id if host else ""
             if not sid:
                 raise HTTPException(status_code=400, detail="没有活动的环境会话")
+            # 显式 sessionId 校验属主: 会话 id 可枚举, 别人的正在等待的
+            # 工具调用(含参数)不能被他人领走
+            _sess = PATENV_HUB.get(sid)
+            if _sess is None or _sess.user != _current_user():
+                raise HTTPException(status_code=403, detail="无权访问该环境会话")
             call = await PATENV_HUB.next_call(sid, min(25.0, max(1.0, wait)))
             return {"call": call}
 
@@ -2694,6 +2699,10 @@ class ScienceAPI:
         async def patenv_result(request: Request):
             _check_origin(request)
             body = await request.json()
+            # 回传也校验属主: 会话 id 可枚举, 不能替/给他人的调用提交结果
+            _sess = PATENV_HUB.get(str(body.get("sessionId") or ""))
+            if _sess is None or _sess.user != _current_user():
+                raise HTTPException(status_code=403, detail="无权访问该环境会话")
             accepted = PATENV_HUB.submit(
                 str(body.get("sessionId") or ""),
                 str(body.get("id") or ""),
@@ -5140,7 +5149,8 @@ def _safe_rebuild_agent_mcp() -> None:
         client = _rebuild_agent_mcp()
         _AGENT_CONTEXT_SIZES.clear()  # 工具集变了, 固定开销需重新测量
         logging.getLogger("uvicorn.error").info(
-            "mcp tools re-wired after startup: %d", len(getattr(client, "tools", {}) or {})
+            "mcp tools re-wired after startup: %d",
+            len(getattr(client, "tools", {}) or {}),
         )
     except Exception as err:
         logging.getLogger("uvicorn.error").info("mcp rewire skipped: %s", err)

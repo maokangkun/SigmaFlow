@@ -47,7 +47,9 @@ def patient_agent_prompt() -> str:
         return _FALLBACK_PROMPT
 
 
-def _schema(props: Dict[str, Any], required: Optional[List[str]] = None) -> Dict[str, Any]:
+def _schema(
+    props: Dict[str, Any], required: Optional[List[str]] = None
+) -> Dict[str, Any]:
     return {
         "type": "object",
         "properties": props,
@@ -106,7 +108,13 @@ TOOLS: List[Dict[str, Any]] = [
                 "dose": {"type": "number", "default": 1, "minimum": 0.1, "maximum": 50},
                 "route": {
                     "type": "string",
-                    "enum": ["IVPush", "Oral", "Muscle", "ContinuousInfusion", "Inhale"],
+                    "enum": [
+                        "IVPush",
+                        "Oral",
+                        "Muscle",
+                        "ContinuousInfusion",
+                        "Inhale",
+                    ],
                     "default": "IVPush",
                 },
             },
@@ -172,14 +180,23 @@ TOOLS: List[Dict[str, Any]] = [
             "develop; the page renders the whole interval."
         ),
         "inputSchema": _schema(
-            {"seconds": {"type": "number", "minimum": 1, "maximum": 120, "default": 10}},
+            {
+                "seconds": {
+                    "type": "number",
+                    "minimum": 1,
+                    "maximum": 120,
+                    "default": 10,
+                }
+            },
             ["seconds"],
         ),
     },
     {
         "name": "patient_log",
         "description": "Recent event log entries (newest last) with timestamps, for reconstructing what already happened.",
-        "inputSchema": _schema({"limit": {"type": "integer", "minimum": 5, "maximum": 80, "default": 20}}),
+        "inputSchema": _schema(
+            {"limit": {"type": "integer", "minimum": 5, "maximum": 80, "default": 20}}
+        ),
     },
     {
         "name": "patient_reset",
