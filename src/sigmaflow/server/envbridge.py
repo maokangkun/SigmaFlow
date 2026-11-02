@@ -39,6 +39,7 @@ class EnvSession:
         self.id = session_id
         self.created = time.time()
         self.seen = time.time()
+        self.last_poll = time.time()  # 最近一次长轮询: 宿主"活着"的铁证
         self.conversation_id = ""
         self.pending: asyncio.Queue = asyncio.Queue()
         self.waiters: Dict[str, asyncio.Future] = {}
@@ -55,6 +56,10 @@ class EnvHub:
 
     CALL_TIMEOUT = 120.0
     SESSION_TTL = 6 * 3600.0
+    # 宿主存活判据: 页面必须持续长轮询才算是活的浏览器环境。见过标签页
+    # 直接关闭/刷新的会话条目还在 —— 没有这个判据, 后续工具调用会在队列
+    # 里干等 120s 才报错。轮询最长 25s 一轮, 再留出执行长工具的时间。
+    POLL_TTL = 90.0
 
     def __init__(
         self,
@@ -111,8 +116,14 @@ class EnvHub:
         return session
 
     def host(self, user: str) -> Optional[EnvSession]:
+        """The live host page for a user: present AND still long-polling."""
         session_id = self._by_user.get(user)
-        return self.get(session_id) if session_id else None
+        session = self.get(session_id) if session_id else None
+        if session is None:
+            return None
+        if time.time() - session.last_poll > self.POLL_TTL:
+            return None  # 会话记录在, 但页面已停止取任务(关闭/刷新/挂起)
+        return session
 
     def heartbeat(self, session_id: str) -> None:
         session = self._sessions.get(session_id)
@@ -125,6 +136,7 @@ class EnvHub:
         if session is None:
             return None
         session.seen = time.time()
+        session.last_poll = time.time()
         try:
             return await asyncio.wait_for(session.pending.get(), timeout=wait)
         except asyncio.TimeoutError:

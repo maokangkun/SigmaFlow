@@ -42,7 +42,6 @@ def test_job_scope_isolation():
     _fresh("run-isol-job-b")
     check_b = tools.BG.check()
     assert check_b == "No background jobs."
-    id_list = ["sleep"]  # find job id from A
     # A 的作业 id 在 B 里不可查
     import re
 

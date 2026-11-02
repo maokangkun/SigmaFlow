@@ -129,9 +129,7 @@ def test_model_caption_absent_without_name():
 def test_template_skills_dir_placeholder_single_source():
     """模板反替走 agent.tools 单点(skills_dir_field/skills_dir_from_listing),
     措辞或 # Skills 标题调整时仅同步这两个函数即可, 无需改模板代码。"""
-    import os
 
-    import sigmaflow.server.science as sci
     from sigmaflow.agent import tools as agent_tools
 
     tpl = _system_prompt_template()

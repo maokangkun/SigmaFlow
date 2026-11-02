@@ -51,7 +51,7 @@ def test_archive_user_row_ignores_missing_conv(tmp_path):
 
 
 def test_interrupt_active_chats_writes_error_row(tmp_path):
-    from sigmaflow.server.science import ScienceAPI, ScienceProjectStore
+    from sigmaflow.server.science import ScienceAPI
 
     store = _store_with_conv(tmp_path)
     store.archive_user_row("run-x", "长任务的问题")

@@ -15,6 +15,7 @@
  *  11 疫苗平台 | 12 tier
  */
 (() => {
+  const G = typeof window !== 'undefined' ? window : globalThis;
   const _ = null;
 
   // ---------------- 原型(动力学参数族) ----------------
@@ -29,7 +30,7 @@
     v_ssDNA:     { k: 'virus', g: 'ssDNA',        s: [4, 5.6], gn: 3, mu: 1e-7, r: 0.8, pyro: 1.6 },
     v_dsDNA:     { k: 'virus', g: 'dsDNA',        s: [30, 240], gn: 90, mu: 6e-8, r: 0.9, pyro: 1.8 },
     v_rtDNA:     { k: 'virus', g: 'dsDNA-RT',     s: [3.2, 3.4], gn: 4, mu: 2e-5, r: 0.35, pyro: 1.0 },
-    v_rtna:      { k: 'virus', g: 'ssRNA-RT',     s: [9.2, 9.7], gn: 9, mu: 3e-5, r: 0.9, pyro: 0.8 },
+    v_rtna:      { k: 'virus', g: 'ssRNA-RT',     s: [9.2, 9.7], gn: 9, mu: 3e-5, r: 0.45, pyro: 0.8 },
     // 细菌
     b_gp:        { k: 'bacterium', g: '革兰阳性 dsDNA', s: [2.0, 3.2], gn: 2600, mu: 2e-10, r: 1.9, pyro: 2.6 },
     b_gn:        { k: 'bacterium', g: '革兰阴性 dsDNA', s: [3.2, 5.9], gn: 4200, mu: 2e-10, r: 2.1, pyro: 3.2 },
@@ -322,7 +323,7 @@
   // 个别行里 vaccine 字段误用下划线占位打成了 '_' 等, 统一归一为 null
   for (const row of CAT) { if (row[11] === '_' || row[11] === '') row[11] = _; }
 
-  window.PathoCatalog = {
+  G.PathoCatalog = {
     arch: ARCH,
     rx: RX,
     raw: CAT,

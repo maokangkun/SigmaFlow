@@ -67,8 +67,8 @@
       </div>
     </div></section>`},f.pathogen=()=>`<section class="page pathogen-page"><div id="pathogen-root">
     <div class="p2-topbar">
-      <div class="p2-title">🦠 虚拟病原体</div>
-      <div class="p2-motto">教学/训练沙盒 · 非预测工具</div>
+      <div class="p2-title">🦠 虚拟病原体<span class="p2-dot" id="p2BridgeDot" title="环境桥: 智能体工具直接驱动本页引擎"></span></div>
+      <div class="p2-motto">教学/训练沙盒 · 参数为教科书量级 · 非预测工具</div>
       <div class="p2-scales">
         <button type="button" class="p2-scale" data-s="molecular" onclick="PathoUI.setScale('molecular')">分子/基因</button>
         <button type="button" class="p2-scale on" data-s="host" onclick="PathoUI.setScale('host')">宿主内</button>
@@ -85,7 +85,55 @@
       </aside>
       <div class="p2-right">
         <div class="p2-card" id="p2Info"></div>
-        <div class="p2-scalecard" id="p2ScaleDesc">本面板承载选中病原体在各尺度的仿真。开始先在左侧选定病原体。</div>
+        <div class="p2-work">
+          <section class="p2-pane" data-pane="molecular" hidden>
+            <div class="p2-pane-head">分子 / 基因组层</div>
+            <p>伪基因组与基因图式、变异检出、耐药注释、抗原逃逸、演化预测、药物匹配、疫苗设计、系统发生与宿主溯源。</p>
+            <p class="muted">本层(P2)接线中: 接入后智能体可通过 <b>测序 → 变异谱 → 机制注释 → 用药匹配</b> 的全链路做推断任务, 真值由场景种子锁定并可评分。</p>
+          </section>
+          <section class="p2-pane" data-pane="host">
+            <div class="p2-pane-head">宿主内动力学</div>
+            <div class="p2-controls">
+              <label>接种 10^<input id="p2Dose" type="number" value="3" min="-1" max="12" step="0.5" style="width:52px"></label>
+              <button type="button" class="p2-btn" onclick="PathoUI.inoculate()">🦠 接种</button>
+              <span class="p2-sep"></span>
+              <label>药物 <select id="p2Rx"></select></label>
+              <label><input id="p2Mg" type="number" value="500" style="width:62px">mg</label>
+              <label>q<input id="p2Iv" type="number" value="12" style="width:46px">h</label>
+              <label>×<input id="p2Days" type="number" value="7" style="width:46px">d</label>
+              <button type="button" class="p2-btn" onclick="PathoUI.dose()">💊 给药</button>
+              <span class="p2-sep"></span>
+              <label>推进 <input id="p2Adv" type="number" value="1" style="width:48px" step="0.5"> 天</label>
+              <button type="button" class="p2-btn" onclick="PathoUI.advance()">⏩ 推进</button>
+              <button type="button" class="p2-btn" id="p2Play" onclick="PathoUI.play()">▶ 播放</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.reset()">↺ 复位</button>
+            </div>
+            <div class="p2-strip" id="p2Strip"></div>
+            <div class="p2-charts" id="p2Charts"></div>
+          </section>
+          <section class="p2-pane" data-pane="diag" hidden>
+            <div class="p2-pane-head">诊断读数（所有观测都有检出限与假阴）</div>
+            <div class="p2-controls">
+              <button type="button" class="p2-btn" onclick="PathoUI.diag('pcr')">🧬 qPCR (Ct)</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.diag('antigen')">🧻 抗原</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.diag('culture')">🧫 培养</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.diag('mic_panel')">💊 MIC 面板</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.diag('panel')">▣ 全套</button>
+            </div>
+            <pre class="p2-out" id="p2DiagOut">尚未采样 —— 先在「宿主内」接种并推进时间, 再回来检测。
+注意: 检测读数是唯一合法的观测来源; 智能体看不到引擎内部状态。</pre>
+          </section>
+          <section class="p2-pane" data-pane="pop" hidden>
+            <div class="p2-pane-head">群体动态</div>
+            <p>元种群 SEIR（地区 × 年龄分组）、变异株频率、疫苗接种与 NPI 干预、基因组监测采样、溢出预警评分。</p>
+            <p class="muted">本层(P3)接线中: 将与宿主内层通过"传染性曲线 I(t)"耦合 —— 治疗效果会真实地改变传播。</p>
+          </section>
+          <section class="p2-pane" data-pane="trial" hidden>
+            <div class="p2-pane-head">试验台</div>
+            <p>协议定义（多臂 + 时间表）、重复运行与置信区间、A/B 对比、真值评分、CSV 导出。评分四类任务: 推断(F1/Brier)、控制(代价)、设计(覆盖率)、分析(功效)。</p>
+            <p class="muted">本层(P4)接线中。</p>
+          </section>
+        </div>
         <div class="p2-logpanel" id="p2Log"></div>
       </div>
     </div>

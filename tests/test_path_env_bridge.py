@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import time
 
 from sigmaflow.server import pathenv
 from sigmaflow.server.envbridge import EnvHub
@@ -98,6 +99,38 @@ def test_page_bridge_roundtrip_shared_with_patient():
         return await asyncio.wait_for(task, timeout=2)
 
     assert asyncio.run(run()) == {"ok": True, "text": "已接种 1e3"}
+
+
+def test_stale_session_no_longer_hangs_tool_calls():
+    """关闭的标签页不能再拖住工具调用: 宿主必须"还在长轮询"才算活着。
+
+    修复前, 注册过一次会话的浏览器关掉页面后, 后续 tools/call 会在队列里
+    干等 120s 才报错; 现在超过 POLL_TTL 没轮询就立即按"页面没有打开"引导。
+    """
+    hub = pathenv.PathEnvHub()
+    hub.POLL_TTL = 0.05
+    session = hub.register("tester")
+
+    async def no_poller_call():
+        await asyncio.sleep(0.1)  # 会话注册后从未轮询
+        return await hub.call("tester", "pathogen_catalog", {})
+
+    outcome = asyncio.run(no_poller_call())
+    assert outcome["ok"] is False
+    assert "虚拟病原体" in outcome["text"]
+
+    async def poller_then_result():
+        # 活的宿主: 先有轮询证据(last_poll 刷新), 再领任务执行回传
+        session.last_poll = time.time()
+        task = asyncio.create_task(hub.call("tester", "pathogen_catalog", {}))
+        await asyncio.sleep(0)
+        queued = await asyncio.wait_for(session.pending.get(), timeout=2)
+        session.last_poll = time.time()
+        session.seen = session.last_poll
+        assert hub.submit(session.id, queued["id"], {"ok": True, "text": "目录已返回"})
+        return await asyncio.wait_for(task, timeout=2)
+
+    assert asyncio.run(poller_then_result()) == {"ok": True, "text": "目录已返回"}
 
 
 def test_envbridge_is_shared_between_both_environments():
