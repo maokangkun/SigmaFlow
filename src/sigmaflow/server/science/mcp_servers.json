@@ -14,6 +14,26 @@
     },
     "patenv": {
       "url": "http://127.0.0.1:{port}/api/patenv/mcp"
+    },
+    "pathenv-molecular": {
+      "url": "http://127.0.0.1:{port}/api/pathenv/mcp/molecular",
+      "description": "分子/基因组层: 测序读数/变异/耐药注释/逃逸/演化预测/药物匹配/疫苗设计/系统发生/溯源"
+    },
+    "pathenv-host": {
+      "url": "http://127.0.0.1:{port}/api/pathenv/mcp/host",
+      "description": "宿主内层: 目录/场景/接种/给药/免疫/观测/推进时间"
+    },
+    "pathenv-diag": {
+      "url": "http://127.0.0.1:{port}/api/pathenv/mcp/diag",
+      "description": "诊断层: 检测/测序/病原识别"
+    },
+    "pathenv-pop": {
+      "url": "http://127.0.0.1:{port}/api/pathenv/mcp/pop",
+      "description": "群体层: 元种群/干预/疫苗/监测/溢出预警"
+    },
+    "pathenv-trial": {
+      "url": "http://127.0.0.1:{port}/api/pathenv/mcp/trial",
+      "description": "试验台: 协议/重复运行/A-B 对比/导出"
     }
   }
 }

@@ -60,8 +60,14 @@ from .patenv import (
     HUB as PATENV_HUB,
     PATIENT_PROJECT_ID,
     PATIENT_PROJECT_NAME,
-    TOOLS as PATENV_TOOLS,
     patient_agent_prompt,
+)
+from .pathenv import (
+    HUB as PATHENV_HUB,
+    GROUPS as PATHENV_GROUPS,
+    PATHOGEN_PROJECT_ID,
+    PATHOGEN_PROJECT_NAME,
+    pathogen_agent_prompt,
 )
 from .science_admin import (
     _ScienceSkillView,
@@ -1199,14 +1205,16 @@ class ScienceAPI:
         self._register_conversation_routes(router)
 
         self._register_patenv_routes(router, mcp_router)
+        self._register_pathenv_routes(router, mcp_router)
 
         self._register_pty_routes(router, ws_router)
 
         @router.on_event("startup")
         async def startup_event():
             await self.manager.start()
-            # 侧栏「虚拟患者」项目启动即就位, 病例挑战会话才能落在固定项目里
+            # 侧栏「虚拟患者」「虚拟病原体」项目启动即就位, 会话才能落在固定项目里
             self._patenv_ensure_project()
+            self._pathenv_ensure_project()
             # MCP 工具在 tools 模块 import 时接线, 而本服务自托管的 patenv MCP
             # 走 127.0.0.1:<自身端口>——此时端口可能还没监听, 首次列工具会落空。
             # 监听就绪后再重挂一次, 顺便把远端 MCP(rcsb/anysearch) 的临时失败补上。
@@ -2617,36 +2625,74 @@ class ScienceAPI:
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
             )
 
-    # ==================== 虚拟患者环境(病例挑战) ====================
-    def _patenv_ensure_project(self) -> str:
-        """侧栏固定项目「虚拟患者」: 所有病例挑战会话都归到这里。"""
+    # ==================== 浏览器宿主型虚拟环境(患者 / 病原体) ====================
+    # 两个环境的传输完全一致, 区别只在工具清单/提示词/侧栏项目与文案, 因此路由
+    # 写一份、按 EnvSpec 参数化注册。页面是环境宿主: 注册会话 → 长轮询领调用 →
+    # 在实时引擎上执行 → 回传结果; 智能体侧只看到 MCP 工具调用与结果。
+    def _ensure_env_project(
+        self, project_id: str, name: str, description: str, tags: list, icon: str
+    ) -> str:
+        """侧栏固定项目: 某个环境的会话都归到它下面(启动时补种)。"""
         try:
-            if PATIENT_PROJECT_ID not in self.project_store.projects:
+            if project_id not in self.project_store.projects:
                 self.project_store.upsert_project(
                     ProjectIn(
-                        id=PATIENT_PROJECT_ID,
-                        name=PATIENT_PROJECT_NAME,
-                        description="AI 智能体在虚拟患者环境里做病例挑战的会话集合",
-                        tags=["虚拟患者", "病例挑战"],
-                        icon="patient",
+                        id=project_id,
+                        name=name,
+                        description=description,
+                        tags=list(tags),
+                        icon=icon,
                     )
                 )
         except Exception as err:  # 补种失败不影响运行
             logging.getLogger("uvicorn.error").info(
-                "patenv project seed skipped: %s", err
+                "env project seed skipped (%s): %s", project_id, err
             )
-        return PATIENT_PROJECT_ID
+        return project_id
 
-    def _register_patenv_routes(self, router: APIRouter, mcp_router: APIRouter) -> None:
+    def _patenv_ensure_project(self) -> str:
+        """侧栏固定项目「虚拟患者」: 所有病例挑战会话都归到这里。"""
+        return self._ensure_env_project(
+            PATIENT_PROJECT_ID,
+            PATIENT_PROJECT_NAME,
+            "AI 智能体在虚拟患者环境里做病例挑战的会话集合",
+            ["虚拟患者", "病例挑战"],
+            "patient",
+        )
+
+    def _pathenv_ensure_project(self) -> str:
+        """侧栏固定项目「虚拟病原体」: 所有病原体实验会话都归到这里。"""
+        return self._ensure_env_project(
+            PATHOGEN_PROJECT_ID,
+            PATHOGEN_PROJECT_NAME,
+            "AI 智能体在虚拟病原体环境里做仿真实验的会话集合",
+            ["虚拟病原体", "仿真实验"],
+            "virus",
+        )
+
+    def _register_env_routes(
+        self,
+        router: APIRouter,
+        mcp_router: APIRouter,
+        *,
+        hub,
+        prefix: str,
+        project_id: str,
+        project_name: str,
+        prompt_fn,
+        page_title: str,
+        ensure_project,
+        groups: Optional[Dict[str, str]] = None,
+    ) -> None:
         """浏览器(环境宿主)侧路由 + 智能体侧 MCP 路由。
 
-        浏览器: 注册会话 → 长轮询取工具调用 → 在实时引擎上执行 → 回传结果。
-        智能体: MCP JSON-RPC, 每次 tools/call 都在等浏览器回传, 因此页面上
-        看到的心电/血压/事件记录就是智能体操作的同一份状态。
+        ``groups`` 非空时额外为每个分层建一个 MCP 端点 (``/<prefix>/mcp/<group>``),
+        智能体可以只挂需要的尺度, 不必为整套工具付上下文。
         """
+        groups = dict(groups or {})
 
-        @router.post("/patenv/session")
-        async def patenv_session(request: Request):
+        @router.post(f"/{prefix}/session")
+        async def env_session(request: Request):
             _check_origin(request)
             try:
                 body = await request.json()
@@ -2654,8 +2700,8 @@ class ScienceAPI:
                 body = {}
             if not isinstance(body, dict):
                 body = {}
-            project_id = self._patenv_ensure_project()
-            session = PATENV_HUB.register(_current_user())
+            pid = ensure_project()
+            session = hub.register(_current_user())
             cid = str(body.get("conversationId") or "")
             conv = self.project_store.conversations.get(cid) if cid else None
             if conv is None:
@@ -2665,8 +2711,9 @@ class ScienceAPI:
             return {
                 "sessionId": session.id,
                 "conversationId": cid,
-                "projectId": project_id,
-                "projectName": PATIENT_PROJECT_NAME,
+                "projectId": pid,
+                "projectName": project_name,
+                "pageTitle": page_title,
                 "messages": [
                     {
                         "role": m.get("role"),
@@ -2676,43 +2723,44 @@ class ScienceAPI:
                     for m in content
                     if isinstance(m, dict) and m.get("role") in ("user", "assistant")
                 ],
-                "tools": [tool["name"] for tool in PATENV_TOOLS],
+                "tools": [tool["name"] for tool in hub.tools],
+                "groups": {k: len(v) for k, v in groups.items()},
             }
 
-        @router.get("/patenv/poll")
-        async def patenv_poll(request: Request, sessionId: str = "", wait: float = 20):
+        @router.get(f"/{prefix}/poll")
+        async def env_poll(request: Request, sessionId: str = "", wait: float = 20):
             sid = sessionId.strip()
             if not sid:
-                host = PATENV_HUB.host(_current_user())
-                sid = host.id if host else ""
+                host_session = hub.host(_current_user())
+                sid = host_session.id if host_session else ""
             if not sid:
                 raise HTTPException(status_code=400, detail="没有活动的环境会话")
             # 显式 sessionId 校验属主: 会话 id 可枚举, 别人的正在等待的
             # 工具调用(含参数)不能被他人领走
-            _sess = PATENV_HUB.get(sid)
+            _sess = hub.get(sid)
             if _sess is None or _sess.user != _current_user():
                 raise HTTPException(status_code=403, detail="无权访问该环境会话")
-            call = await PATENV_HUB.next_call(sid, min(25.0, max(1.0, wait)))
+            call = await hub.next_call(sid, min(25.0, max(1.0, wait)))
             return {"call": call}
 
-        @router.post("/patenv/result")
-        async def patenv_result(request: Request):
+        @router.post(f"/{prefix}/result")
+        async def env_result(request: Request):
             _check_origin(request)
             body = await request.json()
             # 回传也校验属主: 会话 id 可枚举, 不能替/给他人的调用提交结果
-            _sess = PATENV_HUB.get(str(body.get("sessionId") or ""))
+            _sess = hub.get(str(body.get("sessionId") or ""))
             if _sess is None or _sess.user != _current_user():
                 raise HTTPException(status_code=403, detail="无权访问该环境会话")
-            accepted = PATENV_HUB.submit(
+            accepted = hub.submit(
                 str(body.get("sessionId") or ""),
                 str(body.get("id") or ""),
                 {"ok": bool(body.get("ok")), "text": str(body.get("text") or "")},
             )
             return {"accepted": accepted}
 
-        @router.post("/patenv/chat")
-        async def patenv_chat(request: Request):
-            """跑一轮智能体: 用例挑战提示词 + MCP 工具, SSE 流式回传。"""
+        @router.post(f"/{prefix}/chat")
+        async def env_chat(request: Request):
+            """跑一轮智能体: 环境提示词 + MCP 工具, SSE 流式回传。"""
             _check_origin(request)
             body = await request.json()
             cid = str(body.get("conversationId") or "")
@@ -2721,16 +2769,13 @@ class ScienceAPI:
                 raise HTTPException(status_code=400, detail="消息为空")
             conv = self.project_store.conversations.get(cid) or {}
             if not conv:
-                # 首轮才落库: 会话只在真有消息时出现在侧栏「虚拟患者」项目里
+                # 首轮才落库: 会话只在真有消息时出现在侧栏项目里
                 created = self.project_store.upsert_conversation(
-                    ConversationIn(
-                        title=text[:60],
-                        projectId=self._patenv_ensure_project(),
-                    )
+                    ConversationIn(title=text[:60], projectId=ensure_project())
                 )
                 cid = created["id"]
                 conv = self.project_store.conversations.get(cid) or {}
-            host_session = PATENV_HUB.host(_current_user())
+            host_session = hub.host(_current_user())
             if host_session is not None:
                 host_session.conversation_id = cid
             history = [
@@ -2744,7 +2789,7 @@ class ScienceAPI:
             base_url, api_key, model_name = _resolve_chat(
                 self.model_store, body.get("modelId")
             )
-            host = PATENV_HUB.host(_current_user())
+            host = hub.host(_current_user())
             loop = asyncio.get_running_loop()
             aq: asyncio.Queue = asyncio.Queue()
             stats: dict = {}
@@ -2762,12 +2807,12 @@ class ScienceAPI:
                         return  # 心跳不渲染
                 _emit("tool", ev)
 
-            extra = patient_agent_prompt() + (
-                "\n\n## 本轮环境\n- 患者页环境连接: "
+            extra = prompt_fn() + (
+                "\n\n## 本轮环境\n- 环境连接: "
                 + (
                     "已连接, 工具直接读改浏览器里的实时引擎"
                     if host
-                    else "未连接 —— 先请用户打开「虚拟患者」页并保持 AI 面板开着"
+                    else f"未连接 —— 先请用户打开「{page_title}」页并保持 AI 面板开着"
                 )
                 + "\n- 会话 ID: "
                 + (cid or "-")
@@ -2825,8 +2870,8 @@ class ScienceAPI:
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
             )
 
-        @router.post("/patenv/answer")
-        async def patenv_answer(request: Request):
+        @router.post(f"/{prefix}/answer")
+        async def env_answer(request: Request):
             _check_origin(request)
             body = await request.json()
             try:
@@ -2837,19 +2882,63 @@ class ScienceAPI:
                 ok = False
             return {"answered": bool(ok)}
 
-        @mcp_router.post("/patenv/mcp")
-        async def patenv_mcp(request: Request):
+        async def _mcp_endpoint(request: Request, group: str = ""):
             """MCP 入口(仅本机): 服务进程内的 MCP 客户端直连 127.0.0.1。"""
             client = getattr(request, "client", None)
             host = getattr(client, "host", "") if client else ""
             if host not in ("127.0.0.1", "::1", "localhost"):
-                raise HTTPException(status_code=403, detail="patenv MCP is local-only")
+                raise HTTPException(
+                    status_code=403, detail=f"{prefix} MCP is local-only"
+                )
             payload = await request.json()
             if not isinstance(payload, dict):
                 raise HTTPException(status_code=400, detail="invalid JSON-RPC payload")
             if str(payload.get("method") or "") == "tools/call":
-                return await PATENV_HUB.mcp_call(_current_user(), payload)
-            return PATENV_HUB.mcp_handle(_current_user(), payload)
+                return await hub.mcp_call(_current_user(), payload, group or None)
+            return hub.mcp_handle(_current_user(), payload, group or None)
+
+        mcp_router.add_api_route(f"/{prefix}/mcp", _mcp_endpoint, methods=["POST"])
+        for group in groups:
+            # 分层端点必须用带注解的真实函数注册: FastAPI 按签名解析参数,
+            # lambda 里的 request 没有 Request 注解会被当成必填查询参数(422)。
+            def _make(group: str = group):
+                async def handler(request: Request):
+                    return await _mcp_endpoint(request, group)
+
+                return handler
+
+            mcp_router.add_api_route(
+                f"/{prefix}/mcp/{group}", _make(), methods=["POST"]
+            )
+
+    def _register_patenv_routes(self, router: APIRouter, mcp_router: APIRouter) -> None:
+        self._register_env_routes(
+            router,
+            mcp_router,
+            hub=PATENV_HUB,
+            prefix="patenv",
+            project_id=PATIENT_PROJECT_ID,
+            project_name=PATIENT_PROJECT_NAME,
+            prompt_fn=patient_agent_prompt,
+            page_title="虚拟患者",
+            ensure_project=self._patenv_ensure_project,
+        )
+
+    def _register_pathenv_routes(
+        self, router: APIRouter, mcp_router: APIRouter
+    ) -> None:
+        self._register_env_routes(
+            router,
+            mcp_router,
+            hub=PATHENV_HUB,
+            prefix="pathenv",
+            project_id=PATHOGEN_PROJECT_ID,
+            project_name=PATHOGEN_PROJECT_NAME,
+            prompt_fn=pathogen_agent_prompt,
+            page_title="虚拟病原体",
+            ensure_project=self._pathenv_ensure_project,
+            groups=PATHENV_GROUPS,
+        )
 
     def _register_pty_routes(self, router: APIRouter, ws_router: APIRouter) -> None:
         """Register routes for this domain (order preserved)."""

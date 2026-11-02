@@ -220,7 +220,7 @@
 
   V.sidebar = () => {
     const active = CS.ui.route;
-    const nav = [ ['home','message','新对话'], ['literature','book','文献'], ['data','database','数据集'], ['workflows','workflow','工作流'], ['results','chart','分析结果'], ['tools','grid','生物工具'], ['tasks','queue','任务队列'], ['cell','cells','虚拟细胞'], ['patient','patient','虚拟患者'] ];
+    const nav = [ ['home','message','新对话'], ['literature','book','文献'], ['data','database','数据集'], ['workflows','workflow','工作流'], ['results','chart','分析结果'], ['tools','grid','生物工具'], ['tasks','queue','任务队列'], ['cell','cells','虚拟细胞'], ['patient','patient','虚拟患者'], ['pathogen','virus','虚拟病原体'] ];
     const running = CS.state.runs.filter(r => ['running','paused','awaiting','connecting'].includes(r.status)).length;
     const streaming = new Set(CS.state.runs.filter(r => (r.messages || []).some(m => m.streaming)).map(r => r.id));
     return `${CS.ui.mobileSidebar ? '<button class="sidebar-scrim" aria-label="关闭菜单" data-action="toggle-sidebar"></button>' : ''}<aside class="sidebar ${CS.ui.mobileSidebar ? 'open' : ''} ${CS.ui.sidebarFolded ? 'folded' : ''}" aria-label="主导航">
@@ -302,6 +302,35 @@
       </div>
     </div></section>`;
   };
+  // ===== 虚拟病原体 =====
+  // 静态壳 + mountPathogenPage() 挂载(目录/详情/日志), 图表与引擎在后续
+  // 迭代挂在同一壳里; #pathogen-root 与患者页同条款: 重渲染时原样搬回。
+  V.pathogen = () => `<section class="page pathogen-page"><div id="pathogen-root">
+    <div class="p2-topbar">
+      <div class="p2-title">🦠 虚拟病原体</div>
+      <div class="p2-motto">教学/训练沙盒 · 非预测工具</div>
+      <div class="p2-scales">
+        <button type="button" class="p2-scale" data-s="molecular" onclick="PathoUI.setScale('molecular')">分子/基因</button>
+        <button type="button" class="p2-scale on" data-s="host" onclick="PathoUI.setScale('host')">宿主内</button>
+        <button type="button" class="p2-scale" data-s="diag" onclick="PathoUI.setScale('diag')">诊断读数</button>
+        <button type="button" class="p2-scale" data-s="pop" onclick="PathoUI.setScale('pop')">群体动态</button>
+        <button type="button" class="p2-scale" data-s="trial" onclick="PathoUI.setScale('trial')">试验台</button>
+      </div>
+    </div>
+    <div class="p2-main">
+      <aside class="p2-browser">
+        <input class="p2-search" type="search" placeholder="搜索病原体: 名称 / 基因组类型…" value="" oninput="PathoUI.search(this.value)">
+        <div class="p2-chips" id="p2Kinds"></div>
+        <div class="p2-list" id="p2List"></div>
+      </aside>
+      <div class="p2-right">
+        <div class="p2-card" id="p2Info"></div>
+        <div class="p2-scalecard" id="p2ScaleDesc">本面板承载选中病原体在各尺度的仿真。开始先在左侧选定病原体。</div>
+        <div class="p2-logpanel" id="p2Log"></div>
+      </div>
+    </div>
+  </div></section>`;
+
   // ===== 虚拟患者 =====
   // 引擎(patient.js 移植层)按 ID 直驱下列 DOM: id 不作改动; inline onclick 直调引擎
   // 全局函数(生产服务无 CSP 限制)。渲染产物整体包在 #patient-root —— app.js 的渲染

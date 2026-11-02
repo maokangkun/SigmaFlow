@@ -194,6 +194,7 @@
     // 虚拟患者页: 引擎状态机持有大量活 DOM 引用(波形扫掠/WebGL 上下文/表单),
     // 与其每次渲染重建再逐个回填, 不如把整个 #patient-root 节点原样搬回新壳
     const patKeep = CS.ui.route === 'patient' ? document.getElementById('patient-root') : null;
+    const p2Keep = CS.ui.route === 'pathogen' ? document.getElementById('pathogen-root') : null;
     _origRender();
     if (CS.ui.route === 'patient') {
       const fresh = document.getElementById('patient-root');
@@ -203,8 +204,15 @@
       // 防 100vh 不感知 zoom 在页面下方露空白带/截断内容
       if (CS._patientFit) CS._patientFit();
       if (CS._patLogSync) CS._patLogSync();
-    } else if (CS._patientLive) {
-      CS.unmountPatientPage();  // 离开页面: 停引擎定时器 + 释放 WebGL
+    }
+    // 虚拟病原体页: 同样保活 #pathogen-root(图表 canvas 与引擎后续接入)
+    if (CS.ui.route === 'pathogen') {
+      const fresh = document.getElementById('pathogen-root');
+      if (p2Keep && fresh && fresh !== p2Keep) fresh.replaceWith(p2Keep);
+      else if (!p2Keep && typeof mountPathogenPage === 'function') mountPathogenPage();
+    }
+    if (CS.ui.route !== 'patient' && CS._patientLive) {
+      CS.unmountPatientPage();  // 离开患者页: 停引擎定时器 + 释放 WebGL
     }
     CS._patientLive = CS.ui.route === 'patient';
     // 虚拟细胞页: 每次渲染后重建 three 场景(innerHTML 整体替换会丢 canvas)

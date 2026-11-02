@@ -5,9 +5,7 @@
 """
 
 import asyncio
-import json
 
-import pytest
 
 from sigmaflow.server import patenv
 
@@ -25,7 +23,9 @@ def test_tool_specs_are_mcp_shaped():
 
 def test_tools_list_over_jsonrpc():
     hub = patenv.PatEnvHub()
-    reply = hub.mcp_handle("tester", {"jsonrpc": "2.0", "id": 7, "method": "tools/list"})
+    reply = hub.mcp_handle(
+        "tester", {"jsonrpc": "2.0", "id": 7, "method": "tools/list"}
+    )
     assert reply["id"] == 7
     assert [t["name"] for t in reply["result"]["tools"]] == [
         t["name"] for t in patenv.TOOLS
@@ -38,7 +38,11 @@ def test_unknown_tool_is_rejected():
     async def run():
         return await hub.mcp_call(
             "tester",
-            {"jsonrpc": "2.0", "id": 1, "params": {"name": "patient_nope", "arguments": {}}},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "params": {"name": "patient_nope", "arguments": {}},
+            },
         )
 
     reply = asyncio.run(run())
@@ -62,7 +66,9 @@ def test_page_bridge_roundtrip():
     session = hub.register("tester")
 
     async def run():
-        task = asyncio.create_task(hub.call("tester", "patient_case_start", {"case_id": "sca"}))
+        task = asyncio.create_task(
+            hub.call("tester", "patient_case_start", {"case_id": "sca"})
+        )
         await asyncio.sleep(0)  # 让 call() 先入队
         queued = await asyncio.wait_for(session.pending.get(), timeout=2)
         assert queued["tool"] == "patient_case_start"

@@ -1,27 +1,22 @@
-"""Virtual-patient environment bridge.
+"""Virtual-patient environment: tools, prompt and hub for the patient page.
+
+The transport itself is generic (``envbridge.py``); this module only describes
+the patient environment: which tools exist, which prompt the agent gets and
+which sidebar project collects the case-challenge conversations.
 
 The physiology engine only exists in the browser (``science/js/patient.js``),
-so the training environment cannot be re-implemented server-side without
-drifting away from what the page shows. Instead the page acts as the
-environment host and this module is the transport:
-
-* the page registers a session and long-polls for tool calls;
-* an MCP client (the agent) posts ``tools/call`` here, which is queued for
-  the page and awaits the page's result;
-* everything the agent does therefore happens on the live engine, so the
-  vitals, waveforms, event log and case HUD update as the challenge is played.
-
-MCP itself is the tiny JSON-RPC dialect the in-process client speaks
-(``tools/list`` + ``tools/call``), see ``agent/tools.py``.
+so the page acts as the environment host: it long-polls for tool calls,
+executes them on the live engine and returns the result, which means the vitals,
+waveforms, event log and case HUD update as the challenge is played.
 """
 
 from __future__ import annotations
 
-import asyncio
-import itertools
 import os
-import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
+
+from .envbridge import EnvHub
+from .envbridge import schema as _schema
 
 # The project that collects every case-challenge conversation. Fixed id so the
 # sidebar entry is stable across restarts and multiple browsers.
@@ -45,17 +40,6 @@ def patient_agent_prompt() -> str:
         return text or _FALLBACK_PROMPT
     except OSError:
         return _FALLBACK_PROMPT
-
-
-def _schema(
-    props: Dict[str, Any], required: Optional[List[str]] = None
-) -> Dict[str, Any]:
-    return {
-        "type": "object",
-        "properties": props,
-        "required": required or [],
-        "additionalProperties": False,
-    }
 
 
 TOOLS: List[Dict[str, Any]] = [
@@ -205,163 +189,19 @@ TOOLS: List[Dict[str, Any]] = [
     },
 ]
 
-TOOL_NAMES = {t["name"] for t in TOOLS}
+PATIENT_PAGE_TITLE = "虚拟患者"
 
 
-class _Session:
-    """One browser tab acting as the environment host."""
-
-    def __init__(self, user: str, session_id: str):
-        self.user = user
-        self.id = session_id
-        self.created = time.time()
-        self.seen = time.time()
-        self.conversation_id = ""
-        self.pending: asyncio.Queue = asyncio.Queue()
-        self.waiters: Dict[str, asyncio.Future] = {}
-        self.busy: Optional[str] = None
-
-
-class PatEnvHub:
-    """Session registry + request/response bridge to the live page."""
-
-    CALL_TIMEOUT = 120.0
-    SESSION_TTL = 6 * 3600.0
+class PatEnvHub(EnvHub):
+    """The patient environment's hub: fixed tool set and wording."""
 
     def __init__(self) -> None:
-        self._sessions: Dict[str, _Session] = {}
-        self._by_user: Dict[str, str] = {}
-        self._ids = itertools.count(1)
-
-    # ---- registration -------------------------------------------------
-    def register(self, user: str) -> _Session:
-        session = _Session(user, f"pe-{next(self._ids)}-{int(time.time()) % 100000}")
-        # One live host per user: a reloaded/duplicate tab replaces the old one.
-        old = self._by_user.get(user)
-        if old and old in self._sessions:
-            stale = self._sessions.pop(old)
-            self._fail_pending(stale, "环境会话已被新的页面实例替换")
-        self._sessions[session.id] = session
-        self._by_user[user] = session.id
-        return session
-
-    def get(self, session_id: str) -> Optional[_Session]:
-        session = self._sessions.get(session_id)
-        if session is None:
-            return None
-        if time.time() - session.seen > self.SESSION_TTL:
-            self._sessions.pop(session_id, None)
-            return None
-        return session
-
-    def host(self, user: str) -> Optional[_Session]:
-        session_id = self._by_user.get(user)
-        return self.get(session_id) if session_id else None
-
-    def heartbeat(self, session_id: str) -> None:
-        session = self._sessions.get(session_id)
-        if session is not None:
-            session.seen = time.time()
-
-    # ---- page side ----------------------------------------------------
-    async def next_call(self, session_id: str, wait: float = 20.0) -> Optional[dict]:
-        session = self._sessions.get(session_id)
-        if session is None:
-            return None
-        session.seen = time.time()
-        try:
-            return await asyncio.wait_for(session.pending.get(), timeout=wait)
-        except asyncio.TimeoutError:
-            return None
-
-    def submit(self, session_id: str, call_id: str, payload: dict) -> bool:
-        session = self._sessions.get(session_id)
-        if session is None:
-            return False
-        session.seen = time.time()
-        future = session.waiters.pop(call_id, None)
-        if future is None or future.done():
-            return False
-        future.set_result(payload)
-        return True
-
-    # ---- tool side ----------------------------------------------------
-    async def call(self, user: str, tool: str, args: dict) -> dict:
-        session = self.host(user)
-        if session is None:
-            return {
-                "ok": False,
-                "text": (
-                    "患者页没有打开: 虚拟患者环境只存在于浏览器里的实时页面。"
-                    "请让用户打开「虚拟患者」页并保持 AI 面板开启后重试。"
-                ),
-            }
-        call_id = f"call-{next(self._ids)}-{int(time.time()) % 100000}"
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future = loop.create_future()
-        session.waiters[call_id] = future
-        session.pending.put_nowait({"id": call_id, "tool": tool, "args": args or {}})
-        try:
-            return await asyncio.wait_for(future, timeout=self.CALL_TIMEOUT)
-        except asyncio.TimeoutError:
-            session.waiters.pop(call_id, None)
-            return {
-                "ok": False,
-                "text": f"环境在 {int(self.CALL_TIMEOUT)}s 内没有回应({tool})——页面可能已关闭或卡住。",
-            }
-
-    def _fail_pending(self, session: _Session, reason: str) -> None:
-        for future in list(session.waiters.values()):
-            if not future.done():
-                future.set_result({"ok": False, "text": reason})
-        session.waiters.clear()
-
-    # ---- MCP -----------------------------------------------------------
-    def mcp_handle(self, user: str, payload: dict) -> dict:
-        """Handle one JSON-RPC message; tool calls are awaited by the caller."""
-        method = str(payload.get("method") or "")
-        rid = payload.get("id")
-        if method == "tools/list":
-            return {"jsonrpc": "2.0", "id": rid, "result": {"tools": TOOLS}}
-        if method == "initialize":
-            return {
-                "jsonrpc": "2.0",
-                "id": rid,
-                "result": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "patenv", "version": "1.0.0"},
-                },
-            }
-        if method == "ping":
-            return {"jsonrpc": "2.0", "id": rid, "result": {}}
-        return {
-            "jsonrpc": "2.0",
-            "id": rid,
-            "error": {"code": -32601, "message": f"unsupported method: {method}"},
-        }
-
-    async def mcp_call(self, user: str, payload: dict) -> dict:
-        rid = payload.get("id")
-        params = payload.get("params") or {}
-        name = str(params.get("name") or "")
-        if name not in TOOL_NAMES:
-            return {
-                "jsonrpc": "2.0",
-                "id": rid,
-                "error": {"code": -32602, "message": f"unknown tool: {name}"},
-            }
-        args = params.get("arguments")
-        if not isinstance(args, dict):
-            args = {}
-        try:
-            outcome = await self.call(user, name, args)
-        except Exception as err:  # pragma: no cover - defensive
-            outcome = {"ok": False, "text": f"环境桥接异常: {err}"}
-        text = outcome.get("text") or ""
-        if not outcome.get("ok") and not text:
-            text = "环境返回空结果"
-        return {"jsonrpc": "2.0", "id": rid, "result": {"content": text}}
+        super().__init__(
+            name="patenv",
+            tools=TOOLS,
+            page_title=PATIENT_PAGE_TITLE,
+            prefix="pe",
+        )
 
 
 HUB = PatEnvHub()
