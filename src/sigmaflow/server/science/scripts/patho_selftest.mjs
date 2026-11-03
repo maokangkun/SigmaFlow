@@ -25,6 +25,12 @@
  *   19) 溢出 what-if 单调: 界面对接 0.9 > 0.2(得分与预期规模)
  *   20) 宿主内耦合: 治疗过的指示病例 → 群体首波规模更小
  *   21) 群体层确定性: 同种子同曲线
+ * P4 试验台:
+ *   22) 确定性: 同协议两次运行 → CSV 完全一致
+ *   23) A/B 检验力: 治疗臂 vs 对照臂(耐药富集)差异大于噪声; 同臂自比不显著
+ *   24) 真值门禁: 默认隐藏 fold, reveal_truth 才揭示
+ *   25) 控制评分: 治疗臂 > 对照臂
+ *   26) 状态保护: 试验后页面活动场景原样保留
  * 通过/失败都打印数值, 全绿 exit 0。
  */
 import { createRequire } from 'node:module';
@@ -38,6 +44,7 @@ require(path.join(root, 'js/patho/diag.js'));
 require(path.join(root, 'js/patho/genome.js'));
 require(path.join(root, 'js/patho/predict.js'));
 require(path.join(root, 'js/patho/pop.js'));
+require(path.join(root, 'js/patho/trial.js'));
 const H = globalThis.PathoCatalog ? globalThis.PathoHost : globalThis.PathoHost;
 
 let pass = 0, fail = 0;
@@ -342,6 +349,60 @@ check('确定性(同种子同曲线)', run(42) === run(42), `hash20=${run(42).sl
   const h1 = scenario('SARS_CoV_2');
   const h2 = scenario('SARS_CoV_2');
   check('群体层确定性', h1 === h2 || peakOf(h1) === peakOf(h2), `峰 ${peakOf(h1)} = ${peakOf(h2)}`);
+}
+
+// ---- P4 · 试验台 ----
+{
+  const T = globalThis.PathoTrial;
+  const PROTO = {
+    name: '自测协议',
+    arms: [
+      { label: '治疗', interventions: [{ t: 0, log10_dose: 5 }, { t: 0.5, drug: 'bl', mg: 1000, interval_h: 12, days: 12 }] },
+      { label: '对照', interventions: [{ t: 0, log10_dose: 5 }] },
+    ],
+    replicates: 10, days: 30, metrics: ['resistance_emergence', 'time_to_clearance', 'peak_load', 'cost'],
+  };
+
+  // 26 前置: 页面活动场景(流感, 第 5 天)
+  H.setup('InfluenzaA', { seed: 7 });
+  H.inoculate(3);
+  H.advance(5);
+  const liveBefore = JSON.stringify({ t: H.state().t, peak: H.state().peak, id: H.state().entry.id });
+
+  T.define({ ...PROTO, pathogen: 'E_coli' });
+  const run1 = T.run({});
+  const csv1 = T.export({ format: 'csv' }).text;
+  T.run({});
+  const csv2 = T.export({ format: 'csv' }).text;
+  check('试验台确定性: 同协议两次运行 CSV 一致', csv1 === csv2, `CSV ${csv1.length} 字符, 一致=${csv1 === csv2}`);
+
+  const cmpDiff = T.compare({ arm_a: '治疗', arm_b: '对照' }).text;
+  check('A/B 检验力: 治疗vs对照(耐药富集)差异大于噪声', cmpDiff.includes('差异大于噪声'), cmpDiff.split('\n')[2]);
+  const armA = T.lastRun.arms[0].label;
+  const cmpSame = T.compare({ arm_a: armA, arm_b: armA }).text;
+  check('A/B 噪声下限: 同臂自比不显著', cmpSame.includes('未超过噪声'), cmpSame.split('\n')[2]);
+
+  const hidden = run1.text;
+  const revealed = T.run({ reveal_truth: true }).text;
+  check('真值门禁: 默认隐藏 fold, 揭示时输出', hidden.indexOf('fold=') < 0 && revealed.indexOf('fold=') >= 0);
+
+  const scoreOf = txt => Number((txt.match(/标准分 (\d+)/g) || [0, 0]).map(s => Number(s.match(/\d+/)[0]))[0]);
+  const s1 = Number(T.report(false).text.match(/「治疗」[\s\S]*?标准分 (\d+)/)[1]);
+  const s2 = Number(T.report(false).text.match(/「对照」[\s\S]*?标准分 (\d+)/)[1]);
+  check('控制评分: 治疗臂 > 对照臂', s1 > s2, `治疗 ${s1} vs 对照 ${s2}`);
+
+  const csvRows = T.export({ format: 'csv' }).text.split('\n');
+  const j = JSON.parse(T.export({ format: 'json' }).text);
+  check('导出形状: CSV 行数 = 头 + 臂×重复; JSON 带协议头',
+    csvRows.length === 1 + 2 * 10 && j.protocol.name === '自测协议' && j.replicates.length === 20,
+    `CSV ${csvRows.length} 行, JSON ${j.replicates.length} 条重复`);
+
+  const liveAfter = JSON.stringify({ t: H.state().t, peak: H.state().peak, id: H.state().entry.id });
+  check('状态保护: 试验不污染页面活动场景', liveBefore === liveAfter, `${liveBefore} → ${liveAfter}`);
+
+  // 27) 真值注册表可追溯: 每条重复的种子可复算
+  const firstRec = T.lastRun.arms[0].replicates[0];
+  check('真值注册表: 种子/耐药倍数已登记', firstRec.seed > 0 && firstRec.truth.resFold > 0, `种子 ${firstRec.seed} fold ${firstRec.truth.resFold}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -401,9 +401,18 @@
 监测(1% 测序)给出的是"有噪读数" —— 与 解析观测 对照是本层的核心练习。</pre>
           </section>
           <section class="p2-pane" data-pane="trial" hidden>
-            <div class="p2-pane-head">试验台</div>
-            <p>协议定义（多臂 + 时间表）、重复运行与置信区间、A/B 对比、真值评分、CSV 导出。评分四类任务: 推断(F1/Brier)、控制(代价)、设计(覆盖率)、分析(功效)。</p>
-            <p class="muted">本层(P4)接线中。</p>
+            <div class="p2-pane-head">试验台 · 协议 → 多臂重复 → A/B → 真值评分 → 导出</div>
+            <div class="p2-controls">
+              <button type="button" class="p2-btn" onclick="PathoUI.trialRun('run')">🧪 运行</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.trialRun('reveal')">🧪 运行(揭示真值)</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.trialCompare()">⚖ A/B(首末臂)</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.trialExport('csv')">📤 CSV</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.trialExport('json')">📤 JSON</button>
+            </div>
+            <textarea id="p2TrialProto" class="p2-textarea" spellcheck="false"></textarea>
+            <pre class="p2-out" id="p2TrialOut">协议在上方 JSON 里改: arms[].interventions 的时间表事件支持
+{t, drug, mg, interval_h, days} 给药 · {t, log10_dose} 接种 · {t, kind, strength, coverage, end_day} 群体干预
+{t, coverage, efficacy} 疫苗 · {t, assay} 采样 · {t, immunity} 免疫背景。每条重复都是"新个体"(种子抖动)。</pre>
           </section>
         </div>
         <div class="p2-logpanel" id="p2Log"></div>

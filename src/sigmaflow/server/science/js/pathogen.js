@@ -82,6 +82,12 @@
     drawCharts();
     renderStrip();
     if (typeof PathoUI !== 'undefined' && PathoUI.renderMolSamples) PathoUI.renderMolSamples();
+    const ta = document.getElementById('p2TrialProto');
+    if (ta && !ta.value && window.PathoTrial) {
+      const ex = JSON.parse(JSON.stringify(window.PathoTrial.DEFAULT_EXAMPLE));
+      ex.pathogen = P2.sel;
+      ta.value = JSON.stringify(ex, null, 2);
+    }
   }
 
   function renderRxSelect() {
@@ -402,10 +408,22 @@
       if (out.ok) drawPopChart();
       return out;
     },
-    pathogen_trial_define() { return { ok: false, text: WIRE.trial }; },
-    pathogen_trial_run() { return { ok: false, text: WIRE.trial }; },
-    pathogen_trial_compare() { return { ok: false, text: WIRE.trial }; },
-    pathogen_trial_export() { return { ok: false, text: WIRE.trial }; },
+    pathogen_trial_define(args) {
+      const out = window.PathoTrial.define(args || {});
+      if (out.ok) log(`🧪 协议已定义: ${esc(out.protocol.name)}(${out.protocol.arms.length} 臂 × ${out.protocol.replicates} 重复 × ${out.protocol.days} 天)`);
+      return out;
+    },
+    pathogen_trial_run(args) {
+      const out = window.PathoTrial.run(args || {});
+      if (out.ok) log(`🧪 试验完成${args && args.reveal_truth ? '(真值已揭示)' : ''} —— 每臂指标分布与控制评分见试验台输出`);
+      return out;
+    },
+    pathogen_trial_compare(args) { return window.PathoTrial.compare(args || {}); },
+    pathogen_trial_export(args) {
+      const out = window.PathoTrial.export(args || {});
+      if (out.ok) log(`📤 试验数据已导出(${(args && args.format) || 'csv'})`);
+      return out;
+    },
   };
 
   // ---------------- 环境桥(页面 = 环境宿主) ----------------
@@ -544,6 +562,34 @@
       log(`🧬 ${tool} → ${esc(String(out.text || '').split('\n')[1] || out.text || '').slice(0, 90)}`);
     },
     refreshMol() { PathoUI.renderMolSamples(); },
+    trialRun(mode) {
+      const T = window.PathoTrial;
+      if (!T) { log('试验台未就绪。', 'crit'); return; }
+      const box = document.getElementById('p2TrialOut');
+      let proto;
+      try { proto = JSON.parse(document.getElementById('p2TrialProto').value); } catch (e) { log('协议 JSON 解析失败: ' + esc(e.message), 'crit'); return; }
+      if (!proto.pathogen) proto.pathogen = P2.sel;
+      const d = T.define(proto);
+      if (!d.ok) { if (box) box.textContent = d.text; return; }
+      const out = T.run({ reveal_truth: mode === 'reveal' });
+      if (box) box.innerHTML = rich(out.text || '').replace(/\n/g, '<br>');
+      log(`🧪 试验完成: ${esc(proto.name)}(${mode === 'reveal' ? '含真值' : '真值隐藏'})`);
+    },
+    trialCompare() {
+      const T = window.PathoTrial;
+      const R = T && T.lastRun;
+      if (!R) { log('先运行一次试验再对比。', 'crit'); return; }
+      const out = T.compare({ arm_a: R.arms[0].label, arm_b: R.arms[R.arms.length - 1].label });
+      const box = document.getElementById('p2TrialOut');
+      if (box) box.innerHTML = rich(out.text || '').replace(/\n/g, '<br>');
+    },
+    trialExport(fmt) {
+      const T = window.PathoTrial;
+      const out = T.export({ format: fmt });
+      const box = document.getElementById('p2TrialOut');
+      if (box) box.textContent = out.text || out;
+      log(`📤 导出 ${fmt.toUpperCase()}(${String(out.text || '').length} 字符)`);
+    },
     popRun(tool, args) {
       const out = window.PathoPop[tool] ? window.PathoPop[tool](args || {}) : { ok: false, text: '未知' + tool };
       const box = document.getElementById('p2PopOut');
@@ -569,7 +615,7 @@
     const root = document.getElementById('pathogen-root');
     if (!root) return;
     if (!window.PathoCatalog || !window.PathoHost || !window.PathoDiag || !window.PathoMol || !window.PathoPredict) {
-      CS.ensureLazy('catalog', 'host', 'diag', 'genome', 'predict', 'pop').then(() => {
+      CS.ensureLazy('catalog', 'host', 'diag', 'genome', 'predict', 'pop', 'trial').then(() => {
         if (window.PathoCatalog) window.mountPathogenPage();
       });
       return;

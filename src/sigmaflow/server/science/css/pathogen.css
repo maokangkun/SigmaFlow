@@ -287,3 +287,16 @@
   .p2-right { grid-template-rows: auto minmax(320px, 1fr) 148px; }
   #pathogen-root { height: auto; }
 }
+
+/* 试验台协议编辑器 */
+.p2-textarea {
+  width: 100%;
+  min-height: 150px;
+  border: 1px solid var(--line, #d7dae2);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  resize: vertical;
+  background: #fbfcfe;
+}
+.p2-textarea:focus { outline: 1.5px solid var(--accent, #6764b9); }
