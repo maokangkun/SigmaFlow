@@ -309,3 +309,9 @@
 #patho3d canvas { display: block; border-radius: 8px; cursor: grab; border: 1px solid #232a3a; }
 .p23d-hint { color: #7d8aa5; font-size: 11px; padding: 5px 2px 1px; }
 .p23d-cap { color: #9aa7c2; font-size: 11.5px; padding: 2px 2px 4px; max-width: 480px; }
+
+/* 详情卡片不许吃掉工作区(P6 修复): 详情行是 auto 行, 字段多的条目能长到
+ * 400+px, 在 1366×768 下把中间工作区挤到 54px 的一条缝。封顶 + 内部滚动,
+ * 中间工作区永远保底可见。 */
+#p2Info { max-height: clamp(140px, 30vh, 280px); overflow-y: auto; }   /* vh: 容器 % 在 grid auto 行里解析不可靠 */
+.p2-work { min-height: 180px; }
