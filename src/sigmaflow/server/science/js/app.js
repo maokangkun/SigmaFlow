@@ -209,7 +209,13 @@
     if (CS.ui.route === 'pathogen') {
       const fresh = document.getElementById('pathogen-root');
       if (p2Keep && fresh && fresh !== p2Keep) fresh.replaceWith(p2Keep);
-      else if (!p2Keep && typeof mountPathogenPage === 'function') mountPathogenPage();
+      else if (!p2Keep) {
+        // pathogen.js/pathenv.js 已挂 data-lazy: 拉到后再挂载(页面期间可能已切走, 过滤)。
+        CS.ensureLazy('pathogen', 'pathenv').then(() => {
+          // mount 自带幂等门(root 缺失/已挂载都会早退), 无需在调用侧判 root。
+          if (CS.ui.route === 'pathogen' && window.mountPathogenPage) window.mountPathogenPage();
+        });
+      }
     }
     if (CS.ui.route !== 'patient' && CS._patientLive) {
       CS.unmountPatientPage();  // 离开患者页: 停引擎定时器 + 释放 WebGL

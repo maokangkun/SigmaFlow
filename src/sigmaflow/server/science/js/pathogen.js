@@ -485,7 +485,7 @@
     let out;
     if (!fn) out = { ok: false, text: `未知工具 ${call.tool}` };
     else {
-      try { out = fn(call.args || {}) || { ok: true, text: '' }; }
+      try { out = (await fn(call.args || {})) || { ok: true, text: '' }; }
       catch (err) { out = { ok: false, text: '执行异常: ' + (err && err.message ? err.message : err) }; }
     }
     log(`🤖 <b>${esc(call.tool.replace(/^pathogen_/, ''))}</b> ${esc(String(out.text || '').split('\n')[0] || '').slice(0, 110)}`, out.ok ? '' : 'crit');
@@ -597,7 +597,7 @@
       EXEC.pathogen_host_vaccinate(o);
       renderStrip(); drawCharts();
     },
-    trialRun(mode) {
+    async trialRun(mode) {
       const T = window.PathoTrial;
       if (!T) { log('试验台未就绪。', 'crit'); return; }
       const box = document.getElementById('p2TrialOut');
@@ -606,15 +606,15 @@
       if (!proto.pathogen) proto.pathogen = P2.sel;
       const d = T.define(proto);
       if (!d.ok) { if (box) box.textContent = d.text; return; }
-      const out = T.run({ reveal_truth: mode === 'reveal' });
+      const out = await T.run({ reveal_truth: mode === 'reveal' });
       if (box) box.innerHTML = rich(out.text || '').replace(/\n/g, '<br>');
       log(`🧪 试验完成: ${esc(proto.name)}(${mode === 'reveal' ? '含真值' : '真值隐藏'})`);
     },
-    trialCompare() {
+    async trialCompare() {
       const T = window.PathoTrial;
       const R = T && T.lastRun;
       if (!R) { log('先运行一次试验再对比。', 'crit'); return; }
-      const out = T.compare({ arm_a: R.arms[0].label, arm_b: R.arms[R.arms.length - 1].label });
+      const out = await T.compare({ arm_a: R.arms[0].label, arm_b: R.arms[R.arms.length - 1].label });
       const box = document.getElementById('p2TrialOut');
       if (box) box.innerHTML = rich(out.text || '').replace(/\n/g, '<br>');
     },

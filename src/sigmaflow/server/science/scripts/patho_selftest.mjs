@@ -378,25 +378,25 @@ check('确定性(同种子同曲线)', run(42) === run(42), `hash20=${run(42).sl
   const liveBefore = JSON.stringify({ t: H.state().t, peak: H.state().peak, id: H.state().entry.id });
 
   T.define({ ...PROTO, pathogen: 'E_coli' });
-  const run1 = T.run({});
+  const run1 = await T.run({});
   const csv1 = T.export({ format: 'csv' }).text;
-  T.run({});
+  await T.run({});
   const csv2 = T.export({ format: 'csv' }).text;
   check('试验台确定性: 同协议两次运行 CSV 一致', csv1 === csv2, `CSV ${csv1.length} 字符, 一致=${csv1 === csv2}`);
 
-  const cmpDiff = T.compare({ arm_a: '治疗', arm_b: '对照' }).text;
+  const cmpDiff = (await T.compare({ arm_a: '治疗', arm_b: '对照' })).text;
   check('A/B 检验力: 治疗vs对照(耐药富集)差异大于噪声', cmpDiff.includes('差异大于噪声'), cmpDiff.split('\n')[2]);
   const armA = T.lastRun.arms[0].label;
-  const cmpSame = T.compare({ arm_a: armA, arm_b: armA }).text;
+  const cmpSame = (await T.compare({ arm_a: armA, arm_b: armA })).text;
   check('A/B 噪声下限: 同臂自比不显著', cmpSame.includes('未超过噪声'), cmpSame.split('\n')[2]);
 
   const hidden = run1.text;
-  const revealed = T.run({ reveal_truth: true }).text;
+  const revealed = (await T.run({ reveal_truth: true })).text;
   check('真值门禁: 默认隐藏 fold, 揭示时输出', hidden.indexOf('fold=') < 0 && revealed.indexOf('fold=') >= 0);
 
   const scoreOf = txt => Number((txt.match(/标准分 (\d+)/g) || [0, 0]).map(s => Number(s.match(/\d+/)[0]))[0]);
-  const s1 = Number(T.report(false).text.match(/「治疗」[\s\S]*?标准分 (\d+)/)[1]);
-  const s2 = Number(T.report(false).text.match(/「对照」[\s\S]*?标准分 (\d+)/)[1]);
+  const s1 = Number((await T.report(false)).text.match(/「治疗」[\s\S]*?标准分 (\d+)/)[1]);
+  const s2 = Number((await T.report(false)).text.match(/「对照」[\s\S]*?标准分 (\d+)/)[1]);
   check('控制评分: 治疗臂 > 对照臂', s1 > s2, `治疗 ${s1} vs 对照 ${s2}`);
 
   const csvRows = T.export({ format: 'csv' }).text.split('\n');
@@ -498,7 +498,7 @@ check('确定性(同种子同曲线)', run(42) === run(42), `hash20=${run(42).sl
     ],
     replicates: 3, days: 45, metrics: ['peak_load'],
   });
-  const tvRun = TV.run({});
+  const tvRun = await TV.run({});
   const armPeak = (lbl) => Number((tvRun.text.match(new RegExp('臂「' + lbl + '」[\\s\\S]*?峰值载量\\(log10\\): ([\\d.]+)')) || [0])[1]);
   check('试验台疫苗事件: 疫苗臂峰值低于对照臂 ≥1.5 log10', armPeak('对照') - armPeak('疫苗') >= 1.5,
     `对照 ${armPeak('对照')} vs 疫苗 ${armPeak('疫苗')}`);

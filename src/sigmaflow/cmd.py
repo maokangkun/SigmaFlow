@@ -106,7 +106,7 @@ def setup_args():
     args = parser.parse_args()
 
     if args.command == "pipe":
-        if not args.serve and not args.pipeline and not args.pipeline_dir:
+        if not args.pipeline and not args.pipeline_dir:
             parser.error(
                 "the following arguments are required: -p/--pipeline or -d/--pipeline_dir"
             )
@@ -116,16 +116,6 @@ def setup_args():
 
         if args.model:
             os.environ["MODEL_PATH"] = args.model
-
-        # persist args in env for reload subprocesses
-        if args.serve and args.reload:
-            os.environ["SIGMAFLOW_CMD_ARGS"] = json.dumps(
-                {
-                    k: v
-                    for k, v in vars(args).items()
-                    if k in ["mode", "llm", "rag", "pipeline_dir", "prompt"]
-                }
-            )
 
     return args
 

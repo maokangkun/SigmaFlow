@@ -190,8 +190,8 @@
       return this.report(reveal);
     },
 
-    /** 汇总输出(key 列表 + 每臂均值 ± bootstrap CI + 真值区)。 */
-    report(reveal) {
+    /** 汇总输出(key 列表 + 每臂均值 ± bootstrap CI + 真值区)。async: CI 走 Worker 池。 */
+    async report(reveal) {
       const R = this.lastRun;
       const p = this.protocol;
       if (!R) return { ok: false, text: '尚无运行结果。' };
@@ -204,7 +204,7 @@
         for (const m of M) {
           const xs = arm.replicates.map(x => x.metrics[m]);
           const mean = xs.reduce((a, b) => a + b, 0) / n;
-          const ci = bootCI(xs);
+          const ci = await bootCI(xs);
           stats[arm.label + '#' + m] = { mean, ci, xs };
           lines.push(`· ${zhMetric(m)}: ${mean.toFixed(mean < 10 ? 3 : 1)} [95%CI ${ci[0].toFixed(2)} ~ ${ci[1].toFixed(2)}]${ci[0] === ci[1] ? '  (重复间无变异)' : ''}`);
         }
@@ -212,7 +212,7 @@
         const score = arm.replicates.reduce((a, x) => a + x.score_control, 0) / n;
         lines.push(`· 控制评分: ${clearNoR}/${n} 清除且未富集耐药; 标准分 ${(score * 100).toFixed(0)}(清除为前提, 再扣代价)`);
       }
-      if (R.arms.length === 2) lines.push(this.compare({ arm_a: R.arms[0].label, arm_b: R.arms[1].label }).text);
+      if (R.arms.length === 2) lines.push((await this.compare({ arm_a: R.arms[0].label, arm_b: R.arms[1].label })).text);
       if (reveal) {
         lines.push('\n## 真值注册表(评估模式)');
         for (const arm of R.arms) {
@@ -225,8 +225,8 @@
       return { ok: true, text: lines.join('\n') };
     },
 
-    /** 两臂对比: bootstrap 差值区间 + 结论(差值 vs 噪声)。 */
-    compare(args) {
+    /** 两臂对比: bootstrap 差值区间 + 结论(差值 vs 噪声)。async: 抽样在 Worker。 */
+    async compare(args) {
       const R = this.lastRun;
       if (!R) return { ok: false, text: '先 pathogen_trial_run。' };
       const a = String(args.arm_a || (R.arms[0] && R.arms[0].label) || '');
@@ -237,12 +237,7 @@
       const xs = armA.replicates.map(x => x.metrics[metric]);
       const ys = armB.replicates.map(x => x.metrics[metric]);
       const diff = xmean(xs) - xmean(ys);
-      const boots = [];
-      const rr = rng(R.baseSeed || 12345);
-      for (let k = 0; k < 1000; k++) {
-        boots.push(xmean(resample(xs, rr)) - xmean(resample(ys, rr)));
-      }
-      boots.sort((x, y) => x - y);
+      const boots = await bootRun(xs, ys, 1000, R.baseSeed || 12345);
       const lo = boots[Math.floor(boots.length * 0.025)], hi = boots[Math.floor(boots.length * 0.975)];
       const lines = [
         `# A/B 对比 · 指标 ${zhMetric(metric)}`,
@@ -286,13 +281,65 @@
   }
   const xmean = xs => xs.reduce((a, b) => a + b, 0) / (xs.length || 1);
   function resample(xs, r) { const out = []; for (let i = 0; i < xs.length; i++) out.push(xs[Math.floor(r() * xs.length)]); return out; }
-  function bootCI(xs) {
-    if (xs.length < 2) return [xs[0] || 0, xs[0] || 0];
-    const rr = rng(xs.length * 7717 + Math.round(xmean(xs) * 100));
+  // ---- bootstrap 计算池: Worker 优先(不占主线程), Worker 不可用回落同步 ----
+  // worker 源码由上面的纯函数 toString 拼装: minify 只会改写函数体形态, 语义
+  // 不变 → 无论 worker 还是回落路径, 抽样序列与结果逐位一致(自测 #22/#23 靠它)。
+  let _bootWorker = null;
+  let _bootSeq = 0;
+  const _bootJobs = new Map();
+  function bootSource() {
+    return [
+      'const xmean = ' + xmean.toString() + ';',
+      'const resample = ' + resample.toString() + ';',
+      'const rng = ' + rng.toString() + ';',
+      'self.onmessage = e => {',
+      '  const j = e.data; const rr = rng(j.seed); const bs = [];',
+      '  for (let k = 0; k < j.reps; k++) bs.push(xmean(resample(j.xs, rr)) - (j.ys ? xmean(resample(j.ys, rr)) : 0));',
+      '  bs.sort((x, y) => x - y); self.postMessage({ id: j.id, bs: bs });',
+      '};',
+    ].join('\n');
+  }
+  function bootSync(xs, ys, reps, seed) {
+    const rr = rng(seed);
     const bs = [];
-    for (let k = 0; k < 500; k++) bs.push(xmean(resample(xs, rr)));
-    bs.sort((a, b) => a - b);
-    return [bs[Math.floor(bs.length * 0.025)], bs[Math.floor(bs.length * 0.975)]];
+    for (let k = 0; k < reps; k++) bs.push(xmean(resample(xs, rr)) - (ys ? xmean(resample(ys, rr)) : 0));
+    bs.sort((x, y) => x - y);
+    return bs;
+  }
+  function bootWorker() {
+    if (_bootWorker) return _bootWorker;
+    if (_bootWorker === false) return null;
+    try {
+      const src = URL.createObjectURL(new Blob([bootSource()], { type: 'text/javascript' }));
+      const w = new Worker(src);
+      URL.revokeObjectURL(src);  // worker 已从源码启动, blob 引用可以释放
+      w.onmessage = e => {
+        const j = _bootJobs.get(e.data.id);
+        if (j) { _bootJobs.delete(e.data.id); j.resolve(e.data.bs); }
+      };
+      w.onerror = () => {
+        // 建好的 worker 挂了: 记死后, 排队中的作业在主线程同步补算, 结果不变。
+        _bootWorker = false;
+        for (const j of _bootJobs.values()) j.resolve(bootSync(j.xs, j.ys, j.reps, j.seed));
+        _bootJobs.clear();
+      };
+      _bootWorker = w;
+      return w;
+    } catch (e) { _bootWorker = false; return null; }
+  }
+  function bootRun(xs, ys, reps, seed) {
+    const w = bootWorker();
+    if (!w) return Promise.resolve(bootSync(xs, ys, reps, seed));
+    const id = ++_bootSeq;
+    return new Promise(resolve => {
+      _bootJobs.set(id, { xs: xs, ys: ys || null, reps: reps, seed: seed, resolve: resolve });
+      w.postMessage({ id: id, xs: xs, ys: ys || null, reps: reps, seed: seed });
+    });
+  }
+  async function bootCI(xs) {
+    if (xs.length < 2) return [xs[0] || 0, xs[0] || 0];
+    const boots = await bootRun(xs, null, 500, xs.length * 7717 + Math.round(xmean(xs) * 100));
+    return [boots[Math.floor(boots.length * 0.025)], boots[Math.floor(boots.length * 0.975)]];
   }
   function collectKeys(R) {
     const keys = [];
