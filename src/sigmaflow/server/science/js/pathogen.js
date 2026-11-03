@@ -81,6 +81,7 @@
     renderRxSelect();
     drawCharts();
     renderStrip();
+    if (typeof PathoUI !== 'undefined' && PathoUI.renderMolSamples) PathoUI.renderMolSamples();
   }
 
   function renderRxSelect() {
@@ -222,7 +223,6 @@
 
   // ---------------- 智能体工具执行器(环境桥 EXEC) ----------------
   const WIRE = {
-    molecular: '分子/基因组层(P2 接线中): 测序读数/变异检出/耐药注释/逃逸/演化预测/药物匹配/疫苗设计/系统发生/溯源。',
     pop: '群体层(P3 接线中): 元种群 SEIR/变异株/干预/疫苗接种/监测/溢出预警。',
     trial: '试验台(P4 接线中): 协议定义/多臂重复运行/A-B 对比/真值评分/导出。',
   };
@@ -306,17 +306,31 @@
       renderStrip(); drawCharts();
       return { ok: true, text: '已复位: 载量清零、免疫状态与计时归零（目录选择保留）。' };
     },
-    pathogen_sequence() { return { ok: false, text: WIRE.molecular }; },
-    pathogen_identify() { return { ok: false, text: WIRE.molecular }; },
-    pathogen_genome() { return { ok: false, text: WIRE.molecular }; },
-    pathogen_variants() { return { ok: false, text: WIRE.molecular }; },
-    pathogen_resistance() { return { ok: false, text: WIRE.molecular }; },
-    pathogen_escape() { return { ok: false, text: WIRE.molecular }; },
-    pathogen_forecast() { return { ok: false, text: WIRE.molecular }; },
-    pathogen_drug_match() { return { ok: false, text: WIRE.molecular }; },
-    pathogen_vaccine_design() { return { ok: false, text: WIRE.molecular }; },
-    pathogen_phylo() { return { ok: false, text: WIRE.molecular }; },
-    pathogen_trace() { return { ok: false, text: WIRE.molecular }; },
+    // ---- 分子/基因组层 + 病原识别(diag 组) ----
+    pathogen_sequence(args) {
+      const out = window.PathoMol.sequence(args || {});
+      if (out.ok) { drawCharts(); PathoUI.refreshMol(); }
+      return out;
+    },
+    pathogen_identify(args) { return window.PathoMol.identify(args || {}); },
+    pathogen_genome() {
+      const s = host() && host().state();
+      if (!s) return { ok: false, text: '尚未设置场景: 先 pathogen_setup。' };
+      const loci = s.mol ? s.mol.loci : window.PathoMol.lociFor(s.entry);
+      const lines = [`# 基因组图式 · ${s.entry.zh}（${s.entry.id}）· ${s.entry.genomeType} · tier ${s.entry.tier}`];
+      lines.push(`基因座 ${loci.length} 个(图式代表, 基因组 ${s.entry.genomeType}):`);
+      for (const l of loci) lines.push(`· ${l.name}  len≈${l.len}bp${l.epi ? ' · 表位区 ' + l.epi : ''}`);
+      lines.push(`注: 序列由 (${s.entry.id}, 基因) 哈希确定性生成, 不落库; 真值 = 谱系变异 + 耐药决定簇, 只能经测序读数看到。`);
+      return { ok: true, text: lines.join('\n') };
+    },
+    pathogen_variants(args) { return window.PathoMol.variants(args || {}); },
+    pathogen_resistance(args) { return window.PathoMol.resistance(args || {}); },
+    pathogen_escape(args) { return window.PathoPredict.escape(args || {}); },
+    pathogen_forecast(args) { return window.PathoPredict.forecast(args || {}); },
+    pathogen_drug_match(args) { return window.PathoPredict.drug_match(args || {}); },
+    pathogen_vaccine_design(args) { return window.PathoPredict.vaccine_design(args || {}); },
+    pathogen_phylo(args) { return window.PathoPredict.phylo(args || {}); },
+    pathogen_trace(args) { return window.PathoPredict.trace(args || {}); },
     pathogen_pop_init() { return { ok: false, text: WIRE.pop }; },
     pathogen_intervene() { return { ok: false, text: WIRE.pop }; },
     pathogen_vaccinate() { return { ok: false, text: WIRE.pop }; },
@@ -452,14 +466,34 @@
       if (box) box.innerHTML = rich(out.text).replace(/\n/g, '<br>');
       renderStrip();
     },
+    molRun(tool, args) {
+      // 分子面板按钮与 MCP 工具同一条通道: EXEC[pathogen_<tool>]
+      const fn = window.PathoMol && EXEC['pathogen_' + tool];
+      if (!fn) { log('分子工具未就绪。', 'crit'); return; }
+      const out = fn(args || {});
+      const box = document.getElementById('p2MolOut');
+      if (box) box.innerHTML = rich(out.text || '').replace(/\n/g, '<br>');
+      log(`🧬 ${tool} → ${esc(String(out.text || '').split('\n')[1] || out.text || '').slice(0, 90)}`);
+    },
+    refreshMol() { PathoUI.renderMolSamples(); },
+    renderMolSamples() {
+      const box = document.getElementById('p2MolSamples');
+      if (!box) return;
+      const s = host() && host().state();
+      const list = s && s.mol ? s.mol.samples : [];
+      box.innerHTML = list.length
+        ? list.map(x => `<button type="button" class="p2-chip" onclick="PathoUI.molSelected='${esc(x.id)}';PathoUI.molRun('variants',{sample:'${esc(x.id)}'})">${esc(x.id)} <i>${Math.round(x.t)}d · ${x.depth}×</i></button>`).join('')
+        : '<span class="muted small">尚无样本: 点击「测序」生成。</span>';
+    },
+    molSelected: '',
   });
 
   // ---------------- 挂载 ----------------
   window.mountPathogenPage = function () {
     const root = document.getElementById('pathogen-root');
     if (!root) return;
-    if (!window.PathoCatalog || !window.PathoHost || !window.PathoDiag) {
-      CS.ensureLazy('catalog', 'host', 'diag').then(() => {
+    if (!window.PathoCatalog || !window.PathoHost || !window.PathoDiag || !window.PathoMol || !window.PathoPredict) {
+      CS.ensureLazy('catalog', 'host', 'diag', 'genome', 'predict').then(() => {
         if (window.PathoCatalog) window.mountPathogenPage();
       });
       return;

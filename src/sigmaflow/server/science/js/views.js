@@ -327,9 +327,30 @@
         <div class="p2-card" id="p2Info"></div>
         <div class="p2-work">
           <section class="p2-pane" data-pane="molecular" hidden>
-            <div class="p2-pane-head">分子 / 基因组层</div>
-            <p>伪基因组与基因图式、变异检出、耐药注释、抗原逃逸、演化预测、药物匹配、疫苗设计、系统发生与宿主溯源。</p>
-            <p class="muted">本层(P2)接线中: 接入后智能体可通过 <b>测序 → 变异谱 → 机制注释 → 用药匹配</b> 的全链路做推断任务, 真值由场景种子锁定并可评分。</p>
+            <div class="p2-pane-head">分子 / 基因组层 · 测序读数 ⇒ 推断</div>
+            <div class="p2-controls">
+              <label>样本 <input id="p2SeqLabel" type="text" value="" placeholder="自动 S1,S2…" style="width:70px"></label>
+              <label>深度 <select id="p2SeqDepth">
+                <option value="100">100× (便宜/易漏低频)</option>
+                <option value="1000" selected>1000×</option>
+                <option value="20000">20000× (能看到 ~0.01%)</option>
+              </select></label>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('sequence', {label: document.getElementById('p2SeqLabel').value || undefined, depth: Number(document.getElementById('p2SeqDepth').value)})">🧬 测序</button>
+              <span class="p2-sep"></span>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('variants', {})">变异谱</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('resistance', {})">耐药注释</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('drug_match', {})">药物匹配</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('escape', {})">抗原逃逸</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('forecast', {days: 60, drug_pressure: 0.5, vaccine_coverage: 0.3})">演化预测</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('vaccine_design', {platform: 'mrna', doses: 2, strategy: 'cocktail'})">疫苗设计</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('phylo', {})">系统发生</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('trace', {})">溯源</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('identify', {method: 'mngs'})">病原识别</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('genome', {})">基因组图式</button>
+            </div>
+            <div class="p2-controls" id="p2MolSamples" style="border-style:solid;background:#fff"></div>
+            <pre class="p2-out" id="p2MolOut">测序会产生带噪声的读数: 深度决定能看到的等位基因频率(本环境铁律: AF×深度 &lt; 2.5 的亚群被"藏"在读数下)。
+推断链路: 测序 → 变异谱 → 耐药注释/药物匹配 → 必要时高深度复测 → 给区间与 tier。</pre>
           </section>
           <section class="p2-pane" data-pane="host">
             <div class="p2-pane-head">宿主内动力学</div>

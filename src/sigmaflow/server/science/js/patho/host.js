@@ -147,6 +147,9 @@
       host: { temp: 36.6, dmg: 0, severe: false, clearedAt: -1, priorClear: false },
       // 药物: {cls, mg, start, intervalH, end, micWt, micRes}
       drugs: [],
+      // 病毒耐药等位基因频率 cls→af(接种物自带 3e-4 现存变异; 抗病毒药压
+      // 下按选择系数克隆扩张, 停药被适应度代价压回)。分子层测序读的就是它。
+      drAf: {},
       diagSeed: 1,
       samples: [],
       peak: 0, inoculated: false, events: [],
@@ -237,6 +240,19 @@
       const p = 30 * pMul;   // 日产粒量: 决定对数斜率与峰值形态(βT₀=r 已锁 λ)
       const delta = 1.0 + 1.5 * s.imm.ifn + 0.8 * s.imm.cd8;
       const c = 3.0 * cMul + 5 * s.imm.ab;
+      // 耐药等位基因动力学: 药物把敏感株子代产量压到 pMul 倍 = 给耐药株让出
+      // 相对优势 (1/pMul - 1); 停药只有适应度代价(~0.02/d)往下压。
+      for (const dd of concAll) {
+        if (!dd.d.drug.vir) continue;
+        let mult = 1;
+        const ec = Math.max(1e-6, dd.d.micWt * 0.6);
+        mult *= 1 - 0.85 * hill(dd.C / ec, dd.d.drug.h);
+        const af = s.drAf[dd.d.cls] || 0;
+        if (af > 0) {
+          const sCoef = mult < 1 ? (1 / mult - 1) * 0.55 : -0.02;
+          s.drAf[dd.d.cls] = clamp(af + af * (1 - af) * sCoef * dt, 0, 0.999);
+        }
+      }
       const dT = 2.4 * (1 - s.T / T0_VIRUS) - 0.01 * s.T - beta * s.T * s.V;
       const dI = beta * s.T * s.V - delta * s.I;
       const dV = p * s.I - c * s.V;
@@ -381,6 +397,7 @@
       s.drugs.push(d);
       if (key === 'cort') { s.imm.supp = clamp(s.imm.supp + 0.35, 0, 0.85); }   // 激素: 免疫抑制(教学语义)
       if (key === 'ifn') { s.imm.ifn = Math.max(s.imm.ifn, 0.5); }
+      if (drug.vir && s.drAf[key] === undefined) s.drAf[key] = 3e-4;   // 现存耐药变异(测序可读的真值)
       return d;
     },
     setImmune(o) {
