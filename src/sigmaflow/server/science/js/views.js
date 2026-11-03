@@ -315,6 +315,7 @@
         <button type="button" class="p2-scale" data-s="diag" onclick="PathoUI.setScale('diag')">诊断读数</button>
         <button type="button" class="p2-scale" data-s="pop" onclick="PathoUI.setScale('pop')">群体动态</button>
         <button type="button" class="p2-scale" data-s="trial" onclick="PathoUI.setScale('trial')">试验台</button>
+        <button type="button" class="p2-scale" onclick="openPathAI()" id="btnPathAI" title="让智能体接管: 观测/实验/诊断/试验台, 操作实时同步到本页">🤖 AI</button>
       </div>
     </div>
     <div class="p2-main">
