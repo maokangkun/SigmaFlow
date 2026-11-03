@@ -385,11 +385,11 @@ assert client.post("/api/projects", json={"name": "  "}).status_code == 400
 check("Project create + validation")
 
 r = client.get("/api/projects")
-# patenv 服务启动时会种子化"虚拟患者"项目(eb1915c), 名单断言只看本测试
-# 关心的非种子项目, 不与其余服务自动注入的固定项目耦合
+# 环境服务启动时会种子化固定项目(虚拟患者/虚拟病原体), 名单断言只看本测试
+# 关心的非种子项目, 不与各环境自动注入的固定项目耦合
 _names = [p["name"] for p in r.json()["projects"]]
 assert "demo project" in _names
-assert all(n in ("demo project", "虚拟患者") for n in _names), _names
+assert all(n.startswith("虚拟") for n in _names if n != "demo project"), _names
 assert (
     client.post(
         "/api/projects",
