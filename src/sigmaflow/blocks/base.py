@@ -1,7 +1,14 @@
+import asyncio
+import random
 import time
 from datetime import datetime
 from ..log import log
 from ..utils import sync_compat
+
+# 重试退避: 指数级(1s, 2s, 4s...)封顶 30s, 叠加 0~25% 抖动让并发节点别齐步。
+# 模块级常量便于测试把间隔压到 0。
+RETRY_BACKOFF_BASE = 1.0
+RETRY_BACKOFF_CAP = 30.0
 
 
 class Block:
@@ -37,6 +44,21 @@ class Block:
     async def _call(self, *inp):
         pass
 
+    @staticmethod
+    def _backoff_delay(n):
+        delay = RETRY_BACKOFF_BASE * (2 ** (n - 1))
+        delay = min(delay, RETRY_BACKOFF_CAP)
+        if delay <= 0:
+            return 0.0
+        return delay * (1 + random.uniform(0, 0.25))
+
+    async def _backoff(self, n):
+        delay = self._backoff_delay(n)
+        if delay <= 0:
+            return
+        self.log("backoff", f"{delay:.2f}s")
+        await asyncio.sleep(delay)
+
     @sync_compat
     async def __call__(self, *inp):
         n = 0
@@ -57,6 +79,7 @@ class Block:
                 last_err = e
                 n += 1
                 self.log("retry", n)
+                await self._backoff(n)
                 continue
             one_trace.append(
                 {
@@ -123,6 +146,7 @@ class Block:
             if out is None:
                 n += 1
                 self.log("retry", n)
+                await self._backoff(n)
             else:
                 break
         self.trace_log.append(one_trace)
