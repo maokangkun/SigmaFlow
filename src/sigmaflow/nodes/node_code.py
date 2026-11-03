@@ -11,12 +11,6 @@ class CodeNode(Node):
     def match(conf):
         return "code" in conf and type(conf.get("next", None)) is not dict
 
-    def _eval_format(self, item):
-        if type(item) is str:
-            return item.encode("unicode_escape").decode("utf-8")
-        else:
-            return item
-
     async def current_task(self, data, queue, dynamic_tasks):
         inps = await self.get_inps(queue)
         self.execute_start_callback()

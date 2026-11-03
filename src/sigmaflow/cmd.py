@@ -170,8 +170,23 @@ def main():
         case "env":
             check_env()
         case "pipe":
+            pm = build_pm(args)
             pipefile = Path(args.pipeline)
-            pipe = build_pm(args).add_pipe(pipefile.stem, pipefile=pipefile)
+            if not pipefile.exists():
+                # -p 传的是管线名: 按 pipes_dir + 管线后缀解析成真实文件。
+                # 此前名字被直接当路径传给 calc_hash, 后缀非 _pipeline 的工程
+                # (如 _agent)会得到 ENOENT。
+                pipefile = pm.pipes_dir / f"{args.pipeline}{pm.pipeline_suffix}.py"
+                if not pipefile.exists():
+                    available = sorted(
+                        x.stem.removesuffix(pm.pipeline_suffix)
+                        for x in pm.pipes_dir.glob(f"*{pm.pipeline_suffix}.py")
+                    )
+                    raise SystemExit(
+                        f"pipeline '{args.pipeline}' not found in {pm.pipes_dir} "
+                        f"(suffix '{pm.pipeline_suffix}'); available: {available}"
+                    )
+            pipe = pm.add_pipe(pipefile.stem, pipefile=pipefile)
 
             if args.input:
                 data = jload(args.input)

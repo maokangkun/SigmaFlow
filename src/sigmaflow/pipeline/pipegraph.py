@@ -10,6 +10,10 @@ from .graph import Graph
 
 
 class PipeGraph(Graph):
+    def tree2mermaid(self, info=None):
+        # 旧名遗留(pipeline.save_result 侧仍在调用): 实为执行树/全图渲染。
+        return self.graph2mermaid(info)
+
     async def async_run(self, inp_data):
         self.reset()
         if err := self.check_inp(inp_data):

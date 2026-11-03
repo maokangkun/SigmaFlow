@@ -99,7 +99,13 @@ class Graph:
             if node := Node.create(name, conf, self):
                 self.node_manager[name] = node
             else:
-                log.error(f"Unable to identify node type: [{name}] {conf}")
+                unknown = sorted(set(conf) - {"name", "out", "next", "inp", "item", "format"})
+                log.error(
+                    f"Unable to identify node type: [{name}] {conf}  — node type is detected by its trigger key: "
+                    "code / prompt / api / sql / rag_param / mcp / file / file_dir / llm / "
+                    "pipe_in_loop / dict-valued next; unrecognized keys like "
+                    f"{unknown} usually mean a misspelled key."
+                )
                 exit()
 
         all_outs = set()

@@ -367,12 +367,18 @@ def sync_compat(func):
 
 
 def remove_think_content(text):
+    # 推理网关截断/失败时 content 为 None: 回空串, 交回上层重试语义。
+    if text is None:
+        return ""
     regex = r"(^<think>[^<]*(?:<(?!/?think>)[^<]*)*<\/think>)"
     text = re.sub(regex, "", text).strip()
     return text
 
 
 def extract_json(text, remove_think=True):
+    # None 响应安全落地: 让 return_json 节点往外 yield None 以触发重试。
+    if text is None:
+        text = ""
     text = text.strip()
 
     if remove_think:

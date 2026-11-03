@@ -22,7 +22,7 @@ class ValueNode(Node):
             t = t[:n] + "..."
         m = {"append": "+", "assign": "="}[self.conf.get("mode", "assign")]
         d = f"{m} {t}"
-        return [self.__class__.mermaid_shape.format(n=self.name, x=d)] + data_defs
+        return [self.__class__.mermaid_shape.format(m=self.name, x=d)] + data_defs
 
     def get_inps_mp(self, data, config=None):
         def get_data(i):

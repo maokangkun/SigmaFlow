@@ -10,6 +10,13 @@ from .constant import DataState
 
 
 class Node(Base):
+    @staticmethod
+    def _eval_format(item):
+        # Branch 与 Code 节点共用: 模板串按 eval_format 转义, 其余原样。
+        if type(item) is str:
+            return item.encode("unicode_escape").decode("utf-8")
+        return item
+
     def add_callback(self, start_cb=[], finish_cb=[]):
         for item, callback in zip(
             [self.start_callbacks, self.finish_callbacks], [start_cb, finish_cb]
@@ -67,7 +74,7 @@ class Node(Base):
             "handoffs": [],
             "tools": [],
             "output_type": "str",
-            "input": [{"inps": {k: v for k, v in zip(self.conf["inp"], inps)}}],
+            "input": [{"inps": dict(zip(self.conf.get("inp", []), inps))}],
             "output": [{"out": out}],
         }
         save_span(span_id=trace_node_id, span_data=node_data)
@@ -83,16 +90,17 @@ class Node(Base):
                     "input": [
                         {
                             "inps": {
-                                k: v for k, v in zip(self.conf["inp"], log["inps"])
+                                k: v for k, v in zip(self.conf.get("inp", []), log["inps"])
                             },
                             "prompt": log["prompt"],
                         }
                     ],
                     "output": [{"resp": log["resp"], "out": log["out"]}],
-                    "model": self.conf["model"],
+                    "model": self.conf.get("model") or getattr(getattr(self.pipe, "llm", None), "conf", {}).get("model", ""),
                     "usage": {
-                        "input_tokens": log["usage"].get("prompt_tokens", 0),
-                        "output_tokens": log["usage"].get("completion_tokens", 0),
+                        # rag/search 块没有 usage 记录(会存 None), 不能假定非空。
+                        "input_tokens": (log["usage"] or {}).get("prompt_tokens", 0),
+                        "output_tokens": (log["usage"] or {}).get("completion_tokens", 0),
                     },
                 }
                 save_span(

@@ -41,12 +41,22 @@ class Block:
     async def __call__(self, *inp):
         n = 0
         one_trace = []
+        last_err = None
         while n < self.retry:
             start_t = time.time()
             self.log(
                 "inp", [str(i)[:20] + " ..." if len(str(i)) > 20 else i for i in inp]
             )
-            out, query, resp, usage = await self._call(*inp)
+            try:
+                out, query, resp, usage = await self._call(*inp)
+            except Exception as e:
+                # 单次调用抛错(网关瞬时失败/推理截断)也计入重试, 而不是把整个
+                # 节点直接判死;耗尽后按最后一次异常归档由上层记录。
+                self.log("attempt error", str(e))
+                last_err = e
+                n += 1
+                self.log("retry", n)
+                continue
             one_trace.append(
                 {
                     "inps": inp,
@@ -115,4 +125,7 @@ class Block:
             else:
                 break
         self.trace_log.append(one_trace)
+        if out is None and last_err is not None:
+            # 从未成功过: 把真实失败原因抛给任务级 error_msg, 附加重试次数上下文。
+            raise RuntimeError(f'after {self.retry} attempts: {last_err}') from last_err
         return out

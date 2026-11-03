@@ -91,6 +91,7 @@ class RAGNode(Node):
 
     async def current_task(self, data, queue, dynamic_tasks):
         inps = await self.get_inps(queue)
+        self.execute_start_callback({'query': inps})  # finish 侧 trace 依赖 start_time
         out = await self.pipe(*inps)
         self.set_out(out, data, queue)
-        self.execute_finish_callback(out)
+        self.execute_finish_callback(inps, out, queue)

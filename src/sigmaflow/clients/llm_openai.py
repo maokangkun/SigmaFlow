@@ -50,7 +50,15 @@ async def completion(item: str | list[str], conf={}):
 
     client = AsyncOpenAI(**client_param)
     chat_completion = await client.chat.completions.create(**chat_param)
-    resp = chat_completion.choices[0].message.content
+    msg = chat_completion.choices[0].message
+    resp = msg.content
+    if resp is None:
+        # 纯思考无正文(多半被 max_completion_tokens 截断)→ 抛错交回 Block 重试循环,
+        # 重试耗尽后 error_msg 会带明说原因, 别静默把 None 当结果传下去。
+        raise RuntimeError(
+            "model returned no content (empty message, likely reasoning truncated "
+            "by max_completion_tokens; raise OPENAI_API_MAX_COMP_TOKENS)"
+        )
     usage = {
         "prompt_tokens": chat_completion.usage.prompt_tokens,
         "completion_tokens": chat_completion.usage.completion_tokens,

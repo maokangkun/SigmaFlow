@@ -150,7 +150,7 @@ class BranchNode(Node):
         elif "code" in self.conf:
             code = self.conf["code"]
             if callable(code):
-                code(*inps)
+                cond = code(*inps)
             elif type(code) is str:
                 if "def" in code:
                     func_name = code.split("def ")[1].split("(")[0].strip()
@@ -162,7 +162,7 @@ class BranchNode(Node):
                         k: self._eval_format(v)
                         for k, v in zip(self.conf.get("inp", []), inps)
                     }
-                    eval(code.format(**inps_dict))
+                    cond = eval(code.format(**inps_dict))
         else:
             cond = inps[0]
 
@@ -241,7 +241,7 @@ class BranchNode(Node):
         elif "code" in self.conf:
             code = self.conf["code"]
             if callable(code):
-                code(*inps)
+                cond = code(*inps)
             elif type(code) is str:
                 if "def" in code:
                     func_name = code.split("def ")[1].split("(")[0].strip()
@@ -253,7 +253,7 @@ class BranchNode(Node):
                         k: self._eval_format(v)
                         for k, v in zip(self.conf.get("inp", []), inps)
                     }
-                    eval(code.format(**inps_dict))
+                    cond = eval(code.format(**inps_dict))
         else:
             cond = inps[0]
 
@@ -302,7 +302,7 @@ class BranchNode(Node):
         elif "code" in self.conf:
             code = self.conf["code"]
             if callable(code):
-                code(*inps)
+                cond = code(*inps)
             elif type(code) is str:
                 if "def" in code:
                     func_name = code.split("def ")[1].split("(")[0].strip()
@@ -314,7 +314,7 @@ class BranchNode(Node):
                         k: self._eval_format(v)
                         for k, v in zip(self.conf.get("inp", []), inps)
                     }
-                    eval(code.format(**inps_dict))
+                    cond = eval(code.format(**inps_dict))
         else:
             cond = inps[0]
 
