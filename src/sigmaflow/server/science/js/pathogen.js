@@ -221,6 +221,44 @@
     });
   }
 
+  // ---------------- 群体流行曲线(单 lane canvas) ----------------
+  function drawPopChart() {
+    const box = document.getElementById('p2PopChart');
+    const P = window.PathoPop;
+    if (!box || !P || !P.state()) { return; }
+    const sm = P.state().sample;
+    if (!sm || sm.length < 2) return;
+    let cv = box.querySelector('canvas');
+    if (!cv) { cv = document.createElement('canvas'); box.appendChild(cv); }
+    const w = Math.max(280, box.clientWidth - 2), h = 150, dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = w * dpr; cv.height = h * dpr;
+    cv.style.width = w + 'px'; cv.style.height = h + 'px';
+    const g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    g.font = '10px ui-monospace, monospace';
+    g.fillStyle = '#8a90a2';
+    g.fillText('群体流行曲线: 活跃感染(红) · 累计死亡(灰) · 变异株占比(紫×100)', 6, 11);
+    const tMax = sm[sm.length - 1].t || 1;
+    const imax = Math.max(1, ...sm.map(p => p.I));
+    const dmax = Math.max(1, ...sm.map(p => p.D));
+    const x0 = v => 40 + v / tMax * (w - 48);
+    g.strokeStyle = '#d8dce8'; g.beginPath(); g.moveTo(40, h - 18); g.lineTo(w - 8, h - 18); g.stroke();
+    g.strokeStyle = '#d5484f';
+    g.beginPath();
+    sm.forEach((p2, i) => { const y = 16 + (1 - p2.I / imax) * (h - 36); i ? g.lineTo(x0(p2.t), y) : g.moveTo(x0(p2.t), y); });
+    g.stroke();
+    g.strokeStyle = '#9aa0b2';
+    g.beginPath();
+    sm.forEach((p2, i) => { const y = 16 + (1 - p2.D / dmax) * (h - 36); i ? g.lineTo(x0(p2.t), y) : g.moveTo(x0(p2.t), y); });
+    g.stroke();
+    g.strokeStyle = '#8a5fd5';
+    g.beginPath();
+    sm.forEach((p2, i) => { const y = 16 + (1 - Math.min(1, p2.fv)) * (h - 36); i ? g.lineTo(x0(p2.t), y) : g.moveTo(x0(p2.t), y); });
+    g.stroke();
+    g.fillStyle = '#9aa0b2'; g.fillText('t=0', 40, h - 6); g.fillText('t=' + tMax, w - 46, h - 6);
+  }
+
   // ---------------- 智能体工具执行器(环境桥 EXEC) ----------------
   const WIRE = {
     pop: '群体层(P3 接线中): 元种群 SEIR/变异株/干预/疫苗接种/监测/溢出预警。',
@@ -282,7 +320,9 @@
       const before = host().load();
       const days = Number(args.days) || 1;
       host().advance(days);
-      renderStrip(); drawCharts();
+      // 单轴语义: 推进时间 = 推进所有已初始化的层(宿主内 + 群体), 面板与工具一致
+      if (window.PathoPop && window.PathoPop.state()) { const o = window.PathoPop.advance(days); if (o.ok) log('🌍 群体同步推进: ' + esc(o.text.split('\n')[0].slice(0, 100))); }
+      renderStrip(); drawCharts(); drawPopChart();
       const L = host().load();
       return { ok: true, text: `已推进 ${days} 天 → t=${s.t.toFixed(2)}d。载量 ${before >= 1 ? before.toExponential(1) : before.toFixed(2)} → ${L >= 1 ? L.toExponential(1) : L.toFixed(2)}（比值 ${(L / Math.max(1e-9, before)).toFixed(2)}×）。` + (s.host.clearedAt > 0 ? ` 病原已被清除(第 ${s.host.clearedAt.toFixed(1)} 天)。` : '') };
     },
@@ -331,12 +371,37 @@
     pathogen_vaccine_design(args) { return window.PathoPredict.vaccine_design(args || {}); },
     pathogen_phylo(args) { return window.PathoPredict.phylo(args || {}); },
     pathogen_trace(args) { return window.PathoPredict.trace(args || {}); },
-    pathogen_pop_init() { return { ok: false, text: WIRE.pop }; },
-    pathogen_intervene() { return { ok: false, text: WIRE.pop }; },
-    pathogen_vaccinate() { return { ok: false, text: WIRE.pop }; },
-    pathogen_surveillance() { return { ok: false, text: WIRE.pop }; },
-    pathogen_spillover() { return { ok: false, text: WIRE.pop }; },
-    pathogen_pop_observe() { return { ok: false, text: WIRE.pop }; },
+    // ---- 群体层 ----
+    pathogen_pop_init(args) {
+      const out = window.PathoPop.init(args || {});
+      if (out.ok) { log(`🌍 群体模型就绪: ${out.text.split('\n')[0].replace(/^# /, '')}`); drawPopChart(); }
+      return out;
+    },
+    pathogen_intervene(args) {
+      const out = window.PathoPop.intervene(args || {});
+      if (out.ok) log(`🏛 干预排程: ${esc(out.text.split('\n')[0])}`);
+      return out;
+    },
+    pathogen_vaccinate(args) {
+      const out = window.PathoPop.vaccinate(args || {});
+      if (out.ok) log(`💉 疫苗计划: 覆盖 ${(args.coverage * 100).toFixed(0)}% × 保护力 ${(args.efficacy * 100 || 85).toFixed(0)}%`);
+      return out;
+    },
+    pathogen_surveillance(args) {
+      const out = window.PathoPop.surveillance(args || {});
+      if (out.ok) log(`📡 监测报告(t=${(window.PathoPop.state() || {}).t?.toFixed(0) || '?'}d)已生成`);
+      return out;
+    },
+    pathogen_spillover(args) {
+      const out = window.PathoPop.spillover(args || {});
+      if (out.ok) log(`🦠 溢出预警${args && args.what_if ? '(what-if)' : ''}: watchlist 已生成`);
+      return out;
+    },
+    pathogen_pop_observe(args) {
+      const out = window.PathoPop.observe(args || {});
+      if (out.ok) drawPopChart();
+      return out;
+    },
     pathogen_trial_define() { return { ok: false, text: WIRE.trial }; },
     pathogen_trial_run() { return { ok: false, text: WIRE.trial }; },
     pathogen_trial_compare() { return { ok: false, text: WIRE.trial }; },
@@ -436,12 +501,14 @@
       renderStrip(); drawCharts();
     },
     advance() {
+      const days = Number(document.getElementById('p2Adv').value) || 1;
       const s = host().state();
       if (!s) { log('尚未载入: 先选病原体 → 接种。', 'crit'); return; }
-      const days = Number(document.getElementById('p2Adv').value) || 1;
       host().advance(days);
       log(`⏩ 推进 ${days} 天 → t=${s.t.toFixed(1)}d${s.host.clearedAt > 0 ? ' · 已清除' : ''}`);
-      renderStrip(); drawCharts();
+      // 群体模型与宿主内同轴: 推进时间也推动流行(若已初始化)
+      if (window.PathoPop && window.PathoPop.state()) { const o = window.PathoPop.advance(days); if (o.ok) log('🌍 群体 同步推进: ' + esc(o.text.split('\n')[0].slice(0, 90))); }
+      renderStrip(); drawCharts(); drawPopChart();
     },
     play() {
       const btn = document.getElementById('p2Play');
@@ -466,6 +533,7 @@
       if (box) box.innerHTML = rich(out.text).replace(/\n/g, '<br>');
       renderStrip();
     },
+    currentSel() { return P2.sel; },
     molRun(tool, args) {
       // 分子面板按钮与 MCP 工具同一条通道: EXEC[pathogen_<tool>]
       const fn = window.PathoMol && EXEC['pathogen_' + tool];
@@ -476,6 +544,14 @@
       log(`🧬 ${tool} → ${esc(String(out.text || '').split('\n')[1] || out.text || '').slice(0, 90)}`);
     },
     refreshMol() { PathoUI.renderMolSamples(); },
+    popRun(tool, args) {
+      const out = window.PathoPop[tool] ? window.PathoPop[tool](args || {}) : { ok: false, text: '未知' + tool };
+      const box = document.getElementById('p2PopOut');
+      if (box) box.innerHTML = rich(out.text || '').replace(/\n/g, '<br>');
+      log(`🌍 ${tool} → ${esc(String(out.text || '').split('\n')[1] || out.text || '').slice(0, 90)}`);
+      drawPopChart();
+      renderStrip();
+    },
     renderMolSamples() {
       const box = document.getElementById('p2MolSamples');
       if (!box) return;
@@ -493,7 +569,7 @@
     const root = document.getElementById('pathogen-root');
     if (!root) return;
     if (!window.PathoCatalog || !window.PathoHost || !window.PathoDiag || !window.PathoMol || !window.PathoPredict) {
-      CS.ensureLazy('catalog', 'host', 'diag', 'genome', 'predict').then(() => {
+      CS.ensureLazy('catalog', 'host', 'diag', 'genome', 'predict', 'pop').then(() => {
         if (window.PathoCatalog) window.mountPathogenPage();
       });
       return;

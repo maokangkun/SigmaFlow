@@ -385,9 +385,20 @@
 注意: 检测读数是唯一合法的观测来源; 智能体看不到引擎内部状态。</pre>
           </section>
           <section class="p2-pane" data-pane="pop" hidden>
-            <div class="p2-pane-head">群体动态</div>
-            <p>元种群 SEIR（地区 × 年龄分组）、变异株频率、疫苗接种与 NPI 干预、基因组监测采样、溢出预警评分。</p>
-            <p class="muted">本层(P3)接线中: 将与宿主内层通过"传染性曲线 I(t)"耦合 —— 治疗效果会真实地改变传播。</p>
+            <div class="p2-pane-head">群体动态 · 元种群 SEIR + 干预 + 监测 + 溢出</div>
+            <div class="p2-controls">
+              <button type="button" class="p2-btn" onclick="PathoUI.popRun('init', {population: 1000000, regions: 3, initial_cases: 100})">🌍 初始化(100 万 · 3 区)</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.popRun('intervene', {kind: 'lockdown', strength: 0.6, coverage: 0.8, start_day: 30, end_day: 120})">🏛 封控(t=30)</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.popRun('vaccinate', {coverage: 0.6, efficacy: 0.85, start_day: 45})">💉 疫苗 60%</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.popRun('surveillance', {seq_fraction: 0.01})">📡 监测(1% 测序)</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.popRun('spillover', {interface: 0.5})">🦠 溢出预警</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.popRun('spillover', {interface: 0.9, what_if: true})">what-if 界面 0.9</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.popRun('observe', {})">👁 群体观测</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.popRun('observe', {series: true})">👁 +序列</button>
+            </div>
+            <div id="p2PopChart" style="padding:4px 0"></div>
+            <pre class="p2-out" id="p2PopOut">初始化后, 用「宿主内」页签的 推进/播放 按钮同步推进两层; 这里的同时可以排程干预与疫苗。
+监测(1% 测序)给出的是"有噪读数" —— 与 解析观测 对照是本层的核心练习。</pre>
           </section>
           <section class="p2-pane" data-pane="trial" hidden>
             <div class="p2-pane-head">试验台</div>

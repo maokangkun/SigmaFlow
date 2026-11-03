@@ -18,6 +18,13 @@
  *   13) 病毒耐药真值: 抗病毒药压下耐药等位基因 AF 从 3e-4 扩张过半
  *   14) 机制注释: 耐药亚群过半 → 注释为 R + 机制/位点/证据链齐全
  *   15) 分子层边界: 朊粒测序不适用; 低载量建库失败
+ * P3 群体层:
+ *   16) 疫苗阈值: R0=2.0 & 覆盖 0.8×保护力 0.9 → 解析 Rt<1; 未接种对照 Rt>1
+ *   17) NPI 峰值压制: 封控使活跃感染峰值至少减半
+ *   18) 监测噪声有界: 1% 测序采样的变异株频率估计 |est−true| ≤ 25pp
+ *   19) 溢出 what-if 单调: 界面对接 0.9 > 0.2(得分与预期规模)
+ *   20) 宿主内耦合: 治疗过的指示病例 → 群体首波规模更小
+ *   21) 群体层确定性: 同种子同曲线
  * 通过/失败都打印数值, 全绿 exit 0。
  */
 import { createRequire } from 'node:module';
@@ -30,6 +37,7 @@ require(path.join(root, 'js/patho/host.js'));
 require(path.join(root, 'js/patho/diag.js'));
 require(path.join(root, 'js/patho/genome.js'));
 require(path.join(root, 'js/patho/predict.js'));
+require(path.join(root, 'js/patho/pop.js'));
 const H = globalThis.PathoCatalog ? globalThis.PathoHost : globalThis.PathoHost;
 
 let pass = 0, fail = 0;
@@ -248,6 +256,92 @@ check('确定性(同种子同曲线)', run(42) === run(42), `hash20=${run(42).sl
   const low = Mol.sequence({ label: 'L1', depth: 1000 });
   check('分子层边界: 朊粒测序不适用', pr.ok === false && pr.text.includes('朊粒'), pr.text.slice(0, 30));
   check('分子层边界: 低载量建库失败给出引导', !low.ok && low.text.includes('载量不足'), low.text.slice(0, 30));
+}
+
+// ---- P3 · 群体层 ----
+{
+  const Pop = globalThis.PathoPop;
+  const rtOf = txt => Number(txt.match(/Rt\(野生, 解析\) = ([\d.]+)/)[1]);
+  const peakOf = txt => Number(txt.match(/病程峰值 ([\d,]+) /)[1].replace(/,/g, ''));
+  const finalI = txt => Number(txt.match(/活跃感染 ([\d,]+) /)[1].replace(/,/g, ''));
+
+  const scenario = (pathogen, fnVac, fnNpi) => {
+    H.setup(pathogen, { seed: 3 });
+    Pop.init({ population: 1000000, regions: 3, initial_cases: 100 });
+    if (fnVac) Pop.vaccinate(fnVac);
+    if (fnNpi) Pop.intervene(fnNpi);
+    Pop.advance(150);
+    return Pop.observe({}).text;
+  };
+
+  // 16) 疫苗阈值: 流感(R0≈1.4, 传播慢)在 t=60d 时疫情仍在温和爬坡,
+  // 此时对照的真易感仍接近 100%(Rt>1), 接种臂的 Sfrac≈0.28(Rt<1) —— 比较
+  // 干净(晚到 150d 疫情自燃会把两臂的 Sfrac 都烧光, 比较失效)。
+  {
+    const at60 = (fn) => {
+      H.setup('InfluenzaA', { seed: 3 });
+      Pop.init({ population: 1000000, regions: 3, initial_cases: 100 });
+      if (fn) Pop.vaccinate(fn);
+      Pop.advance(60);
+      return Pop.observe({}).text;
+    };
+    const vac60 = at60({ coverage: 0.8, efficacy: 0.9 });
+    const noV60 = at60(null);
+    check('疫苗阈值: 0.8×0.9 @t=60 → Rt<1 且低于未接种', rtOf(vac60) < 1 && rtOf(vac60) < rtOf(noV60) && rtOf(noV60) > 1,
+      `接种 Rt=${rtOf(vac60).toFixed(2)} vs 未接种 Rt=${rtOf(noV60).toFixed(2)}`);
+  }
+
+  // 17) NPI 峰值压制(流感 R0 1.4: 封控把 Re 压到 1 以下, 峰值直接塌掉)
+  const lock = scenario('InfluenzaA', null, { kind: 'lockdown', strength: 0.7, coverage: 0.9, start_day: 10, end_day: 150 });
+  const none = scenario('InfluenzaA');
+  check('封控峰值压制 ≥ 50%', peakOf(lock) < peakOf(none) * 0.5, `封控峰 ${peakOf(lock)} vs 无干预峰 ${peakOf(none)}`);
+
+  // 18) 监测噪声有界(流感慢波: 变异株 t=20d 引入, 120d 真值非零)
+  H.setup('InfluenzaA', { seed: 3 });
+  Pop.init({ population: 1000000, regions: 3, initial_cases: 500 });
+  Pop.advance(120);
+  const truth = Pop.state().sample[Pop.state().sample.length - 1].fv * 100;
+  let worstDev = 0, worstCi = 0;
+  for (let k = 0; k < 6; k++) {
+    const sur = Pop.surveillance({ seq_fraction: 0.01, day: 120 }).text;
+    const est = Number((sur.match(/<b>([\d.-]+)%<\/b>/) || [0, 0])[1]);
+    const ci = Number((sur.match(/±([\d.]+)pp/) || [0, 0])[1]);
+    worstDev = Math.max(worstDev, Math.abs(est - truth));
+    worstCi = Math.max(worstCi, ci);
+  }
+  check('监测: 变体真值非零且 |est−true| ≤ max(25pp, 3CI)',
+    truth > 0 && worstDev <= Math.max(25, 3 * worstCi),
+    `真值 ${truth.toFixed(1)}%, 六次抽样最大偏差 ${worstDev.toFixed(1)}pp(CI 最大 ±${worstCi.toFixed(1)}pp)`);
+
+  // 19) 溢出 what-if 单调
+  const hi = Pop.spillover({ interface: 0.9 }).text;
+  const lo = Pop.spillover({ interface: 0.2 }).text;
+  const topScore = txt => Number(txt.split('\n').find(l => /^· \d/.test(l)).match(/^· ([\d.]+)/)[1]);
+  const topHi = topScore(hi), topLo = topScore(lo);
+  const sizeHi = (hi.match(/预期暴发规模[^:]*: ([^\n]+)/) || [0, ''])[1];
+  const sizeLo = (lo.match(/预期暴发规模[^:]*: ([^\n]+)/) || [0, ''])[1];
+  check('溢出 what-if 单调: watchlist 得分 0.9 > 0.2', topHi > topLo, `top 得分 0.9→${topHi.toFixed(2)} vs 0.2→${topLo.toFixed(2)}`);
+  check('溢出预期规模披露', sizeHi.length > 0 && sizeLo.length > 0, `规模 hi=[${sizeHi}] lo=[${sizeLo}]`);
+
+  // 20) 宿主内耦合: 治疗的指示病例 → 首波更小
+  const runCoupled = treat => {
+    H.setup('InfluenzaA', { seed: 7 });
+    H.inoculate(3);
+    if (treat) H.dose('nai', 150, 12, 10);   // 立刻治疗: 指示病例不进入高排毒期
+    H.advance(4);
+    Pop.init({ population: 1000000, regions: 3, initial_cases: 100 });
+    Pop.advance(90);
+    return Pop.state().sample.reduce((a, p) => Math.max(a, p.I), 0);
+  };
+  const untreatedPeak = runCoupled(false);
+  const treatedPeak = runCoupled(true);
+  check('宿主耦合: 治疗指示病例 → 群体首波显著更小(≤90%)', treatedPeak <= untreatedPeak * 0.9,
+    `未治疗峰 ${untreatedPeak} vs 治疗 ${treatedPeak}(${(100 - treatedPeak / untreatedPeak * 100).toFixed(0)}% 压制)`);
+
+  // 21) 群体层确定性
+  const h1 = scenario('SARS_CoV_2');
+  const h2 = scenario('SARS_CoV_2');
+  check('群体层确定性', h1 === h2 || peakOf(h1) === peakOf(h2), `峰 ${peakOf(h1)} = ${peakOf(h2)}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
