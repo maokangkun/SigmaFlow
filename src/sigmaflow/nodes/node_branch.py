@@ -324,7 +324,7 @@ class BranchNode(Node):
         if nodes := self.next.get(cond, None):
             queue += nodes
         log.debug(f"[{self.name}] condition: {cond}, goto nodes: {nodes}")
-        self.execute_finish_callback(cond)
+        self.execute_finish_callback(inps, cond, queue)
 
     def export_as_comfyui(self):
         inps = {

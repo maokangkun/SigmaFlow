@@ -52,7 +52,7 @@ class CodeNode(Node):
                 out = eval(code.format(**inps_dict))
         self.set_out(out, data, config=config)
         log.debug(f"{self.conf['out']}: {out}")
-        self.execute_finish_callback(out)
+        self.execute_finish_callback(inps, out, queue)
         for n in self.next:
             queue.put((n.name, config))
 
@@ -82,6 +82,6 @@ class CodeNode(Node):
 
         self.set_out(out, data)
         log.debug(f"{self.conf['out']}: {out}")
-        self.execute_finish_callback(out)
+        self.execute_finish_callback(inps, out, queue)
         for n in self.next:
             queue.append(n)

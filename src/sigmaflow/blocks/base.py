@@ -42,6 +42,7 @@ class Block:
         n = 0
         one_trace = []
         last_err = None
+        out = None  # 所有尝试都抛错时循环内不会赋值, 先落 None 让收尾的归因分支可达
         while n < self.retry:
             start_t = time.time()
             self.log(
@@ -127,5 +128,5 @@ class Block:
         self.trace_log.append(one_trace)
         if out is None and last_err is not None:
             # 从未成功过: 把真实失败原因抛给任务级 error_msg, 附加重试次数上下文。
-            raise RuntimeError(f'after {self.retry} attempts: {last_err}') from last_err
+            raise RuntimeError(f"after {self.retry} attempts: {last_err}") from last_err
         return out

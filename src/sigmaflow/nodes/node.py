@@ -37,15 +37,22 @@ class Node(Base):
         for callback in self.start_callbacks:
             callback(data)
 
-    def execute_finish_callback(self, inps, out, queue):
+    def execute_finish_callback(self, inps, out, queue=None):
         self.end_time = datetime.utcnow()
-        self.save_trace(inps, out, queue)
+        # mp/seq 执行模式的 queue 是进程队列/列表(无 #TRACE_ID 路由键, 也没有
+        # execute_start_callback 兜底), 链路追踪只属于异步主循环的 dict 队列;
+        # 这两种模式降级为只跑 finish 回调, 且未跑 start 时按零耗时计。
+        if isinstance(queue, dict) and "#TRACE_ID" in queue:
+            self.save_trace(inps, out, queue)
 
         data = {
             "node": self.name,
             "out": out,
             "execution_time": int(
-                (self.end_time - self.start_time).total_seconds() * 1000
+                (
+                    self.end_time - getattr(self, "start_time", self.end_time)
+                ).total_seconds()
+                * 1000
             ),  # ms
         }
         for callback in self.finish_callbacks:
@@ -90,17 +97,23 @@ class Node(Base):
                     "input": [
                         {
                             "inps": {
-                                k: v for k, v in zip(self.conf.get("inp", []), log["inps"])
+                                k: v
+                                for k, v in zip(self.conf.get("inp", []), log["inps"])
                             },
                             "prompt": log["prompt"],
                         }
                     ],
                     "output": [{"resp": log["resp"], "out": log["out"]}],
-                    "model": self.conf.get("model") or getattr(getattr(self.pipe, "llm", None), "conf", {}).get("model", ""),
+                    "model": self.conf.get("model")
+                    or getattr(getattr(self.pipe, "llm", None), "conf", {}).get(
+                        "model", ""
+                    ),
                     "usage": {
                         # rag/search 块没有 usage 记录(会存 None), 不能假定非空。
                         "input_tokens": (log["usage"] or {}).get("prompt_tokens", 0),
-                        "output_tokens": (log["usage"] or {}).get("completion_tokens", 0),
+                        "output_tokens": (log["usage"] or {}).get(
+                            "completion_tokens", 0
+                        ),
                     },
                 }
                 save_span(
