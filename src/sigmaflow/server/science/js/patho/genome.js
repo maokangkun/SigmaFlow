@@ -208,7 +208,7 @@
         lineage: lineageOf(s.entry, loci, s.seed),
         accPrivate: [],    // 宿主内演化: 已固定的私有变异, 后续样本全部携带
         lastSampleT: 0,
-        samples: [],       // {id,label,t,depth,truth:{lineage,private,dets},calls}
+        samples: [],       // {id,label,t,depth,truth:{lineage,private,dets,load},calls}
       };
     }
     return s.mol;
@@ -262,7 +262,7 @@
       mol.accPrivate.push({ gene: loc.gene, pos, ref: 'G', alt: 'A', class: 'private', t: s.t });
     }
     mol.lastSampleT = s.t;
-    const truth = { lineage: mol.lineage, private: mol.accPrivate.slice(), dets };
+    const truth = { lineage: mol.lineage, private: mol.accPrivate.slice(), dets, load: +load };   // load: 采样时真值载量(培养/panel 阳性判据)
     const calls = [];
     // 谱系变异 + 已固定私有变异: AF≈1
     for (const v of truth.lineage) calls.push({ ...v, af: 1 - r() * 0.01 });
@@ -317,6 +317,14 @@
     return { ok: true, text: lines.join('\n') };
   }
 
+  // 多重 PCR panel 目标清单(现实教学: panel 只报覆盖内目标, 覆盖外=漏检)。
+  const PANELS = {
+    respiratory: { name: '呼吸道 17 联', targets: ['InfluenzaA', 'InfluenzaB', 'SARS_CoV_2', 'SeasonalCorona', 'RSV', 'Parainfluenza', 'Rhinovirus', 'Adenovirus', 'SARS_CoV', 'S_pneumoniae', 'K_pneumoniae', 'H_influenzae_b', 'M_pneumoniae', 'C_pneumoniae', 'L_pneumophila', 'M_tuberculosis', 'Pneumocystis'] },
+    gastro: { name: '胃肠道 15 联', targets: ['Rotavirus', 'Norovirus', 'Astrovirus', 'Adenovirus', 'E_coli_EHEC', 'E_coli_ETEC', 'Salmonella_Typhi', 'Salmonella_NTS', 'Shigella', 'Campylobacter', 'V_cholerae', 'C_difficile', 'Cryptosporidium', 'Giardia', 'E_histolytica'] },
+    bloodstream: { name: '血流/脓毒症 7 联', targets: ['S_aureus', 'E_coli', 'K_pneumoniae', 'S_pneumoniae', 'S_agalactiae', 'N_meningitidis', 'Salmonella_Typhi'] },
+    cns: { name: '中枢神经系统 9 联', targets: ['HSV1', 'HSV2', 'S_pneumoniae', 'N_meningitidis', 'S_agalactiae', 'E_coli', 'K_pneumoniae', 'VZV', 'P_falciparum'] },
+  };
+
   function identify(args) {
     const s = stateOf();
     if (!s || !s.mol) return { ok: false, text: '没有可用样本: 先 pathogen_sequence。' };
@@ -325,6 +333,9 @@
     const r = rng(hash32('id::' + s.entry.id + '::' + sample.id + '::' + s.diagSeed));
     s.diagSeed++;
     const method = String(args.method || 'mngs');
+    // 采样时载量: 培养与 panel 的阳性判据(治疗收尾期采样=低载量, 结果要诚实)
+    const load = (sample.truth && sample.truth.load) || 0;
+    const kind = s.entry.kind;
     if (method === 'mngs') {
       // 宏基因组: 主 + 1-2 个背景/污染种
       const C = G.PathoCatalog;
@@ -340,9 +351,54 @@
       return { ok: true, text: lines.join('\n') };
     }
     if (method === 'panel') {
-      return { ok: true, text: `# 病原识别(多重 PCR panel) · 样本 ${sample.id}\n· <b>${s.entry.zh}</b> (${s.entry.id})  阳性(目标基因 ${s.mol.lineage.length} 个标记全中)\n· 其余靶标阴性; panel 覆盖内的特异性高于 mNGS, 覆盖外的新发病原会漏检。` };
+      const key = String(args.panel || 'respiratory');
+      const pl = PANELS[key];
+      if (!pl) return { ok: true, text: `# 病原识别(panel)
+未知 panel 「${key}」。可用: ${Object.keys(PANELS).join(' / ')}(respiratory/gastro/bloodstream/cns)。` };
+      const lines = [`# 病原识别(多重 PCR ${pl.name}) · 样本 ${sample.id}`];
+      if (!pl.targets.includes(s.entry.id)) {
+        lines.push(`· 目标清单 ${pl.targets.length} 项全部阴性(含临界复测)。`);
+        lines.push(`· <b>${s.entry.zh} 不在本 panel 覆盖内 —— panel 漏检语义: 这不是"没有感染", 是"这套引物看不到它"。</b>`);
+        lines.push(`建议: 换 ${kind === 'virus' ? 'respiratory/gastro 覆盖外用 mNGS' : 'mNGS(宏基因组全谱)'} 或按临床综合征补送针对性检测。`);
+        return { ok: true, text: lines.join('\n') };
+      }
+      if (load < 100) {
+        lines.push(`· ${s.entry.zh} 靶标 <b>阴性</b>(靶基因 Ct>38 未检出) —— 采样时载量 ${load < 1 ? '0' : load.toFixed(0)} 等效单位, 低于 panel 检测限。`);
+        lines.push(`· 其余靶标阴性。注: 检测限下阴性 ≠ 无感染(治疗收尾期常见); 需要病因学确认请重新采样或用 mNGS。`);
+        return { ok: true, text: lines.join('\n') };
+      }
+      const ct = Math.min(38, Math.max(12, 38 - 8 * (Math.log10(load) - 2) + (r() - 0.5) * 1.6));
+      lines.push(`· <b>${s.entry.zh}</b> (${s.entry.id})  阳性 · 靶基因 Ct <b>${ct.toFixed(1)}</b>${ct > 35 ? '(临界, 建议复测确认)' : ''}`);
+      lines.push(`· 其余 ${(pl.targets.length - 1)} 项靶标阴性; panel 特异性高于 mNGS(无背景种问题), 覆盖外新发病原会漏检。`);
+      lines.push(`判读: Ct≈${ct.toFixed(0)} 对应采样时载量量级 —— 与宿主内层载量曲线互为印证(t=${sample.t}d)。`);
+      return { ok: true, text: lines.join('\n') };
     }
-    return { ok: true, text: `# 病原识别(培养) · 样本 ${sample.id}\n· <b>${s.entry.zh}</b> (${s.entry.id})  菌落形态一致, 基质谱鉴定分值 2.1(tier ${s.entry.tier})\n· 可传代做 MIC 面板(见诊断读数层)。` };
+    if (method === 'culture') {
+      const lines = [`# 病原识别(培养) · 样本 ${sample.id}`];
+      if (kind === 'virus') {
+        lines.push(`· <b>无病毒生长</b> —— 常规培养皿不支持病毒复制(需活细胞/鸡胚, 本环境不提供细胞培养线)。`);
+        lines.push(`· 这不是阴性报告: 病毒病原请走 qPCR 载量 / panel / mNGS / 抗原(见诊断读数层)。`);
+        return { ok: true, text: lines.join('\n') };
+      }
+      if (kind === 'protozoa' || kind === 'helminth') {
+        lines.push(`· <b>不适用</b> —— ${kind === 'protozoa' ? '原虫' : '蠕虫'}不做常规培养鉴定; 走血膜/粪检镜检或血清学(教学提示: 诊断读数层的抗原/显微镜语义)。`);
+        return { ok: true, text: lines.join('\n') };
+      }
+      if (kind === 'prion') return { ok: true, text: '朊粒不能体外培养; 走脑组织病理 + 免疫组化(教学在分子层文档说明)。' };
+      // 细菌/真菌: 生长判据 = 采样时载量; 慢生长者给真实周转时间
+      const slow = { M_tuberculosis: '罗氏培养 2-6 周(液体系统 ~10 天)', Cryptococcus: '2-5 天(慢生长酵母)' };
+      if (load < 500) {
+        lines.push(`· 48-72h <b>无菌生长</b>(阴性) —— 采样时载量 ${load < 1 ? '0' : load.toFixed(0)} 等效单位, 接种量低于培养灵敏度(教学: 与 qPCR 检测限的差距)。`);
+        lines.push(`· 提示: 抗生素使用期采样/病灶深部采样常见假阴性; 需要时停药复送或改 mNGS。`);
+        return { ok: true, text: lines.join('\n') };
+      }
+      const grade = Math.min(4, Math.max(1, Math.round(Math.log10(load) - 2)));
+      const tat = slow[s.entry.id] || (kind === 'fungus' ? '2-5 天' : '18-30 小时(过夜孵育)');
+      lines.push(`· <b>${s.entry.zh}</b> (${s.entry.id})  菌落形态一致 · 生长半定量 <b>+${grade}</b>(接种量量级 10^${Math.log10(load).toFixed(0)})`);
+      lines.push(`· 周转: ${tat} · 基质谱(MALDI-TOF)分值 2.1-2.3(tier ${s.entry.tier}) · 可传代做 MIC 面板(诊断读数层)。`);
+      return { ok: true, text: lines.join('\n') };
+    }
+    return { ok: true, text: `未知 method「${method}」。可用: mngs / panel(respiratory|gastro|bloodstream|cns) / culture。` };
   }
 
   // ---------------- 耐药注释 ----------------

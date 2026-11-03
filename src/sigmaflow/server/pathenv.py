@@ -401,6 +401,36 @@ TOOLS: List[Dict[str, Any]] = [
         ),
     },
     {
+        "name": "pathogen_host_vaccinate",
+        "description": (
+            "Apply a vaccine to the within-host host - this is where molecular-layer "
+            "vaccine design results land. Effective protection = coverage discounted by "
+            "escape sites (12% per site, capped at 75%). Circulating antibody ramps to "
+            "the full vaccine floor in ~10 days (challenge immediately and the ramp is "
+            "not there yet) and wanes with a ~240-day time constant. Protection "
+            "neutralizes the challenge inoculum and blocks new infection, on top of the "
+            "memory recall floor - vaccines are prophylaxis, never treatment."
+        ),
+        "inputSchema": _schema(
+            {
+                "coverage": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.8,
+                    "description": "vaccine design coverage fraction (from pathogen_vaccine_design)",
+                },
+                "escape_sites": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 10,
+                    "default": 0,
+                    "description": "escape sites left by the design (from vaccine_design)",
+                },
+            }
+        ),
+    },
+    {
         "name": "pathogen_host_observe",
         "description": (
             "Read the within-host state: log10 load per compartment, immune effectors "
@@ -489,9 +519,13 @@ TOOLS: List[Dict[str, Any]] = [
     {
         "name": "pathogen_identify",
         "description": (
-            "Identify the pathogen from the sequenced/metagenomic reads: candidate "
-            "species with confidence, abundance ranking, and contamination or background "
-            "flora notes."
+            "Identify the pathogen from a sequenced sample. mNGS: candidate species with "
+            "abundance ranking and background flora. panel: multiplex PCR - honest "
+            "no-detection when the pathogen sits outside the panel target list (a panel "
+            "miss is not absence of infection) and Ct-linked positivity when inside. "
+            "culture: only bacteria/fungi grow (viruses/protozoa/helminths are honestly "
+            "refused with the right alternative), and growth requires adequate sampled "
+            "load - low-load windows come back negative."
         ),
         "inputSchema": _schema(
             {
@@ -500,6 +534,12 @@ TOOLS: List[Dict[str, Any]] = [
                     "type": "string",
                     "enum": ["mngs", "panel", "culture"],
                     "default": "mngs",
+                },
+                "panel": {
+                    "type": "string",
+                    "enum": ["respiratory", "gastro", "bloodstream", "cns"],
+                    "default": "respiratory",
+                    "description": "panel target list (use with method=panel)",
                 },
             }
         ),
@@ -631,7 +671,8 @@ TOOLS: List[Dict[str, Any]] = [
             "Spillover early-warning score for the configured pathogen: reservoir and "
             "vector terms, human-animal interface exposure, receptor compatibility, "
             "genetic barrier to human adaptation and surveillance sensitivity, with the "
-            "factor breakdown and a ranked watchlist."
+            "factor breakdown and a ranked watchlist. Weak surveillance delays lab "
+            "confirmation (~28-49 days) and systematically hides rare tier-C pathogens."
         ),
         "inputSchema": _schema(
             {
@@ -641,7 +682,33 @@ TOOLS: List[Dict[str, Any]] = [
                     "maximum": 1,
                     "default": 0.5,
                 },
+                "surveillance": {
+                    "type": "string",
+                    "default": "mid",
+                    "description": "weak(0.2 passive) / mid(0.5 sentinel hospitals) / strong(0.85 sentinel+syndromic+sequencing)",
+                },
                 "what_if": {"type": "boolean", "default": False},
+            }
+        ),
+    },
+    {
+        "name": "pathogen_pop_serology",
+        "description": (
+            "Cross-sectional serology survey: per-region sampling with binomial noise, "
+            "Wilson 95% CI, assay sensitivity 90% / specificity 98% - at low prevalence "
+            "the false-positive floor dominates and the uncorrected estimate "
+            "overestimates (the report says so). Observation proxy for the immune wall; "
+            "analytic truth stays in pop_observe."
+        ),
+        "inputSchema": _schema(
+            {
+                "sample_per_region": {
+                    "type": "integer",
+                    "minimum": 30,
+                    "maximum": 50000,
+                    "default": 500,
+                },
+                "day": {"type": "number", "minimum": 0},
             }
         ),
     },
@@ -749,6 +816,7 @@ GROUPS: Dict[str, List[str]] = {
         "pathogen_inoculate",
         "pathogen_dose",
         "pathogen_host_immune",
+        "pathogen_host_vaccinate",
         "pathogen_host_observe",
         "pathogen_advance",
     ],
@@ -759,6 +827,7 @@ GROUPS: Dict[str, List[str]] = {
         "pathogen_vaccinate",
         "pathogen_surveillance",
         "pathogen_spillover",
+        "pathogen_pop_serology",
         "pathogen_pop_observe",
     ],
     "trial": [

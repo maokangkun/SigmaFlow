@@ -87,3 +87,19 @@
 - **群体观测 vs 监测读数**: `pathogen_pop_observe` 是解析真值(教学/校准用),
   `pathogen_surveillance` 才是公卫情境下的有噪观测(报告延迟 + 漏报 + 采样噪声)。
   做流行病学判断时基于后者, 并在结论里说明采样量的影响。
+
+## 留白收口之后新增的可用语义(P6)
+
+- **疫苗闭环**: `pathogen_vaccine_design` 的输出(coverage / escape_sites)现在可以
+  直接在宿主内层落地 —— `pathogen_host_vaccinate`。接种后 ~10 天召回应答才到
+  完整效价, 抗体衰减 ~240 天时间常数; 立即挑战和长间隔挑战都是可教学的对照。
+- **识别方法的真实分岔**: `pathogen_identify` 的 panel 有目标清单 —— 覆盖外
+  目标诚本报"不在本 panel"(漏检 ≠ 没有感染); 培养只长细菌/真菌, 病毒/原虫/
+  蠕虫会拒培养并给出正确的替代路径; 低载量窗口(测序阈上/培养阈下)培养报阴性。
+  方法选择本身就是考试题: 别用培养找病毒。
+- **血清学**: `pathogen_pop_serology` 是群体免疫墙的观测代理(带噪, 试剂
+  灵敏度 90%/特异度 98%)。低流行区假阳性主导 —— 未校正的血清阳性会高估;
+  与 pop_observe 的解析值对照可以量化检测偏差本身。
+- **监测能力是风险分母**: `pathogen_spillover` 的 surveillance 参数(weak/mid/
+  strong)改变预警中位延迟(weak ~41 天 / strong ~13 天)并系统性改变 tier C
+  罕见病原在 watchlist 里的可见性。"把监测拉到 strong 再跑一次"是标准对照。

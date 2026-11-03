@@ -13,7 +13,7 @@ from sigmaflow.server.envbridge import EnvHub
 
 
 def test_tool_surface_is_grouped_and_complete():
-    assert len(pathenv.TOOLS) == 31
+    assert len(pathenv.TOOLS) == 33
     assert all(t["name"].startswith("pathogen_") for t in pathenv.TOOLS)
     covered = set()
     for names in pathenv.GROUPS.values():
@@ -38,8 +38,8 @@ def test_tools_list_filters_by_group():
             "result"
         ]["tools"]
     }
-    assert len(all_ids) == 31
-    assert len(host_ids) == len(pathenv.GROUPS["host"]) == 9
+    assert len(all_ids) == 33
+    assert len(host_ids) == len(pathenv.GROUPS["host"]) == 10
     assert host_ids < all_ids
     # serverInfo 带分组名, 便于在智能体侧辨认是哪一层在应答
     info = hub.mcp_handle("u", {"id": 3, "method": "initialize"}, group="molecular")[

@@ -317,21 +317,29 @@
       const C = G.PathoCatalog;
       if (!C) return { ok: false, text: '目录未加载。' };
       const iface = clamp(Number(args.interface) === 0 ? 0.5 : Number(args.interface) ?? 0.5, 0, 1);
+      // 监测灵敏度(0-1): 弱 0.2 / 中 0.5 / 强 0.85 —— 决定"能不能在早期看见"
+      const SUR_W = { weak: 0.2, low: 0.2, '弱': 0.2, mid: 0.5, '中': 0.5, strong: 0.85, '强': 0.85 };
+      let sur;
+      if (args && args.surveillance === undefined) sur = 0.5;
+      else if (typeof (args || {}).surveillance === 'string') sur = SUR_W[args.surveillance.trim().toLowerCase()] ?? clamp(Number(args.surveillance) || 0, 0, 1);
+      else sur = clamp(Number((args || {}).surveillance) || 0, 0, 1);
       const ent = entryFor();
       const factor = (e) => {
         const tx = e.tx.join('|');
         const animal = (tx.includes('animal') ? 1 : 0) + (tx.includes('vector') ? 0.8 : 0) + (String(e.reservoir || '').match(/蝙蝠|啮齿|禽|果蝠|鼠|鸟|猴/) ? 0.6 : 0);
         const receptor = e.kind === 'virus' ? (['resp', 'contact'].some(t => e.tx.includes(t)) ? 1 : 0.4) : 0.5;
-        const barrier = e.tier === 'C' ? 0.8 : e.tier === 'B' ? 0.5 : 0.3;   // 目录级/罕见 = 更少宿主适应数据
+        // 基因屏障: tier C(目录级/宿主适应数据少的罕见种)在弱监测下几乎必然"晚发现"
+        const barrier0 = e.tier === 'C' ? 0.8 : e.tier === 'B' ? 0.5 : 0.3;
+        const barrier = e.tier === 'C' ? barrier0 * (1.45 - 0.45 * sur) : barrier0;
         const bslRisk = e.bsl >= 4 ? 0.9 : e.bsl === 3 ? 0.7 : 0.4;
         const novel = e.kind === 'virus' ? 0.2 : 0.1;
-        const sur = 0.5;   // 监测灵敏度固定中档(P3 简化)
-        return { animal, receptor, barrier, bsl: bslRisk, novel, sur, score: 0.30 * animal + 0.20 * receptor + 0.15 * (1 - barrier) + 0.15 * bslRisk + 0.10 * novel + 0.10 * sur };
+        return { animal, receptor, barrier: Math.min(1, barrier), bsl: bslRisk, novel, sur, score: 0.30 * animal + 0.20 * receptor + 0.15 * Math.max(0, 1 - barrier) + 0.15 * bslRisk + 0.10 * novel + 0.10 * sur };
       };
       const scores = C.all().map(e => ({ e, f: factor(e) }));
       scores.forEach(x => { x.ifScore = x.f.score * (0.55 + 0.9 * iface); });
       scores.sort((a, b) => b.ifScore - a.ifScore);
       const lines = [`# 溢出预警 · 人兽界面对接 ${ctxType(iface)}(=${iface.toFixed(2)})${args && args.what_if ? ' · what-if 模式(只算因子分解与预期规模)' : ''}`];
+      lines.push(`监测灵敏度: ${sur < 0.35 ? '弱(被动报告/无哨点)' : sur > 0.7 ? '强(哨点+综合征+测序)' : '中(哨点医院)'}(=${sur.toFixed(2)}) —— 预计从首例到实验室确认中位延迟 <b>${Math.round(7 + 42 * (1 - sur))} 天</b>; 弱监测下罕见/tier C 病原被系统性晚发现。`);
       if (ent && (ent.tx.includes('animal') || ent.tx.includes('vector') || ent.reservoir)) {
         const f = factor(ent);
         lines.push(`当前场景 ${ent.zh}: 风险 ${(f.score * (0.55 + 0.9 * iface)).toFixed(2)}/1.0 —— 因子: 宿主/媒介 ${f.animal.toFixed(1)} · 受体兼容 ${f.receptor.toFixed(1)} · 基因屏障 ${f.barrier.toFixed(1)} · BSL ${f.bsl.toFixed(1)} · 监测 ${f.sur.toFixed(1)}`);
@@ -339,8 +347,45 @@
       } else if (ent) lines.push(`当前场景 ${ent.zh}: 无人兽界面/储存宿主字段, 直接溢出途径不适用(人传人/环境途径为主)。`);
       lines.push(`Watchlist(全目录按风险排序 Top8, 界面=${iface.toFixed(2)}):`);
       for (const x of scores.slice(0, 8)) lines.push(`· ${(x.ifScore).toFixed(2)}  ${x.e.zh}(${x.e.id}) 储存 ${x.e.reservoir || '—'} · 媒介 ${x.e.vector || '—'} · tier ${x.e.tier}`);
-      lines.push('注: 评分为教学合成(tier 语义), 用于排序与因子分解练习, 不是真实生态风险数值。');
+      lines.push('注: 评分为教学合成(tier 语义), 用于排序与因子分解练习, 不是真实生态风险数值。把 surveillance 从 weak 拉到 strong 再跑一次 —— watchlist 排序会变, 这就是"监测能力是风险分母"的演练。');
       if (args && args.what_if) lines.push('what-if 说明: 把 interface 调到 0.9 再跑一次, top 项得分与预期规模同步上行, 这组对照就是"减少界面对接"的价值演练。');
+      return { ok: true, text: lines.join('\n') };
+    },
+
+    // ---- 血清学调查(带噪观测的免疫快照) ----
+    serology(args) {
+      const s = this._s;
+      if (!s) return { ok: false, text: '先 pathogen_pop_init。' };
+      const n = Math.max(30, Math.min(50000, Math.round(Number(args && args.sample_per_region) || 500)));
+      const day = Number(args && args.day) || s.t;
+      const snap = s.sample.slice().reverse().find(p => p.t <= day + 1e-9) || s.sample[0];
+      const SENS = 0.90, SPEC = 0.98;      // 现实教学: 抗体检测有灵敏度/特异度
+      // 确定性二项抽样: 种子 = 采样量+地区数+报告日(同参数可复算)
+      let h = (Math.round(day * 10) * 2654435761 ^ n * 97 ^ s.nR * 31) >>> 0;
+      const rnd = () => { h = (h + 0x6D2B79F5) >>> 0; let x = Math.imul(h ^ (h >>> 15), 1 | h); x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x; return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+      const wilson = (k, m) => {
+        const z = 1.96, ph = (k + z * z / 2) / (m + z * z), hw = z * Math.sqrt((ph * (1 - ph) / m) + (z * z / (4 * m * m))) / (1 + z * z / m);
+        return [Math.max(0, ph - hw), Math.min(1, ph + hw)];
+      };
+      const lines = [`# 血清学调查 · t=${day.toFixed(0)}d · 每地区抽样 ${n} · 试剂 灵敏度 ${SENS * 100}%/特异度 ${SPEC * 100}%`];
+      let totK = 0, totPop = 0, estSum = 0;
+      for (let ri = 0; ri < s.nR; ri++) {
+        let immT = 0, pop = 0;
+        for (const c of s.comp[ri]) { immT += c.V + c.R; pop += c.S + c.E1 + c.I1 + c.E2 + c.I2 + c.R + c.V; }
+        const truthP = immT / Math.max(1e-9, pop);
+        const apparent = truthP * SENS + (1 - truthP) * (1 - SPEC);   // 观测到的是"表现阳性率"
+        let k = 0;
+        for (let i = 0; i < n; i++) if (rnd() < apparent) k++;
+        const [lo, hi] = wilson(k, n);
+        lines.push(`· 地区 ${ri + 1}: ${k}/${n} 阳性 → 估计 ${(k / n * 100).toFixed(1)}% [<b>CI ${(lo * 100).toFixed(1)} ~ ${(hi * 100).toFixed(1)}%</b>]`);
+        totK += k; totPop += pop; estSum += (s.nR ? 0 : 0) + (k / n);
+      }
+      const [lo2, hi2] = wilson(totK, n * s.nR);
+      lines.push(`合计: ${totK.toLocaleString()}/${(n * s.nR).toLocaleString()} → 加权血清阳性率 <b>${(totK / (n * s.nR) * 100).toFixed(1)}%</b> [CI ${(lo2 * 100).toFixed(1)} ~ ${(hi2 * 100).toFixed(1)}%]`);
+      if (n < 150) lines.push(`样本量偏小(${n}/地区): 区间过宽, 不足以支撑地区差异化决策 —— 加大抽样或合并地区看。`);
+      lines.push(`未校正偏倚说明: ①低流行区 1−特异度(${((1 - SPEC) * 100).toFixed(0)}%)主导, 直接引用会高估; ②抽样框偏差/高危职业超额采样未建模。`);
+      lines.push(`判读: 血清阳性 ≈ 人群免疫屏障的观测代理。本教学引擎把感染/疫苗免疫记为持久 —— 现实中抗体随月衰减, 血清阳性率会<b>低于</b>累计发病率(低估)。`);
+      lines.push(`对照: 观测代理 vs 解析免疫(Imm%)的差异 = 检测偏差本身; 用 pathogen_pop_observe 看真值仅限校准学习, 公卫决策应站在这份带噪报告上。`);
       return { ok: true, text: lines.join('\n') };
     },
   };

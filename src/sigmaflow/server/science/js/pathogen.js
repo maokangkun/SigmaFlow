@@ -82,6 +82,19 @@
     drawCharts();
     renderStrip();
     if (typeof PathoUI !== 'undefined' && PathoUI.renderMolSamples) PathoUI.renderMolSamples();
+    // 患者页联动: #/pathogen?entry=X 带参进入时预选目标病原体。
+    // 一次性守卫: render 每帧都可能回来, 无守卫的 log() 会在这里引爆渲染
+    // 风暴(log → render → log)。
+    try {
+      const q = location.hash.match(/#\/pathogen\?entry=([A-Za-z0-9_]+)/);
+      if (q && !P2.deepLinked) {
+        P2.deepLinked = true;                 // 先立旗再做事
+        if (window.PathoCatalog && window.PathoUI && window.PathoCatalog.get(q[1])) {
+          window.PathoUI.pick(q[1]);
+          log(`🧭 由患者页带入: <b>${esc(q[1])}</b> —— 沙盒是独立教学环境, 与原病人无连续性(机制/用药/疫苗实验在此做)。`);
+        }
+      }
+    } catch (e) { /* 带参失效不阻断 */ }
     const ta = document.getElementById('p2TrialProto');
     if (ta && !ta.value && window.PathoTrial) {
       const ex = JSON.parse(JSON.stringify(window.PathoTrial.DEFAULT_EXAMPLE));
@@ -311,6 +324,16 @@
       log(`💊 给药 <b>${d.drug.zh}</b> ${d.mg}mg q${d.intervalH}h ×${(d.end - s.t).toFixed(1)}d（MIC ${d.micWt} / 耐药 ${d.fold}×）`);
       drawCharts();
       return { ok: true, text: `已给药 ${d.drug.zh}(${d.cls}) ${d.mg}mg, 间隔 ${d.intervalH}h, 疗程 ${(d.end - s.t).toFixed(2)}天。本品针对该株 MIC≈${d.micWt} mg/L；目录耐药株 fold ${d.fold}×（是否已存在要看耐药占比/测序）。` };
+    },
+    pathogen_host_vaccinate(args) {
+      const out = window.PathoHost.vaccinate(args || {});
+      if (out && out.ok) log(`💉 <b>${esc(out.s.entry.zh)} 疫苗接种</b>: 有效保护力 ${((out.s.imm.vaxEff) * 100).toFixed(0)}% —— ${args && args.escape_sites ? `${args.escape_sites} 个逃逸位点已折扣` : '无逃逸位点折扣'}`);
+      return out;
+    },
+    pathogen_pop_serology(args) {
+      const out = window.PathoPop.serology(args || {});
+      if (out && out.ok) log(`🩸 血清学调查完成(每地区 ${args && args.sample_per_region ? args.sample_per_region : 500} 份) —— 带噪观测详见输出面板`);
+      return out;
     },
     pathogen_host_immune(args) {
       const s = host().state();
@@ -562,6 +585,18 @@
       log(`🧬 ${tool} → ${esc(String(out.text || '').split('\n')[1] || out.text || '').slice(0, 90)}`);
     },
     refreshMol() { PathoUI.renderMolSamples(); },
+    open3D() {
+      const id = (window.PathoHost && PathoHost.state() && PathoHost.state().entry.id) || P2.sel;
+      window.Patho3D.open(id);
+    },
+    vaccinateUI() {
+      const raw = window.prompt('疫苗接种参数 JSON:\n{coverage: 0-1 设计覆盖率, escape_sites: 逃逸位点数}', '{"coverage": 0.9, "escape_sites": 0}');
+      if (!raw) return;
+      let o;
+      try { o = JSON.parse(raw); } catch (e) { log('疫苗参数 JSON 解析失败: ' + esc(e.message), 'crit'); return; }
+      EXEC.pathogen_host_vaccinate(o);
+      renderStrip(); drawCharts();
+    },
     trialRun(mode) {
       const T = window.PathoTrial;
       if (!T) { log('试验台未就绪。', 'crit'); return; }
@@ -615,7 +650,7 @@
     const root = document.getElementById('pathogen-root');
     if (!root) return;
     if (!window.PathoCatalog || !window.PathoHost || !window.PathoDiag || !window.PathoMol || !window.PathoPredict) {
-      CS.ensureLazy('catalog', 'host', 'diag', 'genome', 'predict', 'pop', 'trial').then(() => {
+      CS.ensureLazy('catalog', 'host', 'diag', 'genome', 'predict', 'pop', 'trial', 'patho3d').then(() => {
         if (window.PathoCatalog) window.mountPathogenPage();
       });
       return;

@@ -315,6 +315,7 @@
         <button type="button" class="p2-scale" data-s="diag" onclick="PathoUI.setScale('diag')">诊断读数</button>
         <button type="button" class="p2-scale" data-s="pop" onclick="PathoUI.setScale('pop')">群体动态</button>
         <button type="button" class="p2-scale" data-s="trial" onclick="PathoUI.setScale('trial')">试验台</button>
+        <button type="button" class="p2-scale" onclick="PathoUI.open3D()" id="btnPath3D" title="示意形态 3D 视图(软件渲染, 非真实结构)">🦠 3D</button>
         <button type="button" class="p2-scale" onclick="openPathAI()" id="btnPathAI" title="让智能体接管: 观测/实验/诊断/试验台, 操作实时同步到本页">🤖 AI</button>
       </div>
     </div>
@@ -369,6 +370,8 @@
               <button type="button" class="p2-btn" onclick="PathoUI.advance()">⏩ 推进</button>
               <button type="button" class="p2-btn" id="p2Play" onclick="PathoUI.play()">▶ 播放</button>
               <button type="button" class="p2-btn" onclick="PathoUI.reset()">↺ 复位</button>
+              <span class="p2-sep"></span>
+              <button type="button" class="p2-btn" onclick="PathoUI.vaccinateUI()" title="疫苗设计(分子层)结果在此落地: ~10 天起效, ~240 天衰减, 逃逸位点逐个折扣">💉 疫苗</button>
             </div>
             <div class="p2-strip" id="p2Strip"></div>
             <div class="p2-charts" id="p2Charts"></div>
@@ -396,6 +399,7 @@
               <button type="button" class="p2-btn" onclick="PathoUI.popRun('spillover', {interface: 0.9, what_if: true})">what-if 界面 0.9</button>
               <button type="button" class="p2-btn" onclick="PathoUI.popRun('observe', {})">👁 群体观测</button>
               <button type="button" class="p2-btn" onclick="PathoUI.popRun('observe', {series: true})">👁 +序列</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.popRun('serology', {sample_per_region: 2000})">🩸 血清调查(2000/区)</button>
             </div>
             <div id="p2PopChart" style="padding:4px 0"></div>
             <pre class="p2-out" id="p2PopOut">初始化后, 用「宿主内」页签的 推进/播放 按钮同步推进两层; 这里的同时可以排程干预与疫苗。
@@ -437,6 +441,7 @@
         <button type="button" onclick="resetSim()">↺ 复苏重置</button>
         <button type="button" onclick="showEngineDoc()">⚙ 引擎</button>
         <button type="button" onclick="openPatAI()" id="btnPatAI" title="让智能体接管: 观测/处置/推进时间, 操作实时同步到本页">🤖 AI</button>
+        <button type="button" onclick="openPathoSandbox()" id="btnPat2Patho" title="把当前主导病原带进虚拟病原体沙盒: 做机制/用药/疫苗实验(独立教学环境, 不回写本病人)">🧭 病原沙盒</button>
       </div>
     </div>
     <div class="pat-main">

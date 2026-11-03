@@ -2202,6 +2202,43 @@ function pathInoculate(key,dose){
 function pathTot(){let t=0;if(!S.pathogens)return 0;for(const k in S.pathogens)t+=S.pathogens[k].load;return t;}
 function pathFrac(key){const p=S.pathogens&&S.pathogens[key],L=PATH_LIB[key];return (p&&L)?p.load/L.cap:0;}
 function pathTop(){let bk=null,bl=0;if(S.pathogens)for(const k in S.pathogens){if(S.pathogens[k].load>bl){bl=S.pathogens[k].load;bk=k;}}return bk;}
+
+// ---- P6 联动: 患者页主导病原 → 虚拟病原体沙盒 ----
+// 患者 PATH_LIB 键 → 病原体目录 id(全部真实键; catalog 未在患者页加载,
+// 所以直接映射表不依赖目录对象的存在 —— id 的有效性由沙盒端校验)
+const PAT2CAT = {
+  Rhinovirus: 'Rhinovirus', Adenovirus: 'Adenovirus', Influenza: 'InfluenzaA', Coronavirus: 'SARS_CoV_2',
+  RSV: 'RSV', Rotavirus: 'Rotavirus', Norovirus: 'Norovirus', HIV: 'HIV1', HPV: '',
+  VZV: 'VZV', MeaslesVIrus: 'MeaslesVirus', RubellaVirus: 'RubellaVirus', HAV: 'HAV', HBV: 'HBV',
+  HCV: 'HCV', HDV: 'HDV',
+  EColi: 'E_coli', CTetani: 'C_tetani', CDiphtheriae: 'C_diphtheriae', BPertussis: 'B_pertussis',
+};
+function patToCatalog(key) {
+  const direct = PAT2CAT[key];
+  if (direct !== undefined) return direct;                     // 目录未加载也能带参
+  const L = PATH_LIB[key];
+  if (L && window.PathoCatalog) {
+    const core = String(L.zh).replace(/(病毒|细菌|杆菌|球菌|衣原体|支原体|螺旋体|弧菌|沙门菌|奈瑟菌|弯曲菌)$/,'');
+    if (core.length >= 2) {
+      const want = L.kind === 'virus' ? 'virus' : 'bacterium';
+      const hit = window.PathoCatalog.all().find(e => e.kind === want && e.zh.indexOf(core) >= 0)
+        || window.PathoCatalog.all().find(e => e.zh.indexOf(core) >= 0);
+      if (hit) return hit.id;
+    }
+  }
+  return '';
+}
+window.openPathoSandbox = () => {
+  const k = pathTop();
+  if (!k) { log('🧭 当前没有活动感染 —— 先接种病原体或等病例出现感染事件。', 'crit'); return; }
+  const cat = patToCatalog(k);
+  const zh = (PATH_LIB[k] || {}).zh || k;
+  const pe = s => (window.CS && CS.escape) ? CS.escape(s) : String(s).replace(/</g, '&lt;');
+  if (!cat) { location.hash = '#/pathogen'; log('🧭 ' + pe(zh) + ' 在病原体目录中无同构条目 —— 已打开沙盒自由选择。'); return; }
+  log('🧭 带着活动病原 <b>' + pe(zh) + '</b> 进入机制沙盒(' + pe(cat) + ')');
+  location.hash = '#/pathogen?entry=' + cat;
+};
+
 function pathPeaked(key){const p=S.pathogens&&S.pathogens[key],L=PATH_LIB[key];return !!(p&&L&&(p.peak||0)>L.cap*0.18);}   // 病原已确立感染(峰值>18% 容量)——清除/退热目标的有效性门控
 // ---- 免疫-病原体动力学(每 tick): 指数复制→致热/免疫动员→清除 ∝ 免疫强度×(1-免疫抑制) ----
 function pathogenStep(dt){

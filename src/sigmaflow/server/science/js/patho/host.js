@@ -142,7 +142,7 @@
       // 负荷分支
       N: 0, Nr: 0, biofilm: 0,
       // 免疫
-      imm: { ifn: 0, cd8: 0, ab: 0, mem: 0, supp: 0, exposed: -1, rampT: 0 },
+      imm: { ifn: 0, cd8: 0, ab: 0, mem: 0, supp: 0, exposed: -1, rampT: 0, vaxAb: 0, vaxT: -1, vaxEff: 0 },
       // 宿主
       host: { temp: 36.6, dmg: 0, severe: false, clearedAt: -1, priorClear: false },
       // 药物: {cls, mg, start, intervalH, end, micWt, micRes}
@@ -217,8 +217,14 @@
     const tgt8 = Math.max(memFloor, sat(ag * 2.5) * mat, 0.6 * sero) * suppF;
     im.cd8 += (tgt8 - im.cd8) * clamp(dt / 12, 0, 1);
     const rampAb = im.exposed >= 0 ? sat((s.t - im.exposed - 5 * delayW) / (3 + 2 * delayW)) : 0;
-    const tgtAb = Math.max(memFloor, sat(ag * 1.8) * rampAb, sero) * suppF;
-    im.ab += (tgtAb - im.ab) * clamp(dt / 18, 0, 1);
+    // 疫苗免疫地板: 接种后 ~10 天起效(召回应答, ramp 编在 vaxF 形状里),
+    // 之后以 ~240 天衰减常数消退; 免疫抑制同样打折。
+    // 当疫苗地板是主导目标时, ab 用快时间常数逼近(2 天) —— 循环抗体效价
+    // 应当在起效窗内已经存在, 而不是像初次感染那样慢慢血清转化(τ=18 天)。
+    const vaxF = im.vaxAb > 0 ? im.vaxAb * sat((s.t - im.vaxT - 4) / 9) * Math.exp(-(s.t - im.vaxT) / 240) : 0;
+    const tgtAb = Math.max(memFloor, sat(ag * 1.8) * rampAb, sero, vaxF) * suppF;
+    const abTau = vaxF > sero + 1e-9 && vaxF > memFloor ? 2.0 : 18;
+    im.ab += (tgtAb - im.ab) * clamp(dt / abTau, 0, 1);
   }
 
   function step(s, dt) {
@@ -236,7 +242,9 @@
         else if (d.drug.tgt === 'b') betaMul = Math.min(betaMul, f);
         else cMul = Math.min(cMul, f);
       }
-      const beta = (a.r || 1.0) / T0_VIRUS * betaMul;
+      // 中和抗体的核心作用位点是"进入"(β)而不只是游离病毒清除(c) —— 没有
+      // 这条通道, 高效价宿主会在富余靶细胞上无限闷烧(ab 杀粒子, 感染不停)。
+      const beta = (a.r || 1.0) / T0_VIRUS * betaMul * (1 - 0.35 * s.imm.ab);
       const p = 30 * pMul;   // 日产粒量: 决定对数斜率与峰值形态(βT₀=r 已锁 λ)
       const delta = 1.0 + 1.5 * s.imm.ifn + 0.8 * s.imm.cd8;
       const c = 3.0 * cMul + 5 * s.imm.ab;
@@ -253,7 +261,10 @@
           s.drAf[dd.d.cls] = clamp(af + af * (1 - af) * sCoef * dt, 0, 0.999);
         }
       }
-      const dT = 2.4 * (1 - s.T / T0_VIRUS) - 0.01 * s.T - beta * s.T * s.V;
+      // 靶细胞稳态: logistic 自更新(r=0.08, 稳态=T₀, 缺损半恢复 ~12 天 —— 呼吸道
+      // 上皮再生量级)。曾经的 2.4−0.01·T 量纲错配会让未感染宿主每天净丢 10⁶
+      // 靶细胞(纯等待 300 天跑干 95%), 疫苗衰减/长程试验一测就现形。
+      const dT = 0.08 * s.T * (1 - s.T / T0_VIRUS) - beta * s.T * s.V;
       const dI = beta * s.T * s.V - delta * s.I;
       const dV = p * s.I - c * s.V;
       s.T = Math.max(0, s.T + dT * dt);
@@ -348,6 +359,12 @@
   const Host = {
     DRUGS, micOf, DT, HORIZON,
     state() { return this._s || null; },
+    // 挑战时刻疫苗地板(0-1): 供接种/观测/自测统一引用
+    vaxFloor() {
+      const s = this._s;
+      if (!s || !(s.imm.vaxAb > 0)) return 0;
+      return s.imm.vaxAb * sat((s.t - s.imm.vaxT - 4) / 9) * Math.exp(-(s.t - s.imm.vaxT) / 240);
+    },
     setup(pathogenId, opts) {
       const C = G.PathoCatalog;
       const entry = C && (C.get(pathogenId) || null);
@@ -364,7 +381,19 @@
     inoculate(logDose, route) {
       let s = this._s;
       if (!s) return null;
-      const dose = Math.pow(10, clamp(Number(logDose) || 3, -1, 12));
+      let dose = Math.pow(10, clamp(Number(logDose) || 3, -1, 12));
+      // 疫苗中和折扣(挑战时刻的循环中和抗体): 决定性的入口机制 —— 预存中和
+      // 抗体压低有效接种量, 把"感染建立阈值剂量"抬高 1-2 个 log。折扣取自
+      // 疫苗地板公式(而非缓慢逼近的 imm.ab), 上限 85%(高效疫苗也非 100%)。
+      if (s.imm.vaxAb > 0) {
+        const vF = s.imm.vaxAb * sat((s.t - s.imm.vaxT - 4) / 9) * Math.exp(-(s.t - s.imm.vaxT) / 240);
+        const cap = s.isVirus ? 0.85 : 0.60;             // 病毒=中和; 细菌=调理吞噬(有剩余定植)
+        const neutral = cap * vF;
+        if (neutral > 0.004) {
+          dose *= (1 - neutral);
+          s.lastVaxNeutral = +(neutral).toFixed(3);       // 接种日志用
+        }
+      }
       // 再感染: 清除后再次接种, 免疫记忆保留, 清除时间戳复位
       s.host.clearedAt = -1;
       s.host.clearLowT = 0;
@@ -414,6 +443,28 @@
       }
       return s;
     },
+    // 疫苗接种(分子层 pathogen_vaccine_design 的结果在此落地):
+    // coverage=设计覆盖率, escape_sites=逃逸位点数(每个打折 12%, 封顶 75%)。
+    vaccinate(o) {
+      const s = this._s;
+      if (!s) return { ok: false, text: '先 pathogen_setup。' };
+      o = o || {};
+      const cov = clamp(Number(o.coverage) === 0 ? 0 : (Number(o.coverage) ?? 0.8), 0, 1);
+      const esc = Math.max(0, Math.round(Number(o.escape_sites) || 0));
+      const eff = cov * (1 - Math.min(0.75, 0.12 * esc));
+      s.imm.vaxAb = Math.max(s.imm.vaxAb || 0, 0.15 + 0.55 * eff);
+      s.imm.vaxT = s.t;
+      s.imm.vaxEff = +eff.toFixed(3);
+      if (eff > 0.4) s.imm.mem = 1;             // 成功的疫苗免疫同样建立记忆(记忆地板)
+      const lines = [
+        `# 疫苗接种 · ${s.entry.zh} · t=${s.t.toFixed(1)}d`,
+        `接种: 覆盖率 ${(cov * 100).toFixed(0)}% × 逃逸折扣 (${esc} 位点 → −${(Math.min(0.75, 0.12 * esc) * 100).toFixed(0)}%) → <b>有效保护力 ${(eff * 100).toFixed(0)}%</b>`,
+        `起效时程: 召回应答 ~10 天达到完整疫苗地板(立即挑战只有部分保护); 抗体衰减半衰期 ~166 天(240d 时间常数)。`,
+        s.imm.vaxAb >= 0.5 ? `记忆免疫已建立 —— 二次应答走记忆地板(更快更稳)。` : `免疫原性偏低(覆盖率不足或逃逸位点过多): 记忆未建立。`,
+        `对象: 抗体地板路径(病毒: 中和清除 ↑; 细菌/真菌: 免疫杀伤 ↑)。剂量方案请另走 pathogen_dose —— 疫苗不是治疗。`,
+      ];
+      return { ok: true, text: lines.join('\n'), s };
+    },
     advance(days) {
       const s = this._s;
       if (!s) return null;
@@ -432,7 +483,7 @@
       lines.push(`载量: ${L >= 1 ? L.toExponential(2) : L.toFixed(3)} 等效单位 (log10 ${Math.log10(Math.max(1e-2, L)).toFixed(2)}) · 峰值 log10 ${Math.log10(Math.max(1e-2, s.peak)).toFixed(2)}`);
       if (s.isVirus) lines.push(`靶细胞剩余 ${(s.T / T0_VIRUS * 100).toFixed(0)}% · 累计感染 ${(s.cumInfCells * 100).toFixed(1)}%`);
       else lines.push(`耐药亚群占比 ${(s.N + s.Nr > 1 ? (s.Nr / (s.N + s.Nr) * 100).toFixed(3) : '0.000')}% · 生物膜庇护 ${(s.biofilm * 100).toFixed(0)}%`);
-      lines.push(`免疫: IFN ${s.imm.ifn.toFixed(2)} · CD8 ${s.imm.cd8.toFixed(2)} · Ab ${s.imm.ab.toFixed(2)} · 记忆 ${s.imm.mem > 0.5 ? '已建立' : '未建立'} · 免疫抑制 ${s.imm.supp.toFixed(2)}`);
+      lines.push(`免疫: IFN ${s.imm.ifn.toFixed(2)} · CD8 ${s.imm.cd8.toFixed(2)} · Ab ${s.imm.ab.toFixed(2)} · 记忆 ${s.imm.mem > 0.5 ? '已建立' : '未建立'}` + (s.imm.vaxAb > 0 ? ` · 疫苗地板 ${Math.max(0, (s.imm.vaxAb * sat((s.t - s.imm.vaxT - 4) / 9) * Math.exp(-(s.t - s.imm.vaxT) / 240)) * 100).toFixed(0)}%(有效力 ${(s.imm.vaxEff * 100).toFixed(0)}%)` : '') + (s.imm.supp > 0.02 ? ` · 免疫抑制 ${s.imm.supp.toFixed(2)}` : ''));
       lines.push(`体温 ${s.host.temp.toFixed(1)}°C · 传染性指数 ${infCurve(s).toFixed(2)} · 严重进程 ${s.host.severe ? '是' : '否'}(损伤 ${s.host.dmg.toFixed(2)})`);
       if (s.drugs.length) {
         const dr = s.drugs.slice(-3).map(d => {

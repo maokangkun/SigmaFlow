@@ -79,6 +79,7 @@
           else if (ev.assay) arm.events.push({ t, kind: 'sample', assay: String(ev.assay) });
           else if (ev.log10_dose !== undefined) arm.events.push({ t, kind: 'inoculate', log10_dose: Number(ev.log10_dose) });
           else if (ev.immunity) arm.events.push({ t, kind: 'immunity', immunity: String(ev.immunity) });
+          else if (ev.host_vaccine) arm.events.push({ t, kind: 'vaccine', coverage: Number(ev.coverage) ?? 0.8, escape_sites: Number(ev.escape_sites) || 0 });
           else arm.events.push({ t, kind: 'unknown', raw: ev });
         }
         arm.events.sort((x, y) => x.t - y.t);
@@ -131,6 +132,7 @@
                   }
                   else if (ev.kind === 'inoculate') { H.inoculate(ev.log10_dose * doseJit); events.push(`t${jittered.toFixed(1)}:inoculate:10^${(ev.log10_dose * doseJit).toFixed(1)}`); }
                   else if (ev.kind === 'immunity') { H.setup(entry.id, { immunity: ev.immunity, seed, resFold }); events.push(`t${jittered.toFixed(1)}:immunity:${ev.immunity}`); }
+                  else if (ev.kind === 'vaccine') { H.vaccinate({ coverage: ev.coverage, escape_sites: ev.escape_sites }); cost += 0.5 * (ev.coverage || 0.5); events.push(`t${jittered.toFixed(1)}:vaccine ${((ev.coverage * 100) || 80).toFixed(0)}%`); }
                   else if (ev.kind === 'pop_intervene' && arm.pop) { Pop.intervene({ kind: ev.kind2, strength: ev.strength, coverage: ev.coverage, start_day: jittered, end_day: ev.end_day }); cost += ev.strength * ev.coverage * (ev.end_day - jittered) * 0.5; events.push(`t${jittered.toFixed(1)}:pop:${ev.kind2}`); }
                   else if (ev.kind === 'pop_vaccinate' && arm.pop) { Pop.vaccinate({ coverage: ev.coverage, efficacy: ev.efficacy, start_day: jittered }); cost += ev.coverage * 0.6; events.push(`t${jittered.toFixed(1)}:vax:${ev.coverage}`); }
                   else if (ev.kind === 'sample') { rec.sampled = (rec.sampled || 0) + 1; }

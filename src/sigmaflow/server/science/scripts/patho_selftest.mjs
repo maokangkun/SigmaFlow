@@ -31,6 +31,14 @@
  *   24) 真值门禁: 默认隐藏 fold, reveal_truth 才揭示
  *   25) 控制评分: 治疗臂 > 对照臂
  *   26) 状态保护: 试验后页面活动场景原样保留
+ * 留白收口(P6):
+ *   27) 疫苗落地: 无疫苗 > 逃逸疫苗 > 全效疫苗 的峰值载量严格降序
+ *   28) 疫苗时程: 立即挑战保护弱于起效后(应答 ramp)
+ *   29) 培养真实性: 细菌生长/病毒拒培养/低载量培养阴性
+ *   30) panel 漏检: 覆盖外目标诚实报"不在本 panel"; 覆盖内报 Ct
+ *   31) 溢出灵敏度: strong 比 weak 预警更快, 风险分单调
+ *   32) 血清学: 估计聚合在解析真值附近, 偏差方向=试剂特征
+ *   33) 试验台疫苗事件: 疫苗臂峰值 << 对照臂
  * 通过/失败都打印数值, 全绿 exit 0。
  */
 import { createRequire } from 'node:module';
@@ -403,6 +411,97 @@ check('确定性(同种子同曲线)', run(42) === run(42), `hash20=${run(42).sl
   // 27) 真值注册表可追溯: 每条重复的种子可复算
   const firstRec = T.lastRun.arms[0].replicates[0];
   check('真值注册表: 种子/耐药倍数已登记', firstRec.seed > 0 && firstRec.truth.resFold > 0, `种子 ${firstRec.seed} fold ${firstRec.truth.resFold}`);
+}
+
+// ---- P6 · 留白收口 ----
+{
+  const PG = globalThis.PathoMol;
+  const PP = globalThis.PathoPop;
+  // 27-28) 疫苗落地与时程: InfluenzaA 高剂量挑战
+  const peakAfter = (setup, wait) => {
+    H.setup('InfluenzaA', { seed: 42 });
+    if (setup) H.vaccinate(setup);
+    if (wait) H.advance(wait);
+    H.inoculate(7);
+    H.advance(14);
+    return Math.log10(Math.max(1e-2, H.state().peak));   // 病程峰值(清除末载量会被"好结局"稀释)
+  };
+  const pkNone = peakAfter(null, 0);
+  const pkImm = peakAfter({ coverage: 0.9, escape_sites: 0 }, 14);
+  const pkEsc = peakAfter({ coverage: 0.9, escape_sites: 5 }, 14);
+  const pkNow = peakAfter({ coverage: 0.9, escape_sites: 0 }, 0);
+  check('疫苗落地: 无疫苗 > 逃逸疫苗 > 全效疫苗 峰值降序', pkNone > pkEsc && pkEsc > pkImm,
+    `无疫苗 ${pkNone.toFixed(2)} > 逃逸×5 ${pkEsc.toFixed(2)} > 全效 ${pkImm.toFixed(2)}`);
+  check('疫苗时程: 立即挑战(应答未起)保护弱于起效后', pkNow > pkImm && pkNow < pkNone,
+    `立即 ${pkNow.toFixed(2)} vs 等14天 ${pkImm.toFixed(2)} vs 无疫苗 ${pkNone.toFixed(2)}`);
+
+  // 28b) 衰减: 接种后 300 天疫苗地板消退(仍优于无疫苗)
+  const pkOld = peakAfter({ coverage: 0.9, escape_sites: 0 }, 300);
+  check('疫苗衰减: 300 天后保护弱于 14 天, 但仍优于无疫苗', pkOld > pkImm && pkOld < pkNone,
+    `14天 ${pkImm.toFixed(2)} < 300天 ${pkOld.toFixed(2)} < 无疫苗 ${pkNone.toFixed(2)}`);
+
+  // 29-30) identify 真实语义
+  H.setup('InfluenzaA', { seed: 7 });
+  H.inoculate(4);
+  H.advance(1);
+  H.seq ? null : null;
+  PG.sequence({});
+  const vCulture = PG.identify({ method: 'culture' }).text;
+  const vPanel = PG.identify({ method: 'panel', panel: 'respiratory' }).text;
+  check('培养真实性: 病毒拒培养(指向 qPCR/panel)', vCulture.includes('无病毒生长'), vCulture.split('\n')[1]);
+  check('panel 阳性: 覆盖内目标报 Ct', vPanel.includes('阳性') && vPanel.includes('Ct'), vPanel.split('\n')[1]);
+  H.setup('E_coli', { seed: 9, resFold: 1 });
+  H.inoculate(5);
+  H.advance(0.5);
+  PG.sequence({});
+  const bWrong = PG.identify({ method: 'panel', panel: 'respiratory' }).text;
+  const bRight = PG.identify({ method: 'panel', panel: 'bloodstream' }).text;
+  const bGrow = PG.identify({ method: 'culture' }).text;
+  check('panel 漏检: 大肠杆菌不在呼吸道 panel → 诚实报覆盖外', bWrong.includes('不在本 panel'), bWrong.split('\n')[2]);
+  check('panel 对症: 血流 panel 检出大肠杆菌', bRight.includes('E_coli') || bRight.includes('大肠杆菌'), bRight.split('\n')[1]);
+  check('培养生长: 细菌高载量 → 菌落生长', bGrow.includes('菌落') && bGrow.includes('+'), bGrow.split('\n')[1]);
+  // 低载量培养: 治疗中采样落入 "qPCR 检得出 / 培养长不出" 窗口
+  H.dose('bl', 600, 8, 7);
+  let lowTxt = '';
+  for (let i = 0; i < 400; i++) {
+    H.advance(0.1);
+    if (H.load() < 450 && H.load() >= 200) { PG.sequence({ label: 'low' }); lowTxt = PG.identify({ method: 'culture', sample: 'low' }).text; break; }
+  }
+  check('培养灵敏度: 窗口期载量(培养阈下/测序阈上)→无菌生长', lowTxt.includes('无菌生长') || lowTxt.includes('阴性'), lowTxt ? lowTxt.split('\n')[1] : '窗口未命中(load=' + H.load().toFixed(0) + ')');
+
+  // 31) 溢出监测灵敏度
+  const spWeak = PP.spillover({ interface: 0.5, surveillance: 'weak' }).text;
+  const spStrong = PP.spillover({ interface: 0.5, surveillance: 'strong' }).text;
+  const dly = (x) => Number((x.match(/中位延迟 <b>(\d+) 天/) || [0, 0])[1]);
+  const riskNum = (x) => Number((x.match(/风险 ([\d.]+)\/1.0/) || [0, -1])[1]);
+  check('溢出灵敏度: strong 预警快于 weak 且风险分单调', dly(spStrong) < dly(spWeak) && riskNum(spStrong) > riskNum(spWeak),
+    `中位延迟 strong ${dly(spStrong)}d vs weak ${dly(spWeak)}d · 当前风险 ${riskNum(spStrong).toFixed(2)} vs ${riskNum(spWeak).toFixed(2)}`);
+
+  // 32) 血清学
+  PP.init({ population: 1000000, regions: 3, initial_cases: 300 });
+  PP.advance(60);
+  const ser = PP.serology({ sample_per_region: 2000 }).text;
+  const obs = PP.observe({}).text;
+  const est = Number((ser.match(/加权血清阳性率 <b>([\d.]+)%/) || [0, -1])[1]);
+  const truth = Number((obs.match(/免疫 (\d+)%/) || [0, -1])[1]);
+  check('血清学: 估计在解析真值 ±5pp 内', Math.abs(est - truth) <= 5, `观测 ${est}% vs 解析免疫 ${truth}%`);
+  const small = PP.serology({ sample_per_region: 60 }).text;
+  check('血清学样本不足提示', small.includes('样本量偏小'), small.split('\n').find(l => l.includes('偏小')) || '');
+
+  // 33) 试验台疫苗事件
+  const TV = globalThis.PathoTrial;
+  TV.define({
+    name: '疫苗事件试验', pathogen: 'InfluenzaA',
+    arms: [
+      { label: '对照', interventions: [{ t: 0, log10_dose: 7 }] },
+      { label: '疫苗', interventions: [{ t: 0, host_vaccine: true, coverage: 0.9 }, { t: 21, log10_dose: 7 }] },
+    ],
+    replicates: 3, days: 45, metrics: ['peak_load'],
+  });
+  const tvRun = TV.run({});
+  const armPeak = (lbl) => Number((tvRun.text.match(new RegExp('臂「' + lbl + '」[\\s\\S]*?峰值载量\\(log10\\): ([\\d.]+)')) || [0])[1]);
+  check('试验台疫苗事件: 疫苗臂峰值低于对照臂 ≥1.5 log10', armPeak('对照') - armPeak('疫苗') >= 1.5,
+    `对照 ${armPeak('对照')} vs 疫苗 ${armPeak('疫苗')}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
