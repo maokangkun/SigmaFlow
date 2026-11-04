@@ -663,7 +663,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .compact-card.msg-flash{animation:msg-flash 1.8s ease-out}
 /* 轨迹跳转定位提示: 任意元素可用(块级锚点无 .msg-block 类, 旧 msg-flash 匹配不上);
    左侧强调色条 + 底色 + 描边圈三重信号, 2.6s 缓出, 远看也扫得到落点 */
-@keyframes jump-flash{0%{background:color-mix(in srgb,var(--accent) 18%,transparent);box-shadow:inset 3px 0 0 var(--accent),0 0 0 1.5px color-mix(in srgb,var(--accent) 45%,transparent)}60%{background:color-mix(in srgb,var(--accent) 12%,transparent);box-shadow:inset 3px 0 0 color-mix(in srgb,var(--accent) 70%,transparent),0 0 0 1.5px color-mix(in srgb,var(--accent) 28%,transparent)}100%{background:transparent;box-shadow:inset 3px 0 0 transparent,0 0 0 1.5px transparent}}
+@keyframes jump-flash{0%{background:color-mix(in srgb,var(--accent) 18%,transparent)}60%{background:color-mix(in srgb,var(--accent) 12%,transparent)}100%{background:transparent}}
 .jump-flash{animation:jump-flash 2.6s ease-out;border-radius:10px}
 .run-track .tr-user{background:var(--tr-user)}
 .run-track .tr-think{background:var(--tr-think)}

@@ -619,7 +619,9 @@
           if (!b || typeof b !== 'object') return;
           const on = live && bi === liveIdx;
           if (b.type === 'think' && (b.text || '').trim()) blocks.push({ k: 'think', txt: b.text, live: on, mi, bi });
-          else if (b.type === 'tool') blocks.push({ k: 'tool', err: !!b.isError, txt: (b.name || '工具') + ' ' + (typeof b.result === 'string' ? b.result : ''), live: on, mi, bi });
+          // 报错判定与消息流卡片同源: 显式 isError 标记为真直接红, 否则按文本
+          // 启发式(Error:/Traceback/{"error")判定 —— 老存档块缺标记也要标红
+          else if (b.type === 'tool') blocks.push({ k: 'tool', err: b.isError === true || V.toolIsErr(b.result || ''), txt: (b.name || '工具') + ' ' + (typeof b.result === 'string' ? b.result : ''), live: on, mi, bi });
           else if (b.type === 'present') blocks.push({ k: 'present', txt: '展示 ' + (b.name || b.path || ''), live: on, mi, bi });
           else if (b.type === 'sysnote' && !/Conversation history was just compacted/.test(b.text || '')) blocks.push({ k: 'system', txt: '系统注入', live: on, mi, bi });
           else if (b.type === 'compact') blocks.push({ k: 'compact', txt: String(b.text || '').trim() ? '上下文已压缩' : '正在压缩会话', live: on, mi, bi });
@@ -628,7 +630,7 @@
         });
       } else {
         if ((m.reasoning || '').trim()) blocks.push({ k: 'think', txt: m.reasoning, live: false, mi });
-        (m.tools || []).forEach((t, ti) => blocks.push({ k: 'tool', err: !!t.isError, txt: (t.name || '工具') + ' ' + (typeof t.result === 'string' ? t.result : ''), live: live && n0 + ((m.reasoning || '').trim() ? 1 : 0) + ti === liveIdx, mi }));
+        (m.tools || []).forEach((t, ti) => blocks.push({ k: 'tool', err: t.isError === true || V.toolIsErr(t.result || ''), txt: (t.name || '工具') + ' ' + (typeof t.result === 'string' ? t.result : ''), live: live && n0 + ((m.reasoning || '').trim() ? 1 : 0) + ti === liveIdx, mi }));
         (m.asks || []).forEach(() => blocks.push({ k: 'tool', txt: 'ask 提问', live: false, mi }));
         if ((m.content || '').trim()) blocks.push({ k: 'reply', txt: m.content, live: live && liveIdx === n0 + ((m.reasoning || '').trim() ? 1 : 0) + (m.tools || []).length + (m.asks || []).length, mi });
       }
