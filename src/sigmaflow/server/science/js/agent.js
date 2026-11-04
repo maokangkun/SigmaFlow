@@ -107,6 +107,7 @@
   CS.api.ws = {
     socket: null, state: 'closed', seq: 0, connecting: null, failedAt: 0,
     pending: new Map(), onState: new Map(), activeChats: new Set(), suspended: new Map(),
+    lastFrameAt: 0, _kaTimer: null, _probing: false, _pongWaiters: new Map(),
     open() { return this.socket && this.socket.readyState === 1; },
     connect(timeout = 3500) {
       if (this.open()) return Promise.resolve(true);
@@ -119,12 +120,18 @@
         try { socket = new WebSocket(CS.api.wsUrl()); }
         catch { return finish(false); }
         const timer = setTimeout(() => finish(false), timeout);
-        socket.onopen = () => { clearTimeout(timer); this.socket = socket; this.state = 'open'; this.failedAt = 0; finish(true); };
+        socket.onopen = () => { clearTimeout(timer); this.socket = socket; this.state = 'open'; this.failedAt = 0; this.lastFrameAt = Date.now(); this._startKeepalive(); finish(true); };
         socket.onmessage = event => {
+          this.lastFrameAt = Date.now();
           if (event.data instanceof Blob) { event.data.arrayBuffer().then(ab => CS.agent.pty?.feed(new Uint8Array(ab))); return; }
           if (event.data instanceof ArrayBuffer) { CS.agent.pty?.feed(new Uint8Array(event.data)); return; }
           let message;
           try { message = JSON.parse(event.data); } catch { return; }
+          if (message.event === 'pong' && this._pongWaiters && this._pongWaiters.size > 0) {
+            const waiter = this._pongWaiters.get(message.requestId);
+            if (waiter) { this._pongWaiters.delete(message.requestId); waiter(); }
+            return;
+          }
           if (message.event === 'pty.closed') { CS.agent.pty?.markDead(); if (message.requestId && CS.api.ws.pending.has(message.requestId)) CS.api.ws.pending.get(message.requestId).resolve?.({}); return; }
           if (message.event === 'state' && message.data?.id) {
             const handler = CS.api.ws.onState.get(message.data.id);
@@ -160,6 +167,7 @@
           }
         };
         socket.onclose = (ev) => {
+          this._stopKeepalive();
           // 记录关闭码便于排查: 1006 表示异常断开(网络中断/被中间层掐断), 1000 为正常关闭
           try { console.warn('[ws] connection closed', { code: ev && ev.code, reason: ev && ev.reason, hadChat: this.activeChats && this.activeChats.size > 0 }); } catch {}
           if (this.socket === socket) { this.socket = null; this.state = 'closed'; }
@@ -181,6 +189,42 @@
         socket.onerror = () => { clearTimeout(timer); finish(false); };
       });
       return this.connecting;
+    },
+    // 通道探活: 半开连接(网络路径单向死亡)下浏览器只收不发, onclose 不会触发,
+    // 聊天空闲看门狗会把"连接死了"误判成"模型超时"。用应用层 ping/pong 探测。
+    _probe(timeout = 3000) {
+      if (!this.open()) return Promise.resolve(false);
+      if (this._probing) return Promise.resolve(true);  // 已有探活在途: 不叠加
+      return new Promise(resolve => {
+        const rid = '_probe' + (++this.seq);
+        this._probing = true;
+        let t = null;
+        const done = ok => { this._probing = false; this._pongWaiters.delete(rid); if (t) clearTimeout(t); resolve(ok); };
+        t = setTimeout(() => done(false), timeout);
+        this._pongWaiters.set(rid, () => done(true));
+        try { this.socket.send(JSON.stringify({ action: 'ping', requestId: rid })); }
+        catch { done(false); }
+      });
+    },
+    // 常驻看门狗: 连接空闲(无任何帧)超过 60s 时主动探活; 10s 无回应判定半开,
+    // 主动断开以触发 _suspend→自动重连→chat.replay 无损续播, 而不是让聊天
+    // 空闲计时器先触发"模型响应超时"误报(run-17807694 案例: 服务端 90 分钟全部
+    // 正常, WS ~18:51 静默死亡, 浏览器 3 分钟后才察觉, 计时器先赢了赛跑)
+    _startKeepalive() {
+      this._stopKeepalive();
+      this._kaTimer = setInterval(async () => {
+        if (!this.open() || this._probing) return;
+        if (Date.now() - (this.lastFrameAt || 0) < 60000) return;
+        const alive = await this._probe(10000);
+        if (!this.open()) return;
+        if (alive) { this.lastFrameAt = Date.now(); return; }
+        try { console.warn('[ws] keepalive probe failed, forcing reconnect'); } catch {}
+        try { this.socket.close(4000, 'keepalive-timeout'); } catch { try { this.socket.close(); } catch {} }
+      }, 15000);
+    },
+    _stopKeepalive() {
+      if (this._kaTimer) { clearInterval(this._kaTimer); this._kaTimer = null; }
+      if (this._pongWaiters) this._pongWaiters.clear();
     },
     // 挂起: 断线时不终止进行中的对话请求——任务在服务端后台继续执行,
     // entry 连同流式回调转入 suspended, 自动重连成功后 chat.replay 按
@@ -269,8 +313,21 @@
         const idleMs = ws.chatIdleTimeout || 180000;
         const fail = () => { CS.api.ws.pending.delete(requestId); CS.api.ws.activeChats.forEach(x => { if (x && x.requestId === requestId) CS.api.ws.activeChats.delete(x); }); reject(new Error('模型响应超时。')); };
         const entry = { resolve, reject, timer: null, resetTimer: null, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem };
-        entry.timer = setTimeout(fail, idleMs);
-        entry.resetTimer = () => { clearTimeout(entry.timer); entry.timer = setTimeout(fail, idleMs); };
+        // 空闲触发时先探活通道: 事件停流的常见根因是 WS 半开而非模型真停; 通道
+        // 活着就续等(服务端 journal 保证事件不丢, 探活最多宽容 3 轮防真挂死任务
+        // 无限等), 只有确认通道死亡才判"模型响应超时"
+        let idleProbes = 0;
+        const idleFire = async () => {
+          const alive = await CS.api.ws._probe(3000);
+          if (alive && idleProbes < 3) {
+            idleProbes += 1;
+            clearTimeout(entry.timer); entry.timer = setTimeout(idleFire, idleMs);
+            return;
+          }
+          fail();
+        };
+        entry.timer = setTimeout(idleFire, idleMs);
+        entry.resetTimer = () => { idleProbes = 0; clearTimeout(entry.timer); entry.timer = setTimeout(idleFire, idleMs); };
         // ask 等待期不计常规空闲: 服务端 ask 超时为 1 小时, 前端以 2 小时兜底防永久挂起
         entry.pauseIdle = () => { clearTimeout(entry.timer); entry.timer = setTimeout(fail, 2 * 60 * 60 * 1000); };
         CS.api.ws.pending.set(requestId, entry);
