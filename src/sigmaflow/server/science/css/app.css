@@ -660,6 +660,8 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .run-track .tr-think{background:var(--tr-think)}
 .run-track .tr-present{background:var(--tr-present)}
 .run-track .tr-tool{background:var(--tr-tool)}
+/* 出错的工具格: 琥珀底混入红色, 与正常工具格/纯红错误格都能一眼区分; 三个配色方案自动适配 */
+.run-track .tr-cell.tr-err{background:color-mix(in srgb,var(--tr-error) 62%,var(--tr-tool))}
 .run-track .tr-reply{background:var(--tr-reply)}
 .run-track .tr-system{background:var(--tr-system)}
 .run-track .tr-compact{background:var(--tr-compact)}
