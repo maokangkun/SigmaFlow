@@ -146,4 +146,4 @@ class LoopNode(Node):
 
         for n in self.next:
             queue.append(n)
-        self.execute_finish_callback(None)
+        self.execute_finish_callback(None, None, queue)

@@ -7,6 +7,23 @@ from copy import deepcopy
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from .constant import PData
+from ..log import log
+
+
+def load_runnable_pipe(pipeline_manager, name):
+    # 单例 pipe 被运行期注入过线程/队列闭包回调(如 TaskWorker 的推送 partial)
+    # 后 deepcopy 会挂: 回退 live pipe 并清掉全部残留回调 —— async_run 自带
+    # reset, 每个请求自带 fresh queue, 单例跑法在这里是安全的。
+    pipe = pipeline_manager.pipes[name]
+    try:
+        return deepcopy(pipe)
+    except Exception:
+        log.warning(
+            f"deepcopy of pipe '{name}' failed after runtime callbacks were "
+            "injected; falling back to the live pipe (callbacks cleared)"
+        )
+        pipe.remove_node_callbacks()
+        return pipe
 
 
 def post_progress(result):
@@ -85,7 +102,7 @@ class PipelineAPI:
         async def run_pipe(pipe_name: str, p_data: PData):
             assert p_data.type == "pipeline"
             try:
-                pipe = deepcopy(pipeline_manager.pipes[pipe_name])
+                pipe = load_runnable_pipe(pipeline_manager, pipe_name)
                 if p_data.stream:
                     queue: Queue[Any] = Queue()
                     msg_func = lambda out: asyncio.create_task(queue.put(out))  # noqa: E731

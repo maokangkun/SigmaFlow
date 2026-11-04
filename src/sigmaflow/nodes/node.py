@@ -276,6 +276,9 @@ class Node(Base):
         log.banner(f"Leave async task: {self.name}, cnt: {cnt}")
 
     def get_inps_seq(self, data):
+        # 无 inp 的节点(纯产出型 code/value 等)在 seq 引擎里同样要能跑。
+        if "inp" not in self.conf:
+            return []
         inps = []
         for i in self.conf["inp"]:
             if type(i) is str:
@@ -297,7 +300,7 @@ class Node(Base):
         pass
 
     def seq_run(self, data, queue):
-        if (inps := self.get_inps_seq(data)) or not self.conf["inp"]:
+        if (inps := self.get_inps_seq(data)) or not self.conf.get("inp"):
             start_time = time.time()
             self.run_cnt += 1
             log.banner(f"Enter task: {self.name}, cnt: {self.run_cnt}")

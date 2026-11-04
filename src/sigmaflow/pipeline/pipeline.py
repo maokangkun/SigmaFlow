@@ -221,6 +221,27 @@ class Pipeline:
         for n in nodes:
             n.add_callback(start_cb=start_cb, finish_cb=finish_cb)
 
+    def remove_node_callbacks(self, start_cb=None, finish_cb=None, nodes=None):
+        # 运行期注入的回调(如 TaskWorker 的推送 partial / 取消闭包)任务结束就该
+        # 摘除: 残留线程/队列闭包会让单例 deepcopy 直接挂掉, 重复注入还会重复推送。
+        # 传 None 表示按类清空, 传列表表示按身份精确移除。
+        if nodes is None:
+            nodes = self.pipegraph.node_manager.values()
+        elif type(nodes) is list and type(nodes[0]) is str:
+            nodes = [self.pipegraph.node_manager[n] for n in nodes]
+
+        for n in nodes:
+            for store, cbs in (
+                (n.start_callbacks, start_cb),
+                (n.finish_callbacks, finish_cb),
+            ):
+                if cbs is None:
+                    store.clear()
+                    continue
+                for cb in cbs:
+                    if cb in store:
+                        store.remove(cb)
+
     def __str__(self):
         return f"<{self.__class__.__name__}: {self.name}, mode: {self.run_mode}, file: {self.pipefile}, hash: {self.hash}>"
 

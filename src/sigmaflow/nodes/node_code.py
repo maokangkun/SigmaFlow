@@ -85,3 +85,5 @@ class CodeNode(Node):
         self.execute_finish_callback(inps, out, queue)
         for n in self.next:
             queue.append(n)
+        for n in self.next:
+            queue.append(n)

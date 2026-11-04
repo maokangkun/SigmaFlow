@@ -212,7 +212,12 @@ class TaskWorker(threading.Thread):
                 )
                 pipe = self.pipeline_manager.pipes[task["pipe"]]
                 pipe.add_node_callback(finish_cb=[msg_func, cancel_func])
-                out, info = pipe.run(task["data"])
+                try:
+                    out, info = pipe.run(task["data"])
+                finally:
+                    # 摘除本次注入: 不摘会跨任务累积重复推送, 且 sender 闭包
+                    # 持有线程/队列对象, 会把下一次 /run 的 deepcopy 毒到 500。
+                    pipe.remove_node_callbacks(finish_cb=[msg_func, cancel_func])
                 self.send_msg(Events.TASK_ITEM_DONE, out, sid)
                 # self.send_msg(Events.TASK_ITEM_DONE, info, sid)
 

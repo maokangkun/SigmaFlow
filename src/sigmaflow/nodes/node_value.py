@@ -54,7 +54,7 @@ class ValueNode(Node):
             out = self.conf["value"]
         self.set_out(out, data, config=config)
         log.debug(f"{mode = }, {self.conf['out']}: {out}")
-        self.execute_finish_callback(out)
+        self.execute_finish_callback(inps, out, config)
         for n in self.next:
             queue.put((n.name, config))
 
@@ -79,7 +79,7 @@ class ValueNode(Node):
             out = v
         self.set_out(out, data, queue)
         log.debug(f"{mode = }, {self.conf['out']}: {out}")
-        self.execute_finish_callback(out)
+        self.execute_finish_callback([], out, queue)
 
     def current_seq_task(self, inps, data, queue):
         mode = self.conf.get("mode", "assign")
@@ -100,4 +100,6 @@ class ValueNode(Node):
             out = v
         self.set_out(out, data)
         log.debug(f"{mode = }, {self.conf['out']}: {out}")
-        self.execute_finish_callback(out)
+        self.execute_finish_callback(inps, out, queue)
+        for n in self.next:
+            queue.append(n)

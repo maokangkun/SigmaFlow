@@ -38,3 +38,7 @@ class FileNode(Node):
 
         self.set_out(md, data)
         log.debug(f"[{self.name}] read: {info} -> {self.conf['out']}")
+        # seq 引擎推进下一跳 + trace 回调(async 版本有, seq 此前漏了, 节点会停在这)。
+        self.execute_finish_callback(inps, md, queue)
+        for n in self.next:
+            queue.append(n)

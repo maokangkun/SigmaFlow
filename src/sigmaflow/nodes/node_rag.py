@@ -78,14 +78,14 @@ class RAGNode(Node):
     def current_seq_task(self, inps, data, queue):
         out = self.pipe(*inps)
         self.set_out(out, data)
-        self.execute_finish_callback(out)
+        self.execute_finish_callback(inps, out, queue)
         for n in self.next:
             queue.append(n)
 
     def current_mp_task(self, inps, data, queue, config=None):
         out = self.pipe(*inps)
         self.set_out(out, data, config=config)
-        self.execute_finish_callback(out)
+        self.execute_finish_callback(inps, out, config)
         for n in self.next:
             queue.put((n.name, config))
 
