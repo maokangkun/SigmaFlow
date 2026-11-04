@@ -3201,7 +3201,9 @@
       // running 标记会让会话永远显示"运行中"且停止按钮空转。本页有在途请求的
       // 会话跳过(chat.send 与本列表存在先后竞态, 在途即真相)
       const _byId = new Map(CS.ui.conversations.map(c => [c.id, c]));
-      const _inflight = new Set((CS.api.ws?.activeChats || []).map(e => (typeof e === 'string' ? null : e?.runId)).filter(Boolean));
+      // activeChats 是 Set(元素为 {requestId, runId}): 直接 .map 会抛错并
+      // 静默中止整个列表加载, 必须先展开
+      const _inflight = new Set([...(CS.api.ws?.activeChats || [])].map(e => (typeof e === 'string' ? null : e?.runId)).filter(Boolean));
       let _fixed = false;
       for (const r of CS.state.runs || []) {
         if (!['running', 'connecting', 'awaiting', 'paused'].includes(r.status)) continue;
