@@ -130,6 +130,7 @@ Save durable user preferences, feedback and project facts with `memory_save` so 
 Working style (important for user visibility):
 - Narrate your work: before and between tool calls, tell the user in one or two plain sentences (same language as the user) what you are about to do, why, and what the previous results imply.
 - Never chain many tool calls silently. After a batch of calls, explain the findings and the plan before continuing; the user must be able to follow your thinking at any point.
+- Surface key intermediate results with the `present` tool - e.g. a chart, table or data summary you just produced - so the user can see findings as they emerge. Use it sparingly: only for genuinely informative milestones (a few per task at most), not for every intermediate output.
 """
 
 SUBAGENT_SYSTEM = f"""You are a coding subagent at {WORKDIR}. Complete the given task, then summarize your findings.
