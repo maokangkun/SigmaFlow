@@ -66,6 +66,7 @@ CS.icons = {
   spark: '<path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2Z"/>',
   layers: '<path d="m12 2 10 5-10 5L2 7l10-5ZM2 12l10 5 10-5M2 17l10 5 10-5"/>',
   eye: '<path d="M2 12S6 5 12 5s10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  present: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M12 17v3M8.5 21h7M8 12.5l2.5-3 2 2L16 8"/>',
   bolt: '<path d="m13 2-9 12h7l-1 8 10-13h-7l0-7Z"/>',
   sort: '<path d="M8 3v18m-4-4 4 4 4-4M16 21V3m-4 4 4-4 4 4"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2m-3-9-2 2M7 17l-2 2M5 5l2 2m10 10 2 2"/>',

@@ -654,7 +654,7 @@
       cur.push(b);
     });
     if (cur.length) cols.push(cur);
-    const name = { user: '用户', think: '思考', tool: '工具', reply: '回复', system: '系统', error: '错误', compact: '压缩' };
+    const name = { user: '用户', think: '思考', tool: '工具', reply: '回复', system: '系统', error: '错误', compact: '压缩', present: '展示' };
     const cell = (b, gi) => `<span role="button" class="tr-cell tr-${b.k}${b.err ? ' tr-err' : ''}${b.live ? ' tr-live' : ''}" data-action="track-jump" data-id="${b.bi == null ? b.mi : b.mi + ':' + b.bi}" title="#${start + gi + 1} ${name[b.k]}${b.err ? ' · 出错' : ''}${b.live ? ' · 生成中' : ''} · ${e(String(b.txt || '').replace(/\s+/g, ' ').slice(0, 80))} · 点击跳转到该消息"></span>`;
     // 超长会话被截掉头部时加渐隐类, 在左缘用 mask 提示“还有更早的”
     return `<div class="run-track${start ? ' tr-trunc' : ''}" aria-hidden="true"${start ? ` title="还有更早的 ${start} 条消息未展示"` : ''} data-blocks="${blocks.length}"><span class="tr-strip">${cols.map(c => `<span class="tr-col">${c.map(cell).join('')}</span>`).join('')}</span></div>`;
@@ -698,7 +698,7 @@
   V.traceRows = () => {
     const { msgs, kindOf, prev } = _traceCtx();
     if (!msgs.length) return '';
-    const KIND = { user: '用户', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误', sysnote: '注入', compact: '压缩' };
+    const KIND = { user: '用户', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误', sysnote: '注入', compact: '压缩', present: '展示' };
     // 运行耗时占比时间轴: 分母 = 各条消息运行耗时之和(流式实时计入), 消息间空闲时段不占条, 段连续堆叠
     // 行内再分段: 优先块边界时间戳(相邻差), 缺省按文本量等比; 段色随块类型(思考/工具/回复)
     // 带时长块集与 blocks 数组分开过滤(sysnote/compact 无时长), 行内块行按 timedKind 依序对位取 ms
@@ -757,6 +757,7 @@
             if (b.type === 'think' && (b.text || '').trim()) blocks.push({ k: 'think', t: b.text, ms, raw: b });
             else if (b.type === 'tool') blocks.push({ k: 'tool', t: (b.name || '工具') + (typeof b.result === 'string' && b.result ? ' → ' + b.result : ' (执行中)'), ms, raw: b });
             else if (b.type === 'ask') blocks.push({ k: 'tool', t: 'ask 提问', ms, raw: b });
+            else if (b.type === 'present') blocks.push({ k: 'present', t: '展示 ' + (b.name || b.path || ''), ms, raw: b });
             else if (b.type === 'text' && (b.text || '').trim()) blocks.push({ k: 'reply', t: b.text, ms, raw: b });
             else if (b.type === 'sysnote') blocks.push({ k: 'sysnote', t: b.text || '', ms: 0, raw: b });
             else if (b.type === 'compact') blocks.push({ k: 'compact', t: String(b.text || '').trim() ? '上下文已压缩' : '正在压缩会话', ms: 0, raw: b });
@@ -797,6 +798,9 @@
         const q = (b.questions || []).join('\n');
         const a = b.result || (Array.isArray(b.answers) ? b.answers.join('\n') : '') || (b.answered ? '(已答复)' : '未答复');
         return `问题：\n${q}\n\n答复：\n${a}`;
+      }
+      if (b.type === 'present') {
+        return ['路径：\n' + (b.path || ''), b.note ? '备注：\n' + b.note : ''].filter(Boolean).join('\n\n');
       }
       return b.text || '';
     };
@@ -933,7 +937,8 @@ V.ctxRing = () => {
         return m.role === 'user'
         ? `<div class="msg-block user-block" data-mi="${idxOf}"><div class="user-message">${e(m.content)}${m.datasetIds?.length ? `<div class="attachment-list mt-12">${m.datasetIds.map(id => `<span class="attachment">${i('file')}${e(CS.state.datasets.find(d => d.id === id)?.name || id)}</span>`).join('')}</div>` : ''}</div><div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span><span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="edit-message" data-id="${idxOf}" title="修改">${i('edit','',13)}</span></span></div></div>`
         : (() => {
-            const blockMeta = t => t.name === 'bash' ? {icon: 'terminal', label: '终端'} : {icon: 'code', label: '工具'};
+            // present 专属身份: 图标与名称"展示"(标题不再拼原始工具名, 展开详情保留)
+            const blockMeta = t => t.name === 'bash' ? {icon: 'terminal', label: '终端'} : t.name === 'present' ? {icon: 'present', label: '展示'} : {icon: 'code', label: '工具'};
             // 块折叠键: 会话id+消息序号+块序号。不能用 m.at —— 完成时会重置 at,
             // 展开状态会随键失效。idxOf 在追加式列表里稳定
             const bkey = bi => `${run.id}|${idxOf}|${bi}`;
@@ -954,7 +959,7 @@ V.ctxRing = () => {
             </button>
             ${CS.ui.thinkingOpen ? `<div class="think-body">${e(m.streaming ? (CS.ui.thinkingText || m.reasoning || '') : (m.reasoning || ''))}</div>` : ''}
           </div>` : ''}
-          ${(m.tools || []).length ? (() => { const meta = blockMeta(m.tools[m.tools.length - 1]); const running = m.tools.some(t => t.running); const last = m.tools[m.tools.length - 1]; const firstBash = m.tools.find(t => t.name === 'bash'); const bashCmdText = firstBash ? bashCmd(firstBash.args) : ''; return `<div class="think-root tool-root${running ? ' think-live' : ''}" data-state="${running ? 'running' : (m.tools.some(t => V.toolIsErr(t.result)) ? 'err' : 'ok')}"${CS.ui.toolsOpen ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-tools" aria-expanded="${!!CS.ui.toolsOpen}"><span class="think-leading">${i(bashCmdText ? 'terminal' : meta.icon, '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${bashCmdText ? '终端' : meta.label} ${e(last.name)} · ${m.tools.length} 次调用${running ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(bashCmdText || m.tools.map(t => t.name).join(', '))}</span></span></button>${CS.ui.toolsOpen ? `<div class="tool-list">${m.tools.map(t => t.name === 'bash' ? `<div class="tool-item${t.running ? ' tool-running' : (V.toolIsErr(t.result) ? ' tool-err' : '')}">${V.toolTerminal(t.name, t.args, t.result, !!t.running)}</div>` : `<div class="tool-item${t.running ? ' tool-running' : (V.toolIsErr(t.result) ? ' tool-err' : '')}"><div class="tool-head"><code>${e(t.name)}</code><span class="tool-args">${e(JSON.stringify(t.args || {}).slice(0, 160))}</span>${t.running ? '<span class="tool-status">运行中…</span>' : ''}</div>${t.result != null ? `<pre class="tool-result">${e(String(t.result).slice(0, 600))}${String(t.result).length > 600 ? '\n…' : ''}</pre>` : ''}</div>`).join('')}</div>` : ''}</div>`; })() : ''}          <div class="agent-intro md-body"${m.streaming ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(m.content)}</div>`;
+          ${(m.tools || []).length ? (() => { const meta = blockMeta(m.tools[m.tools.length - 1]); const running = m.tools.some(t => t.running); const last = m.tools[m.tools.length - 1]; const firstBash = m.tools.find(t => t.name === 'bash'); const bashCmdText = firstBash ? bashCmd(firstBash.args) : ''; return `<div class="think-root tool-root${running ? ' think-live' : ''}" data-state="${running ? 'running' : (m.tools.some(t => V.toolIsErr(t.result)) ? 'err' : 'ok')}"${CS.ui.toolsOpen ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-tools" aria-expanded="${!!CS.ui.toolsOpen}"><span class="think-leading">${i(bashCmdText ? 'terminal' : meta.icon, '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${bashCmdText ? '终端' : meta.label}${last.name === 'present' ? '' : ' ' + e(last.name)} · ${m.tools.length} 次调用${running ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(bashCmdText || m.tools.map(t => t.name === 'present' ? '展示' : t.name).join(', '))}</span></span></button>${CS.ui.toolsOpen ? `<div class="tool-list">${m.tools.map(t => t.name === 'bash' ? `<div class="tool-item${t.running ? ' tool-running' : (V.toolIsErr(t.result) ? ' tool-err' : '')}">${V.toolTerminal(t.name, t.args, t.result, !!t.running)}</div>` : `<div class="tool-item${t.running ? ' tool-running' : (V.toolIsErr(t.result) ? ' tool-err' : '')}"><div class="tool-head"><code>${e(t.name)}</code><span class="tool-args">${e(JSON.stringify(t.args || {}).slice(0, 160))}</span>${t.running ? '<span class="tool-status">运行中…</span>' : ''}</div>${t.result != null ? `<pre class="tool-result">${e(String(t.result).slice(0, 600))}${String(t.result).length > 600 ? '\n…' : ''}</pre>` : ''}</div>`).join('')}</div>` : ''}</div>`; })() : ''}          <div class="agent-intro md-body"${m.streaming ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(m.content)}</div>`;
             } else {
               // 单块渲染: 思考/工具块可折叠(状态存 CS.ui.blockOpen), 正文块渲染 markdown
               const seg = (b, bi) => {
@@ -1003,7 +1008,7 @@ V.ctxRing = () => {
                 if (b.type === 'present') {
                   // 模型主动呈现的富媒介文件卡片: 图标按类别, 点击进预览
                   const k = b.klass || 'other';
-                  const kicon = { image: 'eye', '3d': 'dna', video: 'play', audio: 'message', pdf: 'file', html: 'globe', text: 'file', archive: 'database', other: 'file' }[k] || 'file';
+                  const kicon = 'present';  // present 卡专属图标: 显示器+折线(类型由名称/扩展名表达)
                   const kb = { image: '图片', '3d': '3D 模型', video: '视频', audio: '音频', pdf: 'PDF', html: 'HTML', text: '文本', archive: '压缩包', other: '文件' }[k] || '文件';
                   return `<div class="present-card" data-bi="${bi}" data-action="open-present" data-path="${e(b.path)}" data-klass="${e(b.klass || 'other')}" data-name="${e(b.name || '')}" data-title="${e(b.title || '')}" data-size="${e(String(b.size || 0))}" data-note="${e(b.note || '')}" data-bpid="${e(b.pid || '')}" role="button" tabindex="0" title="点击预览"><div class="present-ic">${i(kicon, '', 17)}</div><div class="present-body"><div class="present-name">${e(b.title || b.name || b.path)}</div><div class="present-sub small muted">${kb}${b.size ? ' · ' + CS.formatBytes(b.size) : ''}${b.note ? ' · ' + e(b.note) : ''}</div></div><span class="present-open small muted">查看</span></div>`;
                 }
@@ -1023,9 +1028,9 @@ V.ctxRing = () => {
                 const bcmd = isBash ? bashCmd(b.args) : '';
                 if (isBash) {
                   const summary = bcmd || '（无命令）';
-                  return `<div class="think-root tool-root${live ? ' think-live' : ''}" data-state="${live ? 'running' : (V.toolIsErr(b.result) ? 'err' : 'ok')}" data-bi="${bi}"${open ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-block" data-id="${e(bkey(bi))}" aria-expanded="${open}"><span class="think-leading">${i('terminal', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${meta.label} ${e(b.name)}${live ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(summary.length > 120 ? summary.slice(0, 120) + '…' : summary)}</span></span></button>${open ? V.toolTerminal(b.name, b.args, b.result, live) : ''}</div>`;
+                  return `<div class="think-root tool-root${live ? ' think-live' : ''}" data-state="${live ? 'running' : (V.toolIsErr(b.result) ? 'err' : 'ok')}" data-bi="${bi}"${open ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-block" data-id="${e(bkey(bi))}" aria-expanded="${open}"><span class="think-leading">${i('terminal', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${meta.label}${b.name === 'present' ? '' : ' ' + e(b.name)}${live ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(summary.length > 120 ? summary.slice(0, 120) + '…' : summary)}</span></span></button>${open ? V.toolTerminal(b.name, b.args, b.result, live) : ''}</div>`;
                 }
-                return `<div class="think-root tool-root${live ? ' think-live' : ''}" data-state="${live ? 'running' : (V.toolIsErr(b.result) ? 'err' : 'ok')}" data-bi="${bi}"${open ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-block" data-id="${e(bkey(bi))}" aria-expanded="${open}"><span class="think-leading">${i(meta.icon, '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${meta.label} ${e(b.name)}${live ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(JSON.stringify(b.args || {}).slice(0, 160))}</span></span></button>${open ? `<div class="tool-list"><div class="tool-item${live ? ' tool-running' : (V.toolIsErr(b.result) ? ' tool-err' : '')}"><div class="tool-head"><code>${e(b.name)}</code><span class="tool-args">${e(JSON.stringify(b.args || {}).slice(0, 160))}</span>${live ? '<span class="tool-status">运行中…</span>' : ''}</div>${b.result != null ? (V.isUnifiedDiff(String(b.result)) ? V.renderUnifiedDiff(String(b.result).slice(0, 20000)) : `<pre class="tool-result">${e(String(b.result).slice(0, 600))}${String(b.result).length > 600 ? '\n…' : ''}</pre>`) : ''}</div></div>` : ''}</div>`;
+                return `<div class="think-root tool-root${live ? ' think-live' : ''}" data-state="${live ? 'running' : (V.toolIsErr(b.result) ? 'err' : 'ok')}" data-bi="${bi}"${open ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-block" data-id="${e(bkey(bi))}" aria-expanded="${open}"><span class="think-leading">${i(meta.icon, '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${meta.label}${b.name === 'present' ? '' : ' ' + e(b.name)}${live ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(JSON.stringify(b.args || {}).slice(0, 160))}</span></span></button>${open ? `<div class="tool-list"><div class="tool-item${live ? ' tool-running' : (V.toolIsErr(b.result) ? ' tool-err' : '')}"><div class="tool-head"><code>${e(b.name)}</code><span class="tool-args">${e(JSON.stringify(b.args || {}).slice(0, 160))}</span>${live ? '<span class="tool-status">运行中…</span>' : ''}</div>${b.result != null ? (V.isUnifiedDiff(String(b.result)) ? V.renderUnifiedDiff(String(b.result).slice(0, 20000)) : `<pre class="tool-result">${e(String(b.result).slice(0, 600))}${String(b.result).length > 600 ? '\n…' : ''}</pre>`) : ''}</div></div>` : ''}</div>`;
               };
               // ask 问题卡: 未回答时可选项+自由输入; 已回答后默认折叠成一行摘要,
               // 点标题行可重新展开查看原问题与所选答案; 失效后回放提示
