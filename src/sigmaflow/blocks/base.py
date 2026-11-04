@@ -45,10 +45,10 @@ class Block:
         pass
 
     def set_stream(self, cb):
-        # LLM 块把 node 级流式转发挂到底层客户端; 非 LLM 块没有 llm, 忽略。
-        llm = getattr(self, "llm", None)
-        if llm is not None and hasattr(llm, "stream_cb"):
-            llm.stream_cb = cb
+        # node 级流式转发只落块本地槽位(块是节点私有的), 调用时经参数传给底层
+        # 客户端。不写共享 LLM 实例: CONFIG 级 LLM 被多节点共享, 并发节点会
+        # 互相覆盖实例槽位导致帧串台; 非 LLM 块没人消费该槽位, 写了也无害。
+        self._stream_cb = cb
 
     @staticmethod
     def _backoff_delay(n):

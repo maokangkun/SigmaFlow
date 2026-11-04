@@ -178,3 +178,48 @@ def test_llm_set_thinking_touches_bound_and_mirror_conf():
     assert llm.conf["no_think"] is True      # deepcopy 镜像同步
     llm.set_thinking(True)
     assert base["no_think"] is False
+
+
+def test_concurrent_llm_blocks_route_frames_independently():
+    """并发 LLM 节点共享 CONFIG 的 LLM 实例: 增量帧必须各自路由, 不能串台。
+
+    契约: 每帧都按 node 名归属(前端按名路由)。set_stream 只改共享实例槽位时,
+    后启动的节点转发器会覆盖前者 —— 所以 cb 必须按调用传参而非存实例。
+    """
+
+    class SharedLLM:
+        def __init__(self):
+            self.cbs = []
+
+        async def __call__(self, item, stream_cb=None):
+            self.cbs.append(stream_cb)
+            parts = []
+            for i in range(2):
+                if stream_cb:
+                    stream_cb("content", f"{item}-{i}")
+                parts.append(f"{item}-{i}")
+                await asyncio.sleep(0)
+            return "".join(parts), {"prompt_tokens": 1}
+
+    shared = SharedLLM()
+    from sigmaflow.blocks.block_llm import LLMBlock
+
+    block_a = LLMBlock(
+        "a", prompt=lambda *x: x[0], return_json=False, llm=shared
+    )
+    block_b = LLMBlock(
+        "b", prompt=lambda *x: x[0], return_json=False, llm=shared
+    )
+    frames_a, frames_b = [], []
+    block_a.set_stream(lambda k, d: frames_a.append((k, d)))
+    block_b.set_stream(lambda k, d: frames_b.append((k, d)))
+
+    async def go():
+        await asyncio.gather(block_a._call("A"), block_b._call("B"))
+
+    asyncio.run(go())
+    assert [d for _, d in frames_a] == ["A-0", "A-1"]
+    assert [d for _, d in frames_b] == ["B-0", "B-1"]
+    # 两次调用各自带上了不同的转发器(而非共享实例上的单一槽位)
+    assert len(shared.cbs) == 2 and shared.cbs[0] is not shared.cbs[1]
+    assert all(cb is not None for cb in shared.cbs)

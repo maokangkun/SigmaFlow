@@ -11,20 +11,70 @@ from ..log import log
 
 
 def load_runnable_pipe(pipeline_manager, name):
-    # 单例 pipe 被运行期注入过线程/队列闭包回调(如 TaskWorker 的推送 partial)
-    # 后 deepcopy 会挂: 回退 live pipe 并清掉全部残留回调 —— async_run 自带
-    # reset, 每个请求自带 fresh queue, 单例跑法在这里是安全的。
+    """按请求取可安全独占的 pipe, 隔离优先级逐级降:
+
+    1. deepcopy 副本(常态, 每请求一份, 状态互不可见);
+    2. 单例被运行期注入的回调(线程/队列闭包)毒化时: 显式三类全清后重拷 ——
+       中毒源就是回调, 清掉即可恢复逐请求隔离;
+    3. 仍拷不动(非回调类毒化, 如节点上挂了锁/线程): 从源文件强制重建一份
+       新单例(绕过 manager 的 hash 缓存, 缓存会原样吐回毒单例);
+    4. 源文件也没了: live pipe 兜底 —— 并发 /run 共享单例, 调用方(api)按
+       名字加锁串行执行, 只保正确性不保并发。
+    """
     pipe = pipeline_manager.pipes[name]
     try:
         return deepcopy(pipe)
-    except Exception:
+    except Exception as first_err:
         log.warning(
-            f"deepcopy of pipe '{name}' failed after runtime callbacks were "
-            "injected; falling back to the live pipe (callbacks cleared)"
+            f"deepcopy of pipe '{name}' failed ({first_err}); "
+            "clearing runtime callbacks and retrying the copy"
         )
         # 显式三类全清: remove_node_callbacks 缺参语义是"不动任何一类"
         pipe.remove_node_callbacks(None, None, None)
-        return pipe
+        try:
+            return deepcopy(pipe)
+        except Exception as second_err:
+            log.warning(
+                f"deepcopy of pipe '{name}' still fails after callback cleanup "
+                f"({second_err}); forcing a rebuild from source"
+            )
+            src = pipeline_manager.pipes_dir / (
+                f"{name}{pipeline_manager.pipeline_suffix}.py"
+            )
+            if src.exists():
+                try:
+                    from ..pipeline import Pipeline
+
+                    fresh = Pipeline(
+                        pipeline_manager,
+                        pipeline_manager.prompt_manager,
+                        name=name,
+                        pipefile=src,
+                        run_mode=pipeline_manager.run_mode or "async",
+                        llm_batch_processor=pipeline_manager.llm_batch_processor,
+                    )
+                    pipeline_manager.pipes[name] = fresh
+                    return fresh
+                except Exception as rebuild_err:
+                    log.warning(
+                        f"rebuild of pipe '{name}' from {src} failed: {rebuild_err}"
+                    )
+            log.warning(
+                f"falling back to the live shared pipe '{name}'; concurrent "
+                "runs on it are serialized by the api layer"
+            )
+            return pipe
+
+
+_RUN_LOCKS: dict = {}
+
+
+def _run_lock(name):
+    # live-pipe 兜底路径的并发闸: 同名 pipe 的执行串行化, 防共享单例上的
+    # queue/callback 互相踩。deepcopy/重建路径每请求独占, 不进锁。
+    if name not in _RUN_LOCKS:
+        _RUN_LOCKS[name] = asyncio.Lock()
+    return _RUN_LOCKS[name]
 
 
 def set_pipe_thinking(pipe, enabled):
@@ -134,6 +184,12 @@ class PipelineAPI:
             assert p_data.type == "pipeline"
             try:
                 pipe = load_runnable_pipe(pipeline_manager, pipe_name)
+                # 返回的是单例本体(live 兜底)时并发共享: 按名加锁串行执行
+                _lock = (
+                    _run_lock(pipe_name)
+                    if pipe is pipeline_manager.pipes.get(pipe_name)
+                    else None
+                )
                 _undo_think = None
                 if getattr(p_data, "no_think", None):
                     _undo_think = set_pipe_thinking(pipe, enabled=False)
@@ -151,7 +207,11 @@ class PipelineAPI:
 
                     async def run_pipe():
                         try:
-                            result = await pipe.async_run(p_data.data)
+                            if _lock is not None:
+                                async with _lock:
+                                    result = await pipe.async_run(p_data.data)
+                            else:
+                                result = await pipe.async_run(p_data.data)
                             await queue.put({"result": result})
                         except Exception as e:  # noqa: BLE001
                             await queue.put({"error": str(e)})
@@ -182,7 +242,11 @@ class PipelineAPI:
                     )
                 else:
                     try:
-                        result = await pipe.async_run(p_data.data)
+                        if _lock is not None:
+                            async with _lock:
+                                result = await pipe.async_run(p_data.data)
+                        else:
+                            result = await pipe.async_run(p_data.data)
                     finally:
                         if _undo_think is not None:
                             _undo_think()

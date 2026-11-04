@@ -42,7 +42,7 @@ def test_deepcopy_poisoned_pipe_recovers(tmp_path, monkeypatch):
     """WS 任务把携带线程/队列对象的回调留在单例上 → 下一次 /run deepcopy 500。
 
     用 TaskWorker 同款形态(partial 绑定持有 asyncio.Queue/锁 的实例)复现:
-    load_runnable_pipe 必须回退 live pipe 并清回调, 恢复后 deepcopy 可用。
+    load_runnable_pipe 清掉回调后重拷成功 —— 返回的是隔离副本而非单例本体。
     """
 
     class FakeWorker:
@@ -68,9 +68,10 @@ def test_deepcopy_poisoned_pipe_recovers(tmp_path, monkeypatch):
         deepcopy(raw)
 
     pipe = load_runnable_pipe(pm, "demo")
-    # 回退分支: 返回 live pipe, 残留回调已清
+    # 清回调后重拷: 返回隔离副本(不是单例本体), 单例残留回调已清
     assert isinstance(pipe, Pipeline)
-    assert all(not n.finish_callbacks for n in pipe.pipegraph.node_manager.values())
+    assert pipe is not raw
+    assert all(not n.finish_callbacks for n in raw.pipegraph.node_manager.values())
     # 清空后 deepcopy 恢复可用(重启才恢复的病灶消失)
     deepcopy(pipe)
 
@@ -85,3 +86,35 @@ def test_clean_pipe_prefers_deepcopy(tmp_path, monkeypatch):
     pipe = load_runnable_pipe(pm, "demo")
     # 未中毒: 正常走 deepcopy 分支(副本, 不是单例本体)
     assert pipe is not pm.pipes["demo"]
+
+
+def test_structurally_poisoned_pipe_rebuilds_from_source(tmp_path, monkeypatch):
+    """回调清空也救不回的中毒(节点上挂了锁) → 从源文件强制重建新单例。
+
+    重建必须绕过 manager 的 hash 缓存: 文件没变时缓存会原样吐回毒单例。
+    """
+    pm = build_manager(tmp_path, monkeypatch, run_mode="async")
+    pipes_dir = tmp_path / "pipes"
+    pipes_dir.mkdir(exist_ok=True)
+    src = pipes_dir / "demo_pipeline.py"
+    src.write_text(
+        "pipeline = {\n"
+        '    "CONFIG": {"llm": "openai", "model": "test-model"},\n'
+        '    "seed": {"value": "v", "out": "o1", "next": []},\n'
+        "}\n",
+        encoding="utf-8",
+    )
+    pm.add_pipe("demo", pipefile=src)
+    raw = pm.pipes["demo"]
+    # 非回调类毒化: remove_node_callbacks 够不着的属性
+    raw.pipegraph.node_manager["seed"]._poison = threading.Lock()
+    with pytest.raises(Exception):
+        deepcopy(raw)
+
+    pipe = load_runnable_pipe(pm, "demo")
+    # 重建路径: 新实例替换毒单例, 与源文件同名注册
+    assert pipe is not raw
+    assert pm.pipes["demo"] is pipe
+    assert not hasattr(pipe.pipegraph.node_manager["seed"], "_poison")
+    # 新单例干净: 后续请求恢复正常 deepcopy 路径
+    assert load_runnable_pipe(pm, "demo") is not pipe

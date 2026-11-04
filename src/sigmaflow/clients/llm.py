@@ -17,8 +17,12 @@ class LLM:
             self.completion = partial(completion, conf=conf)
         self.__name__ = self.conf["llm"]
 
-    def __call__(self, item: str | list[str]):
-        return self.completion(item, stream_cb=self.stream_cb)
+    def __call__(self, item: str | list[str], stream_cb=None):
+        # stream_cb 按调用传入: CONFIG 级 LLM 实例被全部节点共享, 若只写实例
+        # 槽位, 并发 LLM 节点会互相覆盖转发器, 增量帧串到别人的订阅上(节点
+        # 名错标)。self.stream_cb 保留为无参调用的兼容默认。
+        cb = stream_cb if stream_cb is not None else self.stream_cb
+        return self.completion(item, stream_cb=cb)
 
     def set_thinking(self, enabled):
         # 请求级开关(api /run 的 no_think): completion partial 绑的是构造时的

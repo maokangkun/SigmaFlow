@@ -55,7 +55,9 @@ class LLMBlock(Block):
     async def _call(self, *inp):
         text = self.prompt(*inp)
         self.log("prompt", text)
-        resp, usage = await self.llm(text)
+        resp, usage = await self.llm(
+            text, stream_cb=getattr(self, "_stream_cb", None)
+        )
         self.log("resp", resp)
         if self.return_json:
             out = extract_json(resp)
@@ -76,7 +78,10 @@ class LLMBlock(Block):
             history.append("Make sure return answer in JSON format.")
 
             self.log("history", history)
-            resp, usage = await self.llm(history)
+            # 二轮补射同样带块本地转发器: JSON 重试的增量也要按 node 名路由
+            resp, usage = await self.llm(
+                history, stream_cb=getattr(self, "_stream_cb", None)
+            )
             self.log("resp", resp)
 
             out = extract_json(resp)
