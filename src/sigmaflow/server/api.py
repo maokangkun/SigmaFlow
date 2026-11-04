@@ -26,6 +26,18 @@ def load_runnable_pipe(pipeline_manager, name):
         return pipe
 
 
+def set_pipe_thinking(pipe, enabled):
+    # 走遍节点的 llm(多为 CONFIG 共享实例, 按身份去重), 一个不漏地同步开关。
+    seen = set()
+    for n in pipe.pipegraph.node_manager.values():
+        llm = getattr(getattr(n, "pipe", None), "llm", None)
+        if llm is None or id(llm) in seen:
+            continue
+        seen.add(id(llm))
+        if hasattr(llm, "set_thinking"):
+            llm.set_thinking(enabled)
+
+
 def post_progress(result):
     if type(result) is list:
         return [post_progress(r) for r in result]
@@ -103,6 +115,8 @@ class PipelineAPI:
             assert p_data.type == "pipeline"
             try:
                 pipe = load_runnable_pipe(pipeline_manager, pipe_name)
+                if getattr(p_data, "no_think", None):
+                    set_pipe_thinking(pipe, enabled=False)
                 if p_data.stream:
                     queue: Queue[Any] = Queue()
                     msg_func = lambda out: asyncio.create_task(queue.put(out))  # noqa: E731

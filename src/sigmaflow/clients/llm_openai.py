@@ -48,9 +48,22 @@ async def completion(item: str | list[str], conf={}, stream_cb=None):
         ),
     }
 
+    # 关思考: reasoning_effort 是 SDK 官方字段; 另两种写法(Claude 风格 thinking /
+    # vLLM chat_template_kwargs)openai SDK 不认, 必须走 extra_body 进原始 body。
+    # 三键同发, 网关认哪种用哪种(实测同一网关三者皆 200 且都能消掉推理)。
+    extra_body = {}
+    if conf.get("no_think"):
+        chat_param["reasoning_effort"] = "none"
+        extra_body = {
+            "thinking": {"type": "disabled"},
+            "chat_template_kwargs": {"thinking": False},
+        }
+
     client = AsyncOpenAI(**client_param)
     if stream_cb is None:
-        chat_completion = await client.chat.completions.create(**chat_param)
+        chat_completion = await client.chat.completions.create(
+            extra_body=extra_body, **chat_param
+        ) if extra_body else await client.chat.completions.create(**chat_param)
     else:
         # 流式通道: 每个增量立即回调(node 层转发给 /run 的 SSE 订阅)。
         # reasoning_content → type=think; content 里的 think 标签段也切为 think 帧,
@@ -58,9 +71,10 @@ async def completion(item: str | list[str], conf={}, stream_cb=None):
         parts = []
         splitter = ThinkStreamSplitter()
         usage = None
-        stream = await client.chat.completions.create(
-            **{**chat_param, "stream": True}
-        )
+        call_param = {**chat_param, "stream": True}
+        if extra_body:
+            call_param["extra_body"] = extra_body
+        stream = await client.chat.completions.create(**call_param)
         async for chunk in stream:
             usage = getattr(chunk, "usage", None) or usage
             choices = getattr(chunk, "choices", None)

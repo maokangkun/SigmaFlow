@@ -20,6 +20,15 @@ class LLM:
     def __call__(self, item: str | list[str]):
         return self.completion(item, stream_cb=self.stream_cb)
 
+    def set_thinking(self, enabled):
+        # 请求级开关(api /run 的 no_think): completion partial 绑的是构造时的
+        # 原 conf dict, 镜像 deepcopy 不生效, 两份都要同步。
+        self.conf["no_think"] = not enabled
+        bound = getattr(self.completion, "keywords", None) or {}
+        conf = bound.get("conf")
+        if isinstance(conf, dict):
+            conf["no_think"] = not enabled
+
     def __str__(self):
         return f"<{self.__class__.__name__}: {self.conf['llm']}, model: {self.conf['model']}>"
 

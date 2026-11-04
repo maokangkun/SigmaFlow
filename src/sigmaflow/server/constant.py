@@ -75,6 +75,9 @@ class PipelineData(BaseModel):
     type: Literal["pipeline"] = "pipeline"
     stream: bool | None = False
     data: dict | list[dict]
+    # True: 本次请求让所有 LLM 节点关思考直出(网关认哪种关思考字段见
+    # llm_openai._no_think_kwargs, 三键同发保证兼容面)。
+    no_think: Optional[bool] = None
 
 
 class WorkspacePromptData(BaseModel):

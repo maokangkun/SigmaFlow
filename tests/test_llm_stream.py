@@ -137,3 +137,44 @@ def test_node_forwards_stream_to_subscription(tmp_path, monkeypatch):
     # 最终 out 是剥离 think 后的文本, 节点帧里 node 名是执行节点
     assert result["reply"] == "prepost"
     assert {n for n, _, _ in frames} == {"talk"}
+
+
+def test_no_think_sends_disable_flags(monkeypatch):
+    """conf 里 no_think 真值时, chat_param 必须带上三类关思考写法。"""
+    captured = {}
+
+    class _CapCompletions:
+        async def create(self, **kw):
+            captured.update(kw)
+            return _FakeStream(FAKE_CHUNKS)
+
+    class _CapClient:
+        def __init__(self, **kargs):
+            self.chat = SimpleNamespace(completions=_CapCompletions())
+
+    monkeypatch.setattr(llm_openai_mod, "AsyncOpenAI", lambda **kw: _CapClient())
+    # @sync_compat: 循环外同步调用直接执行并返回结果。
+    llm_openai_mod.completion(
+        "hi",
+        conf={"llm": "openai", "model": "m", "no_think": True},
+        stream_cb=lambda k, d: None,
+    )
+    # SDK 官方字段走顶级; 两家私有写法走 extra_body 进原始 body。
+    assert captured["reasoning_effort"] == "none"
+    assert captured["extra_body"] == {
+        "thinking": {"type": "disabled"},
+        "chat_template_kwargs": {"thinking": False},
+    }
+
+
+def test_llm_set_thinking_touches_bound_and_mirror_conf():
+    from sigmaflow.clients.llm import LLM
+
+    base = {"llm": "openai", "model": "m"}
+    llm = LLM(base)
+    assert llm.completion.keywords["conf"] is base  # partial 绑原 dict
+    llm.set_thinking(False)
+    assert base["no_think"] is True          # partial 绑定的 conf 被改
+    assert llm.conf["no_think"] is True      # deepcopy 镜像同步
+    llm.set_thinking(True)
+    assert base["no_think"] is False
