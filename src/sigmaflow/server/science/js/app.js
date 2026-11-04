@@ -2119,10 +2119,10 @@
       const el = cards[cards.length - 1];
       if (!el) { CS.toast('未找到摘要卡。', 'error'); return; }
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.remove('msg-flash');
+      el.classList.remove('msg-flash', 'jump-flash');
       void el.offsetWidth;
-      el.classList.add('msg-flash');
-      setTimeout(() => el.classList.remove('msg-flash'), 1800);
+      el.classList.add('jump-flash');
+      setTimeout(() => el.classList.remove('jump-flash'), 2600);
     },
     'track-jump': (id, el) => {
       // 拖拽平移结束后的 click 不算跳转: 位移超阈值的拖动已置 dragged 标
@@ -2151,10 +2151,11 @@
         anchor = (isErr && target.querySelector(':scope .think-root.error-root')) || target;
       }
       anchor.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      anchor.classList.remove('msg-flash');
+      // jump-flash 不依赖宿主类名(块级锚点无 .msg-block), 色条+描边更醒目
+      anchor.classList.remove('msg-flash', 'jump-flash');
       void anchor.offsetWidth;
-      anchor.classList.add('msg-flash');
-      setTimeout(() => anchor.classList.remove('msg-flash'), 1800);
+      anchor.classList.add('jump-flash');
+      setTimeout(() => anchor.classList.remove('jump-flash'), 2600);
     },
     'open-conversation': id => {
       if (!CS.state.runs.some(r => r.id === id) && !CS.ui.conversations.some(c => c.id === id)) { CS.toast('该会话不存在。', 'error'); return; }
