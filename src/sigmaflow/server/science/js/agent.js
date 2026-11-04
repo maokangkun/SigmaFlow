@@ -337,8 +337,12 @@
     // 停止所有进行中的生成: 服务端以已生成内容收尾并下发 chat.done
     stopChats() {
       if (!this.socket || this.state !== 'open') return;
-      for (const requestId of this.activeChats) {
-        try { this.socket.send(JSON.stringify({ action: 'chat.stop', requestId })); } catch { /* 连接已断时忽略 */ }
+      // activeChats 存的是 {requestId, runId} 对象: 曾按字符串遍历导致发出的
+      // requestId 是整个对象, 服务端停止注册表按字符串查找全部落空, 停止失效
+      for (const entry of this.activeChats) {
+        const rid = typeof entry === 'string' ? entry : entry && entry.requestId;
+        if (!rid) continue;
+        try { this.socket.send(JSON.stringify({ action: 'chat.stop', requestId: rid })); } catch { /* 连接已断时忽略 */ }
       }
       for (const requestId of this.suspended.keys()) {
         try { this.socket.send(JSON.stringify({ action: 'chat.stop', requestId })); } catch { /* 连接已断时忽略 */ }
