@@ -14,6 +14,8 @@ import shutil
 from rich import print
 from pathlib import Path
 from collections import defaultdict
+
+from ..utils import is_protected_path
 from .conf import *
 from .harness import (
     GOAL,
@@ -1771,34 +1773,46 @@ def _present_klass(ext: str) -> str:
 
 
 def run_present(path, title="", note="", _notify=None):
-    """把项目内文件以富媒介卡片呈给用户; 文件本体由前端按需加载。"""
+    """把文件以富媒介卡片呈给用户; 文件本体由前端按需加载。
+
+    路径策略是黑名单制: 项目目录(相对或绝对路径均可)与 /tmp 等任意可读
+    位置都放行, 仅拒绝系统敏感目录(/etc /proc /usr 等)与家目录凭据点
+    (~/.ssh 等)。项目内文件投影成相对路径, 项目外保留绝对路径(前端与
+    /fs/file 均支持绝对路径取件)。
+    """
     p = str(path or "").strip()
     if not p:
         return "Error: path is required"
     root = get_session_workdir()
-    if os.path.isabs(p):
-        # 模型常给绝对路径: 在项目根内就投影成相对路径, 之外的再报错
-        abs_full = Path(os.path.realpath(p))
-        try:
-            if abs_full.is_relative_to(root):
-                p = os.path.relpath(abs_full, root)
-            else:
-                return (
-                    "Error: path must be inside the project directory"
-                    f" ({root}); pass a relative path."
-                )
-        except (OSError, ValueError):
-            return "Error: invalid path"
-    full = safe_path(p)
-    if not os.path.isfile(full):
+    expanded = os.path.expanduser(p)
+    abs_full = Path(
+        os.path.realpath(
+            expanded if os.path.isabs(expanded) else os.path.join(root, expanded)
+        )
+    )
+    # 黑名单: 系统敏感目录/凭据点一律拒绝, 其余(含项目外如 /tmp)均可展示
+    if is_protected_path(abs_full):
+        return (
+            "Error: path is in a protected system location; pick a file in the"
+            " project directory, /tmp or another non-sensitive location."
+        )
+    # 项目内投影成相对路径(前端按项目相对路径取件预览); 项目外保留绝对路径
+    try:
+        if abs_full.is_relative_to(Path(os.path.realpath(root))):
+            p = os.path.relpath(abs_full, root)
+        else:
+            p = abs_full.as_posix()
+    except (OSError, ValueError):
+        return "Error: invalid path"
+    if not os.path.isfile(abs_full):
         return f"Error: file not found: {p}"
-    size = full.stat().st_size
-    ext = full.suffix.lstrip(".").lower()
+    size = abs_full.stat().st_size
+    ext = abs_full.suffix.lstrip(".").lower()
     ev = {
         "kind": "present",
         "typ": "file",
         "path": p,
-        "name": full.name,
+        "name": abs_full.name,
         "ext": ext,
         "klass": _present_klass(ext),
         "size": size,
@@ -1810,7 +1824,7 @@ def run_present(path, title="", note="", _notify=None):
             _notify(ev)
         except Exception:
             pass  # 事件通道异常不阻断工具返回(卡片丢失由前端兜底, 不落调试文件)
-    return f"Presented {full.name} to the user."
+    return f"Presented {abs_full.name} to the user."
 
 
 setattr(run_present, "__notify_tool__", True)  # 需要事件通道的工具(与 ask 同款)

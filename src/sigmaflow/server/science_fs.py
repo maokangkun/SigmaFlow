@@ -20,6 +20,8 @@ from fastapi import (
     HTTPException,
 )
 
+from ..utils import is_protected_path
+
 _FS_HIDDEN_NAMES = {".git", "__pycache__", "node_modules", ".DS_Store"}
 _GIT_STATUS_TTL = 3.0
 _GIT_STATUS_CACHE: Dict[str, tuple] = {}
@@ -481,11 +483,19 @@ def _fs_file_payload(project, rel: str) -> dict:
     直显(浏览器内建 PDF 查看器); 其余按 NUL 探测的原始二进制降级为提示。
     """
     base = str((project or {}).get("dir") or "").strip()
-    if not base or not os.path.isdir(base):
-        raise HTTPException(status_code=404, detail="项目目录不存在")
-    target, root = _fs_resolve(base, rel)
-    if target is None:
-        raise HTTPException(status_code=403, detail="越界路径")
+    if os.path.isabs(rel):
+        # 绝对路径(present 卡片支持项目外文件如 /tmp 产物): 与 present 工具
+        # 同一黑名单护栏, 系统敏感目录一律拒绝; 项目目录此时不需要
+        target = os.path.realpath(rel)
+        if is_protected_path(target):
+            raise HTTPException(status_code=403, detail="受保护的系统路径")
+        root = os.path.dirname(target) or "/"
+    else:
+        if not base or not os.path.isdir(base):
+            raise HTTPException(status_code=404, detail="项目目录不存在")
+        target, root = _fs_resolve(base, rel)
+        if target is None:
+            raise HTTPException(status_code=403, detail="越界路径")
     if not os.path.isfile(target):
         raise HTTPException(status_code=404, detail="文件不存在")
     size = os.path.getsize(target)
@@ -566,9 +576,9 @@ def _fs_op_payload(project, action: str, src: str, dst: str, name: str) -> dict:
         return {"ok": True}
 
     if action == "touch" or action == "mkdir":
-        clean = os.path.basename(str(name or "").replace("\\", "/").replace("\x00", ""))[
-            :200
-        ]
+        clean = os.path.basename(
+            str(name or "").replace("\\", "/").replace("\x00", "")
+        )[:200]
         if not clean or clean in (".", "..") or "/" in clean or clean in protected:
             raise HTTPException(status_code=400, detail="名称无效")
         target = os.path.join(src_t, clean)

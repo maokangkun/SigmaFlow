@@ -3235,9 +3235,13 @@
 
   // present 卡片预览: 与 fs-preview 共用后端(/fs/file), 渲染按 klass 分派
   CS.agent.presentPreview = async entry => {
-    if (!entry.pid) { CS.toast('该文件不在项目目录内，无法预览。', 'error'); return; }
+    // 项目外文件(如 /tmp 产物)以绝对路径展示: 无 projectId 也可预览(服务端
+    // 对绝对路径走同一黑名单护栏); 相对路径仍必须携带项目
+    const abs = /^[/~]/.test(entry.path || '');
+    if (!entry.pid && !abs) { CS.toast('该文件不在项目目录内，无法预览。', 'error'); return; }
     try {
-      const data = await CS.api.request('/fs/file?projectId=' + encodeURIComponent(entry.pid) + '&path=' + encodeURIComponent(entry.path), { method: 'GET' });
+      const qs = (entry.pid ? 'projectId=' + encodeURIComponent(entry.pid) + '&' : '') + 'path=' + encodeURIComponent(entry.path);
+      const data = await CS.api.request('/fs/file?' + qs, { method: 'GET' });
       CS.showModal('fs-preview', { name: entry.title || entry.name, path: entry.path, ...data, presentKlass: entry.klass, presenting: true });
     } catch (error) { CS.toast('无法读取该文件：' + CS.api.friendlyError(error), 'error'); }
   };

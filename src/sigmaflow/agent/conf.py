@@ -167,7 +167,10 @@ CHILD_TOOLS = [
             " conversation (images, 3D models, audio/video, PDF, HTML,"
             " code/text). Use it whenever a produced or relevant artifact"
             " deserves visual attention - e.g. after generating a plot,"
-            " rendering a model, or when a report file is ready."
+            " rendering a model, or when a report file is ready. Paths may be"
+            " relative to the project directory or absolute (project files,"
+            " /tmp artifacts, any readable location); protected system locations"
+            " (/etc, /proc, ~/.ssh, ...) are refused."
         ),
         "input_schema": {
             "type": "object",

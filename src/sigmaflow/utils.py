@@ -406,11 +406,10 @@ def extract_json(text, remove_think=True):
 
 
 class ThinkStreamSplitter:
-    """think 标签感知的流式 content 分帧器: 把 think 段与正文切开。
-    """
+    """think 标签感知的流式 content 分帧器: 把 think 段与正文切开。"""
 
     def __init__(self):
-        self.mode = "content"   # 当前段状态: content | think
+        self.mode = "content"  # 当前段状态: content | think
         self.tag = self._tag("think") if False else None
         self._open = chr(60) + "think" + chr(62)
         self._close = chr(60) + "/think" + chr(62)
@@ -432,15 +431,72 @@ class ThinkStreamSplitter:
                         break
                 if len(buf) - k:
                     out.append((self.mode, buf[: len(buf) - k]))
-                self.tail = buf[len(buf) - k:] if k else ""
+                self.tail = buf[len(buf) - k :] if k else ""
                 buf = ""
             else:
                 if i:
                     out.append((self.mode, buf[:i]))
                 self.mode = "think" if tag == self._open else "content"
-                buf = buf[i + len(tag):]
+                buf = buf[i + len(tag) :]
         return out
 
     def flush(self):
         rest, self.tail = self.tail, ""
         return [(self.mode, rest)] if rest else []
+
+
+# 系统敏感目录黑名单: present 等只读展示类工具据此放行"项目外但无害"的路径
+# (如 /tmp 产物), 同时挡住 /etc /proc 等敏感位置; 前缀精确匹配(含目录自身)。
+_PROTECTED_SYSTEM_DIRS = (
+    "/etc",
+    "/boot",
+    "/efi",
+    "/proc",
+    "/sys",
+    "/dev",
+    "/root",
+    "/run",
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib32",
+    "/lib64",
+    "/libx32",
+    "/opt",
+    "/srv",
+    "/var",
+    "/lost+found",
+)
+# 家目录内的凭据/隐私点(目录或文件): ssh/gpg/云厂商与容器凭据、.netrc 等
+_PROTECTED_HOME_DOTS = (
+    ".ssh",
+    ".gnupg",
+    ".aws",
+    ".kube",
+    ".docker",
+    ".azure",
+    ".config/gcloud",
+    ".netrc",
+    ".ssh/authorized_keys",
+)
+
+
+def is_protected_path(path) -> bool:
+    """True 当解析后的真实路径落在系统敏感目录或家目录凭据点内(黑名单语义)。
+
+    路径解析失败按受保护处理(拒绝放行优先于误放行)。
+    """
+    try:
+        real = Path(os.path.realpath(os.path.expanduser(str(path)))).as_posix()
+    except (OSError, ValueError):
+        return True
+    home = Path.home().as_posix().rstrip("/") or "/"
+    for d in _PROTECTED_SYSTEM_DIRS:
+        if real == d or real.startswith(d + "/"):
+            return True
+    for d in _PROTECTED_HOME_DOTS:
+        full = home + "/" + d
+        if real == full or real.startswith(full + "/"):
+            return True
+    return False
