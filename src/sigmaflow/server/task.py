@@ -217,7 +217,11 @@ class TaskWorker(threading.Thread):
                 finally:
                     # 摘除本次注入: 不摘会跨任务累积重复推送, 且 sender 闭包
                     # 持有线程/队列对象, 会把下一次 /run 的 deepcopy 毒到 500。
-                    pipe.remove_node_callbacks(finish_cb=[msg_func, cancel_func])
+                    # finish 按身份精确摘; stream 全清兜底(单例上可能残留
+                    # live-pipe 回退路径注入的队列闭包), start 不动(持久配置)。
+                    pipe.remove_node_callbacks(
+                        finish_cb=[msg_func, cancel_func], stream_cb=None
+                    )
                 self.send_msg(Events.TASK_ITEM_DONE, out, sid)
                 # self.send_msg(Events.TASK_ITEM_DONE, info, sid)
 

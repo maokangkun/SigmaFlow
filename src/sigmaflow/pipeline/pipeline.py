@@ -224,10 +224,16 @@ class Pipeline:
                 for cb in stream_cb:
                     n.add_stream_callback(cb)
 
-    def remove_node_callbacks(self, start_cb=None, finish_cb=None, nodes=None):
+    _UNSET = object()
+
+    def remove_node_callbacks(
+        self, start_cb=_UNSET, finish_cb=_UNSET, stream_cb=_UNSET, nodes=None
+    ):
         # 运行期注入的回调(如 TaskWorker 的推送 partial / 取消闭包)任务结束就该
         # 摘除: 残留线程/队列闭包会让单例 deepcopy 直接挂掉, 重复注入还会重复推送。
-        # 传 None 表示按类清空, 传列表表示按身份精确移除。
+        # 默认(缺参)不动任何一类; None=按类清空; 列表=按身份精确移除。
+        # 三类独立控制 —— 此前 stream 的清除搭载在 start_cb is None 上, 精确移除
+        # finish 时会顺带清空全部 start 回调(持久配置的 start 回调会被误杀)。
         if nodes is None:
             nodes = self.pipegraph.node_manager.values()
         elif type(nodes) is list and type(nodes[0]) is str:
@@ -237,9 +243,10 @@ class Pipeline:
             for store, cbs in (
                 (n.start_callbacks, start_cb),
                 (n.finish_callbacks, finish_cb),
-                # 流式回调与 finish 同生命周期(None=全清随 fallback, 列表=精确)。
-                (n.stream_callbacks, start_cb if start_cb is None else None),
+                (n.stream_callbacks, stream_cb),
             ):
+                if cbs is self._UNSET:
+                    continue
                 if cbs is None:
                     store.clear()
                     continue

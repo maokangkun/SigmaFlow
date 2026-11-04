@@ -22,20 +22,39 @@ def load_runnable_pipe(pipeline_manager, name):
             f"deepcopy of pipe '{name}' failed after runtime callbacks were "
             "injected; falling back to the live pipe (callbacks cleared)"
         )
-        pipe.remove_node_callbacks()
+        # 显式三类全清: remove_node_callbacks 缺参语义是"不动任何一类"
+        pipe.remove_node_callbacks(None, None, None)
         return pipe
 
 
 def set_pipe_thinking(pipe, enabled):
     # 走遍节点的 llm(多为 CONFIG 共享实例, 按身份去重), 一个不漏地同步开关。
-    seen = set()
+    # 返回恢复闭包: deepcopy 路径上改的是副本无妨; live-pipe 回退路径上改的是
+    # 共享单例, 不恢复会把"关思考"泄漏给后续所有请求(含其它管线)。
+    seen, undo = set(), []
     for n in pipe.pipegraph.node_manager.values():
         llm = getattr(getattr(n, "pipe", None), "llm", None)
         if llm is None or id(llm) in seen:
             continue
         seen.add(id(llm))
         if hasattr(llm, "set_thinking"):
+            prev = (
+                not bool(llm.conf.get("no_think"))
+                if isinstance(getattr(llm, "conf", None), dict)
+                else None
+            )
             llm.set_thinking(enabled)
+            if prev is not None:
+                undo.append((llm, prev))
+
+    def _restore():
+        for llm, prev in undo:
+            try:
+                llm.set_thinking(prev)
+            except Exception:
+                pass
+
+    return _restore
 
 
 def post_progress(result):
@@ -115,8 +134,9 @@ class PipelineAPI:
             assert p_data.type == "pipeline"
             try:
                 pipe = load_runnable_pipe(pipeline_manager, pipe_name)
+                _undo_think = None
                 if getattr(p_data, "no_think", None):
-                    set_pipe_thinking(pipe, enabled=False)
+                    _undo_think = set_pipe_thinking(pipe, enabled=False)
                 if p_data.stream:
                     queue: Queue[Any] = Queue()
                     msg_func = lambda out: asyncio.create_task(queue.put(out))  # noqa: E731
@@ -130,23 +150,42 @@ class PipelineAPI:
                     )
 
                     async def run_pipe():
-                        result = await pipe.async_run(p_data.data)
-                        await queue.put({"result": result})
-                        await queue.put(None)
+                        try:
+                            result = await pipe.async_run(p_data.data)
+                            await queue.put({"result": result})
+                        except Exception as e:  # noqa: BLE001
+                            await queue.put({"error": str(e)})
+                        finally:
+                            await queue.put(None)
 
                     async def event_stream():
                         asyncio.create_task(run_pipe())
-                        while True:
-                            msg = await queue.get()
-                            if msg is None:
-                                break
-                            yield str(msg) + "\n"
+                        try:
+                            while True:
+                                msg = await queue.get()
+                                if msg is None:
+                                    break
+                                yield str(msg) + "\n"
+                        finally:
+                            # 摘除本次注入: deepcopy 路径副本随请求丢弃, 但
+                            # live-pipe 回退路径上残留的队列闭包会让此后每个
+                            # /run 都复用毒单例(跨请求串流/毒队列), 且每次
+                            # /run 重复注入会重复推送。
+                            pipe.remove_node_callbacks(
+                                finish_cb=[msg_func], stream_cb=[stream_func]
+                            )
+                            if _undo_think is not None:
+                                _undo_think()
 
                     return StreamingResponse(
                         event_stream(), media_type="application/json"
                     )
                 else:
-                    result = await pipe.async_run(p_data.data)
+                    try:
+                        result = await pipe.async_run(p_data.data)
+                    finally:
+                        if _undo_think is not None:
+                            _undo_think()
                     result = post_progress(result)
                     return {"result": result}
             except Exception:
