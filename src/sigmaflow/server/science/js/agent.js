@@ -478,7 +478,9 @@ CS.agent.pty = {
     if (typeof Terminal === 'undefined') {          // 终端内核按需加载(~490KB), 拉到后重试
       if (!this._lazyPending) {
         this._lazyPending = true;
-        CS.ensureLazySeq('xterm', 'fit').then(() => { this._lazyPending = false; if (this._waiting) this.ensure(); });
+        // 拉到后重入 mount 而不是裸 ensure: 首次 mount 已在 ensure=false 处返回,
+        // 只建内核不会把画布挂进容器/发起 attach, 终端会死等下一次偶然渲染
+        CS.ensureLazySeq('xterm', 'fit').then(() => { this._lazyPending = false; if (this._waiting) this.mount(); });
         this._waiting = true;
       }
       return false;
