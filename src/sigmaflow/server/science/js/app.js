@@ -518,6 +518,9 @@
             if (b.t === 'sysnote') return { type: 'sysnote', text: b.x || '' };
             return null;
           }).filter(Boolean);
+          // 历史快照行兜底: 服务端早期快照把正文累积进 content 字段而不发
+          // text 块, 块时间线渲染不读 content——补一个 text 块防正文丢失
+          if (msg.blocks.length && !msg.blocks.some(b => b && b.type === 'text') && String(m.content || '').trim()) msg.blocks.push({ type: 'text', text: m.content });
         }
         if (msg.role === 'assistant' && !msg.blocks && (msg.reasoning || msg.tools?.length || msg.asks?.length || msg.deliverables?.length)) {
           const blocks = [];

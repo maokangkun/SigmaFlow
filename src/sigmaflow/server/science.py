@@ -5183,6 +5183,22 @@ def _tool_block_of(func, args, output) -> dict:
     }
 
 
+def _text_of_turn(m: dict) -> str:
+    """轮次叙述文本: 纯字符串 content 直接取, anthropic 块列表取 text 部件。"""
+    content = m.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                parts.append(str(item.get("text") or ""))
+            elif isinstance(item, str):
+                parts.append(item)
+        return "".join(parts)
+    return ""
+
+
 def _blocks_from_agent_info(info: dict) -> list:
     """把 agent info 的轨迹压成存档块序列(与前端流式块同构), 兜底归档用。
 
@@ -5197,12 +5213,18 @@ def _blocks_from_agent_info(info: dict) -> list:
     for m in info.get("messages") or []:
         if not isinstance(m, dict) or m.get("role") != "assistant":
             continue
-        turns.append((_think_of_turn(m), _tool_calls_of_turn(m)))
+        turns.append((_think_of_turn(m), _tool_calls_of_turn(m), _text_of_turn(m)))
 
     idx = 0
-    for think, n_calls in turns:
+    last_turn_text = ""
+    for think, n_calls, turn_text in turns:
         if think:
             blocks.append({"t": "think", "x": _clip(think, 20000)})
+        # 每轮的叙述文本(与工具调用同消息发出的正文)按流式顺序织入:
+        # 只追加末轮正文会丢掉中间轮的说明文字, 刷新后"只剩 think 和工具"
+        if turn_text.strip():
+            blocks.append({"t": "text", "x": _clip(turn_text, 20000)})
+            last_turn_text = turn_text
         take = min(int(n_calls or 0), max(0, len(used) - idx))
         for func, args, output in used[idx : idx + take]:
             blocks.append(_tool_block_of(func, args, output))
@@ -5216,7 +5238,7 @@ def _blocks_from_agent_info(info: dict) -> list:
         blocks.append({"t": "think", "x": _clip(last_reasoning, 20000)})
     last = info.get("last_response")
     text = last if isinstance(last, str) else ""
-    if text.strip():
+    if text.strip() and text != last_turn_text:
         blocks.append({"t": "text", "x": _clip(text, 20000)})
     return blocks
 
@@ -5243,9 +5265,17 @@ def _archive_row_from_journal(state, model_name: str, streaming: bool = True):
                     think_idx = len(blocks) - 1
         elif kind == "delta":
             think_idx = -1
-            text_parts.append(
+            d = (
                 str((value or {}).get("delta") or "") if isinstance(value, dict) else str(value or "")
             )
+            if d:
+                text_parts.append(d)
+                # 正文必须以 text 块进入时间线: 前端渲染块时间线时不读 content
+                # 字段, 缺 text 块的快照在刷新后只剩 think/工具块(正文"消失")
+                if blocks and blocks[-1].get("t") == "text":
+                    blocks[-1]["x"] += d
+                else:
+                    blocks.append({"t": "text", "x": d})
         elif kind == "tool" and isinstance(value, dict):
             k = value.get("kind")
             if k in ("call", "result"):
@@ -5271,6 +5301,22 @@ def _archive_row_from_journal(state, model_name: str, streaming: bool = True):
                         blocks[tgt]["r"] = str(value.get("result") or "")
                         blocks[tgt]["e"] = bool(value.get("isError"))
                         open_tools = [i for i in open_tools if i != tgt]
+            elif k == "ask":
+                think_idx = -1
+                blocks.append(
+                    {
+                        "t": "ask",
+                        "id": value.get("id"),
+                        "qs": value.get("questions")
+                        if isinstance(value.get("questions"), list)
+                        else [],
+                        "ok": False,
+                        "r": "",
+                    }
+                )
+            elif k == "compact":
+                think_idx = -1
+                blocks.append({"t": "compact", "x": str(value.get("text") or "")})
             elif k == "present":
                 think_idx = -1
                 blocks.append(
