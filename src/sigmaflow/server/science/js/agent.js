@@ -347,6 +347,12 @@
       for (const requestId of this.suspended.keys()) {
         try { this.socket.send(JSON.stringify({ action: 'chat.stop', requestId })); } catch { /* 连接已断时忽略 */ }
       }
+      // requestId 只存在于页面连接内存, 刷新后的页面拿不到; 当前会话仍在
+      // 运行时按会话 runId 停止——服务端注册表记录了 runId, 据此仍能停掉任务
+      const cur = (CS.state.runs || []).find(r => r.id === CS.state.currentRunId);
+      if (cur && ['running', 'connecting', 'awaiting', 'paused'].includes(cur.status)) {
+        try { this.socket.send(JSON.stringify({ action: 'chat.stop', runId: cur.id })); } catch { /* 连接已断时忽略 */ }
+      }
     },
     bind(run) {
       if (!run?.remoteId) return;
@@ -455,7 +461,9 @@
     tick() {
       let changed = false;
       for (const run of CS.state.runs) {
-        if (run.status !== 'running' || run.transport === 'remote') continue;
+        // 只推进演示任务: 真实会话(含刷新后从存档恢复的 running 态)由
+        // 服务端状态驱动, 演示计时器不得把在途会话翻成 complete
+        if (!run.isDemo || run.status !== 'running') continue;
         const step = run.steps.find(s => s.status !== 'complete');
         if (!step) { run.status = 'complete'; run.progress = 100; changed = true; continue; }
         step.status = 'running'; step.progress = Math.min(100, step.progress + 25);

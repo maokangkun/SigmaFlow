@@ -1435,6 +1435,12 @@ class ScienceAPI:
             except Exception:
                 # 停机路径尽力而为, 单会话失败不影响其余注册项
                 pass
+            finally:
+                try:
+                    self.project_store.set_conversation_status(_rid, "done")
+                except Exception:
+                    # 停机路径尽力而为, 状态归位失败不影响其余注册项
+                    pass
         self._active_runs.clear()
 
     def _conversation_system_or_bind(self, conv: dict) -> str:
@@ -2578,6 +2584,7 @@ class ScienceAPI:
                 "id": conversation_id,
                 "title": conv.get("title") or "",
                 "projectId": conv.get("projectId"),
+                "status": conv.get("status") or "done",
                 # total 供前端分页循环判断进度; 不带分页参数仍是全量(兼容旧调用)
                 "total": len(content),
                 "content": content,
@@ -3391,6 +3398,30 @@ class ScienceAPI:
                     else:
                         await fail(request_id, "问题已失效或已被回答")
                 elif action == "chat.stop":
+                    # 按 runId 停止: requestId 只存在于页面连接内存, 刷新后的
+                    # 页面拿不到; 服务端注册表记录了 runId, 据此仍能停掉在途任务
+                    _stop_runid = _clip(str(data.get("runId") or ""), 64)
+                    if _stop_runid:
+                        _user = _current_user()
+                        _stopped_any = False
+                        for _k, _rec in list(self._active_runs.items()):
+                            if _k[0] != _user or _rec.get("runId") != _stop_runid:
+                                continue
+                            _st = _rec.get("state")
+                            if isinstance(_st, dict):
+                                _st["stop"] = True
+                                _stopped_any = True
+                            for ask_id in chat_asks.pop(_k[1], ()) or ():
+                                try:
+                                    _agent_tools_module().ASK.cancel(ask_id)
+                                except Exception:
+                                    pass
+                        await reply(
+                            "chat.stop.ack",
+                            request_id,
+                            {"stopped": _stopped_any, "runId": _stop_runid},
+                        )
+                        return
                     # 置位停止标记, pump 据此合成 done(stopped=true) 终态并收割:
                     # 工作线程不强制杀死(工具轮次自然收尾), 但前端在收到终态前
                     # 一直停在"停止中"。旧 chat_stops dict 已无消费方, 新链路全
@@ -3502,10 +3533,14 @@ class ScienceAPI:
                     # 猜中即可劫持他人在途对话的 journal 续播流。
                     _run_key = (_current_user(), request_id)
                     state["registry_key"] = _run_key
+                    _run_id = str(data.get("runId") or "")
                     self._active_runs[_run_key] = {
-                        "runId": str(data.get("runId") or ""),
+                        "runId": _run_id,
                         "state": state,
                     }
+                    # 运行状态是服务端事实: 页面刷新/关闭不影响任务, 前端
+                    # 重新加载会话列表时据此对齐"运行中/已结束"显示
+                    self.project_store.set_conversation_status(_run_id, "running")
 
                     # 工作线程阻塞产出事件, 经 _emit 累积进 journal
                     async def stream_chat() -> None:
@@ -3783,9 +3818,14 @@ class ScienceAPI:
                         await self._chat_pump(ws, request_id, state, -1)
                         try:
                             await worker
+                        except BaseException:
+                            # work 抛错(如重试耗尽的网关错误)同样走 finally 落终态:
+                            # 跳过会让存档尾行永远停在 streaming 残影
+                            pass
+                        finally:
                             # 终态落库: 完整 journal 合成终态行(streaming=False),
                             # 原位替换流式快照行——刷新过页面的用户再次拉存档
-                            # 即得到最终完整内容
+                            # 即得到最终完整内容(正常完成/停止/出错都适用)
                             try:
                                 row = _archive_row_from_journal(
                                     state, model_name, streaming=False
@@ -3796,10 +3836,20 @@ class ScienceAPI:
                                     )
                             except Exception:
                                 pass
-                        finally:
                             chat_stops.pop(request_id, None)
                             # 活跃注销: 正常终态投递后停机不再写中断行
                             self._active_runs.pop(state.get("registry_key"), None)
+                            # 会话运行状态收敛为 done(正常完成/停止/出错都是终态);
+                            # 同一会话还有另一个在途请求时保留 running
+                            _still = any(
+                                k[0] == _current_user()
+                                and (rec or {}).get("runId") == _run_id
+                                for k, rec in self._active_runs.items()
+                            )
+                            if not _still:
+                                self.project_store.set_conversation_status(
+                                    _run_id, "done"
+                                )
                             # 流结束(含停止后的收尾)时取消该请求残留的未答 ask
                             for ask_id in chat_asks.pop(request_id, ()) or ():
                                 try:
@@ -4046,6 +4096,28 @@ class ScienceProjectStore:
         # 不加锁时"读旧内容→整体覆写"会互相吞掉对方的追加。
         self._lock = threading.Lock()
         self._load()
+        # 会话运行状态由服务端进程维护: 进程重启后工作线程不复存在,
+        # 存档里残留的 running 状态全部归位为 done, 避免前端永远显示"运行中"
+        self.reset_running_statuses()
+
+    def reset_running_statuses(self) -> None:
+        """把残留的 running 会话状态归位为 done(进程重启清扫)。"""
+        changed = False
+        for conv in self.conversations.values():
+            if conv.get("status") == "running":
+                conv["status"] = "done"
+                changed = True
+        if changed:
+            self._save()
+
+    def set_conversation_status(self, conversation_id: str, status: str) -> None:
+        """维护会话运行状态(running/done), 前端刷新后据此对齐本地显示。"""
+        with self._lock:
+            conv = self.conversations.get(conversation_id or "")
+            if not conv or conv.get("status") == status:
+                return
+            conv["status"] = status
+            self._save()
 
     def _load(self):
         data = {}
@@ -4161,6 +4233,8 @@ class ScienceProjectStore:
             "hasContent": bool(conv.get("content")),
             "createdAt": conv.get("createdAt"),
             "updatedAt": conv.get("updatedAt"),
+            # 运行状态(running/done): 服务端工作线程的真实生命周期
+            "status": conv.get("status") or "done",
         }
 
     def list_conversations(self) -> list:

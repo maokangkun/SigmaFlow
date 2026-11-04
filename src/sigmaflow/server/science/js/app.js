@@ -546,7 +546,7 @@
       }
       const run = { id, kind: 'chat', title: meta.title || data.title || '会话', projectId: data.projectId, prompt: '', datasetIds: [], config: {}, ...(data.systemPrompt ? { systemPrompt: data.systemPrompt } : {}),
               messages: first.map(decodeMsg),
-              steps: [], createdAt: meta.createdAt ? new Date(meta.createdAt).toISOString() : new Date().toISOString(), status: 'complete', progress: 0, transport: 'chat', isDemo: false };
+              steps: [], createdAt: meta.createdAt ? new Date(meta.createdAt).toISOString() : new Date().toISOString(), status: data.status === 'running' ? 'running' : 'complete', progress: 0, transport: 'chat', isDemo: false };
       // 本地无副本: 首页渲染先行(分页继续后台补全); 已有副本: 拉完再整体换新,
       // 加载过程不闪烁也不再出现"当前视图忽然变短"
       if (!hadLocal) {
@@ -612,10 +612,13 @@
       // 刷新恢复: 尾条 assistant 带服务端 streaming 标记 = 任务仍在后台运行,
       // 周期拉存档原位更新该消息(3s 近实时), 终态到达(streaming 消失)即停。
       // 发新消息时清除(真实流式由 chat.done 驱动, 避免双源互写)
-      const stopStreamPoll = () => { if (CS._streamPoll) { clearInterval(CS._streamPoll); CS._streamPoll = null; } };
+      const stopStreamPoll = () => { if (CS._streamPoll) { clearInterval(CS._streamPoll.timer); CS._streamPoll = null; } };
       stopStreamPoll();
+      // 轮询条件: 尾条是流式快照, 或服务端仍在运行(模型思考期存档可能还只有
+      // user 行, 首条内容行到达时轮询负责补挂 assistant 消息)
       const tailMsg = run.messages[run.messages.length - 1];
-      if (tailMsg && tailMsg.role === 'assistant' && tailMsg.streaming) {
+      const tailLive = tailMsg && tailMsg.role === 'assistant' && tailMsg.streaming;
+      if (tailLive || data.status === 'running') {
         const poll = async () => {
           if (CS._streamPoll?.id !== id) { stopStreamPoll(); return; }
           try {
@@ -623,21 +626,33 @@
             const rows = Array.isArray(d.content) ? d.content : [];
             const lastA = [...rows].reverse().find(r2 => r2.role === 'assistant' && (r2.streaming || r2.content || r2.blocks?.length));
             const msg = run.messages[run.messages.length - 1];
-            if (!msg || msg.role !== 'assistant' || !msg.streaming) { stopStreamPoll(); CS.render(); return; }
+            const msgLive = msg && msg.role === 'assistant' && msg.streaming;
             if (lastA && lastA.streaming) {
               const decoded = decodeMsg(lastA);
-              if (decoded.content !== msg.content || JSON.stringify(decoded.blocks) !== JSON.stringify(msg.blocks)) {
-                msg.content = decoded.content; msg.blocks = decoded.blocks;
+              if (msgLive) {
+                if (decoded.content !== msg.content || JSON.stringify(decoded.blocks) !== JSON.stringify(msg.blocks)) {
+                  msg.content = decoded.content; msg.blocks = decoded.blocks;
+                  if (CS.state.currentRunId === id) CS.render();
+                }
+              } else {
+                // 首条流式行到达: 补挂 assistant 消息(刷新时模型还在思考)
+                run.messages.push(decoded);
+                run.status = 'running';
                 if (CS.state.currentRunId === id) CS.render();
               }
               return;  // 仍在后台运行: 继续轮询
             }
+            if (d.status === 'running') return;  // 思考期尚无 assistant 行: 继续等
+            // 服务端已终态: 落终态行(防重复推送同内容旧行)
             if (lastA) {
               const decoded = decodeMsg(lastA);
-              msg.content = decoded.content; msg.blocks = decoded.blocks; msg.streaming = false;
-              if (decoded.tokens) { msg.tokens = decoded.tokens; msg.promptTokens = decoded.promptTokens; msg.elapsed = decoded.elapsed; }
-            } else msg.streaming = false;
+              if (msgLive) { msg.content = decoded.content; msg.blocks = decoded.blocks; msg.streaming = false; }
+              else if (!run.messages.some(m2 => m2.role === 'assistant' && (m2.content || '') === decoded.content)) run.messages.push(decoded);
+              if (decoded.tokens) { const t2 = run.messages[run.messages.length - 1]; t2.tokens = decoded.tokens; t2.promptTokens = decoded.promptTokens; t2.elapsed = decoded.elapsed; }
+            }
             stopStreamPoll();
+            run.status = 'complete';
+            CS.save();
             CS.render();
           } catch { /* 网络抖动: 下一轮继续 */ }
         };
@@ -1223,7 +1238,7 @@
     // 基于截断上下文接续
     if (CS.ui.loadingRunId === run.id) { CS.toast('会话内容仍在加载，稍候再发送。', 'error'); return; }
     // 真实流式开始: 停掉刷新恢复用的存档轮询, 避免双源互写
-    if (CS._streamPoll) { clearInterval(CS._streamPoll); CS._streamPoll = null; }
+    if (CS._streamPoll) { clearInterval(CS._streamPoll.timer); CS._streamPoll = null; }
     // 隐形续接(压缩完成后): 不插可见用户消息, 历史以压缩摘要卡结尾,
     // 服务端契约把摘要卡组装为 user 末条, 模型基于摘要直接开始下一轮
     if (!opts.hiddenContinue) run.messages.push({ role: 'user', content: text, datasetIds: [...datasetIds], at: new Date().toISOString() });
@@ -3182,6 +3197,23 @@
     try {
       const data = await CS.api.modelCall('conversation.list', 'GET', '/conversations');
       CS.ui.conversations = Array.isArray(data.conversations) ? data.conversations : [];
+      // 运行状态以服务端为准: 页面刷新/关闭期间任务的终态已落库, 本地残留的
+      // running 标记会让会话永远显示"运行中"且停止按钮空转。本页有在途请求的
+      // 会话跳过(chat.send 与本列表存在先后竞态, 在途即真相)
+      const _byId = new Map(CS.ui.conversations.map(c => [c.id, c]));
+      const _inflight = new Set((CS.api.ws?.activeChats || []).map(e => (typeof e === 'string' ? null : e?.runId)).filter(Boolean));
+      let _fixed = false;
+      for (const r of CS.state.runs || []) {
+        if (!['running', 'connecting', 'awaiting', 'paused'].includes(r.status)) continue;
+        if (_inflight.has(r.id)) continue;
+        const c = _byId.get(r.id);
+        if (!c || c.status !== 'running') {
+          r.status = 'complete';
+          (r.messages || []).forEach(m => { delete m.streaming; });
+          _fixed = true;
+        }
+      }
+      if (_fixed) CS.save();
       CS.emit('render');
     } catch (error) { /* 忽略：服务器不可用时保留旧列表 */ }
   };

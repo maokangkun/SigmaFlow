@@ -85,6 +85,10 @@ def test_interrupt_active_chats_survives_store_error(tmp_path):
         def archive_assistant_row(self, *_a, **_k):
             raise RuntimeError("disk full")
 
+        def set_conversation_status(self, *_a, **_k):
+            # 停机清扫的状态归位也应容忍存储故障
+            raise RuntimeError("disk full")
+
         conversations = {"run-x": {}}
 
     fake = types.SimpleNamespace(
