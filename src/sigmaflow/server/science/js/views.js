@@ -642,6 +642,8 @@
     const start = Math.max(0, blocks.length - MAX_COLS * 4);
     const shown = blocks.slice(start);
     // 列内自上而下 4 格一列; 每轮用户消息强制新起一列(回合从列首开始)
+    // 格子包在 tr-strip 内: 容器是横向滚动容器, auto-margin 把 strip 贴右,
+    // 溢出落在可滚动方向(左), 而 justify-flex-end 的左溢出不可滚动(经典陷阱)
     const cols = [];
     let cur = [];
     shown.forEach(b => {
@@ -653,7 +655,7 @@
     const name = { user: '用户', think: '思考', tool: '工具', reply: '回复', system: '系统', error: '错误', compact: '压缩' };
     const cell = (b, gi) => `<span role="button" class="tr-cell tr-${b.k}${b.err ? ' tr-err' : ''}${b.live ? ' tr-live' : ''}" data-action="track-jump" data-id="${b.bi == null ? b.mi : b.mi + ':' + b.bi}" title="#${start + gi + 1} ${name[b.k]}${b.err ? ' · 出错' : ''}${b.live ? ' · 生成中' : ''} · ${e(String(b.txt || '').replace(/\s+/g, ' ').slice(0, 80))} · 点击跳转到该消息"></span>`;
     // 超长会话被截掉头部时加渐隐类, 在左缘用 mask 提示“还有更早的”
-    return `<div class="run-track${start ? ' tr-trunc' : ''}" aria-hidden="true"${start ? ` title="还有更早的 ${start} 条消息未展示"` : ''} data-blocks="${blocks.length}">${cols.map(c => `<span class="tr-col">${c.map(cell).join('')}</span>`).join('')}</div>`;
+    return `<div class="run-track${start ? ' tr-trunc' : ''}" aria-hidden="true"${start ? ` title="还有更早的 ${start} 条消息未展示"` : ''} data-blocks="${blocks.length}"><span class="tr-strip">${cols.map(c => `<span class="tr-col">${c.map(cell).join('')}</span>`).join('')}</span></div>`;
   };
 
   V.runUsage = () => {

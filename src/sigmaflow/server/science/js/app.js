@@ -232,13 +232,48 @@
     // 超长轨迹格视觉截断检测: 首列越出容器左缘时挂 tr-trunc(左缘渐隐)。
     // 数据层已放宽到全部渲染, 截断完全交给视觉层; justify-flex-end 的
     // 左溢出 scrollWidth 测不到, 用首列几何判定, 幂等无循环渲染
+    // 轨迹横向滚动: 贴右生长端 / 保留用户左移位置; 左缘渐隐仅在还有更早内容且
+    // 未左移时展示(滚动后渐隐反而遮住最旧的格子)。渲染重建 DOM, 滚动位置由
+    // CS.ui.trackScroll 跨渲染接力; 拖拽平移用文档级委托, 只绑一次
+    if (!CS._trackPanBound) {
+      CS._trackPanBound = true;
+      document.addEventListener('pointerdown', e => {
+        const track = e.target.closest && e.target.closest('.run-track');
+        if (!track || e.button !== 0) return;
+        const startX = e.clientX;
+        const startLeft = track.scrollLeft;
+        let moved = false;
+        const move = ev => {
+          const dx = ev.clientX - startX;
+          if (Math.abs(dx) > 4) moved = true;
+          if (moved) track.scrollLeft = startLeft - dx;
+        };
+        const up = () => {
+          window.removeEventListener('pointermove', move);
+          window.removeEventListener('pointerup', up);
+          // 位移超阈值判定为拖拽: 抑制其后的 click 跳转(click 同步派发后才清标)
+          if (moved) { track.dataset.dragged = '1'; setTimeout(() => { delete track.dataset.dragged; }, 0); }
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
+      });
+    }
     for (const track of document.querySelectorAll('.run-track')) {
-      const firstCol = track.querySelector('.tr-col');
-      if (!firstCol) continue;
-      const over = firstCol.getBoundingClientRect().x < track.getBoundingClientRect().x - 0.5;
-      // 视觉溢出挂渐隐; 数据层兜底丢块(极端超长会话)的渐隐由渲染层
-      // 以 title 声明, 此处一并保留, 不互相摘除
-      track.classList.toggle('tr-trunc', over || (track.title || '').includes('还有更早'));
+      if (!track._trScrollBound) {
+        track._trScrollBound = true;
+        track.addEventListener('scroll', () => {
+          CS.ui.trackScroll = { left: track.scrollLeft, pinned: track.scrollLeft >= track.scrollWidth - track.clientWidth - 1 };
+          // 渐隐语义: 右侧还有未看过的更早内容(未滚到最左)才在左缘提示
+          const over = track.scrollWidth > track.clientWidth + 1;
+          track.classList.toggle('tr-trunc', (over && track.scrollLeft > 1) || (track.title || '').includes('还有更早'));
+        }, { passive: true });
+      }
+      const st = CS.ui.trackScroll;
+      const max = Math.max(0, track.scrollWidth - track.clientWidth);
+      track.scrollLeft = st && !st.pinned ? Math.min(st.left, max) : max;
+      const over = track.scrollWidth > track.clientWidth + 1;
+      // 数据层兜底丢块(极端超长会话)的渐隐由渲染层以 title 声明, 一并保留
+      track.classList.toggle('tr-trunc', (over && track.scrollLeft > 1) || (track.title || '').includes('还有更早'));
     }
     // 终端面板: 迁移 xterm 到新容器并 attach/fit
     if (CS.ui.terminal?.open) CS.agent.pty?.mount();
@@ -2090,6 +2125,8 @@
       setTimeout(() => el.classList.remove('msg-flash'), 1800);
     },
     'track-jump': (id, el) => {
+      // 拖拽平移结束后的 click 不算跳转: 位移超阈值的拖动已置 dragged 标
+      if (el && el.closest && el.closest('.run-track') && el.closest('.run-track').dataset.dragged) return;
       // 格子 id 两态: "mi:bi"(块级钉点) / "mi"(消息级: 用户消息/错误格/旧存档)
       const colon = id.indexOf(':');
       const mi = parseInt(colon >= 0 ? id.slice(0, colon) : id, 10);
