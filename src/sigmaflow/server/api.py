@@ -106,7 +106,14 @@ class PipelineAPI:
                 if p_data.stream:
                     queue: Queue[Any] = Queue()
                     msg_func = lambda out: asyncio.create_task(queue.put(out))  # noqa: E731
-                    pipe.add_node_callback(finish_cb=[msg_func])
+                    # LLM 增量帧: {"node", "stream": {"type": think|content, "delta"}}。
+                    # finish 帧(节点完成)保持原结构 "out"/"execution_time"。
+                    stream_func = lambda node, kind, delta: queue.put_nowait(  # noqa: E731
+                        {"node": node, "stream": {"type": kind, "delta": delta}}
+                    )
+                    pipe.add_node_callback(
+                        finish_cb=[msg_func], stream_cb=[stream_func]
+                    )
 
                     async def run_pipe():
                         result = await pipe.async_run(p_data.data)

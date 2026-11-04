@@ -30,6 +30,7 @@ class Base:
         self.trace_node_id = None
         self.next = []
         self.loop_nodes = []
+        self.stream_callbacks = []
         self.start_callbacks = []
         self.finish_callbacks = []
         self.reset_out_flag = "reset_out" in self.conf

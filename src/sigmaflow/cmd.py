@@ -159,6 +159,9 @@ def build_server(args=None):
     for key in ["mode", "llm", "rag", "pipeline_dir", "prompt"]:
         if not hasattr(args, key):
             setattr(args, key, data.get(key))
+    # serve 是常驻 API 服务: /api/run 走 async 引擎, 管线缺省必须建成 async 模式,
+    # 否则 node.run property 解析到 seq_run, async 任务三参会直接炸。
+    args.mode = args.mode or "async"
 
     server = PipelineServer(pipeline_manager=build_pm(args))
     return server.app

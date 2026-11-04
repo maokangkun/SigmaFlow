@@ -17,6 +17,14 @@ class Node(Base):
             return item.encode("unicode_escape").decode("utf-8")
         return item
 
+    def add_stream_callback(self, cb):
+        self.stream_callbacks.append(cb)
+
+    def execute_stream_callback(self, kind, delta):
+        # kind: think|content |delta: 增量文本; 订阅方(api /run 流式)按 node 名路由。
+        for cb in self.stream_callbacks:
+            cb(self.name, kind, delta)
+
     def add_callback(self, start_cb=[], finish_cb=[]):
         for item, callback in zip(
             [self.start_callbacks, self.finish_callbacks], [start_cb, finish_cb]

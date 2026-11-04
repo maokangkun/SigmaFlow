@@ -44,6 +44,12 @@ class Block:
     async def _call(self, *inp):
         pass
 
+    def set_stream(self, cb):
+        # LLM 块把 node 级流式转发挂到底层客户端; 非 LLM 块没有 llm, 忽略。
+        llm = getattr(self, "llm", None)
+        if llm is not None and hasattr(llm, "stream_cb"):
+            llm.stream_cb = cb
+
     @staticmethod
     def _backoff_delay(n):
         delay = RETRY_BACKOFF_BASE * (2 ** (n - 1))

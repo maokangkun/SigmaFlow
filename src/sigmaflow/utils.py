@@ -403,3 +403,44 @@ def extract_json(text, remove_think=True):
         except Exception:
             pass
     return None
+
+
+class ThinkStreamSplitter:
+    """think 标签感知的流式 content 分帧器: 把 think 段与正文切开。
+    """
+
+    def __init__(self):
+        self.mode = "content"   # 当前段状态: content | think
+        self.tag = self._tag("think") if False else None
+        self._open = chr(60) + "think" + chr(62)
+        self._close = chr(60) + "/think" + chr(62)
+        self.tail = ""
+
+    def feed(self, delta):
+        buf = self.tail + delta
+        self.tail = ""
+        out = []
+        while buf:
+            tag = self._open if self.mode == "content" else self._close
+            i = buf.find(tag)
+            if i == -1:
+                # 尾部可能是劈开的半个标签: 留住等下一个 delta。
+                k = 0
+                for m in range(min(len(buf), len(tag) - 1), 0, -1):
+                    if buf.endswith(tag[:m]):
+                        k = m
+                        break
+                if len(buf) - k:
+                    out.append((self.mode, buf[: len(buf) - k]))
+                self.tail = buf[len(buf) - k:] if k else ""
+                buf = ""
+            else:
+                if i:
+                    out.append((self.mode, buf[:i]))
+                self.mode = "think" if tag == self._open else "content"
+                buf = buf[i + len(tag):]
+        return out
+
+    def flush(self):
+        rest, self.tail = self.tail, ""
+        return [(self.mode, rest)] if rest else []

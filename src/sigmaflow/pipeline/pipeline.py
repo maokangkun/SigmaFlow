@@ -212,7 +212,7 @@ class Pipeline:
         pipe_mermaid = self.pipegraph.graph2mermaid()
         mmdc(pipe_mermaid, pipe_img)
 
-    def add_node_callback(self, start_cb=[], finish_cb=[], nodes=None):
+    def add_node_callback(self, start_cb=[], finish_cb=[], stream_cb=[], nodes=None):
         if nodes is None:
             nodes = self.pipegraph.node_manager.values()
         elif type(nodes) is list and type(nodes[0]) is str:
@@ -220,6 +220,9 @@ class Pipeline:
 
         for n in nodes:
             n.add_callback(start_cb=start_cb, finish_cb=finish_cb)
+            if stream_cb:
+                for cb in stream_cb:
+                    n.add_stream_callback(cb)
 
     def remove_node_callbacks(self, start_cb=None, finish_cb=None, nodes=None):
         # 运行期注入的回调(如 TaskWorker 的推送 partial / 取消闭包)任务结束就该
@@ -234,6 +237,8 @@ class Pipeline:
             for store, cbs in (
                 (n.start_callbacks, start_cb),
                 (n.finish_callbacks, finish_cb),
+                # 流式回调与 finish 同生命周期(None=全清随 fallback, 列表=精确)。
+                (n.stream_callbacks, start_cb if start_cb is None else None),
             ):
                 if cbs is None:
                     store.clear()

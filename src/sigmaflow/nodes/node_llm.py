@@ -107,6 +107,8 @@ class LLMNode(Node):
     async def current_task(self, data, queue, dynamic_tasks):
         inps = await self.get_inps(queue)
         self.execute_start_callback()
+        # token 级流式: 增量先经 subscribe 方(/run 的 SSE), 最终 out 仍是完整剥离后文本。
+        self.pipe.set_stream(lambda kind, delta: self.execute_stream_callback(kind, delta))
         out = await self.pipe(*inps)
         self.set_out(out, data, queue)
         self.execute_finish_callback(inps, out, queue)
