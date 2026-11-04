@@ -55,6 +55,15 @@ _CONTINUE_AFTER_NUDGE = (
 )
 
 
+def _retry_after_seconds(err_text, cap=120):
+    """从上游错误文本里提取网关建议的等待秒数(如 429 集群限流的 retry_after: 46)。
+
+    openai SDK 的 RateLimitError 文本里带 JSON 详情; 取不到时返回 0, 调用方
+    继续用自己的指数退避。上限封顶, 防异常大的值把会话卡死。"""
+    mo = re.search(r"retry_after['\"]?\s*[:=]\s*(\d+)", str(err_text))
+    return min(int(mo.group(1)), cap) if mo else 0
+
+
 def _inject_sysnote(on_tool, messages, info, msg_dict, text=None):
     """把注入的 [System] 提示消息同时同步给前端时间线(sysnote 块)。"""
     messages.append(msg_dict)
@@ -927,8 +936,13 @@ class Agent:
                             except Exception:
                                 pass
                         if tried < self.retry:
-                            # 重试间隔随次数递增(约 3s/6s/12s/24s/48s, 封顶 60s)加随机抖动
+                            # 重试间隔随次数递增(约 3s/6s/12s/24s/48s, 封顶 60s)加随机抖动;
+                            # 网关明确给了 retry_after(如集群 RPM 限流 429, 常见 40~60s)时
+                            # 尊重之: 按自己的短退避只会连吃 429 烧光重试次数。
                             _backoff = min(60, 3 * 2 ** (tried - 1))
+                            _backoff = max(
+                                _backoff, _retry_after_seconds(str(e))
+                            )
                             time.sleep(_backoff + random.uniform(0, 2))
                         if tried == self.retry:
                             console.print(f"{Prompt.Error}{traceback.format_exc()}")

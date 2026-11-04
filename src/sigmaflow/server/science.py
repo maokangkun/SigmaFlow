@@ -211,6 +211,29 @@ def _turn_budget() -> int:
     return v
 
 
+def _truncation_note(info, files):
+    """无最终正文时的截断说明: 轮次耗尽与上游接口失败要分开表述。
+
+    agent 只在真·轮次耗尽时把 error 写成"轮次上限"语义; 其余 error(限流 429/
+    网络/Max tokens)是上游失败, 此前也被兜底文案说成"轮次预算已用完", 用户会
+    去查自己从没设过的预算。"""
+    _err = str(info.get("error") or "").strip()
+    if _err and "轮次上限" not in _err:
+        note = (
+            "上游模型接口连续失败，任务被迫中断：\n"
+            f"{_err[:200]}\n\n已完成的执行轨迹与产出都保留在上方，"
+            "稍后发送『继续』即可从中断处接续执行。"
+        )
+    else:
+        note = (
+            "本轮的工具轮次预算已用完，任务在此预期内截断："
+            "已完成的执行轨迹与产出都保留在上方，发送『继续』即可接续执行。"
+        )
+    if files:
+        note += "\n\n本轮产出文件:\n" + "\n".join(f"- {f}" for f in files[:10])
+    return note
+
+
 def _nudge_threshold() -> int:
     """静默工具 nudge 阈值: 连续调用多少个工具不产出文字时注入提醒, 默认 10, 0 为禁用。
 
@@ -4923,14 +4946,12 @@ def _run_agent_chat(
                 for d in (info.get("deliverables") or [])
                 if isinstance(d, dict)
             ]
-            note = (
-                "本轮的工具轮次预算已用完，任务在此预期内截断："
-                "已完成的执行轨迹与产出都保留在上方，发送『继续』即可接续执行。"
-            )
-            if files:
-                note += "\n\n本轮产出文件:\n" + "\n".join(f"- {f}" for f in files[:10])
+            note = _truncation_note(info, files)
             logging.getLogger("uvicorn.error").info(
-                "chat truncated at max_turn: tools=%d files=%d", tool_count, len(files)
+                "chat truncated at max_turn: tools=%d files=%d err=%s",
+                tool_count,
+                len(files),
+                str(info.get("error") or "")[:120],
             )
             return note, (info if isinstance(info, dict) else {})
         raise RuntimeError("模型没有返回内容")
