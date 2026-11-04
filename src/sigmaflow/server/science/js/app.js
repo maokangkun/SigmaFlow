@@ -607,8 +607,15 @@
       ) {
         const a = String(_prev.content || '');
         const b2 = String(_last.content || '');
-        if (b2.length >= a.length || (a && b2.startsWith(a.slice(0, 60)))) _prev.hidden = true;
+        if (b2.length >= a.length || (a && b2.startsWith(a.slice(0, 60)))) {
+          // 隐藏的同时必须清掉 streaming 标记: 残留标记会让停止按钮/
+          // 侧边栏绿点/favicon 把已结束的会话继续渲染成"运行中"
+          _prev.hidden = true;
+          delete _prev.streaming;
+        }
       }
+      // 兜底: 服务端已终态的会话, 任何消息上的流式标记都是残留
+      if (data.status !== 'running') run.messages.forEach(m => { delete m.streaming; });
       // 刷新恢复: 尾条 assistant 带服务端 streaming 标记 = 任务仍在后台运行,
       // 周期拉存档原位更新该消息(3s 近实时), 终态到达(streaming 消失)即停。
       // 发新消息时清除(真实流式由 chat.done 驱动, 避免双源互写)
