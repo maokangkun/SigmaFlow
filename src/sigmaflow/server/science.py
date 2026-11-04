@@ -3519,11 +3519,30 @@ class ScienceAPI:
                                     return
                                 state["journal"].append((kind, value))
 
+                            archive_last = [0.0]
+
+                            def _partial_archive(force=False):
+                                # 流式快照节流落库: 刷新页面也能从存档看到已生成的
+                                # 部分内容; 终态行由收尾处的最终 upsert 原位替换
+                                now = time.time()
+                                if not force and now - archive_last[0] < 3.0:
+                                    return
+                                archive_last[0] = now
+                                try:
+                                    row = _archive_row_from_journal(state, model_name)
+                                    if row:
+                                        self.project_store.archive_streaming_row(
+                                            str(data.get("runId") or ""), row
+                                        )
+                                except Exception:
+                                    pass  # 快照落库失败不影响对话主流程
+
                             def on_delta(d):
                                 # 正文在 emit 侧累积, 断线期间 pump 消费
                                 # 不工作也不影响兑底归档取到完整正文
                                 state["content"].append(d)
                                 _emit("delta", d)
+                                _partial_archive()
 
                             def on_tool_wrap(ev):
                                 # ask 轮次: 记录 id 供停止/断开时取消;
@@ -3559,6 +3578,13 @@ class ScienceAPI:
                                     )
                                     return
                                 _emit("tool", ev)
+                                # 工具收尾(带结果)强制落一次快照: 工具块是刷新
+                                # 恢复观感的关键节点, 不等 3s 节流窗口
+                                if (
+                                    isinstance(ev, dict)
+                                    and ev.get("kind") == "result"
+                                ):
+                                    _partial_archive(force=True)
 
                             _agent_info_holder = {"info": None}
                             _except_err = None
@@ -3757,6 +3783,19 @@ class ScienceAPI:
                         await self._chat_pump(ws, request_id, state, -1)
                         try:
                             await worker
+                            # 终态落库: 完整 journal 合成终态行(streaming=False),
+                            # 原位替换流式快照行——刷新过页面的用户再次拉存档
+                            # 即得到最终完整内容
+                            try:
+                                row = _archive_row_from_journal(
+                                    state, model_name, streaming=False
+                                )
+                                if row:
+                                    self.project_store.archive_streaming_row(
+                                        str(data.get("runId") or ""), row
+                                    )
+                            except Exception:
+                                pass
                         finally:
                             chat_stops.pop(request_id, None)
                             # 活跃注销: 正常终态投递后停机不再写中断行
@@ -4452,6 +4491,68 @@ class ScienceProjectStore:
             self._save()
             return True
 
+    def archive_streaming_row(self, conversation_id: str, row: dict) -> bool:
+        """流式过程行 upsert: 尾条是本请求的 streaming 快照行则原位替换,
+        否则追加。刷新页面后从存档即可读到已生成的部分内容; 终态行
+        (streaming=False)到达时同函数原位替换掉快照行, 不产生重复行。
+        """
+        if not conversation_id or not isinstance(row, dict):
+            return False
+        with self._lock:
+            conv = self.conversations.get(conversation_id)
+            if conv is None:
+                return False
+            base = list(conv.get("content") or [])
+            last = base[-1] if base else None
+            row_out = {k: v for k, v in row.items() if v is not None}
+            last_c = str(last.get("content") or "") if isinstance(last, dict) else ""
+            new_c = str(row.get("content") or "")
+            # 同一回复的快照判定: 尾行 streaming(本机制的快照行) 或 内容呈
+            # 前缀生长关系(关页整表保存留下的非流式旧快照 ⊂ 新快照)。
+            # 替换要求新内容不短于尾行, 防止新回复的短快照吃掉旧长回复。
+            snapshot_rel = (
+                isinstance(last, dict)
+                and last.get("role") == "assistant"
+                and (
+                    last.get("streaming")
+                    or (
+                        bool(last_c)
+                        and len(new_c) >= len(last_c)
+                        and (
+                            new_c[:120].startswith(last_c[:120])
+                            or last_c[:120].startswith(new_c[:120])
+                        )
+                    )
+                )
+            )
+            last_streaming = bool(isinstance(last, dict) and last.get("streaming"))
+            if snapshot_rel and not (
+                not row.get("streaming")
+                and not last_streaming
+                and last_c == new_c
+            ):
+                # 同内容同形态(如终态行撞上前端整表归档的更完整版本): 保留尾行
+                base[-1] = row_out
+                _ls = last.get("streaming") if isinstance(last, dict) else None
+                print(f"[stream-archive] replace len={len(new_c)} streaming={row.get('streaming')} lastLen={len(last_c)} lastStreaming={_ls}", flush=True)
+            elif (
+                isinstance(last, dict)
+                and last.get("role") == "assistant"
+                and not row.get("streaming")
+                and not last.get("streaming")
+                and str(last.get("content") or "")[:200]
+                == str(row.get("content") or "")[:200]
+            ):
+                # 终态行撞上前端整表归档(更完整的块/统计): 保留前端版本
+                return False
+            else:
+                base.append(row_out)
+                print(f"[stream-archive] APPEND len={len(new_c)} streaming={row.get('streaming')} lastRole={last.get('role') if isinstance(last, dict) else None} lastStreaming={last.get('streaming') if isinstance(last, dict) else None} lastLen={len(last_c)}", flush=True)
+            conv["content"] = base[-200:]
+            conv["updatedAt"] = int(time.time() * 1000)
+            self._save()
+            return True
+
     def set_conversation_system(self, conversation_id: str, text: str) -> bool:
         """记录会话实际使用的 system 提示词(Trace 页 #0 系统消息条)。
 
@@ -5044,6 +5145,86 @@ def _blocks_from_agent_info(info: dict) -> list:
     if text.strip():
         blocks.append({"t": "text", "x": _clip(text, 20000)})
     return blocks
+
+
+def _archive_row_from_journal(state, model_name: str, streaming: bool = True):
+    """从事件 journal 合成存档行(块形状与前端流式块同构)。
+
+    流式中途周期性落库与终态行共用本合成: 刷新页面后从存档即可看到
+    已生成的部分内容(streaming 标记), 终态行再整体替换。think 连续
+    追加; 工具结果回填最近的同名未收尾块; 正文按到达序累积。
+    """
+    blocks: list = []
+    text_parts: list = []
+    think_idx = -1
+    open_tools: list = []
+    for kind, value in state.get("journal") or []:
+        if kind == "think":
+            d = str((value or {}).get("delta") or "") if isinstance(value, dict) else str(value or "")
+            if d:
+                if think_idx >= 0 and blocks[think_idx].get("t") == "think":
+                    blocks[think_idx]["x"] += d
+                else:
+                    blocks.append({"t": "think", "x": d})
+                    think_idx = len(blocks) - 1
+        elif kind == "delta":
+            think_idx = -1
+            text_parts.append(
+                str((value or {}).get("delta") or "") if isinstance(value, dict) else str(value or "")
+            )
+        elif kind == "tool" and isinstance(value, dict):
+            k = value.get("kind")
+            if k in ("call", "result"):
+                name = str(value.get("name") or "工具")
+                think_idx = -1
+                if k == "call":
+                    args = value.get("args")
+                    blocks.append(
+                        {"t": "tool", "n": name, "a": args if isinstance(args, dict) else {}, "r": ""}
+                    )
+                    open_tools.append(len(blocks) - 1)
+                else:
+                    tgt = None
+                    for i in reversed(open_tools):
+                        if blocks[i].get("n") == name:
+                            tgt = i
+                            break
+                    if tgt is None:
+                        blocks.append(
+                            {"t": "tool", "n": name, "a": {}, "r": str(value.get("result") or "")}
+                        )
+                    else:
+                        blocks[tgt]["r"] = str(value.get("result") or "")
+                        blocks[tgt]["e"] = bool(value.get("isError"))
+                        open_tools = [i for i in open_tools if i != tgt]
+            elif k == "present":
+                think_idx = -1
+                blocks.append(
+                    {
+                        "t": "present",
+                        "typ": value.get("typ") or "file",
+                        "path": value.get("path"),
+                        "name": value.get("name"),
+                        "ext": value.get("ext"),
+                        "klass": value.get("klass"),
+                        "size": value.get("size"),
+                        "title": value.get("title"),
+                        "note": value.get("note"),
+                    }
+                )
+    content = "".join(text_parts)
+    if not content and not blocks:
+        return None
+    row = {
+        "role": "assistant",
+        "blocks": blocks,
+        "at": int(time.time() * 1000),
+        "model": model_name,
+        "streaming": bool(streaming),
+    }
+    if content:
+        row["content"] = content
+    return row
 
 
 _AGENT_CONTEXT_SIZES: Dict[str, int] = {}

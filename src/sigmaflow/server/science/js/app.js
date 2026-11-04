@@ -504,7 +504,7 @@
       // 存档消息 → 内存消息: 新格式解压块时间线 {t,x}/{t,n,a,r}..., 旧格式压平
       // 记录重建 blocks; 分页循环里每页复用同一解码
       const decodeMsg = m => {
-        const msg = { role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}) };
+        const msg = { role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}), ...(m.streaming ? { streaming: true, serverStreaming: true } : {}) };
         if (msg.role === 'assistant' && Array.isArray(m.blocks) && m.blocks.length) {
           msg.blocks = m.blocks.map(b => {
             if (!b || typeof b !== 'object') return null;
@@ -595,6 +595,54 @@
         });
       };
       relocateCompactCards(run.messages);
+      // 流式快照残留合并: 中途刷新会让服务端落一行 streaming 快照, 任务结束
+      // 后前端整表归档又写入终态行, 两行并存时快照行渲染成"永远生成中"的假象。
+      // 尾行非流式且覆盖了前一条快照的内容(长度≥或前缀相同) → 快照行并入隐藏
+      const _msgs = run.messages;
+      const _last = _msgs[_msgs.length - 1];
+      const _prev = _msgs[_msgs.length - 2];
+      if (
+        _last && _prev && _last.role === 'assistant' && _prev.role === 'assistant' &&
+        _prev.streaming && !_last.streaming
+      ) {
+        const a = String(_prev.content || '');
+        const b2 = String(_last.content || '');
+        if (b2.length >= a.length || (a && b2.startsWith(a.slice(0, 60)))) _prev.hidden = true;
+      }
+      // 刷新恢复: 尾条 assistant 带服务端 streaming 标记 = 任务仍在后台运行,
+      // 周期拉存档原位更新该消息(3s 近实时), 终态到达(streaming 消失)即停。
+      // 发新消息时清除(真实流式由 chat.done 驱动, 避免双源互写)
+      const stopStreamPoll = () => { if (CS._streamPoll) { clearInterval(CS._streamPoll); CS._streamPoll = null; } };
+      stopStreamPoll();
+      const tailMsg = run.messages[run.messages.length - 1];
+      if (tailMsg && tailMsg.role === 'assistant' && tailMsg.streaming) {
+        const poll = async () => {
+          if (CS._streamPoll?.id !== id) { stopStreamPoll(); return; }
+          try {
+            const d = await CS.api.request(`/conversations/${encodeURIComponent(id)}/content`, { method: 'GET', timeout: 30000 });
+            const rows = Array.isArray(d.content) ? d.content : [];
+            const lastA = [...rows].reverse().find(r2 => r2.role === 'assistant' && (r2.streaming || r2.content || r2.blocks?.length));
+            const msg = run.messages[run.messages.length - 1];
+            if (!msg || msg.role !== 'assistant' || !msg.streaming) { stopStreamPoll(); CS.render(); return; }
+            if (lastA && lastA.streaming) {
+              const decoded = decodeMsg(lastA);
+              if (decoded.content !== msg.content || JSON.stringify(decoded.blocks) !== JSON.stringify(msg.blocks)) {
+                msg.content = decoded.content; msg.blocks = decoded.blocks;
+                if (CS.state.currentRunId === id) CS.render();
+              }
+              return;  // 仍在后台运行: 继续轮询
+            }
+            if (lastA) {
+              const decoded = decodeMsg(lastA);
+              msg.content = decoded.content; msg.blocks = decoded.blocks; msg.streaming = false;
+              if (decoded.tokens) { msg.tokens = decoded.tokens; msg.promptTokens = decoded.promptTokens; msg.elapsed = decoded.elapsed; }
+            } else msg.streaming = false;
+            stopStreamPoll();
+            CS.render();
+          } catch { /* 网络抖动: 下一轮继续 */ }
+        };
+        CS._streamPoll = { id, timer: setInterval(poll, 3000) };
+      }
       if (hadLocal) {
         // 同 id 旧 run 整体替换为服务端全量版; 用户消息自带的引用上下文
         // (refContext)只存在本地, 按消息序号原样保留
@@ -1174,6 +1222,8 @@
     // 分页加载未完成时不放行: 契约/压缩卡可能还在后页, 半份历史会让模型
     // 基于截断上下文接续
     if (CS.ui.loadingRunId === run.id) { CS.toast('会话内容仍在加载，稍候再发送。', 'error'); return; }
+    // 真实流式开始: 停掉刷新恢复用的存档轮询, 避免双源互写
+    if (CS._streamPoll) { clearInterval(CS._streamPoll); CS._streamPoll = null; }
     // 隐形续接(压缩完成后): 不插可见用户消息, 历史以压缩摘要卡结尾,
     // 服务端契约把摘要卡组装为 user 末条, 模型基于摘要直接开始下一轮
     if (!opts.hiddenContinue) run.messages.push({ role: 'user', content: text, datasetIds: [...datasetIds], at: new Date().toISOString() });
