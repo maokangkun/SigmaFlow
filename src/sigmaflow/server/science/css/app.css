@@ -157,7 +157,7 @@ html:has(.auth-page){scrollbar-gutter:auto}
 .user-block .message-meta-row{justify-content:flex-end}
 .agent-block .message-meta-row{justify-content:flex-start}
 .message-meta{display:inline-flex;align-items:center;font-size:11px}
-.message-actions{display:inline-flex;align-items:center}
+.danger-hover:hover{color:var(--red)}.message-actions{display:inline-flex;align-items:center}
 .message-actions .icon-btn{display:inline-flex;align-items:center;justify-content:center;height:18px;width:auto;padding:0 2px}
 
 

@@ -2056,6 +2056,17 @@
       if (!m) return;
       navigator.clipboard?.writeText(m.content).then(() => CS.toast('已复制到剪贴板。')).catch(() => CS.toast('复制失败。', 'error'));
     },
+    'delete-message': id => {
+      const run = CS.currentRun(); const idx = Number(id);
+      const m = run?.messages?.[idx];
+      if (!m || m.streaming) return;
+      if (!confirm('删除这条消息？删除会同步到服务端存档，影响所有设备上的该会话。')) return;
+      run.messages.splice(idx, 1);
+      CS.save();
+      CS.render();
+      syncConversation(run);
+      CS.toast('已删除该消息。');
+    },
     'edit-message': id => {
       const run = CS.currentRun(); const idx = Number(id);
       if (!run || !run.messages[idx]) return;
