@@ -146,7 +146,7 @@ html:has(.auth-page){scrollbar-gutter:auto}
 /* 修复: flex 列父级中 margin:auto 会让 .chat-layout 收缩为内容宽, 必须显式满宽 */
 .chat-page .chat-layout{width:100%;margin-left:auto;margin-right:auto}
 .chat-main-chat{width:100%;max-width:none}
-.chat-title-compact{padding-bottom:10px;margin-bottom:14px}
+.chat-title-compact{padding-bottom:10px;margin-bottom:14px;min-height:58px;align-items:center}
 .chat-title-compact h1{font-size:18px}
 .message-meta-row{display:flex;align-items:center;height:20px;gap:8px;opacity:.75;line-height:20px;margin-top:10px}
 .msg-block{display:flex;flex-direction:column}
