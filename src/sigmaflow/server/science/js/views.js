@@ -609,7 +609,8 @@
     } catch { pretty = String(text || ''); }
     const cap = 2600;
     const cut = pretty.length > cap;
-    return `<pre class="present-json">${e(pretty.slice(0, cap))}${cut ? '\n…' : ''}</pre><div class="present-preview-note small muted">${isJsonl ? 'JSONL' : 'JSON'} 预览${cut ? '（已截断）' : ''} · 点击"查看"查看完整内容</div>`;
+    const shown = pretty.slice(0, cap) + (cut ? '\n…' : '');
+    return `<pre class="code-view present-json">${CS.fsHighlight ? CS.fsHighlight(shown, 'json') : e(shown)}</pre><div class="present-preview-note small muted">${isJsonl ? 'JSONL' : 'JSON'} 预览${cut ? '（已截断）' : ''} · 点击"查看"查看完整内容</div>`;
   };
   V.presentBlock = (b, bi) => {
     const name = String(b.name || b.path || '');
