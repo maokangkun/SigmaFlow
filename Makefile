@@ -57,11 +57,13 @@ test-all: tests science-regression
 .PHONY: pre-push
 pre-push: format-check lint test-all
 
-# 安装 git 钩子(把跟踪的 scripts/git-hooks/ 链接进 .git/hooks/); 新克隆后跑一次。
+# 启用 git 钩子(仓库本地配置 core.hooksPath 指向跟踪的 scripts/git-hooks/;
+# 比逐钩子往 .git/hooks/ 放符号链接稳 —— 沙箱/容器对 .git 内部的写入可能不持久)。
+# 新克隆后跑一次; 钩子内容随仓库走, 改钩子无需重跑。
 .PHONY: hooks
 hooks:
-	ln -sf ../../scripts/git-hooks/pre-push .git/hooks/pre-push
-	@echo "pre-push 钩子已安装: push 前自动跑 make pre-push(format/lint/test-all/science-regression)"
+	git config core.hooksPath scripts/git-hooks
+	@echo "pre-push 钩子已启用: push 前自动跑 make pre-push(format/lint/test-all/science-regression)"
 
 .PHONY: coverage
 coverage:
