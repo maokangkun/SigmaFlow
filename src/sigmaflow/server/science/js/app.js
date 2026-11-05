@@ -187,6 +187,10 @@
   // present 富预览懒加载: 图片直显 / csv 表格 / json 摘要。
   // IntersectionObserver 只加载视口附近的卡片; 同一路径结果缓存, 重渲染秒填。
   CS._presentCache = new Map();
+  // 已渲染的预览 HTML 缓存: 流式期间的结构变化会整页重建 DOM, 异步填充
+  // 会在重渲染间隙闪现占位符、图片重挂载高度塌缩(滚动卡在图片消息)——
+  // 缓存命中时在渲染帧内同步回填, 用户看不到任何中间态
+  CS._presentHtml = new Map();
   CS._presentLoad = async el => {
     const path = el.dataset.path || '';
     const pid = el.dataset.pid || '';
@@ -209,10 +213,14 @@
       } else if (kind === 'json') {
         html = CS.jsonPreviewBlock(String(payload.content || ''), name, /jsonl/i.test(name));
       }
-      el.innerHTML = html || '<div class="present-preview-note small muted">暂无可预览内容。</div>';
+      html = html || '<div class="present-preview-note small muted">暂无可预览内容。</div>';
+      CS._presentHtml.set(key, html);
+      el.innerHTML = html;
       el.dataset.state = 'done';
     } catch (err) {
-      el.innerHTML = `<div class="present-preview-note small muted">预览加载失败：${e(CS.api.friendlyError ? CS.api.friendlyError(err) : String((err && err.message) || err))}</div>`;
+      const msg = `<div class="present-preview-note small muted">预览加载失败：${e(CS.api.friendlyError ? CS.api.friendlyError(err) : String((err && err.message) || err))}</div>`;
+      CS._presentHtml.set(key, msg);
+      el.innerHTML = msg;
       el.dataset.state = 'error';
     }
   };
@@ -286,8 +294,14 @@
     if (CS.ui.route === 'cell') CS.mountCellViewer();
     // 工具设置的参数编辑框需要按内容自适应高度, 在每次渲染后同步
     CS.sizeSchemaEditors();
-    // present 富预览: 扫描新出现的占位区交给 IO 观察者
-    if (CS._presentIO) document.querySelectorAll('.present-preview[data-state="idle"]').forEach(el => CS._presentIO.observe(el));
+    // present 富预览: 缓存命中的同步回填(渲染帧内, 零闪烁); 未加载的交给 IO
+    if (CS._presentIO) document.querySelectorAll('.present-preview[data-state="idle"]').forEach(el => {
+      const key = (el.dataset.pid || '') + '|' + (el.dataset.path || '');
+      if (CS._presentHtml && CS._presentHtml.has(key)) {
+        el.innerHTML = CS._presentHtml.get(key);
+        el.dataset.state = 'done';
+      } else CS._presentIO.observe(el);
+    });
     const el = document.getElementById('sys-stats');
     if (el && _sysStatsHtml) el.innerHTML = _sysStatsHtml;
     if (hadConv) { const fresh = document.querySelector('.conversation'); if (fresh) fresh.scrollTop = savedTop; }
