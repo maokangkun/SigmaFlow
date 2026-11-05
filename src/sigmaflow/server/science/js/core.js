@@ -1,6 +1,10 @@
 /* Shared state and safe local utilities. */
 (() => {
   'use strict';
+  // 单页应用路由: 刷新时禁止浏览器恢复上次滚动位置(会话页头部会先落在视口外
+  // 上方, 渲染完再跳回, 观感很差), 一律从顶部开始, 由路由切换统一 scrollTo
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+  window.scrollTo(0, 0);
   const key = 'sigmaflow-science.workspace.v1';
   const clone = x => JSON.parse(JSON.stringify(x));
   CS.escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
