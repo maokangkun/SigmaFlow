@@ -5302,8 +5302,11 @@ def _archive_row_from_journal(state, model_name: str, streaming: bool = True):
                     )
                     open_tools.append(len(blocks) - 1)
                 else:
+                    # FIFO 配对: call 事件是整批广播、结果按完成序回填, 而
+                    # 工具是顺序执行的——结果属于最早未收尾的同名调用。
+                    # 取最新会把结果错位挂到后发的调用上(参数/结果交叉)。
                     tgt = None
-                    for i in reversed(open_tools):
+                    for i in open_tools:
                         if blocks[i].get("n") == name:
                             tgt = i
                             break

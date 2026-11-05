@@ -118,11 +118,17 @@ def _bash_timeout(timeout) -> int:
     return max(5, min(BASH_TIMEOUT_MAX, t))
 
 
+# 重定向写入设备文件: > /dev/sda 一类会破坏块设备。/dev/null 与标准流
+# 是最常用的无害重定向目标, 必须放行(此前 "> /dev/" 子串一概拦下,
+# `cmd > /dev/null` 这类常规写法全部误伤)。
+_DANGEROUS_DEV_RE = re.compile(r">+\s*/dev/(?!null\b|stdout\b|stderr\b|fd/)")
+
+
 def run_bash(command: str, timeout=None) -> str:
     if command == "":
         return "Error: command cannot be empty"
-    dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
-    if any(d in command for d in dangerous):
+    dangerous = ["rm -rf /", "sudo", "shutdown", "reboot"]
+    if any(d in command for d in dangerous) or _DANGEROUS_DEV_RE.search(command):
         return "Error: Dangerous command blocked"
     _wait = _bash_timeout(timeout)
     proc = subprocess.Popen(

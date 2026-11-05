@@ -1362,7 +1362,8 @@
           const ab = [...reply.blocks].reverse().find(b => b.type === 'ask' && !b.answered);
           if (ab) { ab.answered = true; if (!ab.result) ab.result = t.result; ab.end = Date.now(); return; }
         }
-        const ent = [...reply.blocks].reverse().find(b => b.type === 'tool' && b.name === t.name && b.result == null);
+        // FIFO 配对: call 整批广播、工具顺序执行, 结果属于最早未收尾的同名调用
+        const ent = reply.blocks.find(b => b.type === 'tool' && b.name === t.name && b.result == null);
         if (ent) { ent.result = t.result; ent.isError = !!t.isError; if (typeof ent.at === 'number') ent.end = Date.now(); }
         else reply.blocks.push({ type: 'tool', name: t.name, result: t.result, isError: !!t.isError, at: Date.now() });
       }
