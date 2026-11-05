@@ -64,9 +64,14 @@ def test_conversation_system_or_bind_prefers_stored(tmp_path):
     }
     import types as _t
 
-    fake = _t.SimpleNamespace(project_store=store, model_store=_t.SimpleNamespace(models={}))
+    fake = _t.SimpleNamespace(
+        project_store=store, model_store=_t.SimpleNamespace(models={})
+    )
     # 有属性用存量
-    assert ScienceAPI._conversation_system_or_bind(fake, store.conversations["r2"]) == "REAL PROMPT"
+    assert (
+        ScienceAPI._conversation_system_or_bind(fake, store.conversations["r2"])
+        == "REAL PROMPT"
+    )
     # 无属性: 惰性组装(非空字符串)而非空
     got = ScienceAPI._conversation_system_or_bind(fake, store.conversations["r1"])
     assert isinstance(got, str) and len(got) > 40
@@ -92,7 +97,9 @@ def test_stored_prompt_with_literal_workdir_is_rebound(tmp_path):
     }
     import types as _t
 
-    fake = _t.SimpleNamespace(project_store=store, model_store=_t.SimpleNamespace(models={}))
+    fake = _t.SimpleNamespace(
+        project_store=store, model_store=_t.SimpleNamespace(models={})
+    )
     got = ScienceAPI._conversation_system_or_bind(fake, store.conversations["r1"])
     assert "`{workdir}`" not in got
 
@@ -100,9 +107,7 @@ def test_stored_prompt_with_literal_workdir_is_rebound(tmp_path):
 def test_model_caption_text_model(monkeypatch):
     import sigmaflow.server.science as sci
 
-    monkeypatch.setattr(
-        sci, "_litellm_lookup", lambda name: None
-    )
+    monkeypatch.setattr(sci, "_litellm_lookup", lambda name: None)
     cap = _bind_main_system(None, False, "", "deepseek-v4.1-flash", 1048576)
     assert "# Current model" in cap
     assert "`deepseek-v4.1-flash`, a text-only model" in cap
@@ -112,11 +117,11 @@ def test_model_caption_text_model(monkeypatch):
 def test_model_caption_multimodal(monkeypatch):
     import sigmaflow.server.science as sci
 
-    monkeypatch.setattr(
-        sci, "_litellm_lookup", lambda name: {"supports_vision": True}
-    )
+    monkeypatch.setattr(sci, "_litellm_lookup", lambda name: {"supports_vision": True})
     # 窗口查询桩: 避免 litellm 冷导入(重模块, 拖慢测试)
-    monkeypatch.setattr(sci, "_model_context_window", lambda name, override=None: 200000)
+    monkeypatch.setattr(
+        sci, "_model_context_window", lambda name, override=None: 200000
+    )
     cap = _bind_main_system(None, False, "", "vision-x", None)
     assert "multimodal model" in cap
     assert "200,000" in cap
@@ -177,7 +182,11 @@ def test_conversation_page_rows_byte_cap():
         assert pages <= 40
 
     # 巨条(单条>上限)至少放行 1 条, 下一页从其后继续
-    big = {"role": "assistant", "reasoning": "z" * 2_500_000, "content": "c" * 2_500_000}
+    big = {
+        "role": "assistant",
+        "reasoning": "z" * 2_500_000,
+        "content": "c" * 2_500_000,
+    }
     p1 = _conversation_page_rows([big, {"role": "user", "content": "ok"}], 0, 30)
     p2 = _conversation_page_rows([big, {"role": "user", "content": "ok"}], 1, 30)
     assert len(p1) == 1 and len(p2) == 1 and p2[0]["content"] == "ok"

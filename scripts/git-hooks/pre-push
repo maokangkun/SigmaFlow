@@ -1,0 +1,21 @@
+#!/bin/sh
+# push 前门禁: 格式/静态检查 + 包级测试 + science 回归(含 dist 一致性)。
+# 由 `make hooks` 安装(symlink 进 .git/hooks/pre-push), 也可手动 `make pre-push`。
+# 沙箱/CI 等代理环境下 httpx 系测试需剥掉代理变量, 钩子里统一处理。
+echo "[pre-push] running gates: make pre-push"
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY 2>/dev/null || true
+
+# dist 一致性检查依赖压缩构建与提交产物逐字节一致: 没有 esbuild 的环境
+# 会静默产出未压缩 dist, 然后以一墙 diff 失败 —— 直接快速失败并说明原因。
+if [ -z "$ESBUILD_BIN" ] && [ ! -x node_modules/.bin/esbuild ] \
+   && [ ! -x /data/mkk/pi-web-deploy/node_modules/.bin/esbuild ]; then
+    echo "[pre-push] 缺少 esbuild: dist 门禁需要压缩构建与提交产物一致。" >&2
+    echo "[pre-push] 安装 esbuild(npm i -D esbuild)或设置 ESBUILD_BIN 后重试。" >&2
+    exit 1
+fi
+
+make pre-push || {
+    echo "[pre-push] 门禁未过, push 已拦截。修完(或 make pre-push 全绿)再推。" >&2
+    exit 1
+}
+echo "[pre-push] all green"

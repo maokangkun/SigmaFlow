@@ -31,7 +31,9 @@ def test_set_conversation_system_persists(tmp_path):
     assert store.set_conversation_system("run-x", "") is False
     # 变更时覆盖
     store.set_conversation_system("run-x", "You are SigmaFlow v2.")
-    assert store.conversations["run-x"]["systemPrompt"].startswith("You are SigmaFlow v2")
+    assert store.conversations["run-x"]["systemPrompt"].startswith(
+        "You are SigmaFlow v2"
+    )
 
 
 def test_system_prompt_survives_frontend_upsert(tmp_path):
@@ -41,10 +43,14 @@ def test_system_prompt_survives_frontend_upsert(tmp_path):
     store.set_conversation_system("run-x", "You are SigmaFlow.")
     # 前端整表归档(upsert 只更新自己认识的键)
     store.upsert_conversation(
-        ConversationIn(id="run-x", title="归档标题", content=[
-            {"role": "user", "content": "q", "at": 1},
-            {"role": "assistant", "content": "a", "at": 2},
-        ])
+        ConversationIn(
+            id="run-x",
+            title="归档标题",
+            content=[
+                {"role": "user", "content": "q", "at": 1},
+                {"role": "assistant", "content": "a", "at": 2},
+            ],
+        )
     )
     conv = store.conversations["run-x"]
     assert conv["title"] == "归档标题"

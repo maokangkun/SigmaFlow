@@ -1,4 +1,5 @@
 """LLM 流式: think/content 分帧、客户端增量路径、节点→SSE 订阅全链转发。"""
+
 import asyncio
 from copy import deepcopy
 from types import SimpleNamespace
@@ -51,9 +52,7 @@ class _FakeCompletions:
 
 class _FakeClient:
     def __init__(self, **kargs):
-        self.chat = SimpleNamespace(
-            completions=_FakeCompletions(kargs["_chunks"])
-        )
+        self.chat = SimpleNamespace(completions=_FakeCompletions(kargs["_chunks"]))
 
 
 def chunk(delta, usage=None):
@@ -80,7 +79,13 @@ FAKE_CHUNKS = [
 
 CONF = {
     "CONFIG": {"llm": "openai", "model": "fake-model"},
-        "talk": {"prompt": "hi {x}", "inp": ["x"], "out": "reply", "return_json": False, "next": []},
+    "talk": {
+        "prompt": "hi {x}",
+        "inp": ["x"],
+        "out": "reply",
+        "return_json": False,
+        "next": [],
+    },
 }
 
 
@@ -174,8 +179,8 @@ def test_llm_set_thinking_touches_bound_and_mirror_conf():
     llm = LLM(base)
     assert llm.completion.keywords["conf"] is base  # partial 绑原 dict
     llm.set_thinking(False)
-    assert base["no_think"] is True          # partial 绑定的 conf 被改
-    assert llm.conf["no_think"] is True      # deepcopy 镜像同步
+    assert base["no_think"] is True  # partial 绑定的 conf 被改
+    assert llm.conf["no_think"] is True  # deepcopy 镜像同步
     llm.set_thinking(True)
     assert base["no_think"] is False
 
@@ -204,12 +209,8 @@ def test_concurrent_llm_blocks_route_frames_independently():
     shared = SharedLLM()
     from sigmaflow.blocks.block_llm import LLMBlock
 
-    block_a = LLMBlock(
-        "a", prompt=lambda *x: x[0], return_json=False, llm=shared
-    )
-    block_b = LLMBlock(
-        "b", prompt=lambda *x: x[0], return_json=False, llm=shared
-    )
+    block_a = LLMBlock("a", prompt=lambda *x: x[0], return_json=False, llm=shared)
+    block_b = LLMBlock("b", prompt=lambda *x: x[0], return_json=False, llm=shared)
     frames_a, frames_b = [], []
     block_a.set_stream(lambda k, d: frames_a.append((k, d)))
     block_b.set_stream(lambda k, d: frames_b.append((k, d)))

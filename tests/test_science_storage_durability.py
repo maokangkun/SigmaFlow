@@ -16,7 +16,6 @@ from sigmaflow.server.science import ScienceProjectStore
 
 
 def _proj_store(tmp_path):
-
     store = ScienceProjectStore(storage_dir=str(tmp_path / "s"))
     store.conversations["run-1"] = {
         "id": "run-1",
@@ -92,9 +91,10 @@ def test_leftover_tmp_poisons_nothing(tmp_path):
     store2 = ScienceProjectStore(storage_dir=str(tmp_path / "s"))
     assert "run-1" in store2.conversations  # tmp 不参与 load
     store2._save()
-    assert "run-1" in json.loads(
-        (tmp_path / "s" / "projects.json").read_text()
-    )["conversations"]
+    assert (
+        "run-1"
+        in json.loads((tmp_path / "s" / "projects.json").read_text())["conversations"]
+    )
 
 
 def test_conversation_replied_semantics():
@@ -102,15 +102,21 @@ def test_conversation_replied_semantics():
 
     class _Store:
         def __init__(self, content=None, convs=None):
-            self.conversations = convs if convs is not None else {
-                "r": {"id": "r", "content": content if content is not None else []}
-            }
+            self.conversations = (
+                convs
+                if convs is not None
+                else {
+                    "r": {"id": "r", "content": content if content is not None else []}
+                }
+            )
 
     # 空档/无内容: 本轮未归档
     assert _conversation_replied(_Store(), "r") is False
     assert _conversation_replied(_Store(), "missing") is False
     # 尾部是 user(send 已落): 未归档
-    assert _conversation_replied(_Store([{"role": "user", "content": "q"}]), "r") is False
+    assert (
+        _conversation_replied(_Store([{"role": "user", "content": "q"}]), "r") is False
+    )
     # user 后面有了 assistant: 已归档
     assert (
         _conversation_replied(
@@ -141,7 +147,13 @@ def test_conversation_replied_semantics():
     # 非法行容错: 倒序扫跳过垃圾行
     assert (
         _conversation_replied(
-            _Store([{"role": "user", "content": "q"}, "garbage", {"role": "assistant", "content": "a"}]),
+            _Store(
+                [
+                    {"role": "user", "content": "q"},
+                    "garbage",
+                    {"role": "assistant", "content": "a"},
+                ]
+            ),
             "r",
         )
         is True
