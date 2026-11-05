@@ -24,7 +24,11 @@
       // 刷新前正停在该会话的场景(currentRunId===id)也要触发; 生成中跳过,
       // 以免吃掉流式中的消息
       const streaming = run?.messages?.some(m => m.streaming);
-      const needsSync = !streaming && !refreshedRuns.has(id);
+      // 看起来陈旧的本地副本(重启残留/暂停态/服务端流式标记)每次打开都强制
+      // 回源同步, 不吃 refreshedRuns 的一次性豁免——否则一次静默失败(如瞬时
+      // 断网/鉴码过期)会让陈旧版本陪伴整个会话周期
+      const staleLocal = !!run && (run.reloaded || ['running', 'paused', 'connecting', 'awaiting'].includes(run.status) || (run.messages || []).some(m => m.serverStreaming));
+      const needsSync = (!streaming && !refreshedRuns.has(id)) || (staleLocal && !streaming);
       if (CS.state.currentRunId !== id || needsSync) {
         CS.state.currentRunId = id;
         if (run?.projectId) CS.state.projectId = run.projectId;
@@ -695,7 +699,11 @@
         CS.save();
         CS.render();
       }
-    } catch (error) { if (!hadLocal) CS.toast('加载会话内容失败：' + CS.api.friendlyError(error), 'error'); }
+    } catch (error) {
+      // 失败要可见并允许下次重试: 本地副本继续展示, 但不锁死回源同步
+      refreshedRuns.delete(id);
+      CS.toast('会话同步失败，当前显示本地缓存版本：' + CS.api.friendlyError(error), 'error');
+    }
     finally { if (CS.ui.loadingRunId === id) { CS.ui.loadingRunId = null; CS.render(); } }
   };
     const startChat = prompt => {
