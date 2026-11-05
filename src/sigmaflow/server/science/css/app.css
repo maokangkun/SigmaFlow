@@ -828,7 +828,18 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .fs-ctx-menu{position:fixed;z-index:60;min-width:172px;display:flex;flex-direction:column;padding:5px;border-radius:10px;background:#fff;border:1px solid #d9dde5;box-shadow:0 12px 34px rgba(20,28,45,.16)}
 
 /* present 富媒介卡片: 模型在对话中主动呈现的文件 */
-.present-card{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #d9dde5;border-radius:10px;background:linear-gradient(135deg,#f4f7fb,#eef3f9);cursor:pointer;margin:8px 0}
+.present-block{border:1px solid #d9dde5;border-radius:10px;background:linear-gradient(135deg,#f4f7fb,#eef3f9);margin:8px 0;overflow:hidden}
+.present-head{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer}
+.present-preview{border-top:1px solid #dfe3ea;background:#fff;cursor:default}
+.present-preview img.present-img{display:block;max-width:100%;max-height:420px;margin:0 auto}
+.present-caption{padding:8px 12px;font-size:10.5px;color:var(--muted);border-top:1px dashed var(--line-soft);line-height:1.75}
+.present-table-wrap{max-height:320px;overflow:auto}
+.present-table{border-collapse:collapse;font-size:10.5px;font-family:var(--mono);width:100%}
+.present-table th{position:sticky;top:0;background:var(--surface);text-align:left;padding:5px 9px;border-bottom:1px solid var(--line);white-space:nowrap}
+.present-table td{padding:4px 9px;border-bottom:1px solid var(--line-soft);white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis}
+.present-table tr.present-table-gap td{color:var(--faint);text-align:center;font-size:10px}
+.present-json{margin:0;padding:10px 12px;font-family:var(--mono);font-size:10.5px;line-height:1.6;max-height:320px;overflow:auto;color:var(--ink);white-space:pre}
+.present-preview-note{padding:6px 12px;color:var(--faint)}
 .present-card:hover{border-color:var(--accent);box-shadow:0 3px 14px rgba(20,28,45,.08)}
 .present-ic{flex-shrink:0;width:34px;height:34px;border-radius:8px;background:#fff;border:1px solid #dfe3ea;display:flex;align-items:center;justify-content:center;color:var(--accent)}
 .present-body{flex:1;min-width:0;overflow:hidden}

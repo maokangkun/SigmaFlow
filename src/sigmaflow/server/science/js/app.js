@@ -184,6 +184,46 @@
     } catch { /* 后端不可达时保持现状, 下轮再试 */ }
   };
   setInterval(() => { if (document.getElementById('sys-stats')) updateSysStats(); }, 3000);
+  // present 富预览懒加载: 图片直显 / csv 表格 / json 摘要。
+  // IntersectionObserver 只加载视口附近的卡片; 同一路径结果缓存, 重渲染秒填。
+  CS._presentCache = new Map();
+  CS._presentLoad = async el => {
+    const path = el.dataset.path || '';
+    const pid = el.dataset.pid || '';
+    const kind = el.dataset.kind || '';
+    const name = el.dataset.name || '';
+    const key = pid + '|' + path;
+    el.dataset.state = 'loading';
+    try {
+      let payload = CS._presentCache.get(key);
+      if (!payload) {
+        payload = await CS.api.request(`/fs/file?path=${encodeURIComponent(path)}${pid ? '&projectId=' + encodeURIComponent(pid) : ''}`, { method: 'GET', timeout: 30000 });
+        CS._presentCache.set(key, payload);
+      }
+      if (el.dataset.state !== 'loading') return;  // 重渲染已替换节点
+      let html = '';
+      if (kind === 'image') {
+        html = payload.dataUrl ? `<img class="present-img" src="${payload.dataUrl}" alt="${e(name)}">` : `<div class="present-preview-note small muted">${e(payload.note || '该图片无法内联预览，点击"查看"。')}</div>`;
+      } else if (kind === 'table') {
+        html = CS.csvPreviewTable(String(payload.content || ''), name);
+      } else if (kind === 'json') {
+        html = CS.jsonPreviewBlock(String(payload.content || ''), name, /jsonl/i.test(name));
+      }
+      el.innerHTML = html || '<div class="present-preview-note small muted">暂无可预览内容。</div>';
+      el.dataset.state = 'done';
+    } catch (err) {
+      el.innerHTML = `<div class="present-preview-note small muted">预览加载失败：${e(CS.api.friendlyError ? CS.api.friendlyError(err) : String((err && err.message) || err))}</div>`;
+      el.dataset.state = 'error';
+    }
+  };
+  CS._presentIO = new IntersectionObserver(entries => {
+    for (const en of entries) if (en.isIntersecting) { CS._presentIO.unobserve(en.target); CS._presentLoad(en.target); }
+  }, { rootMargin: '260px' });
+  // 表格/JSON 预览区允许选中文本, 点击不再冒泡触发整卡弹窗(图片点击仍进弹窗)
+  document.addEventListener('click', ev => {
+    const pv = ev.target && ev.target.closest ? ev.target.closest('.present-preview') : null;
+    if (pv && pv.dataset.kind !== 'image') ev.stopPropagation();
+  }, true);
   // 轨迹热力图: 纯竖向滚轮转为横向滚动(容器只横向溢出; 触控板自带
   // 横向增量时走原生行为)
   document.addEventListener('wheel', e => {
@@ -246,6 +286,8 @@
     if (CS.ui.route === 'cell') CS.mountCellViewer();
     // 工具设置的参数编辑框需要按内容自适应高度, 在每次渲染后同步
     CS.sizeSchemaEditors();
+    // present 富预览: 扫描新出现的占位区交给 IO 观察者
+    if (CS._presentIO) document.querySelectorAll('.present-preview[data-state="idle"]').forEach(el => CS._presentIO.observe(el));
     const el = document.getElementById('sys-stats');
     if (el && _sysStatsHtml) el.innerHTML = _sysStatsHtml;
     if (hadConv) { const fresh = document.querySelector('.conversation'); if (fresh) fresh.scrollTop = savedTop; }

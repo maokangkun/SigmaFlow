@@ -571,6 +571,61 @@
     <div id="caseBox" onclick="if(event.target===this)closeCaseSelect()"><div id="caseCard"><h4>📋 病例挑战</h4><div class="sub">22 个 scripted 病例关卡（16 基础 + 6 感染挑战）——初始化病理状态、限时达目标、自动判定与评级。治疗手段即日常界面（给药/除颤/通气/补液…）。胜利解锁下一病例，进度存 localStorage。</div><div id="caseGrid"></div></div></div>
     <div id="caseEndBox"><div id="caseEndCard"></div></div>
   </div></section>`;
+  // present 富预览: 按扩展名分派展示形态
+  //   图片(png/jpg/webp/gif/svg) → 页面内直显, legend(备注)作为图注在下方
+  //   csv/tsv → 表格(表头 + 首 8 行 + 末 4 行, 中间省略)
+  //   json/jsonl → 缩进摘要(截断保护)
+  // 其余类型维持原卡片。数据由 app.js 的 IO 懒加载器填充(.present-preview)。
+  CS.csvPreviewTable = (text, name) => {
+    const tsv = /\.tsv$/i.test(name || '');
+    const lines = String(text || '').split(/\r?\n/).filter(l => l.length);
+    if (!lines.length) return '<div class="present-preview-note small muted">空文件。</div>';
+    const sep = tsv ? '\t' : (lines[0].includes('\t') && !lines[0].includes(',') ? '\t' : ',');
+    const all = lines.map(l => l.split(sep));
+    const head = all[0] || [];
+    const body = all.slice(1);
+    const FIRST = 8, LAST = 4;
+    const cell = v => `<td>${e(String(v == null ? '' : v).slice(0, 80))}</td>`;
+    let rowsHtml = body.slice(0, FIRST).map(r => '<tr>' + head.map((_, i) => cell(r[i])).join('') + '</tr>').join('');
+    if (body.length > FIRST + LAST) {
+      rowsHtml += `<tr class="present-table-gap"><td colspan="${head.length || 1}">… 共 ${CS.num(body.length)} 行数据 · 中间行省略 …</td></tr>`;
+      rowsHtml += body.slice(-LAST).map(r => '<tr>' + head.map((_, i) => cell(r[i])).join('') + '</tr>').join('');
+    } else {
+      rowsHtml = body.map(r => '<tr>' + head.map((_, i) => cell(r[i])).join('') + '</tr>').join('');
+    }
+    const thead = `<thead><tr>${head.map(h2 => `<th>${e(String(h2).slice(0, 60))}</th>`).join('')}</tr></thead>`;
+    return `<div class="present-table-wrap"><table class="present-table">${thead}<tbody>${rowsHtml}</tbody></table></div><div class="present-preview-note small muted">${tsv ? 'TSV' : 'CSV'} 预览 · 共 ${CS.num(body.length)} 行 · 点击"查看"查看全文</div>`;
+  };
+  CS.jsonPreviewBlock = (text, name, isJsonl) => {
+    let pretty = '';
+    try {
+      if (isJsonl) {
+        const lines = String(text || '').split(/\r?\n/).filter(l => l.trim());
+        const shown = lines.slice(0, 6).map(l => { try { return JSON.stringify(JSON.parse(l)); } catch { return l; } });
+        pretty = shown.join('\n') + (lines.length > 6 ? `\n… 共 ${lines.length} 行` : '');
+      } else {
+        pretty = JSON.stringify(JSON.parse(String(text || '')), null, 2);
+      }
+    } catch { pretty = String(text || ''); }
+    const cap = 2600;
+    const cut = pretty.length > cap;
+    return `<pre class="present-json">${e(pretty.slice(0, cap))}${cut ? '\n…' : ''}</pre><div class="present-preview-note small muted">${isJsonl ? 'JSONL' : 'JSON'} 预览${cut ? '（已截断）' : ''} · 点击"查看"查看完整内容</div>`;
+  };
+  V.presentBlock = (b, bi) => {
+    const name = String(b.name || b.path || '');
+    const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+    const isImg = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext);
+    const isCsv = ['csv', 'tsv'].includes(ext);
+    const isJson = ['json'].includes(ext);
+    const isJsonl = ['jsonl', 'ndjson'].includes(ext);
+    const kind = isImg ? 'image' : isCsv ? 'table' : (isJson || isJsonl) ? 'json' : '';
+    const kb = b.klass && b.klass !== 'other' ? e(b.klass) : (ext ? e(ext.toUpperCase()) : '');
+    // 图片的 legend(备注)移到图片下方作图注, 不再挤在标题行
+    const sub = `${kb}${b.size ? ' · ' + CS.formatBytes(b.size) : ''}${(!isImg && b.note) ? ' · ' + e(b.note) : ''}`;
+    const preview = kind ? `<div class="present-preview" data-state="idle" data-kind="${kind}" data-path="${e(b.path || '')}" data-pid="${e(b.pid || '')}" data-name="${e(name)}"><div class="present-preview-loading small muted">正在加载预览…</div></div>` : '';
+    const caption = isImg && b.note ? `<div class="present-caption small muted">${e(b.note)}</div>` : '';
+    return `<div class="present-block" data-bi="${bi}" data-action="open-present" data-path="${e(b.path)}" data-klass="${e(b.klass || 'other')}" data-name="${e(name)}" data-title="${e(b.title || '')}" data-size="${e(String(b.size || 0))}" data-note="${e(b.note || '')}" data-bpid="${e(b.pid || '')}" role="button" tabindex="0" title="点击查看完整内容"><div class="present-head"><div class="present-ic">${i('present', '', 17)}</div><div class="present-body"><div class="present-name">${e(b.title || b.name || b.path)}</div><div class="present-sub small muted">${sub}</div></div><span class="present-open small muted">查看</span></div>${preview}${caption}</div>`;
+  };
   V.runTrack = () => {
     const run = CS.currentRun();
     const all = run?.messages || [];
@@ -1010,7 +1065,7 @@ V.ctxRing = () => {
                   const k = b.klass || 'other';
                   const kicon = 'present';  // present 卡专属图标: 显示器+折线(类型由名称/扩展名表达)
                   const kb = { image: '图片', '3d': '3D 模型', video: '视频', audio: '音频', pdf: 'PDF', html: 'HTML', text: '文本', archive: '压缩包', other: '文件' }[k] || '文件';
-                  return `<div class="present-card" data-bi="${bi}" data-action="open-present" data-path="${e(b.path)}" data-klass="${e(b.klass || 'other')}" data-name="${e(b.name || '')}" data-title="${e(b.title || '')}" data-size="${e(String(b.size || 0))}" data-note="${e(b.note || '')}" data-bpid="${e(b.pid || '')}" role="button" tabindex="0" title="点击预览"><div class="present-ic">${i(kicon, '', 17)}</div><div class="present-body"><div class="present-name">${e(b.title || b.name || b.path)}</div><div class="present-sub small muted">${kb}${b.size ? ' · ' + CS.formatBytes(b.size) : ''}${b.note ? ' · ' + e(b.note) : ''}</div></div><span class="present-open small muted">查看</span></div>`;
+                  return V.presentBlock(b, bi);
                 }
                 if (b.type === 'deliverables') {
                   // 本轮修改文件行(dsh deliverables 思路): 来源只信 edit/write 参数
