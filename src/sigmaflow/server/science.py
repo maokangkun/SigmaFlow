@@ -3825,57 +3825,74 @@ class ScienceAPI:
 
                         # to_thread 在默认执行器中运行 work, 不阻塞事件循环
                         worker = asyncio.create_task(asyncio.to_thread(work))
-                        await self._chat_pump(ws, request_id, state, -1)
-                        try:
-                            await worker
-                        except BaseException:
-                            # work 抛错(如重试耗尽的网关错误)同样走 finally 落终态:
-                            # 跳过会让存档尾行永远停在 streaming 残影
-                            pass
-                        finally:
-                            # 终态落库: 完整 journal 合成终态行(streaming=False),
-                            # 原位替换流式快照行——刷新过页面的用户再次拉存档
-                            # 即得到最终完整内容(正常完成/停止/出错都适用)
+
+                        async def _finalize_run() -> None:
+                            """worker 终止后立即收尾(终态行/状态收敛/注册注销)。
+
+                            不等 pump: pump 可能长期阻塞在向已死连接的 send 上
+                            (TCP 重传超时以十分钟计), 收尾被它拖住期间注册表残留
+                            已结束的任务, 停机清扫会给早已完成的会话误写
+                            "服务重启中断"行(run-dcb61010 事故)。
+                            """
                             try:
-                                row = _archive_row_from_journal(
-                                    state, model_name, streaming=False
-                                )
-                                if row:
-                                    self.project_store.archive_streaming_row(
-                                        str(data.get("runId") or ""), row
-                                    )
-                            except Exception:
+                                await worker
+                            except BaseException:
+                                # work 抛错(如重试耗尽的网关错误)同样走收尾:
+                                # 跳过会让存档尾行永远停在 streaming 残影
                                 pass
-                            chat_stops.pop(request_id, None)
-                            # 活跃注销: 正常终态投递后停机不再写中断行
-                            self._active_runs.pop(state.get("registry_key"), None)
-                            # 会话运行状态收敛为 done(正常完成/停止/出错都是终态);
-                            # 同一会话还有另一个在途请求时保留 running
-                            _still = any(
-                                k[0] == _current_user()
-                                and (rec or {}).get("runId") == _run_id
-                                for k, rec in self._active_runs.items()
-                            )
-                            if not _still:
-                                self.project_store.set_conversation_status(
-                                    _run_id, "done"
-                                )
-                            # 流结束(含停止后的收尾)时取消该请求残留的未答 ask
-                            for ask_id in chat_asks.pop(request_id, ()) or ():
+                            finally:
+                                # 终态落库: 完整 journal 合成终态行(streaming=False),
+                                # 原位替换流式快照行——刷新过页面的用户再次拉存档
+                                # 即得到最终完整内容(正常完成/停止/出错都适用)
                                 try:
-                                    _agent_tools_module().ASK.cancel(ask_id)
+                                    row = _archive_row_from_journal(
+                                        state, model_name, streaming=False
+                                    )
+                                    if row:
+                                        self.project_store.archive_streaming_row(
+                                            str(data.get("runId") or ""), row
+                                        )
                                 except Exception:
                                     pass
-                            if not state["delivered"]:
-                                # 断线孤儿: 任务已在后台跑完但终态未送出。
-                                # journal 无期限保留, 前端续播消费即删; 仅以
-                                # 容量上限 LRU 淘汰防长期运行泄漏, 被淘汰的
-                                # 极端场景仍有服务端兑底归档与存档合并兜底。
-                                self._chat_journals[state.get("registry_key")] = state
-                                while len(self._chat_journals) > _CHAT_JOURNAL_MAX:
-                                    self._chat_journals.pop(
-                                        next(iter(self._chat_journals)), None
+                                chat_stops.pop(request_id, None)
+                                # 活跃注销: 正常终态投递后停机不再写中断行
+                                self._active_runs.pop(state.get("registry_key"), None)
+                                # 会话运行状态收敛为 done(正常完成/停止/出错都是终态);
+                                # 同一会话还有另一个在途请求时保留 running
+                                _still = any(
+                                    k[0] == _current_user()
+                                    and (rec or {}).get("runId") == _run_id
+                                    for k, rec in self._active_runs.items()
+                                )
+                                if not _still:
+                                    self.project_store.set_conversation_status(
+                                        _run_id, "done"
                                     )
+                                # 流结束(含停止后的收尾)时取消该请求残留的未答 ask
+                                for ask_id in chat_asks.pop(request_id, ()) or ():
+                                    try:
+                                        _agent_tools_module().ASK.cancel(ask_id)
+                                    except Exception:
+                                        pass
+                                if not state["delivered"]:
+                                    # 断线孤儿: 任务已在后台跑完但终态未送出。
+                                    # journal 无期限保留, 前端续播消费即删; 仅以
+                                    # 容量上限 LRU 淘汰防长期运行泄漏, 被淘汰的
+                                    # 极端场景仍有服务端兑底归档与存档合并兜底。
+                                    self._chat_journals[state.get("registry_key")] = (
+                                        state
+                                    )
+                                    while len(self._chat_journals) > _CHAT_JOURNAL_MAX:
+                                        self._chat_journals.pop(
+                                            next(iter(self._chat_journals)), None
+                                        )
+
+                        finalizer = asyncio.create_task(_finalize_run())
+                        chat_tasks.add(finalizer)
+                        finalizer.add_done_callback(chat_tasks.discard)
+                        await self._chat_pump(ws, request_id, state, -1)
+                        # pump 返回(连接关闭/令牌抢占)后即结束: 终态收尾已由
+                        # _finalize_run 承担, 不再依赖本协程等待 worker
 
                     # 流式任务与请求解耦: handle 立即返回, 事件异步推送
                     # 停止通过 chat_stops 轮询生效, 不强杀工作线程
