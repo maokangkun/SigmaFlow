@@ -99,7 +99,9 @@ class Graph:
             if node := Node.create(name, conf, self):
                 self.node_manager[name] = node
             else:
-                unknown = sorted(set(conf) - {"name", "out", "next", "inp", "item", "format"})
+                unknown = sorted(
+                    set(conf) - {"name", "out", "next", "inp", "item", "format"}
+                )
                 log.error(
                     f"Unable to identify node type: [{name}] {conf}  — node type is detected by its trigger key: "
                     "code / prompt / api / sql / rag_param / mcp / file / file_dir / llm / "

@@ -928,9 +928,7 @@ class Agent:
                             # 网关明确给了 retry_after(如集群 RPM 限流 429, 常见 40~60s)时
                             # 尊重之: 按自己的短退避只会连吃 429 烧光重试次数。
                             _backoff = min(300, 5 * 3 ** (tried - 1))
-                            _backoff = max(
-                                _backoff, _retry_after_seconds(str(e))
-                            )
+                            _backoff = max(_backoff, _retry_after_seconds(str(e)))
                             # 只对还会重试的失败发通知; UI 显示第 N 次失败、原因与
                             # 等待倒计时(wait 为本次退避秒数)
                             if self.on_retry is not None:

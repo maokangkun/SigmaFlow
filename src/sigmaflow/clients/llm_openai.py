@@ -61,9 +61,11 @@ async def completion(item: str | list[str], conf={}, stream_cb=None):
 
     client = AsyncOpenAI(**client_param)
     if stream_cb is None:
-        chat_completion = await client.chat.completions.create(
-            extra_body=extra_body, **chat_param
-        ) if extra_body else await client.chat.completions.create(**chat_param)
+        chat_completion = (
+            await client.chat.completions.create(extra_body=extra_body, **chat_param)
+            if extra_body
+            else await client.chat.completions.create(**chat_param)
+        )
     else:
         # 流式通道: 每个增量立即回调(node 层转发给 /run 的 SSE 订阅)。
         # reasoning_content → type=think; content 里的 think 标签段也切为 think 帧,

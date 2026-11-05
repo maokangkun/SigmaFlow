@@ -55,9 +55,7 @@ class LLMBlock(Block):
     async def _call(self, *inp):
         text = self.prompt(*inp)
         self.log("prompt", text)
-        resp, usage = await self.llm(
-            text, stream_cb=getattr(self, "_stream_cb", None)
-        )
+        resp, usage = await self.llm(text, stream_cb=getattr(self, "_stream_cb", None))
         self.log("resp", resp)
         if self.return_json:
             out = extract_json(resp)

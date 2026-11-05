@@ -3617,10 +3617,7 @@ class ScienceAPI:
                                 _emit("tool", ev)
                                 # 工具收尾(带结果)强制落一次快照: 工具块是刷新
                                 # 恢复观感的关键节点, 不等 3s 节流窗口
-                                if (
-                                    isinstance(ev, dict)
-                                    and ev.get("kind") == "result"
-                                ):
+                                if isinstance(ev, dict) and ev.get("kind") == "result":
                                     _partial_archive(force=True)
 
                             _agent_info_holder = {"info": None}
@@ -3683,8 +3680,8 @@ class ScienceAPI:
                                 # 作为正文流出、终态走 done; 上游接口连续失败是真错误,
                                 # 完整说明(含原始错误与接续指引)必须以红错块呈现,
                                 # 混进正文流会让失败看起来像正常回复
-                                _budget_cut = (
-                                    "轮次上限" in str(_agent_info.get("error") or "")
+                                _budget_cut = "轮次上限" in str(
+                                    _agent_info.get("error") or ""
                                 )
                                 _note_served = bool(
                                     _budget_cut
@@ -3703,8 +3700,7 @@ class ScienceAPI:
                                         else:
                                             _emit(
                                                 "error",
-                                                _final_text
-                                                or _agent_info["error"],
+                                                _final_text or _agent_info["error"],
                                             )
                                 elif not state["terminal"]:
                                     _emit("done", {})
@@ -4295,9 +4291,7 @@ class ScienceProjectStore:
             conv["title"] = _clip(payload.title, 300) or "新会话"
         if payload.projectId is not None:
             conv["projectId"] = (
-                payload.projectId
-                if payload.projectId in self.projects
-                else None
+                payload.projectId if payload.projectId in self.projects else None
             )
         if payload.pinned is not None:
             conv["pinned"] = bool(payload.pinned)
@@ -4632,14 +4626,15 @@ class ScienceProjectStore:
             )
             last_streaming = bool(isinstance(last, dict) and last.get("streaming"))
             if snapshot_rel and not (
-                not row.get("streaming")
-                and not last_streaming
-                and last_c == new_c
+                not row.get("streaming") and not last_streaming and last_c == new_c
             ):
                 # 同内容同形态(如终态行撞上前端整表归档的更完整版本): 保留尾行
                 base[-1] = row_out
                 _ls = last.get("streaming") if isinstance(last, dict) else None
-                print(f"[stream-archive] replace len={len(new_c)} streaming={row.get('streaming')} lastLen={len(last_c)} lastStreaming={_ls}", flush=True)
+                print(
+                    f"[stream-archive] replace len={len(new_c)} streaming={row.get('streaming')} lastLen={len(last_c)} lastStreaming={_ls}",
+                    flush=True,
+                )
             elif (
                 isinstance(last, dict)
                 and last.get("role") == "assistant"
@@ -4652,7 +4647,10 @@ class ScienceProjectStore:
                 return False
             else:
                 base.append(row_out)
-                print(f"[stream-archive] APPEND len={len(new_c)} streaming={row.get('streaming')} lastRole={last.get('role') if isinstance(last, dict) else None} lastStreaming={last.get('streaming') if isinstance(last, dict) else None} lastLen={len(last_c)}", flush=True)
+                print(
+                    f"[stream-archive] APPEND len={len(new_c)} streaming={row.get('streaming')} lastRole={last.get('role') if isinstance(last, dict) else None} lastStreaming={last.get('streaming') if isinstance(last, dict) else None} lastLen={len(last_c)}",
+                    flush=True,
+                )
             conv["content"] = base[-200:]
             conv["updatedAt"] = int(time.time() * 1000)
             self._save()
@@ -5288,7 +5286,11 @@ def _archive_row_from_journal(state, model_name: str, streaming: bool = True):
     row_error = None
     for kind, value in state.get("journal") or []:
         if kind == "think":
-            d = str((value or {}).get("delta") or "") if isinstance(value, dict) else str(value or "")
+            d = (
+                str((value or {}).get("delta") or "")
+                if isinstance(value, dict)
+                else str(value or "")
+            )
             if d:
                 if think_idx >= 0 and blocks[think_idx].get("t") == "think":
                     blocks[think_idx]["x"] += d
@@ -5298,7 +5300,9 @@ def _archive_row_from_journal(state, model_name: str, streaming: bool = True):
         elif kind == "delta":
             think_idx = -1
             d = (
-                str((value or {}).get("delta") or "") if isinstance(value, dict) else str(value or "")
+                str((value or {}).get("delta") or "")
+                if isinstance(value, dict)
+                else str(value or "")
             )
             if d:
                 text_parts.append(d)
@@ -5319,7 +5323,12 @@ def _archive_row_from_journal(state, model_name: str, streaming: bool = True):
                 if k == "call":
                     args = value.get("args")
                     blocks.append(
-                        {"t": "tool", "n": name, "a": args if isinstance(args, dict) else {}, "r": ""}
+                        {
+                            "t": "tool",
+                            "n": name,
+                            "a": args if isinstance(args, dict) else {},
+                            "r": "",
+                        }
                     )
                     open_tools.append(len(blocks) - 1)
                 else:
@@ -5333,7 +5342,12 @@ def _archive_row_from_journal(state, model_name: str, streaming: bool = True):
                             break
                     if tgt is None:
                         blocks.append(
-                            {"t": "tool", "n": name, "a": {}, "r": str(value.get("result") or "")}
+                            {
+                                "t": "tool",
+                                "n": name,
+                                "a": {},
+                                "r": str(value.get("result") or ""),
+                            }
                         )
                     else:
                         blocks[tgt]["r"] = str(value.get("result") or "")
