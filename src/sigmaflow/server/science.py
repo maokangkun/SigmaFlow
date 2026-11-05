@@ -366,7 +366,9 @@ class FeedbackIn(BaseModel):
 
 class ConversationIn(BaseModel):
     id: Optional[str] = None
-    title: str = ""
+    # title/projectId 为 None 时保留原值: 部分更新(如仅同步 content)不应
+    # 把已有标题打回"新会话"、把项目归属清空
+    title: Optional[str] = None
     projectId: Optional[str] = None
     pinned: Optional[bool] = None
     archived: Optional[bool] = None
@@ -4289,12 +4291,14 @@ class ScienceProjectStore:
                 "createdAt": now,
             }
             self.conversations[conv["id"]] = conv
-        conv["title"] = _clip(payload.title, 300) or "新会话"
-        conv["projectId"] = (
-            payload.projectId
-            if payload.projectId and payload.projectId in self.projects
-            else None
-        )
+        if payload.title is not None:
+            conv["title"] = _clip(payload.title, 300) or "新会话"
+        if payload.projectId is not None:
+            conv["projectId"] = (
+                payload.projectId
+                if payload.projectId in self.projects
+                else None
+            )
         if payload.pinned is not None:
             conv["pinned"] = bool(payload.pinned)
         elif "pinned" not in conv:
