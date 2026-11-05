@@ -184,6 +184,15 @@
     } catch { /* 后端不可达时保持现状, 下轮再试 */ }
   };
   setInterval(() => { if (document.getElementById('sys-stats')) updateSysStats(); }, 3000);
+  // 轨迹热力图: 纯竖向滚轮转为横向滚动(容器只横向溢出; 触控板自带
+  // 横向增量时走原生行为)
+  document.addEventListener('wheel', e => {
+    const el = e.target && e.target.closest ? e.target.closest('.run-track') : null;
+    if (!el || el.scrollWidth <= el.clientWidth) return;
+    if (e.deltaX !== 0) return;
+    el.scrollLeft += e.deltaY;
+    e.preventDefault();
+  }, { passive: false });
   // 重试等待倒计时: 全局每秒驱动, 不依赖发送闭包内的流式计时器
   setInterval(() => {
     if (!CS.ui.chatRetry) return;
