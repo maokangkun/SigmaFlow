@@ -3677,28 +3677,33 @@ class ScienceAPI:
                                 # 戛然而止, 不知道循环为什么退出; 无模型正文时
                                 # _run_agent_chat 生成的进度说明作为尾段 delta 补发
                                 # (有正文时正文早已流式送达, 不能重复发)
-                                # 预期内截断: 轮次耗尽且模型没有产出正文, 但补偿说明
-                                # 已作为正文流出。截停不是错误, 终态走 done——
-                                # 下拉红错块的文案与这段说明几乎逐字重复, 只会
-                                # 让用户误以为任务"出错了"
+                                # 终态语义分流: 轮次预算耗尽是预期内截断, 补偿说明
+                                # 作为正文流出、终态走 done; 上游接口连续失败是真错误,
+                                # 完整说明(含原始错误与接续指引)必须以红错块呈现,
+                                # 混进正文流会让失败看起来像正常回复
+                                _budget_cut = (
+                                    "轮次上限" in str(_agent_info.get("error") or "")
+                                )
                                 _note_served = bool(
-                                    _agent_info.get("error")
+                                    _budget_cut
                                     and not _agent_info.get("last_response")
                                     and _final_text
                                     and _final_text.strip()
                                 )
                                 if _agent_info.get("error"):
-                                    if (
-                                        not _agent_info.get("last_response")
-                                        and _final_text
-                                        and _final_text.strip()
-                                    ):
+                                    if _note_served:
                                         on_delta(_final_text)
                                     if not state["terminal"]:
                                         if _note_served:
                                             _emit("done", {})
-                                        else:
+                                        elif _budget_cut:
                                             _emit("error", _agent_info["error"])
+                                        else:
+                                            _emit(
+                                                "error",
+                                                _final_text
+                                                or _agent_info["error"],
+                                            )
                                 elif not state["terminal"]:
                                     _emit("done", {})
                             except Exception as err:
@@ -3783,6 +3788,11 @@ class ScienceAPI:
                                             if _note_served
                                             else (
                                                 _except_err
+                                                or (
+                                                    _final_text
+                                                    if not _budget_cut
+                                                    else None
+                                                )
                                                 or (
                                                     _fb_info.get("error")
                                                     if _fb_info
@@ -5254,6 +5264,7 @@ def _archive_row_from_journal(state, model_name: str, streaming: bool = True):
     text_parts: list = []
     think_idx = -1
     open_tools: list = []
+    row_error = None
     for kind, value in state.get("journal") or []:
         if kind == "think":
             d = str((value or {}).get("delta") or "") if isinstance(value, dict) else str(value or "")
@@ -5276,6 +5287,9 @@ def _archive_row_from_journal(state, model_name: str, streaming: bool = True):
                     blocks[-1]["x"] += d
                 else:
                     blocks.append({"t": "text", "x": d})
+        elif kind == "error":
+            # 终态错误物化为行的 error 字段: 刷新后红错块可见
+            row_error = str(value or "")[:2000] or None
         elif kind == "tool" and isinstance(value, dict):
             k = value.get("kind")
             if k in ("call", "result"):
@@ -5344,6 +5358,8 @@ def _archive_row_from_journal(state, model_name: str, streaming: bool = True):
     }
     if content:
         row["content"] = content
+    if row_error:
+        row["error"] = row_error
     return row
 
 

@@ -180,6 +180,14 @@
     } catch { /* 后端不可达时保持现状, 下轮再试 */ }
   };
   setInterval(() => { if (document.getElementById('sys-stats')) updateSysStats(); }, 3000);
+  // 重试等待倒计时: 全局每秒驱动, 不依赖发送闭包内的流式计时器
+  setInterval(() => {
+    if (!CS.ui.chatRetry) return;
+    document.querySelectorAll('.retry-countdown[data-until]').forEach(cd => {
+      const left = Math.ceil((Number(cd.dataset.until) - Date.now()) / 1000);
+      cd.textContent = left > 0 ? left + 's 后重试' : '正在重试…';
+    });
+  }, 1000);
   updateSysStats();
   // 全量重渲染会重建空的 sys-stats 容器, 用缓存内容立即回填, 避免对话生成期间状态栏闪空
   // 全量重渲染会重建 .conversation 容器导致滚动位置丢失(如展开思考/工具块时页面跳走)。
@@ -1382,6 +1390,11 @@
         // 只匹配本轮的活跃计时元素(完成标签是 elapsed-done, 无 data-start)
         const el = document.querySelector('.elapsed-timer[data-start="' + CSS.escape(reply.at) + '"]');
         if (el) el.textContent = CS.elapsed(el.dataset.start);
+        // 重试等待倒计时: 到点后文案切换为"正在重试", 首个 delta/think 会清掉整行
+        document.querySelectorAll('.retry-countdown[data-until]').forEach(cd => {
+          const left = Math.ceil((Number(cd.dataset.until) - Date.now()) / 1000);
+          cd.textContent = left > 0 ? left + 's 后重试' : '正在重试…';
+        });
         // 纯正文流没有结构变化, name 行不会因思考块出现而重渲染,
         // 需要在这里动态补建缺失的 ↓ 累计/token 速率标签。
         const downSel = '.tok-down[data-start="' + CSS.escape(reply.at) + '"]';
@@ -1417,7 +1430,7 @@
       if (CS.ui.chatRetry) { CS.ui.chatRetry = null; }
       const retryEvent = r => {
         if (!r || !r.attempt) return;
-        CS.ui.chatRetry = { runId: run.id, attempt: r.attempt, total: r.total || 5, error: r.error || '' };
+        CS.ui.chatRetry = { runId: run.id, attempt: r.attempt, total: r.total || 5, error: r.error || '', waitUntil: Date.now() + (r.wait || 0) * 1000 };
         CS.render();
       };
       const done = await CS.api.chat(history, delta => {

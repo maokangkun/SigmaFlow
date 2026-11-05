@@ -923,26 +923,28 @@ class Agent:
                         tried = self.retry
                     else:
                         tried += 1
-                        if self.on_retry is not None and tried < self.retry:
-                            # 只对还会重试的失败发通知; 可重试错误在 UI 上显示第 N 次失败与原因
-                            try:
-                                self.on_retry(
-                                    {
-                                        "attempt": tried,
-                                        "total": self.retry,
-                                        "error": str(e)[:200],
-                                    }
-                                )
-                            except Exception:
-                                pass
                         if tried < self.retry:
-                            # 重试间隔随次数递增(约 3s/6s/12s/24s/48s, 封顶 60s)加随机抖动;
+                            # 重试间隔指数递增(约 5s/15s/45s/135s/300s, 封顶 300s)加随机抖动;
                             # 网关明确给了 retry_after(如集群 RPM 限流 429, 常见 40~60s)时
                             # 尊重之: 按自己的短退避只会连吃 429 烧光重试次数。
-                            _backoff = min(60, 3 * 2 ** (tried - 1))
+                            _backoff = min(300, 5 * 3 ** (tried - 1))
                             _backoff = max(
                                 _backoff, _retry_after_seconds(str(e))
                             )
+                            # 只对还会重试的失败发通知; UI 显示第 N 次失败、原因与
+                            # 等待倒计时(wait 为本次退避秒数)
+                            if self.on_retry is not None:
+                                try:
+                                    self.on_retry(
+                                        {
+                                            "attempt": tried,
+                                            "total": self.retry,
+                                            "error": str(e)[:200],
+                                            "wait": int(_backoff),
+                                        }
+                                    )
+                                except Exception:
+                                    pass
                             time.sleep(_backoff + random.uniform(0, 2))
                         if tried == self.retry:
                             console.print(f"{Prompt.Error}{traceback.format_exc()}")
