@@ -186,11 +186,27 @@
   setInterval(() => { if (document.getElementById('sys-stats')) updateSysStats(); }, 3000);
   // present 富预览懒加载: 图片直显 / csv 表格 / json 摘要。
   // IntersectionObserver 只加载视口附近的卡片; 同一路径结果缓存, 重渲染秒填。
+  // present 预览双缓存(payload + 渲染结果): 简易 LRU(各 80 条)防超长
+  // 会话高频 present 场景下无限增长; get 命中即重排到最新
+  CS._presentCap = 80;
   CS._presentCache = new Map();
   // 已渲染的预览 HTML 缓存: 流式期间的结构变化会整页重建 DOM, 异步填充
   // 会在重渲染间隙闪现占位符、图片重挂载高度塌缩(滚动卡在图片消息)——
   // 缓存命中时在渲染帧内同步回填, 用户看不到任何中间态
   CS._presentHtml = new Map();
+  CS._presentCachePut = (key, payload, html) => {
+    CS._presentCache.set(key, payload);
+    while (CS._presentCache.size > CS._presentCap) CS._presentCache.delete(CS._presentCache.keys().next().value);
+    CS._presentHtml.set(key, html ?? '');
+    while (CS._presentHtml.size > CS._presentCap) CS._presentHtml.delete(CS._presentHtml.keys().next().value);
+  };
+  CS._presentCacheGet = key => {
+    const payload = CS._presentCache.get(key);
+    if (payload !== undefined) { CS._presentCache.delete(key); CS._presentCache.set(key, payload); }
+    const html = CS._presentHtml.get(key);
+    if (html !== undefined) { CS._presentHtml.delete(key); CS._presentHtml.set(key, html); }
+    return { payload, html };
+  };
   CS._presentLoad = async el => {
     const path = el.dataset.path || '';
     const pid = el.dataset.pid || '';
@@ -199,27 +215,29 @@
     const key = pid + '|' + path;
     el.dataset.state = 'loading';
     try {
-      let payload = CS._presentCache.get(key);
+      const cached = CS._presentCacheGet(key);
+      let payload = cached.payload;
       if (!payload) {
         payload = await CS.api.request(`/fs/file?path=${encodeURIComponent(path)}${pid ? '&projectId=' + encodeURIComponent(pid) : ''}`, { method: 'GET', timeout: 30000 });
-        CS._presentCache.set(key, payload);
       }
       if (el.dataset.state !== 'loading') return;  // 重渲染已替换节点
-      let html = '';
-      if (kind === 'image') {
-        html = payload.dataUrl ? `<img class="present-img" src="${payload.dataUrl}" alt="${e(name)}">` : `<div class="present-preview-note small muted">${e(payload.note || '该图片无法内联预览，点击"查看"。')}</div>`;
-      } else if (kind === 'table') {
-        html = CS.csvPreviewTable(String(payload.content || ''), name);
-      } else if (kind === 'json') {
-        html = CS.jsonPreviewBlock(String(payload.content || ''), name, /jsonl/i.test(name));
+      let html = cached.html;
+      if (!html) {
+        if (kind === 'image') {
+          html = payload.dataUrl ? `<img class="present-img" src="${payload.dataUrl}" alt="${e(name)}">` : `<div class="present-preview-note small muted">${e(payload.note || '该图片无法内联预览，点击"查看"。')}</div>`;
+        } else if (kind === 'table') {
+          html = CS.csvPreviewTable(String(payload.content || ''), name);
+        } else if (kind === 'json') {
+          html = CS.jsonPreviewBlock(String(payload.content || ''), name, /jsonl/i.test(name));
+        }
+        html = html || '<div class="present-preview-note small muted">暂无可预览内容。</div>';
       }
-      html = html || '<div class="present-preview-note small muted">暂无可预览内容。</div>';
-      CS._presentHtml.set(key, html);
+      CS._presentCachePut(key, payload, html);
       el.innerHTML = html;
       el.dataset.state = 'done';
     } catch (err) {
       const msg = `<div class="present-preview-note small muted">预览加载失败：${e(CS.api.friendlyError ? CS.api.friendlyError(err) : String((err && err.message) || err))}</div>`;
-      CS._presentHtml.set(key, msg);
+      CS._presentCachePut(key, { error: true }, msg);
       el.innerHTML = msg;
       el.dataset.state = 'error';
     }

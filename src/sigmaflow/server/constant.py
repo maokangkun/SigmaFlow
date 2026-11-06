@@ -1,6 +1,6 @@
 from enum import Enum
 from dataclasses import dataclass
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, Any, Union, Literal, Annotated, Dict
 from datetime import datetime
 
@@ -147,9 +147,7 @@ class Trace(BaseModel):
     tools_count: Optional[int] = Field(None, alias="toolsCount")
     execution_time: Optional[Any] = Field(None, alias="executionTime")
 
-    class Config:
-        from_attributes = True
-        validate_by_name = True
+    model_config = ConfigDict(from_attributes=True, validate_by_name=True)
 
 
 class Span(BaseModel):
@@ -166,8 +164,7 @@ class Span(BaseModel):
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EventRequest(BaseModel):
@@ -291,8 +288,7 @@ class CreateApiKeyRequest(BaseModel):
         alias="expiresIn"
     )  # 'never', '1_month', '3_months', '6_months', '12_months'
 
-    class Config:
-        validate_by_name = True
+    model_config = ConfigDict(validate_by_name=True)
 
 
 class CreateApiKeyResponse(BaseModel):
@@ -321,8 +317,7 @@ class PreviousPeriod(BaseModel):
     total_cost: float = Field(alias="totalCost")
     cost_change: float = Field(alias="costChange")
 
-    class Config:
-        validate_by_name = True
+    model_config = ConfigDict(validate_by_name=True)
 
 
 class AnalyticsOverview(BaseModel):
@@ -336,8 +331,7 @@ class AnalyticsOverview(BaseModel):
     total_cost: float = Field(alias="totalCost")
     previous_period: PreviousPeriod = Field(alias="previousPeriod")
 
-    class Config:
-        validate_by_name = True
+    model_config = ConfigDict(validate_by_name=True)
 
 
 class TimeSeriesData(BaseModel):

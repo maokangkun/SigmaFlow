@@ -576,12 +576,37 @@
   //   csv/tsv → 表格(表头 + 首 8 行 + 末 4 行, 中间省略)
   //   json/jsonl → 缩进摘要(截断保护)
   // 其余类型维持原卡片。数据由 app.js 的 IO 懒加载器填充(.present-preview)。
+  // RFC 4180 行解析: 引号字段可含分隔符/换行/转义引号("")。
+  // 返回二维数组(不含首行表头由调用方切分)。
+  CS.csvSplitRows = (text, sep) => {
+    const rows = [];
+    let row = [], field = '', inQ = false;
+    const n = text.length;
+    for (let i = 0; i < n; i++) {
+      const ch = text[i];
+      if (inQ) {
+        if (ch === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false; }
+        else field += ch;
+      } else if (ch === '"') inQ = true;
+      else if (ch === sep) { row.push(field); field = ''; }
+      else if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && text[i + 1] === '\n') i++;
+        row.push(field); field = ''; rows.push(row); row = [];
+      } else field += ch;
+    }
+    if (field !== '' || row.length) { row.push(field); rows.push(row); }
+    return rows;
+  };
   CS.csvPreviewTable = (text, name) => {
     const tsv = /\.tsv$/i.test(name || '');
-    const lines = String(text || '').split(/\r?\n/).filter(l => l.length);
-    if (!lines.length) return '<div class="present-preview-note small muted">空文件。</div>';
-    const sep = tsv ? '\t' : (lines[0].includes('\t') && !lines[0].includes(',') ? '\t' : ',');
-    const all = lines.map(l => l.split(sep));
+    const raw = String(text || '');
+    if (!raw.trim()) return '<div class="present-preview-note small muted">空文件。</div>';
+    // 分隔符探测: 统计首行引号外出现的次数(tab 与逗号竞争, 真实 CSV 首行极少同时含两者)
+    const sepCount = (line, ch) => { let n = 0, q = false; for (const chx of line) { if (chx === '"') q = !q; else if (chx === ch && !q) n++; } return n; };
+    const firstLine = raw.slice(0, raw.indexOf('\n') + 1 || raw.length);
+    const sep = tsv ? '\t' : (sepCount(firstLine, '\t') > sepCount(firstLine, ',') ? '\t' : ',');
+    const all = CS.csvSplitRows(raw, sep).filter(r => r.some(cell => String(cell).trim() !== ''));
+    if (!all.length) return '<div class="present-preview-note small muted">空文件。</div>';
     const head = all[0] || [];
     const body = all.slice(1);
     const FIRST = 8, LAST = 4;
