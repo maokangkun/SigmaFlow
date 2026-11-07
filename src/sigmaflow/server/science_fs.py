@@ -349,10 +349,27 @@ def _fs_exec_payload(project, cmd: str, cwd: str) -> dict:
     }
 
 
+def _fs_upload_staging_dir() -> str:
+    """Per-user staging dir for uploads sent without a project association."""
+    root = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
+        os.path.expanduser("~"), ".sigmaflow", "science"
+    )
+    base = os.path.join(root, "uploads")
+    os.makedirs(base, exist_ok=True)
+    return base
+
+
 def _fs_upload_payload(project, name: str, data_base64: str) -> dict:
-    """Upload one file into the project directory (no overwrite)."""
-    base = str((project or {}).get("dir") or "").strip()
-    if not base or not os.path.isdir(base):
+    """Upload one file into the project directory (no overwrite).
+
+    Without a project the file lands in the per-user staging dir and the
+    response carries its absolute path (readable via /fs/file absolute-path
+    support, so @references and previews keep working before a project is
+    ever associated).
+    """
+    staging = project is None
+    base = _fs_upload_staging_dir() if staging else str((project or {}).get("dir") or "").strip()
+    if not staging and (not base or not os.path.isdir(base)):
         raise HTTPException(
             status_code=404, detail="项目目录不存在，请编辑项目并填写本地路径"
         )
@@ -384,7 +401,8 @@ def _fs_upload_payload(project, name: str, data_base64: str) -> dict:
         )
     except Exception:
         pass
-    return {"name": clean, "size": len(raw), "path": clean.replace(os.sep, "/")}
+    out_path = target.replace(os.sep, "/") if staging else clean.replace(os.sep, "/")
+    return {"name": clean, "size": len(raw), "path": out_path}
 
 
 def _git_status_map(root: str) -> Dict[str, str]:

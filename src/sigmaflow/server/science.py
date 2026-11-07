@@ -1885,9 +1885,14 @@ class ScienceAPI:
 
         @router.post("/fs/upload")
         async def fs_upload(payload: _FsUploadIn, request: Request):
-            """上传一个文件到项目目录(base64, 不覆盖已有文件)。"""
+            """上传一个文件到项目目录(base64, 不覆盖已有文件)。
+
+            未关联项目时落到用户级暂存目录(science/uploads), 返回绝对路径。
+            """
             _check_origin(request)
             project = self.project_store.projects.get(payload.projectId or "")
+            if project is None and payload.projectId:
+                raise HTTPException(status_code=404, detail="项目不存在")
             return await asyncio.to_thread(
                 _fs_upload_payload, project, payload.name, payload.dataBase64
             )

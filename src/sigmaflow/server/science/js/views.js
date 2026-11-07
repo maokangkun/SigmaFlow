@@ -655,7 +655,7 @@
   // 用户消息里的 @路径 引用渲染为附件芯片: 图片懒加载缩略图(/fs/file),
   // 其它类型显示图标; 点击打开完整预览。刷新后从文本重新解析, 不依赖内存态。
   V.refChips = (content, pid) => {
-    const tokens = [...new Set(String(content || '').match(/@[\w][\w./-]*/g) || [])];
+    const tokens = [...new Set(String(content || '').match(/@[/~]?[\w][\w./-]*/g) || [])];
     if (!tokens.length) return '';
     const chips = tokens.slice(0, 12).map(tok => {
       const path = tok.slice(1);

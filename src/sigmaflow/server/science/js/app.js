@@ -1386,15 +1386,18 @@
     // @file 引用注入: @路径 在项目目录下读出文件内容, 作为 refContext 附在发送侧
     // (展示仍用原文; 刷新后 refContext 不持久, 模型可再用 read 工具读文件)
     const _lastUser = run.messages[run.messages.length - 1];
-    if (_lastUser && _lastUser.role === 'user' && /@[\w][\w./-]*/.test(text)) {
+    if (_lastUser && _lastUser.role === 'user' && /@[/~]?[\w][\w./-]*/.test(text)) {
       try {
         const pid = run.projectId || CS.state.projectId;
-        if (pid) {
-          const tokens = [...new Set((text.match(/@[\w][\w./-]*/g) || []).map(t => t.slice(1)))].slice(0, 5);
+        {
+          const tokens = [...new Set((text.match(/@[/~]?[\w][\w./-]*/g) || []).map(t => t.slice(1)))].slice(0, 5);
           const parts = [];
           for (const t of tokens) {
             try {
-              const data = await CS.api.request('/fs/file?projectId=' + encodeURIComponent(pid) + '&path=' + encodeURIComponent(t), { method: 'GET' });
+              const absT = /^[/~]/.test(t);
+              if (!absT && !pid) continue;  // 相对引用需要项目; 绝对路径(暂存上传)无项目也可读
+              const qs = (absT ? '' : 'projectId=' + encodeURIComponent(pid) + '&') + 'path=' + encodeURIComponent(t);
+              const data = await CS.api.request('/fs/file?' + qs, { method: 'GET' });
               if (data && !data.binary && typeof data.content === 'string' && data.content.trim()) {
                 parts.push('<file path="' + t + '">\n' + data.content.slice(0, 16000) + (data.content.length > 16000 ? '\n…(内容过长已截断)' : '') + '\n</file>');
               }
@@ -1878,8 +1881,7 @@
   // 插入输入框; 图片用 objectURL 做缩略图。上传中的附件会阻止发送。
   const uploadLocalFiles = async files => {
     CS.ui.pendingUploads = CS.ui.pendingUploads || [];
-    const pid = CS.state.projectId;
-    if (!pid) { CS.toast('先关联项目，上传的文件会进入项目目录。', 'error'); return; }
+    const pid = CS.state.projectId;  // 无项目: 落用户暂存目录, 返回绝对路径
     for (const file of [...files]) {
       if (file.size > 32 * 1024 * 1024) { CS.toast(`${file.name} 超过 32 MB 上传上限。`, 'error'); continue; }
       if (file.size === 0) { CS.toast(`${file.name} 是空文件。`, 'error'); continue; }
@@ -1892,7 +1894,7 @@
         const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => rej(r.error || new Error('读取失败')); r.readAsDataURL(file); });
         let name = file.name, out = null;
         for (let t = 0; t < 5 && !out; t++) {
-          try { out = await CS.api.request('/fs/upload', { method: 'POST', body: JSON.stringify({ projectId: pid, name, dataBase64: dataUrl }) }); }
+          try { out = await CS.api.request('/fs/upload', { method: 'POST', body: JSON.stringify({ projectId: pid || '', name, dataBase64: dataUrl }) }); }
           catch (err) {
             const msg = CS.api.friendlyError(err);
             if (t < 4 && /已存在|exists/i.test(msg)) { const dot = file.name.lastIndexOf('.'); name = dot > 0 ? `${file.name.slice(0, dot)} (${t + 1}).${file.name.slice(dot + 1)}` : `${file.name} (${t + 1})`; continue; }
@@ -2974,7 +2976,6 @@
     },
     'import-data': () => { uploadContext='data'; CS.showModal('import'); },
     'upload-local': () => {
-      if (!CS.state.projectId) { CS.toast('先关联项目，上传的文件会进入项目目录。', 'error'); return; }
       let input = document.getElementById('upload-input');
       if (!input) { input = document.createElement('input'); input.type = 'file'; input.id = 'upload-input'; input.multiple = true; input.hidden = true; input.addEventListener('change', () => { uploadLocalFiles(input.files); input.value = ''; }); document.body.appendChild(input); }
       input.value = ''; input.click();
