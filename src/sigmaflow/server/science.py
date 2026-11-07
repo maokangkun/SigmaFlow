@@ -465,18 +465,52 @@ def _test_provider(base_url: str, api_key: str) -> dict:
 
 
 def _list_provider_models(base_url: str, api_key: str) -> dict:
-    """Fetch the provider's model catalogue (`GET {baseUrl}/models`)."""
-    url = base_url.rstrip("/") + "/models"
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    try:
-        resp = requests.get(url, headers=headers, timeout=15)
-    except Exception as err:
-        return {"ok": False, "models": [], "error": str(err)}
-    if resp.status_code != 200:
-        return {"ok": False, "models": [], "error": f"HTTP {resp.status_code}"}
-    names = []
-    try:
-        data = resp.json()
+    """Fetch the provider's model catalogue.
+
+    OpenAI-dialect endpoints answer ``GET {base}/models``. Anthropic-dialect
+    base URLs (path containing "anthropic", e.g. bigmodel's compat endpoint)
+    answer ``{base}/v1/models`` with ``x-api-key`` headers instead. Gateways
+    that wrap inner 404s in an HTTP 200 error body (bigmodel returns
+    ``{"code":500,"msg":"404 NOT_FOUND"}`` with status 200) are detected and
+    skipped to the next candidate instead of surfacing an empty list.
+    """
+    base = base_url.rstrip("/")
+    attempts = []
+    if "anthropic" in base.lower():
+        if base.endswith("/v1"):
+            attempts.append((base + "/models", True))
+        else:
+            attempts.append((base + "/v1/models", True))
+            attempts.append((base + "/models", False))
+    else:
+        attempts.append((base + "/models", False))
+    names, last_err = [], "无可用模型列表端点"
+    for url, anthropic in attempts:
+        headers = (
+            {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+            if anthropic
+            else ({"Authorization": f"Bearer {api_key}"} if api_key else {})
+        )
+        try:
+            resp = requests.get(url, headers=headers, timeout=15)
+        except Exception as err:
+            last_err = str(err)
+            continue
+        if resp.status_code != 200:
+            last_err = f"HTTP {resp.status_code}"
+            continue
+        try:
+            data = resp.json()
+        except Exception:
+            last_err = "响应不是 JSON"
+            continue
+        if (
+            isinstance(data, dict)
+            and (data.get("success") is False or (data.get("code") and not data.get("data")))
+        ):
+            # 网关把内部 404/500 包成 200: 视为该端点不可用, 换下一个候选
+            last_err = str(data.get("msg") or "网关返回错误")[:200]
+            continue
         entries = data.get("data") if isinstance(data, dict) else data
         if isinstance(entries, list):
             for item in entries:
@@ -484,9 +518,10 @@ def _list_provider_models(base_url: str, api_key: str) -> dict:
                     names.append(str(item["id"]))
                 elif isinstance(item, str):
                     names.append(item)
-    except Exception:
-        pass
-    return {"ok": True, "models": sorted(set(names)), "error": None}
+        if names:
+            return {"ok": True, "models": sorted(set(names)), "error": None}
+        last_err = "列表为空"
+    return {"ok": False, "models": [], "error": last_err}
 
 
 # ==================== LiteLLM 模型价格与上下文数据库 ====================
