@@ -214,6 +214,20 @@
     const name = el.dataset.name || '';
     const key = pid + '|' + path;
     el.dataset.state = 'loading';
+    if (el.classList.contains('ref-thumb')) {
+      // 引用芯片缩略图: 复用 payload 缓存, 只取 dataUrl
+      try {
+        let payload = CS._presentCache.get(key);
+        if (!payload || !payload.dataUrl) {
+          payload = await CS.api.request(`/fs/file?path=${encodeURIComponent(path)}${pid ? '&projectId=' + encodeURIComponent(pid) : ''}`, { method: 'GET', timeout: 30000 });
+          CS._presentCachePut(key, payload, CS._presentHtml.get(key) || '');
+        }
+        if (el.dataset.state !== 'loading') return;
+        if (payload.dataUrl) { el.src = payload.dataUrl; el.dataset.state = 'done'; }
+        else { el.style.display = 'none'; el.dataset.state = 'error'; }
+      } catch { el.style.display = 'none'; el.dataset.state = 'error'; }
+      return;
+    }
     try {
       const cached = CS._presentCacheGet(key);
       let payload = cached.payload;
@@ -319,6 +333,13 @@
         el.innerHTML = CS._presentHtml.get(key);
         el.dataset.state = 'done';
       } else CS._presentIO.observe(el);
+    });
+    // 用户消息 @引用芯片的图片缩略图: 同一套缓存, 命中即同步设 src
+    if (CS._presentIO) document.querySelectorAll('img.ref-thumb[data-state="idle"]').forEach(el => {
+      const key = (el.dataset.pid || '') + '|' + (el.dataset.path || '');
+      const cached = CS._presentCache.get(key);
+      if (cached && cached.dataUrl) { el.src = cached.dataUrl; el.dataset.state = 'done'; }
+      else CS._presentIO.observe(el);
     });
     const el = document.getElementById('sys-stats');
     if (el && _sysStatsHtml) el.innerHTML = _sysStatsHtml;
@@ -767,7 +788,15 @@
         // 同 id 旧 run 整体替换为服务端全量版; 用户消息自带的引用上下文
         // (refContext)只存在本地, 按消息序号原样保留
         const oldIdx = CS.state.runs.findIndex(r => r.id === id);
-        if (oldIdx >= 0) {
+        // 发送链路在途的刚建会话(_pendingSend 30s 内)服务端内容可能还是空,
+        // 整表替换会吞掉本地已推入的用户消息, 流式事件随后写进孤儿对象;
+        // 此情形只补服务端元信息, 内容保留本地版
+        const oldRun = oldIdx >= 0 ? CS.state.runs[oldIdx] : null;
+        const inFlightSend = !!oldRun && !run.messages.length && (oldRun.messages || []).length && Date.now() - (oldRun._pendingSend || 0) < 30000;
+        if (oldRun && inFlightSend) {
+          oldRun.projectId = run.projectId || oldRun.projectId;
+          oldRun.status = run.status !== 'complete' ? run.status : oldRun.status;
+        } else if (oldIdx >= 0) {
           const oldMsgs = CS.state.runs[oldIdx].messages || [];
           oldMsgs.forEach((om, i2) => { if (om?.role === 'user' && om.refContext && run.messages[i2]?.role === 'user') run.messages[i2].refContext = om.refContext; });
           CS.state.runs[oldIdx] = run;
@@ -796,6 +825,9 @@
       messages: [], steps: [], createdAt: new Date().toISOString(), status: 'complete',
       progress: 0, transport: 'chat', isDemo: false,
     };
+    // _pendingSend: 发送链路在途标记(@引用注入等会延迟 chat.send), 期间
+    // 服务端会话刚建好内容还是空, 回源同步的整表替换不能吞掉本地消息
+    run._pendingSend = Date.now();
     CS.state.runs.push(run); CS.state.currentRunId = run.id; CS.save();
     CS.agent.registerConversation(run);
     CS.ui.composer = ''; CS.ui.attachments = []; CS.ui.expandedLogs.clear();
@@ -1842,6 +1874,42 @@
     }
   };
   const chooseFiles = context => { uploadContext = context; const input = document.getElementById('file-input'); input.value = ''; input.click(); };
+  // 本地文件上传(+号/粘贴): 文件进项目目录(/fs/upload, 同名自动改名), @引用
+  // 插入输入框; 图片用 objectURL 做缩略图。上传中的附件会阻止发送。
+  const uploadLocalFiles = async files => {
+    CS.ui.pendingUploads = CS.ui.pendingUploads || [];
+    const pid = CS.state.projectId;
+    if (!pid) { CS.toast('先关联项目，上传的文件会进入项目目录。', 'error'); return; }
+    for (const file of [...files]) {
+      if (file.size > 32 * 1024 * 1024) { CS.toast(`${file.name} 超过 32 MB 上传上限。`, 'error'); continue; }
+      if (file.size === 0) { CS.toast(`${file.name} 是空文件。`, 'error'); continue; }
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      const entry = { name: file.name, size: file.size, status: 'uploading', thumb: '', path: '', error: '' };
+      if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(ext)) { try { entry.thumb = URL.createObjectURL(file); } catch {} }
+      CS.ui.pendingUploads.push(entry);
+      CS.render();
+      try {
+        const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => rej(r.error || new Error('读取失败')); r.readAsDataURL(file); });
+        let name = file.name, out = null;
+        for (let t = 0; t < 5 && !out; t++) {
+          try { out = await CS.api.request('/fs/upload', { method: 'POST', body: JSON.stringify({ projectId: pid, name, dataBase64: dataUrl }) }); }
+          catch (err) {
+            const msg = CS.api.friendlyError(err);
+            if (t < 4 && /已存在|exists/i.test(msg)) { const dot = file.name.lastIndexOf('.'); name = dot > 0 ? `${file.name.slice(0, dot)} (${t + 1}).${file.name.slice(dot + 1)}` : `${file.name} (${t + 1})`; continue; }
+            throw err;
+          }
+        }
+        entry.name = out.name; entry.path = out.path; entry.size = out.size; entry.status = 'done';
+        CS.ui.composer = (CS.ui.composer ? CS.ui.composer.replace(/[\s]+$/, '') + ' ' : '') + '@' + out.path + ' ';
+        const ta = document.getElementById('composer-text'); if (ta) ta.value = CS.ui.composer;
+        const send = document.querySelector('.send-button'); if (send) send.disabled = !CS.ui.composer.trim();
+      } catch (err) {
+        entry.status = 'error'; entry.error = CS.api.friendlyError(err);
+        CS.toast(`${file.name} 上传失败：${entry.error}`, 'error');
+      }
+      CS.render();
+    }
+  };
   const emitRender = () => { CS.save(); CS.render(); };
   const exportMetadata = () => {
     const rows = CS.state.datasets.filter(d => CS.ui.datasetSelection.has(d.id));
@@ -2905,6 +2973,20 @@
       _renderFileRefMenu();
     },
     'import-data': () => { uploadContext='data'; CS.showModal('import'); },
+    'upload-local': () => {
+      if (!CS.state.projectId) { CS.toast('先关联项目，上传的文件会进入项目目录。', 'error'); return; }
+      let input = document.getElementById('upload-input');
+      if (!input) { input = document.createElement('input'); input.type = 'file'; input.id = 'upload-input'; input.multiple = true; input.hidden = true; input.addEventListener('change', () => { uploadLocalFiles(input.files); input.value = ''; }); document.body.appendChild(input); }
+      input.value = ''; input.click();
+    },
+    'remove-upload': name => {
+      const u = (CS.ui.pendingUploads || []).find(x => x.name === name);
+      if (u && u.path) CS.ui.composer = CS.ui.composer.split('@' + u.path).join('').replace(/ {2,}/g, ' ');
+      CS.ui.pendingUploads = CS.ui.pendingUploads.filter(x => x.name !== name);
+      const ta = document.getElementById('composer-text'); if (ta) ta.value = CS.ui.composer;
+      const send = document.querySelector('.send-button'); if (send) send.disabled = !CS.ui.composer.trim();
+      CS.render();
+    },
     'pick-files': () => chooseFiles(uploadContext),
     'preview-csv-import': () => chooseFiles('preview'),
     'choose-dataset': () => CS.showModal('dataset-picker'),
@@ -3051,6 +3133,13 @@
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);
   });
+  // 输入框直接粘贴文件/图片: 剪贴板带文件时转为上传(与 + 号同一入口)
+  document.addEventListener('paste', ev => {
+    const ta = ev.target;
+    if (!ta || ta.id !== 'composer-text') return;
+    const files = ev.clipboardData && ev.clipboardData.files;
+    if (files && files.length) { ev.preventDefault(); uploadLocalFiles(files); }
+  });
   document.addEventListener('input', event => {
     const el = event.target;
     // ask 自由输入草稿: 只存到 UI 状态里不重渲染, 否则每次键入都会重建 DOM 丢失焦点
@@ -3118,14 +3207,16 @@
     }
     if(type==='composer') {
       const prompt=CS.ui.composer.trim(); if(!prompt) return;
+      if((CS.ui.pendingUploads||[]).some(u=>u.status==='uploading')) { CS.toast('附件还在上传，稍候再发送。','error'); return; }
+      CS.ui.pendingUploads=(CS.ui.pendingUploads||[]).filter(u=>u.status!=='error');
       const active=CS.currentRun();
       if(CS.ui.route==='chat' && active?.kind === 'chat') {
-        CS.ui.composer=''; CS.ui.attachments=[]; CS.save();
+        CS.ui.composer=''; CS.ui.attachments=[]; CS.ui.pendingUploads=[]; CS.save();
         sendChatMessage(active,prompt,[]);
       } else if(CS.ui.route==='chat' && active) {
         const run=active; run.messages.push({role:'user',content:prompt,datasetIds:[...CS.ui.attachments],at:new Date().toISOString()});
         run.messages.push({role:'assistant',content:'这是演示对话，不是模型生成的科研解释。当前任务的输入、计划和步骤都可在上方查看；结果中的点云与表达值为合成示例。要获取真实分析，请通过服务端接入模型与经过验证的分析工作流。',at:new Date().toISOString()});
-        CS.ui.composer=''; CS.ui.attachments=[]; CS.save(); CS.render(); setTimeout(()=>document.querySelector('.chat-composer')?.scrollIntoView({block:'end'}),20);
+        CS.ui.composer=''; CS.ui.attachments=[]; CS.ui.pendingUploads=[]; CS.save(); CS.render(); setTimeout(()=>document.querySelector('.chat-composer')?.scrollIntoView({block:'end'}),20);
       } else startChat(prompt);
     } else if(type==='project') {
       const name=document.getElementById('project-name').value.trim(); const description=document.getElementById('project-description').value.trim(); const tags=document.getElementById('project-tags').value.split(/[,，]/).map(t=>t.trim()).filter(Boolean).slice(0,5);
