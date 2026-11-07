@@ -820,7 +820,7 @@
   };
     const startChat = prompt => {
     const run = {
-      id: CS.uid('run'), kind: 'chat', title: prompt.slice(0, 24) || '新会话',
+      id: CS.uid('run'), kind: 'chat', title: prompt.slice(0, 24) || (CS.ui.pendingUploads || []).find(u => u.status === 'done')?.name?.slice(0, 24) || '新会话',
       projectId: CS.state.projectId, prompt, datasetIds: [...CS.ui.attachments], config: {},
       messages: [], steps: [], createdAt: new Date().toISOString(), status: 'complete',
       progress: 0, transport: 'chat', isDemo: false,
@@ -1380,17 +1380,21 @@
     if (CS.ui.loadingRunId === run.id) { CS.toast('会话内容仍在加载，稍候再发送。', 'error'); return; }
     // 真实流式开始: 停掉刷新恢复用的存档轮询, 避免双源互写
     if (CS._streamPoll) { clearInterval(CS._streamPoll.timer); CS._streamPoll = null; }
+    // 上传附件以零宽字符标记(\u200B@path)注入消息尾部: 模型可读路径,
+    // 服务端归档保留(刷新后芯片可重建), 展示层剥离标记不显示裸路径
+    const _zwRef = (CS.ui.pendingUploads || []).filter(u => u.status === 'done' && u.path).map(u => '\u200B@' + u.path);
+    if (_zwRef.length) { text = (text ? text.replace(/\s+$/, '') + ' ' : '') + _zwRef.join(' '); CS.ui.pendingUploads = []; }
     // 隐形续接(压缩完成后): 不插可见用户消息, 历史以压缩摘要卡结尾,
     // 服务端契约把摘要卡组装为 user 末条, 模型基于摘要直接开始下一轮
     if (!opts.hiddenContinue) run.messages.push({ role: 'user', content: text, datasetIds: [...datasetIds], at: new Date().toISOString() });
     // @file 引用注入: @路径 在项目目录下读出文件内容, 作为 refContext 附在发送侧
     // (展示仍用原文; 刷新后 refContext 不持久, 模型可再用 read 工具读文件)
     const _lastUser = run.messages[run.messages.length - 1];
-    if (_lastUser && _lastUser.role === 'user' && /@[/~]?[\w][\w./-]*/.test(text)) {
+    if (_lastUser && _lastUser.role === 'user' && /\u200B?@[/~]?[\w][\w./-]*/.test(text)) {
       try {
         const pid = run.projectId || CS.state.projectId;
         {
-          const tokens = [...new Set((text.match(/@[/~]?[\w][\w./-]*/g) || []).map(t => t.slice(1)))].slice(0, 5);
+          const tokens = [...new Set((text.match(/\u200B?@[/~]?[\w][\w./-]*/g) || []).map(t => t.replace(/^\u200B/, '').slice(1)))].slice(0, 5);
           const parts = [];
           for (const t of tokens) {
             try {
@@ -1902,9 +1906,9 @@
           }
         }
         entry.name = out.name; entry.path = out.path; entry.size = out.size; entry.status = 'done';
-        CS.ui.composer = (CS.ui.composer ? CS.ui.composer.replace(/[\s]+$/, '') + ' ' : '') + '@' + out.path + ' ';
-        const ta = document.getElementById('composer-text'); if (ta) ta.value = CS.ui.composer;
-        const send = document.querySelector('.send-button'); if (send) send.disabled = !CS.ui.composer.trim();
+        // 不往输入框插入 @引用(裸路径对用户是噪声): 附件由芯片展示, 发送时在
+        // sendChatMessage 里以零宽字符标记(\u200B@path)静默注入消息内容
+        const send = document.querySelector('.send-button'); if (send) send.disabled = !CS.ui.composer.trim() && !CS.ui.pendingUploads.some(u => u.status === 'done');
       } catch (err) {
         entry.status = 'error'; entry.error = CS.api.friendlyError(err);
         CS.toast(`${file.name} 上传失败：${entry.error}`, 'error');
@@ -2985,7 +2989,7 @@
       if (u && u.path) CS.ui.composer = CS.ui.composer.split('@' + u.path).join('').replace(/ {2,}/g, ' ');
       CS.ui.pendingUploads = CS.ui.pendingUploads.filter(x => x.name !== name);
       const ta = document.getElementById('composer-text'); if (ta) ta.value = CS.ui.composer;
-      const send = document.querySelector('.send-button'); if (send) send.disabled = !CS.ui.composer.trim();
+      const send = document.querySelector('.send-button'); if (send) send.disabled = !CS.ui.composer.trim() && !CS.ui.pendingUploads.some(u => u.status === 'done');
       CS.render();
     },
     'pick-files': () => chooseFiles(uploadContext),
@@ -3207,7 +3211,8 @@
       return;
     }
     if(type==='composer') {
-      const prompt=CS.ui.composer.trim(); if(!prompt) return;
+      const prompt=CS.ui.composer.trim();
+      if(!prompt && !(CS.ui.pendingUploads||[]).some(u=>u.status==='done')) return;
       if((CS.ui.pendingUploads||[]).some(u=>u.status==='uploading')) { CS.toast('附件还在上传，稍候再发送。','error'); return; }
       CS.ui.pendingUploads=(CS.ui.pendingUploads||[]).filter(u=>u.status!=='error');
       const active=CS.currentRun();
@@ -3271,7 +3276,7 @@
   const searchBindings={ 'data-search':'data','project-search':'project','paper-search':'literature','tool-search':'tools' };
   document.addEventListener('input',event=>{
     const target=event.target,id=target.id;
-    if(id==='composer-text') {CS.ui.composer=target.value; const send=document.querySelector('.send-button');if(send)send.disabled=!target.value.trim();CS.updateContextRing();_fileRefPing();}
+    if(id==='composer-text') {CS.ui.composer=target.value; const send=document.querySelector('.send-button');if(send)send.disabled=!target.value.trim()&&!(CS.ui.pendingUploads||[]).some(u=>u.status==='done');CS.updateContextRing();_fileRefPing();}
     else if(searchBindings[id]) {CS.ui.filters[searchBindings[id]]=target.value;CS.render();}
     else if(id==='marker-search') {CS.ui.markerSearch=target.value;CS.render();}
     else if(id==='sequence-input') CS.ui.sequence=target.value;
