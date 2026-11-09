@@ -259,8 +259,6 @@
 .p2-tier.tB { color: #a07818; }
 .p2-tier.tC { color: #8a8f9d; }
 
-.p2-tier-legend { padding: 2px 10px 6px; font-size: 11px; opacity: .85; }
-.p2-tier-legend b { font-weight: 700; }
 
 .p2-logpanel {
   border: 1px solid var(--line, #d7dae2);
