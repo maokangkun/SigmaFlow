@@ -296,6 +296,7 @@
     // 与其每次渲染重建再逐个回填, 不如把整个 #patient-root 节点原样搬回新壳
     const patKeep = CS.ui.route === 'patient' ? document.getElementById('patient-root') : null;
     const p2Keep = CS.ui.route === 'pathogen' ? document.getElementById('pathogen-root') : null;
+    const flyKeep = CS.ui.route === 'fly' ? document.getElementById('fly-root') : null;
     _origRender();
     if (CS.ui.route === 'patient') {
       const fresh = document.getElementById('patient-root');
@@ -318,6 +319,18 @@
         });
       }
     }
+    // 虚拟果蝇页: 保活 #fly-root(3D canvas), fly.js 懒加载后挂载
+    if (CS.ui.route === 'fly') {
+      const fresh = document.getElementById('fly-root');
+      if (flyKeep && fresh && fresh !== flyKeep) fresh.replaceWith(flyKeep);
+      else if (!flyKeep) {
+        // 3D 内核(cell3d.min 提供 THREE/OrbitControls)与页面控制器都按需拉
+        CS.ensureLazy('fly', 'cell3d.min').then(() => {
+          if (CS.ui.route === 'fly' && window.mountFlyPage) window.mountFlyPage();
+        });
+      }
+    }
+    if (CS.ui.route !== 'fly' && window.FlyUI) { try { FlyUI.suspend(); } catch {} }
     if (CS.ui.route !== 'patient' && CS._patientLive) {
       CS.unmountPatientPage();  // 离开患者页: 停引擎定时器 + 释放 WebGL
     }

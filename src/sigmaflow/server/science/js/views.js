@@ -220,7 +220,7 @@
 
   V.sidebar = () => {
     const active = CS.ui.route;
-    const nav = [ ['home','message','新对话'], ['literature','book','文献'], ['data','database','数据集'], ['workflows','workflow','工作流'], ['results','chart','分析结果'], ['tools','grid','生物工具'], ['tasks','queue','任务队列'], ['cell','cells','虚拟细胞'], ['patient','patient','虚拟患者'], ['pathogen','virus','虚拟病原体'] ];
+    const nav = [ ['home','message','新对话'], ['literature','book','文献'], ['data','database','数据集'], ['workflows','workflow','工作流'], ['results','chart','分析结果'], ['tools','grid','生物工具'], ['tasks','queue','任务队列'], ['cell','cells','虚拟细胞'], ['patient','patient','虚拟患者'], ['pathogen','virus','虚拟病原体'], ['fly','network','虚拟果蝇'] ];
     const running = CS.state.runs.filter(r => ['running','paused','awaiting','connecting'].includes(r.status)).length;
     const streaming = new Set(CS.state.runs.filter(r => (r.messages || []).some(m => m.streaming)).map(r => r.id));
     return `${CS.ui.mobileSidebar ? '<button class="sidebar-scrim" aria-label="关闭菜单" data-action="toggle-sidebar"></button>' : ''}<aside class="sidebar ${CS.ui.mobileSidebar ? 'open' : ''} ${CS.ui.sidebarFolded ? 'folded' : ''}" aria-label="主导航">
@@ -304,6 +304,23 @@
   };
   // ===== 虚拟病原体 =====
   // 静态壳 + mountPathogenPage() 挂载(目录/宿主内控制台/四联图/诊断/日志);
+  // 虚拟果蝇页壳: #fly-root 与病原体页同条款(重渲染原样搬回, 保 3D canvas)。
+  V.fly = () => `<section class="page fly-page"><div id="fly-root">
+    <div class="fly-topbar">
+      <div class="fly-title">🪰 虚拟果蝇<span class="fly-dot" id="flyDot" title="引擎连接状态"></span></div>
+      <div class="fly-motto">全脑 LIF 仿真 × Qwen2.5-1.5B(LoRA) · 每 token 驱动 16 万神经元 · 教学演示</div>
+      <div class="fly-actions"><button type="button" class="btn small-btn" id="flyWireBtn" onclick="FlyUI.toggleWire()" title="全脑神经元线框(按需分块加载)">线框</button><button type="button" class="btn small-btn" id="flyResetBtn" onclick="FlyUI.reset()">重置对话</button></div>
+    </div>
+    <div class="fly-body">
+      <div class="fly-chat" id="flyChat"><div class="fly-msgs" id="flyMsgs"></div>
+        <form class="fly-form" id="flyForm"><input id="flyInput" maxlength="2000" placeholder="和果蝇大脑说点什么…（每 token 增量仿真, 回复需数秒）" autocomplete="off"><button type="submit" class="btn small-btn primary" id="flySend">发送</button></form>
+        <div class="fly-foot small" id="flyFoot">引擎检测中…</div>
+      </div>
+      <div class="fly-viz" id="flyViz"><canvas id="flyCanvas"></canvas>
+        <div class="fly-hud"><span id="flyHudN">— 神经元</span><span id="flyHudAct">活动 —</span><span id="flyHudFps">— fps</span></div>
+      </div>
+    </div>
+  </div></section>`;
   // #pathogen-root 与患者页同条款: 重渲染时原样搬回(保 canvas)。
   V.pathogen = () => `<section class="page pathogen-page"><div id="pathogen-root">
     <div class="p2-topbar">

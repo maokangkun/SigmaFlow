@@ -464,6 +464,20 @@ def _test_provider(base_url: str, api_key: str) -> dict:
     return result
 
 
+_FLY_URL_ENV = "SIGMAFLOW_FLY_URL"
+_FLY_REPO_ENV = "SIGMAFLOW_FLY_REPO"
+
+
+def _fly_base() -> str:
+    """FlyChat 引擎基址(去尾斜杠)。"""
+    return (os.environ.get(_FLY_URL_ENV) or "http://127.0.0.1:4116").rstrip("/")
+
+
+def _fly_repo() -> str:
+    """权重/部署脚本所在的 GitHub 仓库(一键部署入口, 可为 releases 页)。"""
+    return os.environ.get(_FLY_REPO_ENV) or "https://github.com/mkk-archive/flychat"
+
+
 def _list_provider_models(base_url: str, api_key: str) -> dict:
     """Fetch the provider's model catalogue.
 
@@ -1917,6 +1931,118 @@ class ScienceAPI:
             return await asyncio.to_thread(
                 _fs_exec_payload, project, payload.cmd, payload.cwd
             )
+
+        # ---------------- 虚拟果蝇(FlyChat)引擎代理 ----------------
+        # 引擎(全脑 LIF 仿真 + Qwen LoRA, 含 50GB 级权重)独立部署为常驻服务,
+        # 不随 python 包分发; 本组路由只做同源代理(免 CORS + 隐藏内网地址)。
+        # 地址/发布页均可经环境变量覆盖:
+        #   SIGMAFLOW_FLY_URL   引擎基址(默认本机 4116, 即 flychat-web.service)
+        #   SIGMAFLOW_FLY_REPO  权重与部署脚本所在的 GitHub 仓库(页面一键部署入口)
+        @router.get("/fly/status")
+        async def fly_status(request: Request):
+            """探测引擎; 不可达时返回部署引导信息(前端渲染一键部署卡)。"""
+            _check_origin(request)
+            base = _fly_base()
+            try:
+                resp = await asyncio.to_thread(
+                    requests.get, base + "/api/status", timeout=4.0
+                )
+                data = resp.json() if resp.status_code == 200 else {}
+                return {
+                    "ok": resp.status_code == 200,
+                    "engine": base,
+                    "repo": _fly_repo(),
+                    "status": data,
+                    "error": None if resp.status_code == 200 else f"HTTP {resp.status_code}",
+                }
+            except Exception as err:
+                return {
+                    "ok": False,
+                    "engine": base,
+                    "repo": _fly_repo(),
+                    "status": None,
+                    "error": str(err)[:200],
+                }
+
+        @router.post("/fly/chat")
+        async def fly_chat(payload: _FlyChatIn, request: Request):
+            """对话一次(全脑仿真 + 前缀投影 + LLM 生成, 引擎内串行)。"""
+            _check_origin(request)
+            try:
+                resp = await asyncio.to_thread(
+                    requests.post,
+                    _fly_base() + "/api/chat",
+                    json={"text": payload.text},
+                    timeout=600.0,
+                )
+                return resp.json()
+            except Exception as err:
+                raise HTTPException(status_code=502, detail=f"果蝇引擎不可达：{str(err)[:150]}")
+
+        @router.post("/fly/reset")
+        async def fly_reset(request: Request):
+            _check_origin(request)
+            try:
+                resp = await asyncio.to_thread(
+                    requests.post, _fly_base() + "/api/reset", timeout=15.0
+                )
+                return resp.json() if resp.content else {"ok": True}
+            except Exception as err:
+                raise HTTPException(status_code=502, detail=f"果蝇引擎不可达：{str(err)[:150]}")
+
+        @router.get("/fly/activity")
+        async def fly_activity(request: Request):
+            """最近一个 token 子窗的全脑放电快照(3D 实时高亮轮询)。"""
+            _check_origin(request)
+            try:
+                resp = await asyncio.to_thread(
+                    requests.get, _fly_base() + "/api/activity", timeout=5.0
+                )
+                return resp.json()
+            except Exception as err:
+                raise HTTPException(status_code=502, detail=f"果蝇引擎不可达：{str(err)[:150]}")
+
+        @router.get("/fly/data/meta.json")
+        async def fly_meta(request: Request):
+            """viewer 元数据(胞体坐标等, ~9MB JSON)。"""
+            _check_origin(request)
+            try:
+                resp = await asyncio.to_thread(
+                    requests.get, _fly_base() + "/data/meta.json", timeout=60.0
+                )
+                return Response(
+                    content=resp.content,
+                    media_type="application/json; charset=utf-8",
+                    headers={"Cache-Control": "public, max-age=86400"},
+                )
+            except Exception as err:
+                raise HTTPException(status_code=502, detail=f"果蝇引擎不可达：{str(err)[:150]}")
+
+        @router.get("/fly/data/lod2/{chunk}")
+        async def fly_lod2(chunk: str, request: Request):
+            """LOD2 线框分块(懒加载, 仅放行 chunk_NNN.bin 形态的文件名)。"""
+            _check_origin(request)
+            if not re.fullmatch(r"chunk_\d{3}\.bin", chunk):
+                raise HTTPException(status_code=400, detail="分块名无效")
+            try:
+                upstream = requests.get(
+                    _fly_base() + "/data/lod2/" + chunk, stream=True, timeout=120.0
+                )
+
+                def gen():
+                    try:
+                        for part in upstream.iter_content(chunk_size=1 << 20):
+                            yield part
+                    finally:
+                        upstream.close()
+
+                return StreamingResponse(
+                    gen(),
+                    media_type="application/octet-stream",
+                    headers={"Cache-Control": "public, max-age=86400"},
+                )
+            except Exception as err:
+                raise HTTPException(status_code=502, detail=f"果蝇引擎不可达：{str(err)[:150]}")
 
         @router.post("/fs/upload")
         async def fs_upload(payload: _FsUploadIn, request: Request):
@@ -4103,6 +4229,10 @@ class _FsExecIn(BaseModel):
     projectId: str = ""
     cmd: str = Field(min_length=1, max_length=8000)
     cwd: str = Field(default="", max_length=2000)
+
+
+class _FlyChatIn(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
 
 
 class _FsUploadIn(BaseModel):
