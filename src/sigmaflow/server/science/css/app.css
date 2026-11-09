@@ -944,13 +944,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
     linear-gradient(135deg, rgba(120,130,160,.06), rgba(120,130,160,.12));
 }
 
-/* webview 专属「网页」标签与 Cloudflare 提示 */
-.webview-block .wv-tag {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 2px 9px; margin-right: 8px; border-radius: 999px;
-  background: rgba(48, 132, 96, .12); color: #2b7a58;
-  font-size: 12px; font-weight: 600; vertical-align: 1px;
-}
+/* webview 卡片: Cloudflare 提示 */
 .webview-block .wv-hint {
   margin-top: 6px; text-align: right; opacity: .85;
 }
