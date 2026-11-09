@@ -686,7 +686,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 @keyframes tr-pulse{0%,100%{opacity:.55;transform:scale(.82)}50%{opacity:1;transform:scale(1.06)}}
 .run-track .tr-live{animation:tr-pulse 1.15s ease-in-out infinite}
 /* 轨迹配色方案: 马卡龙(默认柔和粉彩) / 经典 / 素雅单色, 设置页可切换 */
-:root{--tr-compact:#d9488c;--tr-user:#35b26a;--tr-think:#3d5fc4;--tr-tool:#f5a623;--tr-reply:#8f4fd6;--tr-system:#9aa1ab;--tr-error:#e03b3b;--tr-present:#12a5b0}
+:root{--tr-compact:#d9488c;--tr-user:#35b26a;--tr-think:#3d5fc4;--tr-tool:#f5a623;--tr-reply:#8f4fd6;--tr-system:#9aa1ab;--tr-error:#e03b3b;--tr-present:#12a5b0;--tr-webview:#2b8f6a}
 :root[data-trackpalette="classic"]{--tr-compact:#b04a75;--tr-user:#3aa463;--tr-think:var(--blue);--tr-tool:var(--amber);--tr-reply:#d1568f;--tr-system:#6e7480;--tr-error:#e03b3b;--tr-present:#1f9bb4}
 :root[data-trackpalette="mono"]{--tr-compact:#3a3f47;--tr-user:#5c6672;--tr-think:#8a93a3;--tr-tool:#a9b1bd;--tr-reply:#cdd3dc;--tr-system:#eef1f5;--tr-error:#b8452f;--tr-present:#9fb6bd}
 @media(max-width:800px){.run-track{max-width:340px}}
@@ -725,6 +725,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .tk-think{background:color-mix(in srgb,var(--tr-think) 13%,transparent);color:var(--tr-think)}
 .tk-tool{background:color-mix(in srgb,var(--tr-tool) 16%,transparent);color:var(--tr-tool)}
 .tk-present{background:color-mix(in srgb,var(--tr-present) 15%,transparent);color:var(--tr-present)}
+.tk-webview{background:color-mix(in srgb,var(--tr-webview) 15%,transparent);color:var(--tr-webview)}
 .tk-system{background:color-mix(in srgb,var(--tr-system) 18%,transparent);color:var(--muted)}
 .tk-error{background:color-mix(in srgb,var(--tr-error) 13%,transparent);color:var(--tr-error)}
 .trace-preview{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
@@ -750,7 +751,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .tb-item.clickable:hover,.tb-item.open{background:color-mix(in srgb,var(--accent-bg) 55%,transparent)}
 .tb-body{display:block;margin:0 0 7px 44px}
 .tb-body pre{margin:0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:color-mix(in srgb,var(--accent-bg) 30%,transparent);font-size:10.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;color:var(--ink)}
-.tb-item .tk-user,.tb-item .tk-reply,.tb-item .tk-think,.tb-item .tk-tool,.tb-item .tk-system,.tb-item .tk-error,.tb-item .tk-sysnote,.tb-item .tk-compact{flex-shrink:0;width:44px;padding:2px 0;text-align:center;font-size:9px;font-weight:570}
+.tb-item .tk-user,.tb-item .tk-reply,.tb-item .tk-think,.tb-item .tk-tool,.tb-item .tk-system,.tb-item .tk-error,.tb-item .tk-sysnote,.tb-item .tk-compact,.tb-item .tk-present,.tb-item .tk-webview{flex-shrink:0;width:44px;padding:2px 0;text-align:center;font-size:9px;font-weight:570}
 .tb-txt{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 
 /* 聊天/trace 主列铺满主区: 解除 .page 与宽屏 media 给出的 max-width, 供 flex width:100% 生效(置于所有 media 之后以确保覆盖) */
@@ -954,6 +955,3 @@ html[data-motion="reduced"] #anchor-tip{display:none}
   margin-top: 6px; text-align: right; opacity: .85;
 }
 /* trace 页块行: 网页条目色系 */
-.tb-item .tk-webview {
-  color: #2b7a58;
-}
