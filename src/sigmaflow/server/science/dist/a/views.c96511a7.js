@@ -97,6 +97,7 @@
       <aside class="p2-browser">
         <input class="p2-search" type="search" placeholder="搜索病原体: 名称 / 基因组类型…" value="" oninput="PathoUI.search(this.value)">
         <div class="p2-chips" id="p2Kinds"></div>
+        <div class="p2-tier-legend small muted">名称后角标 = 保真度：<b>A</b> 精调 · <b>B</b> 原型校准 · <b>C</b> 目录级（教科书量级）</div>
         <div class="p2-list" id="p2List"></div>
       </aside>
       <div class="p2-right">
