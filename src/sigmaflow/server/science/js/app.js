@@ -347,6 +347,12 @@
         el.dataset.state = 'done';
       } else CS._presentIO.observe(el);
     });
+    // 弹出菜单(模型/项目等)向上展开时钳制高度: 不超出视口上缘, 内部滚动兜底,
+    // 否则首页输入框位置较高时长菜单顶部选项会被视口裁掉无法看到
+    document.querySelectorAll('.model-menu').forEach(m => {
+      const r = m.getBoundingClientRect();
+      if (r.top < 8) { m.style.maxHeight = Math.max(200, Math.floor(r.bottom - 8)) + 'px'; m.scrollTop = 0; }
+    });
     // 用户消息 @引用芯片的图片缩略图: 同一套缓存, 命中即同步设 src
     if (CS._presentIO) document.querySelectorAll('img.ref-thumb[data-state="idle"]').forEach(el => {
       const key = (el.dataset.pid || '') + '|' + (el.dataset.path || '');

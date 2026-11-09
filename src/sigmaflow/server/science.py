@@ -5152,6 +5152,21 @@ def _run_agent_chat(
     agent_module = _agent_agent_module()
     Agent = agent_module.Agent
 
+    # anthropic 兼容端点(如 bigmodel 的 /api/anthropic)不实现 OpenAI 风格
+    # /chat/completions(一律返回 200 包 404 错误体), 走 Agent 的 anthropic
+    # 分支(/v1/messages, x-api-key); 工具定义也要转成 input_schema 形态
+    anthropic_dialect = "anthropic" in (base_url or "").lower()
+    effective_tools_arg = _effective_agent_tools()
+    if anthropic_dialect:
+        effective_tools_arg = [
+            {
+                "name": t.get("name", ""),
+                "description": t.get("description", ""),
+                "input_schema": t.get("parameters", {"type": "object", "properties": {}}),
+            }
+            for t in effective_tools_arg
+        ]
+
     tools_mod = _agent_tools_module()
     tools_mod.set_session_workdir(workdir)
     # 会话作用域: task/job/inbox 等有状态工具按 runId 分片, 会话间互不可见
@@ -5159,7 +5174,8 @@ def _run_agent_chat(
 
     def _msg_content(m: dict):
         """user 消息可携带 images(dataUrl 列表, 上传图片附件):
-        组装为 OpenAI 多模态内容块(image_url), 由 glm/qwen 等视觉模型直读;
+        按服务商方言组装多模态内容块 —— OpenAI 兼容端点用 image_url,
+        anthropic 兼容端点(如 bigmodel)用 image source(base64);
         纯文本消息保持字符串, 不改变既有载荷形态。"""
         imgs = m.get("images")
         if m.get("role") == "user" and isinstance(imgs, list) and imgs:
@@ -5168,7 +5184,24 @@ def _run_agent_chat(
             if text.strip():
                 blocks.append({"type": "text", "text": text})
             for url in imgs[:4]:
-                if isinstance(url, str) and url.startswith("data:image/"):
+                if not (isinstance(url, str) and url.startswith("data:image/")):
+                    continue
+                if anthropic_dialect:
+                    try:
+                        head, b64 = url.split(",", 1)
+                        blocks.append(
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": head[5:].split(";")[0],
+                                    "data": b64,
+                                },
+                            }
+                        )
+                    except ValueError:
+                        continue
+                else:
                     blocks.append(
                         {"type": "image_url", "image_url": {"url": url}}
                     )
@@ -5278,7 +5311,7 @@ def _run_agent_chat(
         # 保证它比通用提示词更靠近对话, 模型优先遵循
         bound_system = bound_system + "\n\n" + system_extra
     agent = Agent(
-        method="openai",
+        method="anthropic" if anthropic_dialect else "openai",
         model=model_name,
         base_url=base_url,
         api_key=api_key or "sk-empty",
@@ -5288,7 +5321,7 @@ def _run_agent_chat(
         nudge_threshold=_nudge_threshold(),
         max_model_len=model_ctx,  # 网关自定模型名 litellm 不识, fallback 会低估窗口导致误压缩
         tool_result_limit=_tool_result_limit(),  # 与设置页 toolResultLimit 同源
-        tools=_effective_agent_tools(),
+        tools=effective_tools_arg,
         system=bound_system,
         sub_system=sub_system,
         # pjlab 网关无流式不响应存; 无人订阅增量时也要走流式分支拿缓存字段

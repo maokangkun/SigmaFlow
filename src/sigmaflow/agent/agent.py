@@ -534,6 +534,17 @@ class Agent:
                                 response.content,
                                 key=lambda x: 0 if x.type == "thinking" else 1,
                             )
+                            # 非流式响应也要把思考/正文推给 on_delta: 服务端聊天
+                            # 管线(science 的 stream_chat)只消费增量事件, 不推送
+                            # 会导致 anthropic 方言服务商(bigmodel 等)整轮空回复
+                            if self.on_delta is not None:
+                                for _blk in response.content:
+                                    if getattr(_blk, "type", "") == "thinking":
+                                        if getattr(_blk, "thinking", ""):
+                                            self.on_delta(None, _blk.thinking)
+                                    elif getattr(_blk, "type", "") == "text":
+                                        if getattr(_blk, "text", ""):
+                                            self.on_delta(_blk.text)
                             info["cost_tokens"] += (
                                 response.usage.input_tokens
                                 + response.usage.output_tokens
