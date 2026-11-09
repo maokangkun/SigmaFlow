@@ -1606,8 +1606,20 @@ class Agent:
             # 静默轮计分: 本轮有可见文字即清零; 纯工具轮累计, 超阈值注入滚动
             # nudge(旧 nudge 先移除, 历史不叠加)。只看本轮 assistant 是否对
             # 用户产出了文字, 与 ask/后台通知等 user 注入无关。
-            _turn_text = str(getattr(msg, "content", "") or "").strip()
-            _turn_tools = bool(getattr(msg, "tool_calls", None))
+            if self.method == "anthropic":
+                # anthropic 分支无 openai 的 msg 壳: 文本/工具信息在 response.content 块里
+                _turn_text = "".join(
+                    getattr(_b, "text", "")
+                    for _b in response.content
+                    if getattr(_b, "type", "") == "text"
+                ).strip()
+                _turn_tools = any(
+                    getattr(_b, "type", "") == "tool_use"
+                    for _b in response.content
+                )
+            else:
+                _turn_text = str(getattr(msg, "content", "") or "").strip()
+                _turn_tools = bool(getattr(msg, "tool_calls", None))
             if _turn_text:
                 silent_tools = 0
                 messages[:] = [

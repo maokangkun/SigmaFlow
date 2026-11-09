@@ -5162,7 +5162,11 @@ def _run_agent_chat(
             {
                 "name": t.get("name", ""),
                 "description": t.get("description", ""),
-                "input_schema": t.get("parameters", {"type": "object", "properties": {}}),
+                # 工具定义原生即 input_schema 键(anthropic 形态); 空键兜底必须是
+                # 宽松对象而非空 properties —— 空schema会让网关按schema生成空参数
+                "input_schema": t.get("input_schema")
+                or t.get("parameters")
+                or {"type": "object", "properties": {}},
             }
             for t in effective_tools_arg
         ]
