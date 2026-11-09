@@ -523,21 +523,51 @@ class Agent:
                     start_time = time.time()
                     match self.method:
                         case "anthropic":
-                            response = self.client.messages.create(
-                                model=self.model,
-                                system=self.system,
-                                messages=messages,
-                                tools=usable_tools,
-                                max_tokens=MAX_TOKENS,
-                            )
+                            # 流式优先: ThinkingEvent/TextEvent 边到边推 on_delta,
+                            # 终态由 get_final_message 聚合(usage/stop_reason/内容块
+                            # 与非流式完全同构, 下游逻辑零改动); SDK 不支持 stream
+                            # 上下文管理器时回退非流式并整段补发
+                            _streamed = [False]
+
+                            def _anthropic_call():
+                                try:
+                                    with self.client.messages.stream(
+                                        model=self.model,
+                                        system=self.system,
+                                        messages=messages,
+                                        tools=usable_tools,
+                                        max_tokens=MAX_TOKENS,
+                                    ) as _stream:
+                                        _streamed[0] = True
+                                        for _ev in _stream:
+                                            _t = type(_ev).__name__
+                                            if self.on_delta is not None:
+                                                if _t == "ThinkingEvent" and getattr(
+                                                    _ev, "thinking", ""
+                                                ):
+                                                    self.on_delta(None, _ev.thinking)
+                                                elif _t == "TextEvent" and getattr(
+                                                    _ev, "text", ""
+                                                ):
+                                                    self.on_delta(_ev.text)
+                                        return _stream.get_final_message()
+                                except TypeError:
+                                    return self.client.messages.create(
+                                        model=self.model,
+                                        system=self.system,
+                                        messages=messages,
+                                        tools=usable_tools,
+                                        max_tokens=MAX_TOKENS,
+                                    )
+
+                            response = _anthropic_call()
                             response.content = sorted(
                                 response.content,
                                 key=lambda x: 0 if x.type == "thinking" else 1,
                             )
-                            # 非流式响应也要把思考/正文推给 on_delta: 服务端聊天
-                            # 管线(science 的 stream_chat)只消费增量事件, 不推送
-                            # 会导致 anthropic 方言服务商(bigmodel 等)整轮空回复
-                            if self.on_delta is not None:
+                            # 回退路径(未走流式)整段补发思考/正文, 保证服务端聊天
+                            # 管线(science 的 stream_chat)总能收到增量事件
+                            if self.on_delta is not None and not _streamed[0]:
                                 for _blk in response.content:
                                     if getattr(_blk, "type", "") == "thinking":
                                         if getattr(_blk, "thinking", ""):
