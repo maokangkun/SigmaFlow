@@ -856,7 +856,8 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .upload-spin{width:14px;height:14px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--accent,#5b8def);animation:upload-rot .8s linear infinite;flex:none}
 @keyframes upload-rot{to{transform:rotate(360deg)}}
 .danger-text{color:#c46a6a}
-.ref-chip-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.ref-chip-list{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;justify-content:flex-end}
+.attachment-list.ref-outside{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;justify-content:flex-end}
 .ref-imgs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;justify-content:flex-end}
 .ref-img-btn{padding:0;border:none;background:none;cursor:pointer;border-radius:10px;overflow:hidden;box-shadow:3px 3px 8px #c9cfda90,-2px -2px 6px #ffffffa8}
 .ref-img-btn:hover{box-shadow:3px 3px 10px #b8c0d2a8,-2px -2px 6px #ffffff;outline:2px solid #5b8def40}
