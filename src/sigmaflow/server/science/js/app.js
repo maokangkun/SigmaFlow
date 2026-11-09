@@ -261,6 +261,7 @@
   }, { rootMargin: '260px' });
   // ---- webview live: 服务端真浏览器帧流 + 输入转发 ----
   CS._wvLive = new Map();  // sid -> {ws, el}
+  CS._wvFrame = new Map();  // sid -> {d,w,h} 最后一帧缓存: 重渲染后同步回填防黑屏
   CS._wvLiveAttach = el => {
     const sid = el.dataset.sid;
     if (!sid) return;
@@ -290,10 +291,20 @@
       return { x: (ev.clientX - r.left) * sx, y: (ev.clientY - r.top) * sy };
     };
     let dragging = false;
-    view.addEventListener('mousedown', ev => { ev.preventDefault(); view.focus(); dragging = true; const p = pt(ev); send({ t: 'mouse', st: 'pressed', x: p.x, y: p.y }); });
-    view.addEventListener('mousemove', ev => { if (!dragging) return; const p = pt(ev); send({ t: 'mouse', st: 'moved', x: p.x, y: p.y, drag: 1 }); });
+    let lastMove = 0;
+    const move = (ev, force) => {
+      const now = performance.now();
+      if (!force && now - lastMove < 25) return;  // 40Hz 上限, 轨迹密度足够且不淹 CDP
+      lastMove = now;
+      const p = pt(ev);
+      send({ t: 'mouse', st: 'moved', x: p.x, y: p.y, ...(dragging ? { drag: 1 } : {}) });
+    };
+    // 悬停移动全量转发: 人机验证(Cloudflare/极验等)依赖点击前的鼠标轨迹,
+    // 只转发拖拽会让点击变成"瞬移", 直接判机器人
+    view.addEventListener('mousemove', ev => move(ev));
+    view.addEventListener('mousedown', ev => { ev.preventDefault(); view.focus(); move(ev, true); dragging = true; const p = pt(ev); send({ t: 'mouse', st: 'pressed', x: p.x, y: p.y }); });
     window.addEventListener('mouseup', ev => { if (!dragging) return; dragging = false; const p = pt(ev); send({ t: 'mouse', st: 'released', x: p.x, y: p.y }); });
-    view.addEventListener('wheel', ev => { ev.preventDefault(); send({ t: 'wheel', dx: Math.round(ev.deltaX), dy: Math.round(ev.deltaY) }); }, { passive: false });
+    view.addEventListener('wheel', ev => { ev.preventDefault(); const p = pt(ev); send({ t: 'wheel', x: Math.round(p.x), y: Math.round(p.y), dx: Math.round(ev.deltaX), dy: Math.round(ev.deltaY) }); }, { passive: false });
     view.addEventListener('keydown', ev => {
       const k = ev.key;
       if (k.length === 1 || ['Enter', 'Backspace', 'Tab', 'Escape', 'ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'Delete', 'Home', 'End', 'PageUp', 'PageDown'].includes(k)) {
@@ -302,29 +313,42 @@
       }
     });
     view.addEventListener('paste', ev => { const txt = (ev.clipboardData || {}).getData ? ev.clipboardData.getData('text') : ''; if (txt) send({ t: 'paste', text: txt.slice(0, 5000) }); });
-    const _cur = () => CS._wvLive.get(sid) === st ? {
-      img: document.querySelector(`.wv-live[data-sid="${CSS.escape(sid)}"] .wv-live-img`),
-      conn: document.querySelector(`.wv-live[data-sid="${CSS.escape(sid)}"] .wv-live-conn`),
-      view: document.querySelector(`.wv-live[data-sid="${CSS.escape(sid)}"] .wv-live-view`),
-      urlbar: document.querySelector(`.wv-live[data-sid="${CSS.escape(sid)}"] .wv-live-urlbar`),
-    } : null;
+    // 同 sid 可能有多张卡(模型重复展示同一 URL): 全部扇出。
+    // 注意 NodeList 没有 querySelectorAll, 先展开成元素再查。
+    const _cur = () => {
+      if (CS._wvLive.get(sid) !== st) return null;
+      const cards = [...document.querySelectorAll(`.wv-live[data-sid="${CSS.escape(sid)}"]`)];
+      if (!cards.length) return null;
+      return {
+        imgs: cards.flatMap(c => [...c.querySelectorAll('.wv-live-img')]),
+        cons: cards.flatMap(c => [...c.querySelectorAll('.wv-live-conn')]),
+        views: cards.flatMap(c => [...c.querySelectorAll('.wv-live-view')]),
+        urlbars: cards.flatMap(c => [...c.querySelectorAll('.wv-live-urlbar')]),
+      };
+    };
     ws.onmessage = m => {
       let d; try { d = JSON.parse(m.data); } catch { return; }
       const c = _cur(); if (!c) return;
       if (d.t === 'frame') {
-        c.img.src = 'data:image/jpeg;base64,' + d.d;
-        c.img.dataset.w = d.w; c.img.dataset.h = d.h;
-        c.img.style.display = 'block'; if (c.conn) c.conn.style.display = 'none';
-        c.view.classList.add('wv-live-on');
+        CS._wvFrame.set(sid, { d: d.d, w: d.w, h: d.h });
+        c.imgs.forEach(img => {
+          img.src = 'data:image/jpeg;base64,' + d.d;
+          img.dataset.w = d.w; img.dataset.h = d.h;
+          img.style.display = 'block';
+        });
+        c.cons.forEach(cn => { cn.style.display = 'none'; });
+        c.views.forEach(v => v.classList.add('wv-live-on'));
       } else if (d.t === 'url') {
-        if (c.urlbar) c.urlbar.textContent = d.url || '';
+        CS._wvFrame.get(sid) && (CS._wvFrame.get(sid).url = d.url);
+        c.urlbars.forEach(ub => { ub.textContent = d.url || ''; });
       } else if (d.t === 'err' || d.t === 'done') {
-        if (c.conn) { c.conn.textContent = d.t === 'done' ? '会话已结束' : (d.msg || '连接失败'); c.conn.style.display = ''; }
-        if (c.view) c.view.classList.remove('wv-live-on');
+        CS._wvFrame.delete(sid);
+        c.cons.forEach(cn => { cn.textContent = d.t === 'done' ? '会话已结束' : (d.msg || '连接失败'); cn.style.display = ''; });
+        c.views.forEach(v => v.classList.remove('wv-live-on'));
         CS._wvLive.delete(sid);
       }
     };
-    ws.onclose = () => { CS._wvLive.delete(sid); const c = _cur(); if (c?.view) c.view.classList.remove('wv-live-on'); };
+    ws.onclose = () => { CS._wvLive.delete(sid); const c = _cur(); if (c) c.views.forEach(v => v.classList.remove('wv-live-on')); };
   };
   // 表格/JSON 预览区允许选中文本, 点击不再冒泡触发整卡弹窗(图片点击仍进弹窗)
   document.addEventListener('click', ev => {
@@ -418,8 +442,24 @@
         el.dataset.state = 'done';
       } else CS._presentIO.observe(el);
     });
-    // webview live 真浏览器卡片: 幂等重绑(Map 里已有连接则只换 el 引用)
-    document.querySelectorAll('.wv-live[data-sid]').forEach(el => { try { CS._wvLiveAttach(el); } catch {} });
+    // webview live 真浏览器卡片: 最后一帧缓存同步回填(重渲染不闪黑), 再幂等重绑
+    document.querySelectorAll('.wv-live[data-sid]').forEach(el => {
+      const f = CS._wvFrame && CS._wvFrame.get(el.dataset.sid);
+      if (f) {
+        const img = el.querySelector('.wv-live-img');
+        if (img && !img.src) {
+          img.src = 'data:image/jpeg;base64,' + f.d;
+          img.dataset.w = f.w; img.dataset.h = f.h;
+          img.style.display = 'block';
+          const conn = el.querySelector('.wv-live-conn');
+          if (conn) conn.style.display = 'none';
+          el.querySelector('.wv-live-view')?.classList.add('wv-live-on');
+        }
+        const ub = el.querySelector('.wv-live-urlbar');
+        if (ub && f.url) ub.textContent = f.url;
+      }
+      try { CS._wvLiveAttach(el); } catch {}
+    });
     // webview iframe 懒加载: 进入视口前 300px 才设 src(历史卡片不重复打外站);
     // 已加载的帧优先原样搬回(保活), 搬不回的才走懒加载
     document.querySelectorAll('iframe.wv-frame[data-state="idle"]').forEach(el => {

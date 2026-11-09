@@ -215,3 +215,36 @@ def test_live_browser_engine():
     finally:
         lv.close()
         srv.shutdown()
+
+
+def test_webview_same_url_dedup():
+    """同一 URL 重复调用复用同一会话(不新开卡片会话/浏览器)。"""
+    b1, b2 = {}, {}
+    tools.run_webview(url="http://example.com/dup", _notify=lambda e: b1.update(e))
+    tools.run_webview(url="http://example.com/dup", _notify=lambda e: b2.update(e))
+    assert b1["sid"] == b2["sid"], "proxy jar should be reused for same URL"
+    b3, b4 = {}, {}
+    tools.run_webview(
+        url="http://example.com/duplive", live=True, _notify=lambda e: b3.update(e)
+    )
+    tools.run_webview(
+        url="http://example.com/duplive", live=True, _notify=lambda e: b4.update(e)
+    )
+    assert b3["sid"] == b4["sid"], "live browser should be reused for same URL"
+    lv = tools._WV_LIVE.get(b3["sid"])
+    if lv:
+        lv.close()
+
+
+def test_webview_same_url_parallel_dedup():
+    """并行(同一轮多工具调用)打同一 URL 也必须收敛到同一会话。"""
+    import concurrent.futures
+
+    def call(_i):
+        box = {}
+        tools.run_webview(url="http://example.com/par", _notify=lambda e: box.update(e))
+        return box.get("sid")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+        sids = list(ex.map(call, range(4)))
+    assert len(set(sids)) == 1, f"parallel calls created multiple sessions: {sids}"

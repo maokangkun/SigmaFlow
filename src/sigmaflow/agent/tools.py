@@ -1887,6 +1887,23 @@ def _webview_touch(sid: str, origin: str = ""):
 # 里, webview_fetch 随时把 CDP Cookie 导出进 requests 罐即可复用。
 _WV_LIVE: dict = {}
 _WV_LIVE_LOCK = threading.Lock()
+# 同一 URL 只开一个会话: 模型重复调 webview 打同一地址时复用既有 sid,
+# 不再叠加新卡片/新浏览器(消息刷屏 + chrome 泛滥的根源)
+_WV_URL_SID: dict = {}
+# 同 URL 创建互斥: 模型一轮并行发多个相同 webview 调用时, 去重检查有
+# TOCTOU 竞态(都查到"没有"→都新建)。per-key 锁把创建串行化, 后到者
+# 等先到者登记完再走复用分支。
+_WV_KEY_LOCKS: dict = {}
+_WV_KEY_LOCKS_GUARD = threading.Lock()
+
+
+def _wv_key_lock(key: str) -> threading.Lock:
+    with _WV_KEY_LOCKS_GUARD:
+        lk = _WV_KEY_LOCKS.get(key)
+        if lk is None:
+            lk = threading.Lock()
+            _WV_KEY_LOCKS[key] = lk
+        return lk
 _WV_LIVE_MAX = 3
 _WV_LIVE_TTL = 1800.0
 # Chrome 二进制发现顺序: 环境变量 > playwright 缓存 > 系统 chromium
@@ -2146,7 +2163,17 @@ class _WvLive:
                     },
                 )
             elif t == "wheel":
-                self._fire("Input.dispatchMouseEvent", {"type": "mouseWheel", "x": 0, "y": 0, "deltaX": float(cmd.get("dx", 0)), "deltaY": float(cmd.get("dy", 0))})
+                # 滚轮带光标坐标: 命中测试决定滚动哪个容器(iframe/局部滚动区)
+                self._fire(
+                    "Input.dispatchMouseEvent",
+                    {
+                        "type": "mouseWheel",
+                        "x": float(cmd.get("x", 0)),
+                        "y": float(cmd.get("y", 0)),
+                        "deltaX": float(cmd.get("dx", 0)),
+                        "deltaY": float(cmd.get("dy", 0)),
+                    },
+                )
             elif t == "key":
                 key, text = str(cmd.get("key") or ""), str(cmd.get("text") or "")
                 vk = _vk_of(key) or (ord(text) if len(text) == 1 else 0)
@@ -2204,6 +2231,16 @@ def _wv_live_gc():
         while len(_WV_LIVE) > _WV_LIVE_MAX:
             oldest = min(_WV_LIVE, key=lambda k: _WV_LIVE[k].at)
             _WV_LIVE.pop(oldest).close()
+        # URL→sid 映射修剪: 会话两头(live 真浏览器 / requests 罐)都不在了才删,
+        # 只查 _WV_LIVE 会把代理罐的去重项误剪
+        with _WEBVIEW_LOCK:
+            jars_alive = set(_WEBVIEW_SESSIONS.keys())
+        for k in [
+            k
+            for k, v in _WV_URL_SID.items()
+            if v not in _WV_LIVE and v not in jars_alive
+        ]:
+            _WV_URL_SID.pop(k, None)
 
 
 def _webview_live_state():
@@ -2275,6 +2312,55 @@ def _webview_ingest_cookies(sid: str, cookie: str, ua: str = "") -> int:
     return count
 
 
+def _webview_live_or_reuse(u: str, key: str, ev: dict, h: int, _notify):
+    """live 真浏览器的「复用或创建」; 调用方已持 per-key 锁(并行去重安全)。"""
+    with _WV_LIVE_LOCK:
+        _old = _WV_LIVE.get(_WV_URL_SID.get(key, ""))
+        if _old is not None and not _old.dead and time.time() - _old.at < _WV_LIVE_TTL:
+            _old.at = time.time()
+            sid = _old.sid
+            ev.update({"mode": "remote", "url": u[:800], "sid": sid, "live": 1})
+            if _notify is not None:
+                try:
+                    _notify(ev)
+                except Exception:
+                    pass
+            return (
+                f"Web view card shown again for the ALREADY-OPEN live session {sid}"
+                " (same URL reuses the same server browser - no new session)."
+                " Cookies and page state are preserved; ask the user to operate"
+                " the existing card if they have not finished yet."
+            )
+    sid = "wv" + uuid.uuid4().hex[:10]
+    try:
+        sess = _WvLive(sid, u)
+        sess.start()
+    except Exception as err:
+        return f"Error: live browser failed: {str(err)[:200]}"
+    # 先登记再回收: gc 会修剪 _WV_URL_SID 里未进 _WV_LIVE 的映射,
+    # 顺序反了会把刚建的去重项当场剪掉
+    with _WV_LIVE_LOCK:
+        for k in [k for k, v in _WV_LIVE.items() if v.dead]:
+            _WV_LIVE.pop(k, None)
+        _WV_LIVE[sid] = sess
+        _WV_URL_SID[key] = sid
+    _wv_live_gc()
+    ev.update({"mode": "remote", "url": u[:800], "sid": sid, "live": 1})
+    tip = (
+        f"LIVE server browser shown to the user (session {sid}). They operate"
+        " it directly in the card - clicks, drags, typing all land in the"
+        " server-side Chrome, so cookies stay server-side automatically."
+        " After they finish (e.g. pass a challenge), call webview_fetch with"
+        f" sid={sid} to read pages with those cookies."
+    )
+    if _notify is not None:
+        try:
+            _notify(ev)
+        except Exception:
+            pass
+    return tip
+
+
 def run_webview(url="", title="", note="", height=420, live=False, _notify=None):
     """向用户展示一个可交互网页卡片; 远程页经服务端代理(带 Cookie 罐)。"""
     from urllib.parse import urlparse
@@ -2293,41 +2379,40 @@ def run_webview(url="", title="", note="", height=420, live=False, _notify=None)
         "height": h,
     }
     if str(live or "").lower() in ("1", "true", "yes") and u.lower().startswith(("http://", "https://")):
-        # browser-use 式真浏览器: 服务端 Chrome + 帧流 + 输入转发, Cookie 天然在服务端
-        sid = "wv" + uuid.uuid4().hex[:10]
-        try:
-            sess = _WvLive(sid, u)
-            sess.start()
-        except Exception as err:
-            return f"Error: live browser failed: {str(err)[:200]}"
-        # 先回收(超时/超额/已死)再登记, 防御服务重启遗留的僵尸浏览器
-        _wv_live_gc()
-        with _WV_LIVE_LOCK:
-            dead_sids = [k for k, v in _WV_LIVE.items() if v.dead]
-            for k in dead_sids:
-                _WV_LIVE.pop(k, None)
-            _WV_LIVE[sid] = sess
-        ev.update({"mode": "remote", "url": u[:800], "sid": sid, "live": 1})
-        tip = (
-            f"LIVE server browser shown to the user (session {sid}). They operate"
-            " it directly in the card - clicks, drags, typing all land in the"
-            " server-side Chrome, so cookies stay server-side automatically."
-            " After they finish (e.g. pass a challenge), call webview_fetch with"
-            f" sid={sid} to read pages with those cookies."
-        )
-        if _notify is not None:
-            try:
-                _notify(ev)
-            except Exception:
-                pass
-        return tip
+        # 同 URL 去重: 既有活会话直接复用(不新起浏览器, 不重复占 LRU 名额)
+        key = u.rstrip("/")
+        with _wv_key_lock(key):
+            return _webview_live_or_reuse(u, key, ev, h, _notify)
     if u.lower().startswith(("http://", "https://")):
         p = urlparse(u)
         if p.scheme not in ("http", "https") or not p.netloc:
             return "Error: invalid URL."
-        sid = "wv" + uuid.uuid4().hex[:10]
-        _webview_touch(sid, f"{p.scheme}://{p.netloc}")
-        ev.update({"mode": "remote", "url": u[:800], "sid": sid})
+        # 同 URL 去重(持 per-key 锁防并行竞态): 复用既有代理罐(Cookie 保留)
+        _pkey = u.rstrip("/")
+        with _wv_key_lock(_pkey):
+            with _WV_LIVE_LOCK:
+                _psid = _WV_URL_SID.get(_pkey)
+            if _psid:
+                with _WEBVIEW_LOCK:
+                    _pst = _WEBVIEW_SESSIONS.get(_psid)
+                if _pst is not None and time.time() - _pst["at"] <= _WEBVIEW_TTL:
+                    _pst["at"] = time.time()
+                    sid = _psid
+                    ev.update({"mode": "remote", "url": u[:800], "sid": sid})
+                    if _notify is not None:
+                        try:
+                            _notify(ev)
+                        except Exception:
+                            pass
+                    return (
+                        f"Web view card shown again for the already-open session"
+                        f" {sid} (same URL reuses the same cookie jar)."
+                    )
+            sid = "wv" + uuid.uuid4().hex[:10]
+            with _WV_LIVE_LOCK:
+                _WV_URL_SID[_pkey] = sid
+            _webview_touch(sid, f"{p.scheme}://{p.netloc}")
+            ev.update({"mode": "remote", "url": u[:800], "sid": sid})
         tip = (
             f"Interactive web view shown to the user (session {sid}). Cookies set"
             " while the user operates the embedded page are kept server-side."
