@@ -2232,7 +2232,9 @@
     'copy-message': id => {
       const run = CS.currentRun(); const m = run?.messages[Number(id)];
       if (!m) return;
-      navigator.clipboard?.writeText(m.content).then(() => CS.toast('已复制到剪贴板。')).catch(() => CS.toast('复制失败。', 'error'));
+      // 剥离上传附件的零宽隐藏引用(\u200B@path): 展示层不显示, 复制也不应带出
+      const text = String(m.content || '').replace(/\u200B@\S+/g, '').replace(/\s+$/, '');
+      navigator.clipboard?.writeText(text).then(() => CS.toast('已复制到剪贴板。')).catch(() => CS.toast('复制失败。', 'error'));
     },
     'delete-message': id => {
       const run = CS.currentRun(); const idx = Number(id);
