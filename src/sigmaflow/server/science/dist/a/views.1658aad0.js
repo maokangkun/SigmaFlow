@@ -68,16 +68,16 @@
     </div></section>`},k.fly=()=>`<section class="page fly-page"><div id="fly-root">
     <div class="fly-topbar">
       <div class="fly-title">🪰 虚拟果蝇<span class="fly-dot" id="flyDot" title="引擎连接状态"></span></div>
-      <div class="fly-motto">全脑 LIF 仿真 × Qwen2.5-1.5B(LoRA) · 每 token 驱动 16 万神经元 · 教学演示</div>
+      <div class="fly-motto">全脑 LIF 仿真 × Qwen2.5-1.5B(LoRA) · 每 token 驱动 16 万神经元</div>
       <div class="fly-actions"><button type="button" class="btn small-btn" id="flyWireBtn" onclick="FlyUI.toggleWire()" title="全脑神经元线框(按需分块加载)">线框</button><button type="button" class="btn small-btn" id="flyResetBtn" onclick="FlyUI.reset()">重置对话</button></div>
     </div>
     <div class="fly-body">
+      <div class="fly-viz" id="flyViz"><canvas id="flyCanvas"></canvas>
+        <div class="fly-hud"><span id="flyHudN">— 神经元</span><span id="flyHudAct">活动 —</span><span id="flyHudFps">— fps</span></div>
+      </div>
       <div class="fly-chat" id="flyChat"><div class="fly-msgs" id="flyMsgs"></div>
         <form class="fly-form" id="flyForm"><input id="flyInput" maxlength="2000" placeholder="和果蝇大脑说点什么…（每 token 增量仿真, 回复需数秒）" autocomplete="off"><button type="submit" class="btn small-btn primary" id="flySend">发送</button></form>
         <div class="fly-foot small" id="flyFoot">引擎检测中…</div>
-      </div>
-      <div class="fly-viz" id="flyViz"><canvas id="flyCanvas"></canvas>
-        <div class="fly-hud"><span id="flyHudN">— 神经元</span><span id="flyHudAct">活动 —</span><span id="flyHudFps">— fps</span></div>
       </div>
     </div>
   </div></section>`,k.pathogen=()=>`<section class="page pathogen-page"><div id="pathogen-root">

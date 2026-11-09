@@ -154,7 +154,9 @@
     S.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
     S.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     S.scene = new THREE.Scene();
-    S.scene.background = new THREE.Color(0x0b0f18);
+    // 浅色底(与页面新拟态一致): 叠加混合在浅底会糊成一片白, 活动点改
+    // 普通混合 + 高饱和暖色, 辉光层降透明度作柔边
+    S.scene.background = new THREE.Color(0xe9edf4);
     S.camera = new THREE.PerspectiveCamera(50, 1, 10, 2e6);
     S.camera.position.set(45000, 25000, 90000);
     S.controls = new CV.OrbitControls(S.camera, canvas);
@@ -192,7 +194,7 @@
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos.slice(0, nv * 3), 3));
-    S.scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0x66759c, size: 2.2, sizeAttenuation: false })));
+    S.scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0x8b96b4, size: 2.2, sizeAttenuation: false })));
 
     // 活动神经元覆盖层(轮询重建) + 加色辉光二次绘制
     const g2 = new THREE.BufferGeometry();
@@ -209,8 +211,7 @@
     S.scene.add(S.activePts);
     const halo = new THREE.Points(g2, new THREE.PointsMaterial({
       size: S.baseActiveSize * 1.7, sizeAttenuation: false, vertexColors: true,
-      map: _glowTexture(THREE, 0.9), transparent: true, opacity: 0.22, depthWrite: false,
-      blending: THREE.AdditiveBlending,
+      map: _glowTexture(THREE, 0.9), transparent: true, opacity: 0.16, depthWrite: false,
     }));
     halo.frustumCulled = false;
     S.scene.add(halo);
@@ -222,8 +223,7 @@
     ge.setAttribute('color', new THREE.BufferAttribute(new Float32Array(EDGE_MAX * 6), 3));
     ge.setDrawRange(0, 0);
     S.activeEdges = new THREE.LineSegments(ge, new THREE.LineBasicMaterial({
-      vertexColors: true, transparent: true, opacity: 0.6,
-      blending: THREE.AdditiveBlending, depthWrite: false,
+      vertexColors: true, transparent: true, opacity: 0.45, depthWrite: false,
     }));
     S.activeEdges.frustumCulled = false;
     S.scene.add(S.activeEdges);
@@ -261,10 +261,11 @@
         const sp = S.meta.soma[vi];
         if (!sp) continue;
         pos[k * 3] = sp[0]; pos[k * 3 + 1] = sp[1]; pos[k * 3 + 2] = sp[2];
+        // 浅底上的高饱和橙红: 高频 → 更亮更黄, 低频 → 深红
         const t = Math.pow(r / rmax, 0.3);
-        col[k * 3] = 0.55 + 0.45 * t;
-        col[k * 3 + 1] = 0.30 * (1 - t) + 0.06 * t;
-        col[k * 3 + 2] = 0.12 * (1 - t) + 0.02 * t;
+        col[k * 3] = 0.72 + 0.28 * t;
+        col[k * 3 + 1] = 0.10 + 0.42 * t;
+        col[k * 3 + 2] = 0.06 + 0.05 * t;
         k++;
       }
       S.activePts.geometry.setDrawRange(0, k);
@@ -281,9 +282,9 @@
           ep[e2 * 6 + 3] = sb[0]; ep[e2 * 6 + 4] = sb[1]; ep[e2 * 6 + 5] = sb[2];
           const t = Math.pow(w, 0.5);
           for (const off of [0, 3]) {
-            ec[e2 * 6 + off] = 0.55 + 0.45 * t;
-            ec[e2 * 6 + off + 1] = 0.25 + 0.30 * t;
-            ec[e2 * 6 + off + 2] = 0.15 * t;
+            ec[e2 * 6 + off] = 0.58 + 0.30 * t;
+            ec[e2 * 6 + off + 1] = 0.16 + 0.34 * t;
+            ec[e2 * 6 + off + 2] = 0.10 + 0.06 * t;
           }
           e2++;
         }
@@ -345,7 +346,7 @@
       const g = new CV.THREE.BufferGeometry();
       g.setAttribute('position', new CV.THREE.BufferAttribute(pos, 3));
       S.wireMesh = new CV.THREE.LineSegments(g, new CV.THREE.LineBasicMaterial({
-        color: 0x2b3a5c, transparent: true, opacity: 0.5,
+        color: 0x6e7ea6, transparent: true, opacity: 0.32,
       }));
       S.scene.add(S.wireMesh);
       if (btn) { btn.textContent = '线框已加载'; btn.classList.add('primary'); }
