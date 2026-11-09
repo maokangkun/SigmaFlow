@@ -2233,6 +2233,14 @@
       const target = el?.dataset?.real || el?.dataset?.src || '';
       if (target) window.open(target, '_blank', 'noopener');
     },
+    'wv-toggle': (id, el) => {
+      // 网页卡片折叠/展开: 点头部切换(按钮点击不冒泡触发——closest 命中按钮自身 action)
+      const k = el?.dataset?.foldKey;
+      if (!k) return;
+      if (!CS.ui.wvFold) CS.ui.wvFold = new Set();
+      if (CS.ui.wvFold.has(k)) CS.ui.wvFold.delete(k); else CS.ui.wvFold.add(k);
+      CS.render();
+    },
     'wv-live-reload': (id, el) => {
       const st = CS._wvLive?.get(el?.dataset?.sid || '');
       if (st && st.ws.readyState === 1) st.ws.send(JSON.stringify({ t: 'reload' }));

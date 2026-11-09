@@ -660,6 +660,13 @@
   V.webviewBlock = (b, bi) => {
     const h = Math.max(240, Math.min(900, parseInt(b.height, 10) || 420));
     const pid = b.pid || CS.state.projectId || '';
+    // 折叠态: 点头部收起/展开(按 sid/url 记忆, 会话内保持); 折叠时不再渲染
+    // iframe/live 视图, 需要时点开重新挂(帧缓存即时回填, 无黑屏)
+    const foldKey = 'wv:' + (b.sid || b.url || b.path || bi);
+    if (!CS.ui.wvFold) CS.ui.wvFold = new Set();
+    const folded = CS.ui.wvFold.has(foldKey);
+    const foldAttr = ` data-action="wv-toggle" data-fold-key="${e(foldKey)}" role="button" tabindex="0" title="${folded ? '展开网页' : '收起网页'}"`;
+    const chev = `<span class="wv-chev${folded ? ' folded' : ''}">${i('chevron', '', 13)}</span>`;
     const rp = String(b.path || '').startsWith('/') ? '~abs~' + String(b.path || '') : String(b.path || '');
     const src = b.mode === 'local'
       ? CS.api.url('/wv/file/' + rp.split('/').map(encodeURIComponent).join('/') + '?projectId=' + encodeURIComponent(pid))
@@ -668,11 +675,13 @@
     if (b.live) {
       // browser-use 式真浏览器: 服务端 Chrome 帧流 + 输入转发, 直接在卡片里操作
       const sub = b.note || '服务端真实浏览器 · 在此直接操作';
-      return `<div class="present-block webview-block wv-live" data-bi="${bi}" data-sid="${e(b.sid || '')}"><div class="present-head"><div class="present-ic">${i('globe', '', 17)}</div><div class="present-body"><div class="present-name">${e(name)}</div><div class="present-sub small muted">${e(sub)}</div></div><button type="button" class="wv-btn small" data-action="wv-live-reload" data-sid="${e(b.sid || '')}" title="刷新页面">刷新</button><button type="button" class="wv-btn small" data-action="wv-open" data-real="${e(b.url || '')}" title="在浏览器打开真实地址">新窗口</button><button type="button" class="wv-btn small" data-action="wv-live-end" data-sid="${e(b.sid || '')}" title="关闭服务端浏览器会话">结束</button></div><div class="wv-live-view" tabindex="0" role="img" aria-label="服务端浏览器画面, 可直接点击操作" style="height:${h}px"><img class="wv-live-img" alt=""><div class="wv-live-conn small muted">正在连接服务端浏览器…</div></div><div class="wv-live-urlbar small mono text-clip"></div></div>`;
+      const body = folded ? '' : `<div class="wv-live-view" tabindex="0" role="img" aria-label="服务端浏览器画面, 可直接点击操作" style="height:${h}px"><img class="wv-live-img" alt=""><div class="wv-live-conn small muted">正在连接服务端浏览器…</div></div><div class="wv-live-urlbar small mono text-clip"></div>`;
+      return `<div class="present-block webview-block wv-live${folded ? ' wv-folded' : ''}" data-bi="${bi}" data-sid="${e(b.sid || '')}"><div class="present-head"${foldAttr}><div class="present-ic">${i('globe', '', 17)}</div><div class="present-body"><div class="present-name">${e(name)}</div><div class="present-sub small muted">${e(sub)}${folded ? ' · 已收起' : ''}</div></div>${chev}<button type="button" class="wv-btn small" data-action="wv-live-reload" data-sid="${e(b.sid || '')}" title="刷新页面">刷新</button><button type="button" class="wv-btn small" data-action="wv-open" data-real="${e(b.url || '')}" title="在浏览器打开真实地址">新窗口</button><button type="button" class="wv-btn small" data-action="wv-live-end" data-sid="${e(b.sid || '')}" title="关闭服务端浏览器会话">结束</button></div>${body}</div>`;
     }
     const sub = b.note || (b.mode === 'local' ? '本地页面预览 · 可交互' : '需要人工操作');
-    const hint = b.mode === 'local' ? '' : '<div class="wv-hint small muted">Cloudflare 等强质询无法在嵌入页完成：点「新窗口」在浏览器打开并完成验证，再点「Cookie」粘贴凭据交给助手</div>';
-    return `<div class="present-block webview-block" data-bi="${bi}"><div class="present-head"><div class="present-ic">${i('globe', '', 17)}</div><div class="present-body"><div class="present-name">${e(name)}</div><div class="present-sub small muted">${e(sub)}</div></div><button type="button" class="wv-btn small" data-action="wv-open" data-real="${e(b.mode === 'remote' ? (b.url || '') : src)}" title="在新标签页打开（远程页为真实地址, 可完成 Cloudflare 等强质询）">新窗口</button>${b.mode === 'remote' ? `<button type="button" class="wv-btn small" data-action="wv-cookie" data-sid="${e(b.sid || '')}" title="把浏览器里复制的验证 Cookie 交给服务端会话">Cookie</button>` : ''}<button type="button" class="wv-btn small" data-action="wv-reload" title="重新加载">刷新</button></div><iframe class="wv-frame" data-state="idle" data-src="${e(src)}" style="height:${h}px" referrerpolicy="no-referrer" title="${e(name)}"></iframe>${hint}</div>`;
+    const hint = b.mode === 'local' || folded ? '' : '<div class="wv-hint small muted">Cloudflare 等强质询无法在嵌入页完成：点「新窗口」在浏览器打开并完成验证，再点「Cookie」粘贴凭据交给助手</div>';
+    const frame = folded ? '' : `<iframe class="wv-frame" data-state="idle" data-src="${e(src)}" style="height:${h}px" referrerpolicy="no-referrer" title="${e(name)}"></iframe>`;
+    return `<div class="present-block webview-block${folded ? ' wv-folded' : ''}" data-bi="${bi}"><div class="present-head"${foldAttr}><div class="present-ic">${i('globe', '', 17)}</div><div class="present-body"><div class="present-name">${e(name)}</div><div class="present-sub small muted">${e(sub)}${folded ? ' · 已收起' : ''}</div></div>${chev}<button type="button" class="wv-btn small" data-action="wv-open" data-real="${e(b.mode === 'remote' ? (b.url || '') : src)}" title="在新标签页打开（远程页为真实地址, 可完成 Cloudflare 等强质询）">新窗口</button>${b.mode === 'remote' ? `<button type="button" class="wv-btn small" data-action="wv-cookie" data-sid="${e(b.sid || '')}" title="把浏览器里复制的验证 Cookie 交给服务端会话">Cookie</button>` : ''}<button type="button" class="wv-btn small" data-action="wv-reload" title="重新加载">刷新</button></div>${frame}${hint}</div>`;
   };
   V.presentBlock = (b, bi) => {
     const name = String(b.name || b.path || '');

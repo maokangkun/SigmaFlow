@@ -966,3 +966,10 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 }
 .wv-live .wv-live-view.wv-live-on { cursor: default; }
 .wv-live .wv-live-urlbar { margin-top: 6px; opacity: .7; }
+
+/* webview 卡片折叠: 头部可点击, 收起时只剩标题行 */
+.webview-block .present-head { cursor: pointer; }
+.webview-block .present-head .wv-btn { cursor: default; }
+.webview-block .wv-chev { color: var(--muted, #8a93a6); display: inline-flex; transform: rotate(90deg); transition: transform .15s ease; }
+.webview-block .wv-chev.folded { transform: rotate(0deg); }
+.webview-block.wv-folded .present-sub::after { content: ''; }

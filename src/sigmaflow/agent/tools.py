@@ -1929,6 +1929,45 @@ def _find_chrome() -> str:
     return ""
 
 
+_WV_FALLBACK_UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko)"
+    " Chrome/153.0.0.0 Safari/537.36"
+)
+
+
+def _start_xvfb(width: int, height: int):
+    """起一个 Xvfb 虚拟显示供有头 Chrome 使用; 不可用返回 None 回退 headless。"""
+    import subprocess as _sp
+
+    if shutil.which("Xvfb") is None:
+        return None
+    for n in range(90, 100):
+        disp = f":{n}"
+        lock = f"/tmp/.X{n}-lock"
+        if os.path.exists(lock):
+            continue
+        try:
+            proc = _sp.Popen(
+                [
+                    "Xvfb", disp,
+                    "-screen", "0", f"{width}x{height}x24",
+                    "-nolisten", "tcp",
+                ],
+                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+            )
+        except Exception:
+            return None
+        deadline = time.time() + 3
+        while time.time() < deadline:
+            if os.path.exists(lock):
+                return {"id": disp, "proc": proc}
+            if proc.poll() is not None:
+                break
+            time.sleep(0.1)
+        proc.terminate()
+    return None
+
+
 def _vk_of(key: str) -> int:
     return {
         "Enter": 13, "Backspace": 8, "Tab": 9, "Escape": 27,
@@ -1944,6 +1983,7 @@ class _WvLive:
         self.sid, self.url = sid, url
         self.width, self.height = width, height
         self.proc = None
+        self.xvfb = None
         self.userdir = ""
         self.ws = None
         self.session_id = ""
@@ -2006,16 +2046,28 @@ class _WvLive:
                 "no chromium binary found (set SIGMAFLOW_WV_CHROME or install playwright chromium)"
             )
         self.userdir = _tf.mkdtemp(prefix="wv-live-")
+        # 反检测首选有头模式(Xvfb 虚拟显示): 真渲染管线/插件/WebGL 指纹齐全,
+        # Cloudflare 等据 HeadlessChrome UA 就能直接判机器人; 无 Xvfb 再回退
+        display = _start_xvfb(self.width, self.height)
+        self.xvfb = display and display.get("proc")
+        base_flags = [
+            "--remote-debugging-port=0",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-dev-shm-usage",
+            "--disable-blink-features=AutomationControlled",
+            f"--window-size={self.width},{self.height}",
+            f"--user-data-dir={self.userdir}",
+            "about:blank",
+        ]
+        env = None
+        if display:
+            env = dict(os.environ, DISPLAY=display["id"])
+        else:
+            base_flags = ["--headless=new", "--disable-gpu", "--hide-scrollbars"] + base_flags
         self.proc = _sp.Popen(
-            [
-                chrome, "--headless=new", "--remote-debugging-port=0",
-                "--no-first-run",
-                "--no-default-browser-check", "--disable-gpu",
-                "--hide-scrollbars", "--disable-dev-shm-usage",
-                f"--window-size={self.width},{self.height}",
-                f"--user-data-dir={self.userdir}", "about:blank",
-            ],
-            stdout=_sp.DEVNULL, stderr=_sp.PIPE,
+            [chrome] + base_flags,
+            stdout=_sp.DEVNULL, stderr=_sp.PIPE, env=env,
         )
         # stderr 轮询等 "DevTools listening on ws://..."
         deadline = time.time() + 15
@@ -2063,6 +2115,21 @@ class _WvLive:
         # 等首帧或超时(导航慢时也放行, 帧稍后到)
         self.frame_ev.wait(8.0)
         self.at = time.time()
+        # UA 覆写: headless 回退路径的 UA 带 HeadlessChrome 字样, 是最廉价的
+        # 机器人指纹; 有头路径顺手补 acceptLanguage。覆写后页内 navigator.userAgent
+        # 与 HTTP 头一致。
+        ua = self.ua or _WV_FALLBACK_UA
+        try:
+            self.call(
+                "Emulation.setUserAgentOverride",
+                {
+                    "userAgent": ua.replace("HeadlessChrome", "Chrome"),
+                    "acceptLanguage": "zh-CN,zh;q=0.9,en;q=0.8",
+                    "platform": "Linux x86_64",
+                },
+            )
+        except Exception:
+            pass
 
     def _fire(self, method: str, params: dict = None):
         """线程内专用: 只发不等(响应由本线程的收包循环按 id 匹配后丢弃)。"""
@@ -2218,6 +2285,17 @@ class _WvLive:
                     self.proc.kill()
         except Exception:
             pass
+        if self.xvfb is not None:
+            try:
+                if self.xvfb.poll() is None:
+                    self.xvfb.terminate()
+                    try:
+                        self.xvfb.wait(2)
+                    except Exception:
+                        self.xvfb.kill()
+            except Exception:
+                pass
+            self.xvfb = None
         if self.userdir:
             shutil.rmtree(self.userdir, ignore_errors=True)
 
