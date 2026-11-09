@@ -96,8 +96,8 @@
         <h2>果蝇引擎尚未连接</h2>
         <p class="small muted">虚拟果蝇需要独立的全脑仿真引擎（LIF 仿真 × Qwen2.5-1.5B LoRA，含 50GB 级权重与连接组数据），引擎不随 SigmaFlow 包分发。按下面三步即可在任意 GPU 机器上部署，然后回到本页一键检测。</p>
         <ol class="fly-setup-steps small">
-          <li><b>下载发布包</b> — 前往 <a href="${esc(st.repo || 'https://github.com/mkk-archive/flychat')}" target="_blank" rel="noopener">GitHub 发布页 ${esc((st.repo || 'https://github.com/mkk-archive/flychat').replace(/^https?:\/\//, ''))}</a>，下载最新 Release（分卷压缩的 checkpoints / viewer 数据 / 连接组邻接），校验 md5 后解压到同一目录。</li>
-          <li><b>启动引擎</b> — <code>conda env create -f environment.yml &amp;&amp; python server.py 4116</code>（需要 CUDA GPU；首次启动会加载权重约 1 分钟）。</li>
+          <li><b>下载代码与权重</b> — <code>git clone ${esc(st.repo || 'https://github.com/maokangkun/flychat')}</code> 后运行 <code>./scripts/download_weights.sh</code>：自动从 GitHub Release 拉取权重/连接组/3D 数据（约 325MB，含 SHA256 校验）和 Qwen 基座（约 3GB，官方源自动镜像回退）。</li>
+          <li><b>启动引擎</b> — <code>conda env create -f environment.yml &amp;&amp; conda activate flychat &amp;&amp; python server.py 4116</code>（需要 CUDA GPU；首次启动加载权重约 1 分钟）。</li>
           <li><b>接入本页</b> — 引擎与本服务同机时无需配置；异地部署时在服务端设置环境变量 <code>SIGMAFLOW_FLY_URL=http://引擎IP:4116</code> 并重启。</li>
         </ol>
         <div class="row wrap">

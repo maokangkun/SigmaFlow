@@ -475,7 +475,7 @@ def _fly_base() -> str:
 
 def _fly_repo() -> str:
     """权重/部署脚本所在的 GitHub 仓库(一键部署入口, 可为 releases 页)。"""
-    return os.environ.get(_FLY_REPO_ENV) or "https://github.com/mkk-archive/flychat"
+    return os.environ.get(_FLY_REPO_ENV) or "https://github.com/maokangkun/flychat"
 
 
 def _list_provider_models(base_url: str, api_key: str) -> dict:
