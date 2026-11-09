@@ -24,14 +24,6 @@
   font-weight: 700;
   font-size: 15px;
 }
-.p2-motto {
-  font-size: 11px;
-  color: var(--muted, #6b7280);
-  border: 1px dashed var(--line, #d7dae2);
-  padding: 3px 8px;
-  border-radius: 999px;
-  white-space: nowrap;
-}
 .p2-scales {
   margin-left: auto;
   display: flex;

@@ -325,7 +325,6 @@
   V.pathogen = () => `<section class="page pathogen-page"><div id="pathogen-root">
     <div class="p2-topbar">
       <div class="p2-title">🦠 虚拟病原体<span class="p2-dot" id="p2BridgeDot" title="环境桥: 智能体工具直接驱动本页引擎"></span></div>
-      <div class="p2-motto">教学/训练沙盒 · 参数为教科书量级 · 非预测工具</div>
       <div class="p2-scales">
         <button type="button" class="p2-scale" data-s="molecular" onclick="PathoUI.setScale('molecular')">分子/基因</button>
         <button type="button" class="p2-scale on" data-s="host" onclick="PathoUI.setScale('host')">宿主内</button>
