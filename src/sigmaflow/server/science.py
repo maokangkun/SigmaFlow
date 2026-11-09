@@ -2867,7 +2867,7 @@ class ScienceAPI:
                     txt = resp.content.decode("utf-8", "replace")
                 except Exception:
                     txt = ""
-                html = _wv_rewrite_html(txt, str(resp.url), sid)
+                html = _wv_inject_cf_banner(_wv_rewrite_html(txt, str(resp.url), sid))
                 return Response(
                     content=html,
                     status_code=200,
@@ -2887,6 +2887,25 @@ class ScienceAPI:
                 status_code=resp.status_code,
                 headers=passthrough,
             )
+
+        @router.post("/wv/{sid}/cookies")
+        async def wv_cookies(sid: str, payload: dict, request: Request):
+            """Cookie 交接: 用户在真实浏览器完成强质询后, 把 Cookie 请求头
+            交来注入服务端罐子(UA 一并同步), 模型的 webview_fetch 即可复用。"""
+            _check_origin(request)
+            cookie = str((payload or {}).get("cookie") or "").strip()
+            ua = str((payload or {}).get("ua") or "").strip()
+            if not cookie:
+                raise HTTPException(status_code=400, detail="Cookie 为空")
+            from .science_admin import _agent_tools_module
+
+            try:
+                count = _agent_tools_module()._webview_ingest_cookies(sid, cookie, ua)
+            except Exception as err:
+                raise HTTPException(status_code=500, detail=str(err)[:150])
+            if count < 0:
+                raise HTTPException(status_code=404, detail="网页会话已过期，请让助手重新打开")
+            return {"ok": True, "cookies": count}
 
         @router.get("/wv/file/{rel:path}")
         async def wv_file(rel: str, request: Request, projectId: str = ""):
@@ -6282,6 +6301,35 @@ def _wv_rewrite_html(html: str, final_url: str, sid: str) -> str:
     else:
         html = patch + html
     return html
+
+
+_WV_CF_MARKERS = (
+    "challenge-platform",
+    "cf-chl",
+    "cf_chl_opt",
+    "Just a moment",
+    "Verifying your browser",
+    "Attention Required",
+)
+_WV_CF_BANNER = (
+    "<div style=\"all:initial;display:block;font:14px/1.7 -apple-system,"
+    "'Segoe UI',sans-serif;position:sticky;top:0;z-index:2147483647;"
+    "padding:12px 18px;background:#fff7e0;color:#7a5b00;"
+    "border-bottom:1px solid #ecd9a0\">⚠ 本站启用了 Cloudflare 人机验证,"
+    "无法在此嵌入页内完成。请点击消息卡片上的「新窗口」在真实浏览器打开原始"
+    "网址完成验证;完成后让助手用 webview_fetch 复查是否放行。</div>"
+)
+
+
+def _wv_inject_cf_banner(html: str) -> str:
+    """识别 Cloudflare 质询页并在顶部插说明横幅, 免得用户对着失败的
+    挑战 iframe 疑惑(「无法连接到网站」是质询脚本在代理域下必然报的错)。"""
+    low = html.lower()
+    if not any(m.lower() in low for m in _WV_CF_MARKERS):
+        return html
+    if re.search(r"<body[^>]*>", html, re.I):
+        return re.sub(r"<body[^>]*>", lambda m: m.group(0) + _WV_CF_BANNER, html, count=1)
+    return _WV_CF_BANNER + html
 
 
 def _wv_expired_html() -> str:

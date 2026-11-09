@@ -141,3 +141,19 @@ def test_archive_row_keeps_webview_block():
     assert kinds == ["tool", "webview", "text"]
     wv = row["blocks"][1]
     assert wv["sid"] == "wvabc" and wv["height"] == 500
+
+
+def test_webview_ingest_cookies():
+    # Cookie 交接: 注入罐子 + UA 同步; 未知 sid 返回 -1
+    box, notify = _notify_box()
+    tools.run_webview(url="http://example.com/", _notify=notify)
+    sid = box["sid"]
+    n = tools._webview_ingest_cookies(sid, "cf_clearance=abc; foo=bar", "Mozilla/5.0 X")
+    assert n == 2
+    jars, lock = tools.webview_session_state()
+    with lock:
+        st = jars[sid]
+    d = st["session"].cookies.get_dict()
+    assert d.get("cf_clearance") == "abc"
+    assert st["session"].headers["User-Agent"] == "Mozilla/5.0 X"
+    assert tools._webview_ingest_cookies("wvnope", "a=1") == -1

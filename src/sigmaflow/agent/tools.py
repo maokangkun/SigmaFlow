@@ -1879,6 +1879,43 @@ def _webview_touch(sid: str, origin: str = ""):
         return st
 
 
+def _webview_ingest_cookies(sid: str, cookie: str, ua: str = "") -> int:
+    """把用户浏览器里复制的 Cookie 请求头注入 sid 的会话罐。
+
+    Cloudflare 等强质询的放行凭据(cf_clearance)绑定 IP+UA+Cookie 三元组;
+    部署在同内网的用户与服务器共享出口 IP, 前端同时交来用户浏览器 UA 后,
+    服务端后续请求即可复用这条放行。返回注入的 cookie 对数。
+    """
+    with _WEBVIEW_LOCK:
+        st = _WEBVIEW_SESSIONS.get(str(sid))
+    if st is None:
+        return -1
+    from urllib.parse import urlparse
+
+    # hostname 不带端口: requests 的 cookie 域匹配按主机名, netloc 的 :端口 会让 Cookie 不随请求发送
+    host = urlparse(st.get("origin") or "").hostname
+    count = 0
+    for part in str(cookie or "").replace("\n", ";").split(";"):
+        if "=" not in part:
+            continue
+        name, _, value = part.strip().partition("=")
+        name = name.strip()
+        if not name:
+            continue
+        try:
+            if host:
+                st["session"].cookies.set(name, value.strip(), domain=host)
+            else:
+                st["session"].cookies.set(name, value.strip())
+            count += 1
+        except Exception:
+            pass
+    if ua:
+        st["session"].headers["User-Agent"] = str(ua)[:300]
+    st["at"] = time.time()
+    return count
+
+
 def run_webview(url="", title="", note="", height=420, _notify=None):
     """向用户展示一个可交互网页卡片; 远程页经服务端代理(带 Cookie 罐)。"""
     from urllib.parse import urlparse

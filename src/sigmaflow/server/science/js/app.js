@@ -2120,8 +2120,14 @@
       CS.agent.presentPreview({ pid: d.bpid || CS.state.projectId, path: d.path, klass: d.klass, name: d.name, title: d.title, size: Number(d.size) || 0 });
     },
     'wv-open': (id, el) => {
-      const src = el?.dataset?.src || '';
-      if (src) window.open(src, '_blank', 'noopener');
+      // 远程页打开真实地址: Cloudflare 等强质询只能在真实域名上完成, 代理页里必然失败
+      const target = el?.dataset?.real || el?.dataset?.src || '';
+      if (target) window.open(target, '_blank', 'noopener');
+    },
+    'wv-cookie': (id, el) => {
+      const sid = el?.dataset?.sid || '';
+      if (!sid) return;
+      CS.showModal('fs-input', { title: '交接验证 Cookie', label: '粘贴浏览器里的 Cookie 请求头（新窗口完成验证后：F12 → Network → 任一该站请求 → Request Headers → Cookie，整段复制）', value: '', action: 'wv-cookie', src: sid, confirmLabel: '注入会话' });
     },
     'wv-reload': (id, el) => {
       const frame = el?.closest('.webview-block')?.querySelector('iframe.wv-frame');
@@ -2187,6 +2193,14 @@
         dst = m.prefix ? m.prefix + '/' + val : val;
       }
       if ((m.action === 'touch' || m.action === 'mkdir') && /[\\\/]/.test(val)) { CS.toast('名称不能包含路径分隔符。', 'error'); return; }
+      if (m.action === 'wv-cookie') {
+        CS.closeModal();
+        try {
+          const r = await CS.api.request(`/wv/${encodeURIComponent(m.src)}/cookies`, { method: 'POST', body: JSON.stringify({ cookie: val, ua: navigator.userAgent }) });
+          CS.toast(`已注入 ${r.cookies} 个 Cookie（浏览器 UA 已同步）。让助手用 webview_fetch 复查即可。`, 'success');
+        } catch (err) { CS.toast('注入失败：' + CS.api.friendlyError(err), 'error'); }
+        return;
+      }
       CS.closeModal();
       try {
         await CS.api.request('/fs/op', { method: 'POST', body: JSON.stringify({ projectId: CS.ui.fs && CS.ui.fs.projectId, action: m.action, src: m.src, dst, name: val }) });

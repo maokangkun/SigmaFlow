@@ -666,8 +666,8 @@
       : CS.api.url('/wv/' + encodeURIComponent(b.sid || '') + '?u=' + encodeURIComponent(b.url || ''));
     const name = b.title || (b.mode === 'local' ? b.path : b.url) || '网页';
     const sub = b.note || (b.mode === 'local' ? '本地页面预览 · 可交互' : '需要人工操作');
-    const hint = b.mode === 'local' ? '' : '<div class="wv-hint small muted">若页面内出现无法完成的强质询（如 Cloudflare），请点「新窗口」在真实浏览器打开</div>';
-    return `<div class="present-block webview-block" data-bi="${bi}"><div class="present-head"><div class="present-ic">${i('globe', '', 17)}</div><div class="present-body"><div class="present-name">${e(name)}</div><div class="present-sub small muted">${e(sub)}</div></div><button type="button" class="wv-btn small" data-action="wv-open" data-src="${e(src)}" title="在新标签页打开（真实地址）">新窗口</button><button type="button" class="wv-btn small" data-action="wv-reload" title="重新加载">刷新</button></div><iframe class="wv-frame" data-state="idle" data-src="${e(src)}" style="height:${h}px" referrerpolicy="no-referrer" title="${e(name)}"></iframe>${hint}</div>`;
+    const hint = b.mode === 'local' ? '' : '<div class="wv-hint small muted">Cloudflare 等强质询无法在嵌入页完成：点「新窗口」在浏览器打开并完成验证，再点「Cookie」粘贴凭据交给助手</div>';
+    return `<div class="present-block webview-block" data-bi="${bi}"><div class="present-head"><div class="present-ic">${i('globe', '', 17)}</div><div class="present-body"><div class="present-name">${e(name)}</div><div class="present-sub small muted">${e(sub)}</div></div><button type="button" class="wv-btn small" data-action="wv-open" data-real="${e(b.mode === 'remote' ? (b.url || '') : src)}" title="在新标签页打开（远程页为真实地址, 可完成 Cloudflare 等强质询）">新窗口</button>${b.mode === 'remote' ? `<button type="button" class="wv-btn small" data-action="wv-cookie" data-sid="${e(b.sid || '')}" title="把浏览器里复制的验证 Cookie 交给服务端会话">Cookie</button>` : ''}<button type="button" class="wv-btn small" data-action="wv-reload" title="重新加载">刷新</button></div><iframe class="wv-frame" data-state="idle" data-src="${e(src)}" style="height:${h}px" referrerpolicy="no-referrer" title="${e(name)}"></iframe>${hint}</div>`;
   };
   V.presentBlock = (b, bi) => {
     const name = String(b.name || b.path || '');

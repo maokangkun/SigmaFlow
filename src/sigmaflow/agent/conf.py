@@ -205,8 +205,13 @@ CHILD_TOOLS = [
             " pass a local HTML path (project-relative or absolute) to show"
             " a page you just built, e.g. for the user to review. Always"
             " explain in `note` what the user should do on the page. Strong"
-            " challenges (e.g. Cloudflare) may fail inside the embed - in"
-            " that case tell the user to click the open-in-new-tab button."
+            " challenges (e.g. Cloudflare) fail inside the embed and even in"
+            " a new tab of the embedded proxy. For those: tell the user to"
+            " click open-in-new-tab, complete verification in their real"
+            " browser, then click the Cookie button to paste the cookie"
+            " header - it lands in the server-side jar (the user's UA is"
+            " synced too, and they share the server's egress IP), after"
+            " which webview_fetch with the same sid works."
         ),
         "input_schema": {
             "type": "object",
