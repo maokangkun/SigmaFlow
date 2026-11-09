@@ -297,6 +297,10 @@
     const patKeep = CS.ui.route === 'patient' ? document.getElementById('patient-root') : null;
     const p2Keep = CS.ui.route === 'pathogen' ? document.getElementById('pathogen-root') : null;
     const flyKeep = CS.ui.route === 'fly' ? document.getElementById('fly-root') : null;
+    // webview iframe 保活: 流式期间整页重建会重新 src 加载(验证页进度丢失),
+    // 渲染前收集已加载的 frame, 渲染后原样搬回新位置
+    const wvKeep = new Map();
+    document.querySelectorAll('iframe.wv-frame[data-state="loaded"]').forEach(f => { if (f.dataset.src && !wvKeep.has(f.dataset.src)) wvKeep.set(f.dataset.src, f); });
     _origRender();
     if (CS.ui.route === 'patient') {
       const fresh = document.getElementById('patient-root');
@@ -347,8 +351,11 @@
         el.dataset.state = 'done';
       } else CS._presentIO.observe(el);
     });
-    // webview iframe 懒加载: 进入视口前 300px 才设 src(历史卡片不重复打外站)
+    // webview iframe 懒加载: 进入视口前 300px 才设 src(历史卡片不重复打外站);
+    // 已加载的帧优先原样搬回(保活), 搬不回的才走懒加载
     document.querySelectorAll('iframe.wv-frame[data-state="idle"]').forEach(el => {
+      const kept = wvKeep.get(el.dataset.src);
+      if (kept) { el.replaceWith(kept); return; }
       if (!CS._wvIO) CS._wvIO = new IntersectionObserver(entries => {
         for (const en of entries) if (en.isIntersecting) {
           CS._wvIO.unobserve(en.target);

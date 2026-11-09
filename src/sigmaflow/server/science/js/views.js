@@ -665,8 +665,9 @@
       ? CS.api.url('/wv/file/' + rp.split('/').map(encodeURIComponent).join('/') + '?projectId=' + encodeURIComponent(pid))
       : CS.api.url('/wv/' + encodeURIComponent(b.sid || '') + '?u=' + encodeURIComponent(b.url || ''));
     const name = b.title || (b.mode === 'local' ? b.path : b.url) || '网页';
-    const sub = b.note || (b.mode === 'local' ? '本地页面预览 · 可交互' : '网页 · 需要人工操作');
-    return `<div class="present-block webview-block" data-bi="${bi}"><div class="present-head"><div class="present-ic">${i('present', '', 17)}</div><div class="present-body"><div class="present-name">${e(name)}</div><div class="present-sub small muted">${e(sub)}</div></div><button type="button" class="wv-btn small" data-action="wv-open" data-src="${e(src)}" title="在新标签页打开">新窗口</button><button type="button" class="wv-btn small" data-action="wv-reload" title="重新加载">刷新</button></div><iframe class="wv-frame" data-state="idle" data-src="${e(src)}" style="height:${h}px" referrerpolicy="no-referrer" title="${e(name)}"></iframe></div>`;
+    const sub = b.note || (b.mode === 'local' ? '本地页面预览 · 可交互' : '需要人工操作');
+    const hint = b.mode === 'local' ? '' : '<div class="wv-hint small muted">若页面内出现无法完成的强质询（如 Cloudflare），请点「新窗口」在真实浏览器打开</div>';
+    return `<div class="present-block webview-block" data-bi="${bi}"><div class="present-head"><div class="present-ic">${i('globe', '', 17)}</div><div class="present-body"><div class="present-name"><span class="wv-tag">${i('globe', '', 12)}网页</span>${e(name)}</div><div class="present-sub small muted">${e(sub)}</div></div><button type="button" class="wv-btn small" data-action="wv-open" data-src="${e(src)}" title="在新标签页打开（真实地址）">新窗口</button><button type="button" class="wv-btn small" data-action="wv-reload" title="重新加载">刷新</button></div><iframe class="wv-frame" data-state="idle" data-src="${e(src)}" style="height:${h}px" referrerpolicy="no-referrer" title="${e(name)}"></iframe>${hint}</div>`;
   };
   V.presentBlock = (b, bi) => {
     const name = String(b.name || b.path || '');
@@ -837,7 +838,7 @@
   V.traceRows = () => {
     const { msgs, kindOf, prev } = _traceCtx();
     if (!msgs.length) return '';
-    const KIND = { user: '用户', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误', sysnote: '注入', compact: '压缩', present: '展示' };
+    const KIND = { user: '用户', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误', sysnote: '注入', compact: '压缩', present: '展示', webview: '网页' };
     // 运行耗时占比时间轴: 分母 = 各条消息运行耗时之和(流式实时计入), 消息间空闲时段不占条, 段连续堆叠
     // 行内再分段: 优先块边界时间戳(相邻差), 缺省按文本量等比; 段色随块类型(思考/工具/回复)
     // 带时长块集与 blocks 数组分开过滤(sysnote/compact 无时长), 行内块行按 timedKind 依序对位取 ms
@@ -897,6 +898,7 @@
             else if (b.type === 'tool') blocks.push({ k: 'tool', t: (b.name || '工具') + (typeof b.result === 'string' && b.result ? ' → ' + b.result : ' (执行中)'), ms, raw: b });
             else if (b.type === 'ask') blocks.push({ k: 'tool', t: 'ask 提问', ms, raw: b });
             else if (b.type === 'present') blocks.push({ k: 'present', t: '展示 ' + (b.name || b.path || ''), ms, raw: b });
+            else if (b.type === 'webview') blocks.push({ k: 'webview', t: '网页 ' + (b.title || b.url || b.path || ''), ms, raw: b });
             else if (b.type === 'text' && (b.text || '').trim()) blocks.push({ k: 'reply', t: b.text, ms, raw: b });
             else if (b.type === 'sysnote') blocks.push({ k: 'sysnote', t: b.text || '', ms: 0, raw: b });
             else if (b.type === 'compact') blocks.push({ k: 'compact', t: String(b.text || '').trim() ? '上下文已压缩' : '正在压缩会话', ms: 0, raw: b });
@@ -940,6 +942,10 @@
       }
       if (b.type === 'present') {
         return ['路径：\n' + (b.path || ''), b.note ? '备注：\n' + b.note : ''].filter(Boolean).join('\n\n');
+      }
+      if (b.type === 'webview') {
+        const loc = b.mode === 'local' ? '路径：\n' + (b.path || '') : '地址：\n' + (b.url || '');
+        return [loc, b.note ? '说明：\n' + b.note : '', b.sid ? `会话：\n${b.sid}` : ''].filter(Boolean).join('\n\n');
       }
       return b.text || '';
     };

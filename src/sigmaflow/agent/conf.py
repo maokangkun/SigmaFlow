@@ -204,7 +204,9 @@ CHILD_TOOLS = [
             " whether the content is now accessible. (2) frontend preview -"
             " pass a local HTML path (project-relative or absolute) to show"
             " a page you just built, e.g. for the user to review. Always"
-            " explain in `note` what the user should do on the page."
+            " explain in `note` what the user should do on the page. Strong"
+            " challenges (e.g. Cloudflare) may fail inside the embed - in"
+            " that case tell the user to click the open-in-new-tab button."
         ),
         "input_schema": {
             "type": "object",
