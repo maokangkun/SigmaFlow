@@ -510,7 +510,9 @@
       const e = window.PathoCatalog.get(id);
       if (!e) return;
       P2.sel = id;
-      if (host() && host().state()) host().setup(id, {});
+      // 无条件建场景: 此前仅在已有场景时切换, 新开页面点目录后宿主层仍为空,
+      // 直接点「测序/鉴定」等按钮会撞"尚未设置场景"
+      host().setup(id, {});
       log(`🦠 选定 <b>${e.zh}</b>（${e.id}, tier ${e.tier}）—— 原型 ${e.arch}`);
       render();
     },
@@ -579,6 +581,8 @@
       // 分子面板按钮与 MCP 工具同一条通道: EXEC[pathogen_<tool>]
       const fn = window.PathoMol && EXEC['pathogen_' + tool];
       if (!fn) { log('分子工具未就绪。', 'crit'); return; }
+      // 场景守卫: 新开页面直接点按钮时自动按当前目录选择载入场景
+      if (!(window.PathoHost && PathoHost.state())) EXEC.pathogen_setup({ pathogen: P2.sel });
       const out = fn(args || {});
       const box = document.getElementById('p2MolOut');
       if (box) box.innerHTML = rich(out.text || '').replace(/\n/g, '<br>');
@@ -673,6 +677,11 @@
       }
       const C = window.PathoCatalog;
       log(`<b>虚拟病原体环境就绪</b> —— 目录 ${C.all().length} 条 / 原型 ${Object.keys(C.arch).length} 组; 本环境为教学沙盒: 参数为教科书量级, 只做机制与相对比较。`);
+      // 默认场景自动载入: 免得新开页面直接点「测序」等按钮撞"尚未设置场景"
+      if (!EXEC._p2Autoset) {
+        EXEC._p2Autoset = true;
+        if (!(window.PathoHost && PathoHost.state()) && C.get(P2.sel)) host().setup(P2.sel, {});
+      }
       if (!Bridge.sessionId) bridgeStart();
     }
     render();
