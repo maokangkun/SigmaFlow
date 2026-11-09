@@ -193,6 +193,73 @@ CHILD_TOOLS = [
         },
     },
     {
+        "name": "webview",
+        "description": (
+            "Show an interactive web page inside the conversation for the"
+            " USER to operate. Two scenarios: (1) anti-bot / human"
+            " verification - when your fetch is blocked by a captcha page,"
+            " show that page so the user can complete verification for you;"
+            " cookies set during their operation are kept server-side, so"
+            " afterwards call webview_fetch with the same sid to check"
+            " whether the content is now accessible. (2) frontend preview -"
+            " pass a local HTML path (project-relative or absolute) to show"
+            " a page you just built, e.g. for the user to review. Always"
+            " explain in `note` what the user should do on the page."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": (
+                        "http(s) URL of the page to show, or a local HTML"
+                        " file path for preview."
+                    ),
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Short caption on the card.",
+                },
+                "note": {
+                    "type": "string",
+                    "description": (
+                        "One-line instruction for the user, e.g. 'please"
+                        " complete the slider verification'."
+                    ),
+                },
+                "height": {
+                    "type": "integer",
+                    "description": "Embed height in px (240-900, default 420).",
+                },
+            },
+            "required": ["url"],
+        },
+    },
+    {
+        "name": "webview_fetch",
+        "description": (
+            "Fetch a URL through the cookie jar of a webview session. Use it"
+            " after the user operated a verification page shown via webview:"
+            " pass the same sid and the previously blocked URL - once the"
+            " verification is accepted this returns the real content."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "http(s) URL to fetch."},
+                "sid": {
+                    "type": "string",
+                    "description": "Session id returned by the webview tool.",
+                },
+                "max_chars": {
+                    "type": "integer",
+                    "description": "Response clip limit (500-40000, default 8000).",
+                },
+            },
+            "required": ["url"],
+        },
+    },
+    {
         "name": "grep",
         "description": "Search text with an installed grep-like tool.",
         "input_schema": {

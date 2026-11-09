@@ -1835,6 +1835,151 @@ def run_present(path, title="", note="", _notify=None):
 
 setattr(run_present, "__notify_tool__", True)  # 需要事件通道的工具(与 ask 同款)
 
+# ---- webview: 消息流里的可交互网页 ----
+# 两类场景: 1) 反爬/人机验证页交给用户在会话里操作, Cookie 落在服务端会话罐,
+# 模型随后用 webview_fetch 复用同一罐子确认通过; 2) 前端开发预览: 本地 HTML
+# 经同源路径路由呈出, 相对资源(css/js/图)自然解析。会话罐本身极简(requests
+# Session + 最后访问时间), 代理与改写在 server/science.py 的 /wv 路由完成。
+_WEBVIEW_SESSIONS: dict = {}
+_WEBVIEW_LOCK = threading.Lock()
+_WEBVIEW_MAX = 16
+_WEBVIEW_TTL = 7200.0
+_WEBVIEW_UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko)"
+    " Chrome/126.0.0.0 Safari/537.36"
+)
+
+
+def webview_session_state():
+    """暴露 (会话罐, 锁) 给 server 侧 /wv 代理路由共享访问。"""
+    return _WEBVIEW_SESSIONS, _WEBVIEW_LOCK
+
+
+def _webview_touch(sid: str, origin: str = ""):
+    """取/建 sid 的 Cookie 罐(TTL 2h); 超量按最久未访问淘汰。"""
+    now = time.time()
+    with _WEBVIEW_LOCK:
+        st = _WEBVIEW_SESSIONS.get(sid)
+        if st and now - st["at"] > _WEBVIEW_TTL:
+            _WEBVIEW_SESSIONS.pop(sid, None)
+            st = None
+        if st is None:
+            st = {"session": requests.Session(), "origin": origin, "at": now}
+            st["session"].headers.update({"User-Agent": _WEBVIEW_UA})
+            _WEBVIEW_SESSIONS[sid] = st
+            while len(_WEBVIEW_SESSIONS) > _WEBVIEW_MAX:
+                oldest = min(
+                    _WEBVIEW_SESSIONS, key=lambda k: _WEBVIEW_SESSIONS[k]["at"]
+                )
+                _WEBVIEW_SESSIONS.pop(oldest, None)
+        else:
+            st["at"] = now
+            if origin:
+                st["origin"] = origin
+        return st
+
+
+def run_webview(url="", title="", note="", height=420, _notify=None):
+    """向用户展示一个可交互网页卡片; 远程页经服务端代理(带 Cookie 罐)。"""
+    from urllib.parse import urlparse
+
+    u = str(url or "").strip()
+    if not u:
+        return "Error: url is required (an http(s) URL or a local HTML path)."
+    try:
+        h = max(240, min(900, int(height or 420)))
+    except (TypeError, ValueError):
+        h = 420
+    ev = {
+        "kind": "webview",
+        "title": str(title or "")[:200],
+        "note": str(note or "")[:500],
+        "height": h,
+    }
+    if u.lower().startswith(("http://", "https://")):
+        p = urlparse(u)
+        if p.scheme not in ("http", "https") or not p.netloc:
+            return "Error: invalid URL."
+        sid = "wv" + uuid.uuid4().hex[:10]
+        _webview_touch(sid, f"{p.scheme}://{p.netloc}")
+        ev.update({"mode": "remote", "url": u[:800], "sid": sid})
+        tip = (
+            f"Interactive web view shown to the user (session {sid}). Cookies set"
+            " while the user operates the embedded page are kept server-side."
+            " Poll progress with webview_fetch(url=..., sid=..."
+            f"{sid}) or wait for the user to confirm, then retry the blocked task."
+        )
+    else:
+        # 本地 HTML 预览: 与 present 同一黑名单护栏, 项目内外均可(相对/绝对路径)
+        root = get_session_workdir()
+        expanded = os.path.expanduser(u)
+        absf = Path(
+            os.path.realpath(
+                expanded if os.path.isabs(expanded) else os.path.join(root, expanded)
+            )
+        )
+        if is_protected_path(absf):
+            return (
+                "Error: path is in a protected system location; pick a file in"
+                " the project directory, /tmp or another non-sensitive location."
+            )
+        if not absf.is_file():
+            return f"Error: file not found: {u}"
+        rel = absf.as_posix()
+        try:
+            if absf.is_relative_to(Path(os.path.realpath(root))):
+                rel = os.path.relpath(absf, root)
+        except (OSError, ValueError):
+            return "Error: invalid path"
+        ev.update({"mode": "local", "path": rel[:500], "sid": ""})
+        tip = (
+            f"Local page {rel} shown to the user as an interactive preview"
+            " (relative assets resolve natively)."
+        )
+    if _notify is not None:
+        try:
+            _notify(ev)
+        except Exception:
+            pass  # 事件通道异常不阻断工具返回
+    return tip
+
+
+setattr(run_webview, "__notify_tool__", True)  # 与 present 同款事件通道
+
+
+def run_webview_fetch(url="", sid="", max_chars=8000):
+    """经 webview 会话的 Cookie 罐抓取 URL(验证通过后即可拿到真实内容)。"""
+    u = str(url or "").strip()
+    if not u.lower().startswith(("http://", "https://")):
+        return "Error: url must be an http(s) URL."
+    try:
+        cap = max(500, min(40000, int(max_chars or 8000)))
+    except (TypeError, ValueError):
+        cap = 8000
+    sess = None
+    if sid:
+        with _WEBVIEW_LOCK:
+            st = _WEBVIEW_SESSIONS.get(str(sid))
+            if st:
+                st["at"] = time.time()
+                sess = st["session"]
+    if sess is None:
+        sess = requests.Session()
+        sess.headers.update({"User-Agent": _WEBVIEW_UA})
+    try:
+        r = sess.get(u, timeout=30.0)
+    except Exception as err:
+        return f"Error: request failed: {str(err)[:200]}"
+    ctype = r.headers.get("content-type", "")
+    if "text/" in ctype or "json" in ctype or "xml" in ctype or "html" in ctype:
+        body = r.text
+    else:
+        body = f"[binary {ctype or 'unknown'}, {len(r.content)} bytes]"
+    clipped = len(body) > cap
+    return (
+        f"HTTP {r.status_code} {ctype}\n\n" + body[:cap] + ("\n...[clipped]" if clipped else "")
+    )
+
 TOOL_HANDLERS = {
     "bash": lambda **kw: run_bash(kw.get("command", ""), kw.get("timeout")),
     "memory_save": lambda **kw: _harness_memory_save(
@@ -1896,6 +2041,10 @@ TOOL_HANDLERS = {
     ),
     "rag": lambda **kw: rag(kw.get("query", "")),
     "ask": run_ask,
+    "webview": run_webview,  # 事件通道参数 _notify 需要透传(与 present 同款)
+    "webview_fetch": lambda **kw: run_webview_fetch(
+        kw.get("url", ""), kw.get("sid", ""), kw.get("max_chars", 8000)
+    ),
 }
 
 TOOL_HANDLERS.update(SCIVERSE_TOOL_HANDLERS)

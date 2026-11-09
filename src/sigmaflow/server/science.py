@@ -108,7 +108,9 @@ from .science_admin import (
     _tool_listing,
 )
 
+from ..utils import is_protected_path
 from .science_fs import (
+    _fs_resolve,
     _PTY_SESSIONS_MAX,
     _PtySession,
     _fs_exec_payload,
@@ -2802,6 +2804,147 @@ class ScienceAPI:
                 raise HTTPException(status_code=404, detail="Conversation not found")
             return {"conversations": self.project_store.list_conversations()}
 
+        # ---------------- 网页展示台(webview 工具) ----------------
+        # webview 工具的代理入口与本地预览路由; Cookie 罐在 agent/tools.py。
+        @router.api_route(
+            "/wv/{sid}", methods=["GET", "POST", "HEAD", "PUT", "DELETE", "OPTIONS"]
+        )
+        async def wv_proxy(sid: str, request: Request, u: str = ""):
+            """反向代理目标页: 剥框架头 + HTML 同源改写 + 共享 Cookie 罐。"""
+            _check_origin(request)
+            if not u:
+                return Response(content=_wv_expired_html(), media_type="text/html")
+            from .science_admin import _agent_tools_module
+
+            try:
+                jars, lock = _agent_tools_module().webview_session_state()
+            except Exception:
+                jars, lock = None, None
+            st = None
+            if jars is not None:
+                with lock:
+                    st = jars.get(sid)
+                    if st:
+                        st["at"] = time.time()
+            if st is None:
+                return Response(content=_wv_expired_html(), media_type="text/html")
+            sess = st["session"]
+            method = "GET" if request.method == "HEAD" else request.method
+            fwd = {
+                k: v
+                for k, v in request.headers.items()
+                if k.lower() not in _WV_FWD_DROP
+            }
+            fwd.setdefault("Accept", "text/html,application/xhtml+xml,*/*")
+            fwd["User-Agent"] = _agent_tools_module()._WEBVIEW_UA
+            body = await request.body()
+
+            def _do():
+                return sess.request(
+                    method,
+                    u,
+                    headers=fwd,
+                    data=body or None,
+                    timeout=30.0,
+                    allow_redirects=True,
+                )
+
+            try:
+                resp = await asyncio.to_thread(_do)
+            except Exception as err:
+                return Response(
+                    content=(
+                        "<!doctype html><meta charset='utf-8'><body"
+                        f" style='font:14px/1.7 sans-serif;padding:32px;color:#b00'>"
+                        f"无法访问目标页面：{str(err)[:200]}</body>"
+                    ),
+                    media_type="text/html",
+                    status_code=200,
+                )
+            ctype = resp.headers.get("content-type", "")
+            if "text/html" in ctype:
+                try:
+                    txt = resp.content.decode("utf-8", "replace")
+                except Exception:
+                    txt = ""
+                html = _wv_rewrite_html(txt, str(resp.url), sid)
+                return Response(
+                    content=html,
+                    status_code=200,
+                    headers={
+                        "Content-Type": "text/html; charset=utf-8",
+                        "Cache-Control": "no-store",
+                    },
+                )
+            passthrough = {
+                k.title(): v
+                for k, v in resp.headers.items()
+                if k.lower() not in _WV_STRIP_HEADERS
+            }
+            passthrough.setdefault("Cache-Control", "no-store")
+            return Response(
+                content=resp.content,
+                status_code=resp.status_code,
+                headers=passthrough,
+            )
+
+        @router.get("/wv/file/{rel:path}")
+        async def wv_file(rel: str, request: Request, projectId: str = ""):
+            """本地 HTML 预览: 项目内(或绝对路径)文件按扩展名直出。"""
+            _check_origin(request)
+            project = self.project_store.projects.get(projectId or "")
+            target = None
+            # 绝对路径经 ~abs~ 哨兵前缀传递(路由 path 会吞掉开头的 /)
+            if rel.startswith("~abs~/"):
+                target = os.path.realpath(rel[len("~abs~") :])
+                if is_protected_path(target):
+                    raise HTTPException(status_code=403, detail="受保护的系统路径")
+            else:
+                base = str((project or {}).get("dir") or "").strip()
+                if not base or not os.path.isdir(base):
+                    raise HTTPException(status_code=404, detail="项目目录不存在")
+                resolved, _root = _fs_resolve(base, rel)
+                if resolved is None:
+                    raise HTTPException(status_code=403, detail="越界路径")
+                target = resolved
+            if not os.path.isfile(target):
+                raise HTTPException(status_code=404, detail="文件不存在")
+            ext = os.path.splitext(target)[1].lower().lstrip(".")
+            mtype = {
+                "html": "text/html; charset=utf-8",
+                "htm": "text/html; charset=utf-8",
+                "css": "text/css; charset=utf-8",
+                "js": "text/javascript; charset=utf-8",
+                "mjs": "text/javascript; charset=utf-8",
+                "json": "application/json; charset=utf-8",
+                "svg": "image/svg+xml",
+                "png": "image/png",
+                "jpg": "image/jpeg",
+                "jpeg": "image/jpeg",
+                "gif": "image/gif",
+                "webp": "image/webp",
+                "ico": "image/x-icon",
+                "mp3": "audio/mpeg",
+                "wav": "audio/wav",
+                "mp4": "video/mp4",
+                "woff": "font/woff",
+                "woff2": "font/woff2",
+            }.get(ext, "application/octet-stream")
+            if mtype == "application/octet-stream" and ext not in (
+                "",
+                "map",
+                "txt",
+                "csv",
+            ):
+                raise HTTPException(status_code=403, detail="该类型不支持预览")
+            with open(target, "rb") as fh:
+                data = fh.read()
+            return Response(
+                content=data,
+                media_type=mtype,
+                headers={"Cache-Control": "no-store"},
+            )
+
         # -------------------------------------------------------------- SSE
 
         @router.get("/runs/{run_id}/events")
@@ -4634,6 +4777,23 @@ class ScienceProjectStore:
                                     "pid": _clip(str(b.get("pid", "")), 64),
                                 }
                             )
+                        elif _t == "webview":
+                            # 网页展示台: sid/高度/标题等轻量字段透传, url 截断
+                            saved_blocks.append(
+                                {
+                                    "t": "webview",
+                                    "mode": _clip(str(b.get("mode", "remote")), 16),
+                                    "url": _clip(str(b.get("url", "")), 800),
+                                    "path": _clip(str(b.get("path", "")), 500),
+                                    "sid": _clip(str(b.get("sid", "")), 32),
+                                    "title": _clip(str(b.get("title", "")), 200),
+                                    "note": _clip(str(b.get("note", "")), 500),
+                                    "height": max(
+                                        240, min(900, int(b.get("height") or 420))
+                                    ),
+                                    "pid": _clip(str(b.get("pid", "")), 64),
+                                }
+                            )
                     if saved_blocks:
                         item["blocks"] = saved_blocks
                 deliverables = msg.get("deliverables")
@@ -5629,6 +5789,22 @@ def _archive_row_from_journal(state, model_name: str, streaming: bool = True):
                         "note": value.get("note"),
                     }
                 )
+            elif k == "webview":
+                think_idx = -1
+                blocks.append(
+                    {
+                        "t": "webview",
+                        "mode": str(value.get("mode") or "remote")[:16],
+                        "url": str(value.get("url") or "")[:800],
+                        "path": str(value.get("path") or "")[:500],
+                        "sid": str(value.get("sid") or "")[:32],
+                        "title": str(value.get("title") or "")[:200],
+                        "note": str(value.get("note") or "")[:500],
+                        "height": max(
+                            240, min(900, int(value.get("height") or 420))
+                        ),
+                    }
+                )
     content = "".join(text_parts)
     if not content and not blocks:
         return None
@@ -5960,6 +6136,160 @@ async def _auth_http(request: Request) -> None:
         raise HTTPException(status_code=401, detail="未登录")
     _CURRENT_USER.set(user)
     _ensure_user_data(user)
+
+
+# ==================== 网页展示台(webview 工具)代理 ====================
+# /wv/{sid}?u=<目标URL>: 服务端反向代理, 目的有三——
+#   1) 剥掉 X-Frame-Options/CSP, 让反爬验证页可以进 iframe;
+#   2) 所有请求共享 sid 的 Cookie 罐(agent/tools.py _WEBVIEW_SESSIONS),
+#      用户在会话里完成的验证对模型的 webview_fetch 立即可见;
+#   3) HTML 内同源链接改写成继续走代理, 站内导航/表单不脱离罐子。
+_WV_STRIP_HEADERS = {
+    "x-frame-options",
+    "content-security-policy",
+    "content-security-policy-report-only",
+    "permissions-policy",
+    "cross-origin-opener-policy",
+    "cross-origin-embedder-policy",
+    "cross-origin-resource-policy",
+    "strict-transport-security",
+    "content-encoding",
+    "transfer-encoding",
+    "content-length",
+    "connection",
+    "set-cookie",  # 响应 cookie 由罐子记录, 不透传给浏览器(浏览器域不对)
+}
+_WV_FWD_DROP = {
+    "host",
+    "cookie",
+    "origin",
+    "referer",
+    "content-length",
+    "connection",
+    "accept-encoding",
+    "sec-fetch-site",
+    "sec-fetch-mode",
+    "sec-fetch-dest",
+    "sec-fetch-user",
+    "sec-ch-ua",
+    "sec-ch-ua-mobile",
+    "sec-ch-ua-platform",
+}
+# 注入到被代理页 <head> 的首段脚本: 页面 JS 的同源 fetch/XHR 一律重定向回
+# 代理入口(页面自以为在目标域上, 相对路径其实落在本站根路径上会 404)
+_WV_JS_PATCH = """<script>(function(){
+var T=__WV_TARGET__;var P=location.pathname+'?u=';
+function map(u){
+  try{
+    var s=String(u);
+    if(!s||/^(data:|blob:|javascript:)/i.test(s))return s;
+    var a=new URL(s,location.href);
+    if(a.origin!==location.origin)return s;
+    if(a.pathname.indexOf('/wv/')>-1)return s;
+    return P+encodeURIComponent(T+a.pathname+a.search);
+  }catch(e){return u;}
+}
+var of=window.fetch;
+if(of){window.fetch=function(input,init){
+  try{
+    if(typeof input==='string')input=map(input);
+    else if(input&&input.url)input=new Request(map(input.url),input);
+  }catch(e){}
+  return of.call(this,input,init);
+};}
+var oo=XMLHttpRequest.prototype.open;
+XMLHttpRequest.prototype.open=function(){arguments[1]=map(arguments[1]);return oo.apply(this,arguments);};
+})();</script>"""
+
+
+def _wv_proxied_url(sid: str, target: str) -> str:
+    """目标绝对 URL → 代理入口 URL。
+
+    用纯查询串相对形态 "?u=..." 而非根绝对 "/api/wv/...": 浏览器按当前 iframe
+    URL 解析(自动落在真实挂载前缀下, 如 /sigmaflow), 且不被外层 prefix-proxy
+    的根绝对 src/href 改写二次触碰, 表单 action 也一并正确。
+    """
+    from urllib.parse import quote
+
+    return f"?u={quote(target, safe='')}"
+
+
+def _wv_rewrite_html(html: str, final_url: str, sid: str) -> str:
+    """同源 href/src/action 改写为代理地址; 注入 fetch/XHR 补丁。"""
+    from urllib.parse import urljoin, urlparse
+
+    try:
+        t = urlparse(final_url)
+        target_origin = f"{t.scheme}://{t.netloc}"
+    except Exception:
+        return html
+
+    def _map(val: str) -> str:
+        v = val.strip()
+        if (
+            not v
+            or v.startswith(
+                ("#", "data:", "blob:", "javascript:", "mailto:", "tel:", "about:", "{", "http://www.w3.org")
+            )
+            or v.lower().startswith("{{")
+        ):
+            return val
+        try:
+            if v.startswith("//"):
+                v = f"{t.scheme}:{v}"
+            if v.startswith(("http://", "https://")):
+                p = urlparse(v)
+                if p.netloc != t.netloc:
+                    return val  # 跨域资源直连(地图/统计脚本等), 不经罐子
+                return _wv_proxied_url(sid, v)
+            absu = urljoin(final_url, v)
+            p = urlparse(absu)
+            if p.scheme not in ("http", "https") or p.netloc != t.netloc:
+                return val
+            return _wv_proxied_url(sid, absu)
+        except Exception:
+            return val
+
+    def _sub_dq(m):
+        return f'{m.group(1)}="{_map(m.group(2))}"'
+
+    def _sub_sq(m):
+        return f"{m.group(1)}='{_map(m.group(2))}'"
+
+    html = re.sub(
+        r'\b(href|src|action|formaction|poster|data-src)\s*=\s*"([^"]*)"', _sub_dq, html
+    )
+    html = re.sub(
+        r"\b(href|src|action|formaction|poster|data-src)\s*=\s*'([^']*)'", _sub_sq, html
+    )
+
+    def _ss(m):
+        parts = [p.strip() for p in m.group(2).split(",") if p.strip()]
+        out = []
+        for part in parts:
+            bits = part.split()
+            if bits:
+                bits[0] = _map(bits[0])
+                out.append(" ".join(bits))
+        return f'{m.group(1)}="{", ".join(out)}"'
+
+    html = re.sub(r'\b(srcset|data-srcset)\s*=\s*"([^"]*)"', _ss, html)
+    patch = _WV_JS_PATCH.replace("__WV_TARGET__", json.dumps(target_origin)).replace(
+        "__WV_SID__", sid
+    )
+    if re.search(r"<head[^>]*>", html, re.I):
+        html = re.sub(r"<head[^>]*>", lambda m: m.group(0) + patch, html, count=1)
+    else:
+        html = patch + html
+    return html
+
+
+def _wv_expired_html() -> str:
+    return (
+        "<!doctype html><meta charset='utf-8'><body style='font:14px/1.7"
+        " sans-serif;padding:32px;color:#555'>该网页会话已过期(约 2 小时)。"
+        "请让助手重新调用 webview 工具打开此页面。</body>"
+    )
 
 
 def _check_origin(request: Request):

@@ -654,6 +654,20 @@
     const shown = pretty.slice(0, cap) + (cut ? '\n…' : '');
     return `<pre class="code-view present-json">${CS.fsHighlight ? CS.fsHighlight(shown, 'json') : e(shown)}</pre><div class="present-preview-note small muted">${isJsonl ? 'JSONL' : 'JSON'} 预览${cut ? '（已截断）' : ''} · 点击"查看"查看完整内容</div>`;
   };
+  // 网页展示台(webview 工具): 远程页经 /api/wv/{sid}?u= 代理(可交互, Cookie 落
+  // 服务端罐); 本地 HTML 走 /api/wv/file/ 直出(相对资源自然解析)。iframe 懒加载
+  // (data-src + IO), 避免长会话里历史卡片反复打外站。
+  V.webviewBlock = (b, bi) => {
+    const h = Math.max(240, Math.min(900, parseInt(b.height, 10) || 420));
+    const pid = b.pid || CS.state.projectId || '';
+    const rp = String(b.path || '').startsWith('/') ? '~abs~' + String(b.path || '') : String(b.path || '');
+    const src = b.mode === 'local'
+      ? CS.api.url('/wv/file/' + rp.split('/').map(encodeURIComponent).join('/') + '?projectId=' + encodeURIComponent(pid))
+      : CS.api.url('/wv/' + encodeURIComponent(b.sid || '') + '?u=' + encodeURIComponent(b.url || ''));
+    const name = b.title || (b.mode === 'local' ? b.path : b.url) || '网页';
+    const sub = b.note || (b.mode === 'local' ? '本地页面预览 · 可交互' : '网页 · 需要人工操作');
+    return `<div class="present-block webview-block" data-bi="${bi}"><div class="present-head"><div class="present-ic">${i('present', '', 17)}</div><div class="present-body"><div class="present-name">${e(name)}</div><div class="present-sub small muted">${e(sub)}</div></div><button type="button" class="wv-btn small" data-action="wv-open" data-src="${e(src)}" title="在新标签页打开">新窗口</button><button type="button" class="wv-btn small" data-action="wv-reload" title="重新加载">刷新</button></div><iframe class="wv-frame" data-state="idle" data-src="${e(src)}" style="height:${h}px" referrerpolicy="no-referrer" title="${e(name)}"></iframe></div>`;
+  };
   V.presentBlock = (b, bi) => {
     const name = String(b.name || b.path || '');
     const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
@@ -1137,6 +1151,10 @@ V.ctxRing = () => {
                   const kicon = 'present';  // present 卡专属图标: 显示器+折线(类型由名称/扩展名表达)
                   const kb = { image: '图片', '3d': '3D 模型', video: '视频', audio: '音频', pdf: 'PDF', html: 'HTML', text: '文本', archive: '压缩包', other: '文件' }[k] || '文件';
                   return V.presentBlock(b, bi);
+                }
+                if (b.type === 'webview') {
+                  // 模型展示的可交互网页卡片(反爬人机验证 / 前端预览)
+                  return V.webviewBlock(b, bi);
                 }
                 if (b.type === 'deliverables') {
                   // 本轮修改文件行(dsh deliverables 思路): 来源只信 edit/write 参数

@@ -177,6 +177,27 @@ GET    /api/context-info      → {"systemTokens": int, "toolsTokens": int}  # A
 注意区分：`baseUrl` 指向模型服务商，供后端后续接入真实推理使用；浏览器连接 Science 后端的“服务地址”
 （如 `/api` 或 `/sigmaflow/api`）是工作空间的独立设置项，保存在浏览器本地，与模型记录无关。
 
+### 5a. 网页展示台（webview 工具代理）
+
+模型可调用两个工具把**可交互网页**呈现在消息流里：
+
+- `webview(url, title, note, height)` — 两类场景：
+  1. **反爬/人机验证**：模型抓取被验证页拦截时，把该页交给用户在会话内
+     操作。页面经 `/api/wv/{sid}?u=<目标URL>` 反向代理进 iframe：
+     `X-Frame-Options`/CSP 等框架头被剥离，站内同源链接改写为继续走代理，
+     页面 JS 的相对 fetch/XHR 由注入的补丁重定向回代理入口；用户操作期间
+     目标站下发的 Cookie 全部落进服务端会话罐（`sid`，TTL 2 小时，LRU 16）。
+     之后模型调用 `webview_fetch(url, sid)` 用同一罐子复查，验证通过即可
+     拿到真实内容。
+  2. **前端预览**：`url` 传本地 HTML 路径（项目相对或绝对）时走
+     `/api/wv/file/<路径>`（绝对路径以 `~abs~` 哨兵前缀传递），相对
+     css/js/图片按路径自然解析。
+- `webview_fetch(url, sid, max_chars)` — 经指定会话罐抓取 URL，返回状态
+  行 + 截断正文（500–40000 字符）。
+
+安全边界：本地文件路由沿用 present 的黑名单护栏（/etc、~/.ssh 等拒绝），
+未知二进制类型不支持预览；会话罐仅存 Cookie 与 UA，不落盘。
+
 ### 6. Agent 工具配置（服务端存储）
 
 设置页可对 Agent 内置工具做启用开关、改名、描述与参数结构覆盖，落盘到

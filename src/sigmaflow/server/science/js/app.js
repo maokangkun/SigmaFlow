@@ -347,6 +347,17 @@
         el.dataset.state = 'done';
       } else CS._presentIO.observe(el);
     });
+    // webview iframe 懒加载: 进入视口前 300px 才设 src(历史卡片不重复打外站)
+    document.querySelectorAll('iframe.wv-frame[data-state="idle"]').forEach(el => {
+      if (!CS._wvIO) CS._wvIO = new IntersectionObserver(entries => {
+        for (const en of entries) if (en.isIntersecting) {
+          CS._wvIO.unobserve(en.target);
+          en.target.src = en.target.dataset.src || '';
+          en.target.dataset.state = 'loaded';
+        }
+      }, { rootMargin: '300px' });
+      CS._wvIO.observe(el);
+    });
     // 弹出菜单(模型/项目等)向上展开时钳制高度: 不超出视口上缘, 内部滚动兜底,
     // 否则首页输入框位置较高时长菜单顶部选项会被视口裁掉无法看到
     document.querySelectorAll('.model-menu').forEach(m => {
@@ -650,6 +661,7 @@
             if (b.t === 'compact') return { type: 'compact', text: b.x || '' };
             if (b.t === 'deliverables') return { type: 'deliverables', files: Array.isArray(b.files) ? b.files : [] };
             if (b.t === 'present') return { type: 'present', typ: b.typ || 'file', path: b.path, name: b.name, ext: b.ext, klass: b.klass, size: b.size, title: b.title, note: b.note, pid: b.pid || '' };
+            if (b.t === 'webview') return { type: 'webview', mode: b.mode || 'remote', url: b.url, path: b.path, sid: b.sid, title: b.title, note: b.note, height: b.height, pid: b.pid || '' };
             if (b.t === 'sysnote') return { type: 'sysnote', text: b.x || '' };
             return null;
           }).filter(Boolean);
@@ -1280,6 +1292,7 @@
         else if (b.type === 'text') out.push({ t: 'text', x: b.text || '' });
         else if (b.type === 'deliverables') out.push({ t: 'deliverables', files: b.files || [] });
         else if (b.type === 'present') out.push({ t: 'present', typ: b.typ || 'file', path: b.path, name: b.name, ext: b.ext, klass: b.klass, size: b.size, title: b.title, note: b.note, pid: b.pid || '' });
+        else if (b.type === 'webview') out.push({ t: 'webview', mode: b.mode || 'remote', url: b.url, path: b.path, sid: b.sid, title: b.title, note: b.note, height: b.height, pid: b.pid || '' });
         else if (b.type === 'sysnote') out.push({ t: 'sysnote', x: b.text || '' });
       });
       return out;
@@ -1507,6 +1520,10 @@
         reply.blocks.push({ type: 'present', typ: t.typ || 'file', path: t.path, name: t.name, ext: t.ext, klass: t.klass, size: t.size, title: t.title, note: t.note, pid: run?.projectId || CS.state.projectId, at: Date.now() });
         return;
       }
+      if (t.kind === 'webview') {
+        reply.blocks.push({ type: 'webview', mode: t.mode || 'remote', url: t.url, path: t.path, sid: t.sid, title: t.title, note: t.note, height: t.height, pid: run?.projectId || CS.state.projectId, at: Date.now() });
+        return;
+      }
       // 每次工具调用独立成块, 不再合并进之前的工具列表
       if (t.kind === 'call') {
         // ask 的通用工具卡跳过: 问题卡片由专门的 ask 事件负责
@@ -1662,7 +1679,7 @@
       }
     }
     finishTimer();
-    reply.blocks = reply.blocks.filter(b => b.type === 'tool' || b.type === 'ask' || b.type === 'deliverables' || b.type === 'present' || !!b.text);  // 丢弃中途产生的空段
+    reply.blocks = reply.blocks.filter(b => b.type === 'tool' || b.type === 'ask' || b.type === 'deliverables' || b.type === 'present' || b.type === 'webview' || !!b.text);  // 丢弃中途产生的空段
     CS.save(); CS.render();
     if (!CS.ui.followLock && CS.state.settings.autoScroll !== false) setTimeout(scrollToLatest, 20);  // 用户暂停跟随或关闭自动滚动时不拽到底部
     syncConversation(run);
@@ -2094,6 +2111,18 @@
       const d = el ? el.dataset : null;
       if (!d || !d.path) return;
       CS.agent.presentPreview({ pid: d.bpid || CS.state.projectId, path: d.path, klass: d.klass, name: d.name, title: d.title, size: Number(d.size) || 0 });
+    },
+    'wv-open': (id, el) => {
+      const src = el?.dataset?.src || '';
+      if (src) window.open(src, '_blank', 'noopener');
+    },
+    'wv-reload': (id, el) => {
+      const frame = el?.closest('.webview-block')?.querySelector('iframe.wv-frame');
+      if (!frame) return;
+      const base = frame.dataset.src || frame.src;
+      if (!base) return;
+      frame.src = base + (base.includes('?') ? '&' : '?') + '_wv=' + Date.now();
+      frame.dataset.state = 'loaded';
     },
     'fs-menu-copy-path': (id, el) => {
       const path = el?.dataset?.path || '';
