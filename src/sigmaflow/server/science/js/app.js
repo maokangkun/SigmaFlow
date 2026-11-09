@@ -1395,7 +1395,7 @@
     if (CS._streamPoll) { clearInterval(CS._streamPoll.timer); CS._streamPoll = null; }
     // 上传附件以零宽字符标记(\u200B@path)注入消息尾部: 模型可读路径,
     // 服务端归档保留(刷新后芯片可重建), 展示层剥离标记不显示裸路径
-    const _zwRef = (CS.ui.pendingUploads || []).filter(u => u.status === 'done' && u.path).map(u => '\u200B@' + u.path);
+    const _zwRef = (CS.ui.pendingUploads || []).filter(u => u.status === 'done' && u.path).map(u => '\u200B@[[' + u.path + ']]');
     if (_zwRef.length) { text = (text ? text.replace(/\s+$/, '') + ' ' : '') + _zwRef.join(' '); CS.ui.pendingUploads = []; }
     // 隐形续接(压缩完成后): 不插可见用户消息, 历史以压缩摘要卡结尾,
     // 服务端契约把摘要卡组装为 user 末条, 模型基于摘要直接开始下一轮
@@ -1403,24 +1403,32 @@
     // @file 引用注入: @路径 在项目目录下读出文件内容, 作为 refContext 附在发送侧
     // (展示仍用原文; 刷新后 refContext 不持久, 模型可再用 read 工具读文件)
     const _lastUser = run.messages[run.messages.length - 1];
-    if (_lastUser && _lastUser.role === 'user' && /\u200B?@[/~]?[\w][\w./-]*/.test(text)) {
+    if (_lastUser && _lastUser.role === 'user' && (/\u200B@\[\[[^\]]*\]\]/.test(text) || /@[/~]?[\w][\w./-]*/.test(text))) {
       try {
         const pid = run.projectId || CS.state.projectId;
         {
-          const tokens = [...new Set((text.match(/\u200B?@[/~]?[\w][\w./-]*/g) || []).map(t => t.replace(/^\u200B/, '').slice(1)))].slice(0, 5);
+          // 括号标记(上传附件, 路径可含空格) + 手动 @引用(无空格) 双格式解析
+          const bracket = (text.match(/\u200B@\[\[[^\]]*\]\]/g) || []).map(t => t.slice(4, -2));
+          const plain = (text.match(/@[/~]?[\w][\w./-]*/g) || []).map(t => t.slice(1));
+          const tokens = [...new Set([...bracket, ...plain])].slice(0, 5);
           const parts = [];
+          const images = [];
           for (const t of tokens) {
             try {
               const absT = /^[/~]/.test(t);
               if (!absT && !pid) continue;  // 相对引用需要项目; 绝对路径(暂存上传)无项目也可读
               const qs = (absT ? '' : 'projectId=' + encodeURIComponent(pid) + '&') + 'path=' + encodeURIComponent(t);
               const data = await CS.api.request('/fs/file?' + qs, { method: 'GET' });
-              if (data && !data.binary && typeof data.content === 'string' && data.content.trim()) {
+              if (data && data.kind === 'image' && data.dataUrl && images.length < 4) {
+                // 多模态: 图片以 dataUrl 附在消息上(模型按 image_url 内容块收到原图)
+                images.push(data.dataUrl);
+              } else if (data && !data.binary && typeof data.content === 'string' && data.content.trim()) {
                 parts.push('<file path="' + t + '">\n' + data.content.slice(0, 16000) + (data.content.length > 16000 ? '\n…(内容过长已截断)' : '') + '\n</file>');
               }
             } catch {}
           }
           if (parts.length) _lastUser.refContext = '<referenced-files>\n用户在消息中引用了以下项目文件, 内容如下:\n' + parts.join('\n') + '\n</referenced-files>';
+          if (images.length) _lastUser.images = images;
         }
       } catch {}
     }
@@ -1526,7 +1534,7 @@
       CS.ui.thinkingText = '';
     };
     try {
-      const history = run.messages.filter(m => !m.streaming).map(m => ({ role: m.role, content: m.role === 'user' && m.refContext ? m.content + '\n\n' + m.refContext : m.content }));
+      const history = run.messages.filter(m => !m.streaming).map(m => ({ role: m.role, content: m.role === 'user' && m.refContext ? m.content + '\n\n' + m.refContext : m.content, ...(m.role === 'user' && m.images?.length ? { images: m.images } : {}) }));
       timerInterval = setInterval(() => {
         if (!reply.streaming) { clearInterval(timerInterval); return; }
         // 流式期间上下文占用也在增长, 顺带同步圆环显示
@@ -2233,7 +2241,7 @@
       const run = CS.currentRun(); const m = run?.messages[Number(id)];
       if (!m) return;
       // 剥离上传附件的零宽隐藏引用(\u200B@path): 展示层不显示, 复制也不应带出
-      const text = String(m.content || '').replace(/\u200B@\S+/g, '').replace(/\s+$/, '');
+      const text = String(m.content || '').replace(/\u200B@\[\[[^\]]*\]\]/g, '').replace(/\u200B@\S+/g, '').replace(/\s+$/, '');
       navigator.clipboard?.writeText(text).then(() => CS.toast('已复制到剪贴板。')).catch(() => CS.toast('复制失败。', 'error'));
     },
     'delete-message': id => {
@@ -3001,7 +3009,7 @@
     },
     'remove-upload': name => {
       const u = (CS.ui.pendingUploads || []).find(x => x.name === name);
-      if (u && u.path) CS.ui.composer = CS.ui.composer.split('@' + u.path).join('').replace(/ {2,}/g, ' ');
+      if (u && u.path) CS.ui.composer = CS.ui.composer.split('\u200B@[[' + u.path + ']]').join('').split('@' + u.path).join('').replace(/ {2,}/g, ' ');
       CS.ui.pendingUploads = CS.ui.pendingUploads.filter(x => x.name !== name);
       const ta = document.getElementById('composer-text'); if (ta) ta.value = CS.ui.composer;
       const send = document.querySelector('.send-button'); if (send) send.disabled = !CS.ui.composer.trim() && !CS.ui.pendingUploads.some(u => u.status === 'done');

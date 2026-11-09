@@ -5157,11 +5157,31 @@ def _run_agent_chat(
     # 会话作用域: task/job/inbox 等有状态工具按 runId 分片, 会话间互不可见
     tools_mod.set_session_scope(conversation_id or None)
 
+    def _msg_content(m: dict):
+        """user 消息可携带 images(dataUrl 列表, 上传图片附件):
+        组装为 OpenAI 多模态内容块(image_url), 由 glm/qwen 等视觉模型直读;
+        纯文本消息保持字符串, 不改变既有载荷形态。"""
+        imgs = m.get("images")
+        if m.get("role") == "user" and isinstance(imgs, list) and imgs:
+            blocks = []
+            text = str(m.get("content", "") or "")
+            if text.strip():
+                blocks.append({"type": "text", "text": text})
+            for url in imgs[:4]:
+                if isinstance(url, str) and url.startswith("data:image/"):
+                    blocks.append(
+                        {"type": "image_url", "image_url": {"url": url}}
+                    )
+            return blocks or text
+        return m.get("content", "")
+
     raw = [
-        {"role": m.get("role"), "content": m.get("content", "")}
+        {"role": m.get("role"), "content": _msg_content(m)}
         for m in messages
         if m.get("role") in ("user", "assistant")
     ]
+    import sys as _sys
+    print("[dbg multimodal] shapes=" + str([(m.get("role"), type(m.get("content")).__name__, len(m.get("content")) if isinstance(m.get("content"), (str, list)) else 0) for m in raw]), file=_sys.stderr, flush=True)
     # harness 会话上下文: cron 投递按会话绑定; 队友/goal 评估器用同一模型配置
     from sigmaflow.agent import harness as _harness
 
