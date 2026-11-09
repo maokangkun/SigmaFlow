@@ -897,7 +897,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .fly-chat{flex:0 0 42%;min-width:320px;display:flex;flex-direction:column;background:var(--bg);border-radius:16px;box-shadow:7px 7px 20px #dce0e7a3,-6px -6px 16px #ffffffd0;padding:14px;min-height:0}
 .fly-msgs{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 6px;min-height:0}
 .fly-msg{max-width:92%;padding:9px 12px;border-radius:12px;font-size:12.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word}
-.fly-msg.user{align-self:flex-end;background:var(--bg);color:#fff;border-radius:12px 12px 4px 12px;box-shadow:4px 4px 10px #c9cfdaa6,-3px -3px 8px #ffffffb8}
+.fly-msg.user{align-self:flex-end;background:var(--bg);color:var(--ink);border-radius:12px 12px 4px 12px;box-shadow:4px 4px 10px #c9cfdaa6,-3px -3px 8px #ffffffb8}
 .fly-msg.fly{align-self:flex-start;background:var(--surface,#fff);border-radius:12px 12px 12px 4px;box-shadow:inset 3px 3px 7px #dfe3eaab,inset -3px -3px 7px #ffffff}
 .fly-msg-meta{margin-top:6px;font-size:10px;color:var(--faint)}
 .fly-form{display:flex;gap:8px;margin-top:12px;flex:none}
