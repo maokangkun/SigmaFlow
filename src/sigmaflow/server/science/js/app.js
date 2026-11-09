@@ -1402,7 +1402,7 @@
     // 上传附件以零宽字符标记(\u200B@path)注入消息尾部: 模型可读路径,
     // 服务端归档保留(刷新后芯片可重建), 展示层剥离标记不显示裸路径
     const _zwRef = (CS.ui.pendingUploads || []).filter(u => u.status === 'done' && u.path).map(u => '\u200B@[[' + u.path + ']]');
-    if (_zwRef.length) { text = (text ? text.replace(/\s+$/, '') + ' ' : '') + _zwRef.join(' '); CS.ui.pendingUploads = []; }
+    if (_zwRef.length) { text = (text ? text.replace(/\s+$/, '') + ' ' : '') + _zwRef.join(' '); CS.ui.pendingUploads = []; CS._persistUploads(); }
     // 隐形续接(压缩完成后): 不插可见用户消息, 历史以压缩摘要卡结尾,
     // 服务端契约把摘要卡组装为 user 末条, 模型基于摘要直接开始下一轮
     if (!opts.hiddenContinue) run.messages.push({ role: 'user', content: text, datasetIds: [...datasetIds], at: new Date().toISOString() });
@@ -1908,6 +1908,24 @@
     }
   };
   const chooseFiles = context => { uploadContext = context; const input = document.getElementById('file-input'); input.value = ''; input.click(); };
+  // 待发附件持久化: 上传后页面刷新/换标签页会让内存态清零, 附件凭空消失
+  // (文件已在暂存区, 只是引用丢了)。落 localStorage, 启动时恢复; objectURL
+  // 不可持久, 恢复项无缩略图(显示图标), 发送后消息内的图片预览不受影响。
+  CS._persistUploads = () => {
+    try {
+      const rows = (CS.ui.pendingUploads || []).filter(u => u.status === 'done' && u.path).map(u => ({ name: u.name, size: u.size, status: 'done', path: u.path, thumb: '', error: '' }));
+      localStorage.setItem('sigmaflow-science.pendingUploads', JSON.stringify(rows));
+    } catch {}
+  };
+  CS._restoreUploads = () => {
+    try {
+      const raw = localStorage.getItem('sigmaflow-science.pendingUploads');
+      if (!raw) return;
+      const rows = JSON.parse(raw);
+      if (Array.isArray(rows) && rows.length) CS.ui.pendingUploads = (CS.ui.pendingUploads || []).concat(rows.filter(r => r && r.path && !(CS.ui.pendingUploads || []).some(u => u.path === r.path)));
+    } catch {}
+  };
+  CS._restoreUploads();
   // 本地文件上传(+号/粘贴): 文件进项目目录(/fs/upload, 同名自动改名), @引用
   // 插入输入框; 图片用 objectURL 做缩略图。上传中的附件会阻止发送。
   const uploadLocalFiles = async files => {
@@ -1933,6 +1951,7 @@
           }
         }
         entry.name = out.name; entry.path = out.path; entry.size = out.size; entry.status = 'done';
+        CS._persistUploads();
         // 不往输入框插入 @引用(裸路径对用户是噪声): 附件由芯片展示, 发送时在
         // sendChatMessage 里以零宽字符标记(\u200B@path)静默注入消息内容
         const send = document.querySelector('.send-button'); if (send) send.disabled = !CS.ui.composer.trim() && !CS.ui.pendingUploads.some(u => u.status === 'done');
@@ -1940,6 +1959,7 @@
         entry.status = 'error'; entry.error = CS.api.friendlyError(err);
         CS.toast(`${file.name} 上传失败：${entry.error}`, 'error');
       }
+      CS._persistUploads();
       CS.render();
     }
   };
@@ -3017,6 +3037,7 @@
       const u = (CS.ui.pendingUploads || []).find(x => x.name === name);
       if (u && u.path) CS.ui.composer = CS.ui.composer.split('\u200B@[[' + u.path + ']]').join('').split('@' + u.path).join('').replace(/ {2,}/g, ' ');
       CS.ui.pendingUploads = CS.ui.pendingUploads.filter(x => x.name !== name);
+      CS._persistUploads();
       const ta = document.getElementById('composer-text'); if (ta) ta.value = CS.ui.composer;
       const send = document.querySelector('.send-button'); if (send) send.disabled = !CS.ui.composer.trim() && !CS.ui.pendingUploads.some(u => u.status === 'done');
       CS.render();
@@ -3243,6 +3264,8 @@
       const prompt=CS.ui.composer.trim();
       if(!prompt && !(CS.ui.pendingUploads||[]).some(u=>u.status==='done')) return;
       if((CS.ui.pendingUploads||[]).some(u=>u.status==='uploading')) { CS.toast('附件还在上传，稍候再发送。','error'); return; }
+      const _dropErr=(CS.ui.pendingUploads||[]).filter(u=>u.status==='error').length;
+      if (_dropErr) CS.toast(`已忽略 ${_dropErr} 个上传失败的附件。`, 'info');
       CS.ui.pendingUploads=(CS.ui.pendingUploads||[]).filter(u=>u.status!=='error');
       const active=CS.currentRun();
       if(CS.ui.route==='chat' && active?.kind === 'chat') {
