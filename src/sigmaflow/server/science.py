@@ -2907,6 +2907,82 @@ class ScienceAPI:
                 raise HTTPException(status_code=404, detail="网页会话已过期，请让助手重新打开")
             return {"ok": True, "cookies": count}
 
+        @self.ws_router.websocket("/wv/live/{sid}")
+        async def wv_live_ws(ws: WebSocket, sid: str):
+            """browser-use 式真浏览器帧流: screencast JPEG 下行, 输入事件上行。"""
+            origin = ws.headers.get("origin")
+            host = ws.headers.get("host", "")
+            if origin and origin not in (f"http://{host}", f"https://{host}"):
+                await ws.close(code=1008)
+                return
+            if _multi_user():
+                if not _cookie_user(ws):
+                    await ws.close(code=1008)
+                    return
+            from .science_admin import _agent_tools_module
+
+            m = _agent_tools_module()
+            jars, lock = m._webview_live_state()
+            with lock:
+                live = jars.get(sid)
+            if live is None or live.dead:
+                await ws.accept()
+                await ws.send_text(json.dumps({"t": "err", "msg": "会话已过期，请让助手重新打开"}))
+                await ws.close()
+                return
+            await ws.accept()
+            loop = asyncio.get_event_loop()
+            last_sig = [None]
+            last_sent = [0.0]
+
+            async def _sender():
+                while True:
+                    # 帧事件从 threading.Event 桥到 asyncio(线程池等 0.25s)
+                    await loop.run_in_executor(None, live.frame_ev.wait, 0.25)
+                    live.frame_ev.clear()
+                    if live.dead:
+                        await ws.send_text(json.dumps({"t": "done"}))
+                        return
+                    try:
+                        frame = live.frames[-1]
+                    except IndexError:
+                        continue
+                    sig = (frame[0][:32], frame[1], frame[2])
+                    now = time.time()
+                    # 同帧不重发; 最快 120ms 一帧
+                    if sig == last_sig[0] and now - last_sent[0] < 1.5:
+                        continue
+                    last_sig[0], last_sent[0] = sig, now
+                    await ws.send_text(
+                        json.dumps({"t": "frame", "d": frame[0], "w": frame[1], "h": frame[2]})
+                    )
+                    await ws.send_text(json.dumps({"t": "url", "url": live.cur_url[:500]}))
+
+            send_task = asyncio.create_task(_sender())
+            try:
+                while True:
+                    raw = await ws.receive_text()
+                    try:
+                        cmd = json.loads(raw)
+                    except Exception:
+                        continue
+                    if cmd.get("t") == "bye":
+                        live.close()
+                        break
+                    if cmd.get("t") == "hello":
+                        # 新连接/重连握手: 唤醒发送器立即下发当前帧
+                        live.frame_ev.set()
+                        continue
+                    live.feed(cmd)
+            except Exception:
+                pass
+            finally:
+                send_task.cancel()
+                try:
+                    await ws.close()
+                except Exception:
+                    pass
+
         @router.get("/wv/file/{rel:path}")
         async def wv_file(rel: str, request: Request, projectId: str = ""):
             """本地 HTML 预览: 项目内(或绝对路径)文件按扩展名直出。"""
@@ -4810,6 +4886,7 @@ class ScienceProjectStore:
                                     "height": max(
                                         240, min(900, int(b.get("height") or 420))
                                     ),
+                                    "live": 1 if b.get("live") else 0,
                                     "pid": _clip(str(b.get("pid", "")), 64),
                                 }
                             )
@@ -5822,6 +5899,7 @@ def _archive_row_from_journal(state, model_name: str, streaming: bool = True):
                         "height": max(
                             240, min(900, int(value.get("height") or 420))
                         ),
+                        "live": 1 if value.get("live") else 0,
                     }
                 )
     content = "".join(text_parts)

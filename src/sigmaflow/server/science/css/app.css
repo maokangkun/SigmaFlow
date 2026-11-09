@@ -949,3 +949,20 @@ html[data-motion="reduced"] #anchor-tip{display:none}
   margin-top: 6px; text-align: right; opacity: .85;
 }
 /* trace 页块行: 网页条目色系 */
+
+/* ---- webview live: 服务端真浏览器卡片 ---- */
+.wv-live .wv-live-view {
+  position: relative; margin-top: 8px; border-radius: 12px; overflow: hidden;
+  background: #1c2027; outline: none; cursor: crosshair;
+  box-shadow: inset 0 0 0 1px rgba(120, 130, 160, .18), 0 2px 10px rgba(20, 26, 40, .06);
+}
+.wv-live .wv-live-img {
+  width: 100%; height: 100%; object-fit: contain; display: none;
+  user-select: none; -webkit-user-drag: none;
+}
+.wv-live .wv-live-conn {
+  position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; color: #aab3c5;
+}
+.wv-live .wv-live-view.wv-live-on { cursor: default; }
+.wv-live .wv-live-urlbar { margin-top: 6px; opacity: .7; }

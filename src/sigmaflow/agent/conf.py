@@ -238,6 +238,17 @@ CHILD_TOOLS = [
                     "type": "integer",
                     "description": "Embed height in px (240-900, default 420).",
                 },
+                "live": {
+                    "type": "boolean",
+                    "description": (
+                        "Open a LIVE server-side real browser instead of a"
+                        " proxied iframe: the user operates the actual page"
+                        " (clicks, drags, typing) inside the card and all"
+                        " cookies stay server-side automatically. Use it for"
+                        " strong anti-bot challenges (Cloudflare, sliders)"
+                        " or anything the proxied embed cannot handle."
+                    ),
+                },
             },
             "required": ["url"],
         },

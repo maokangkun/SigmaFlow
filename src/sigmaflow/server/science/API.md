@@ -194,6 +194,13 @@ GET    /api/context-info      → {"systemTokens": int, "toolsTokens": int}  # A
      css/js/图片按路径自然解析。
 - `webview_fetch(url, sid, max_chars)` — 经指定会话罐抓取 URL，返回状态
   行 + 截断正文（500–40000 字符）。
+- `webview(url, ..., live=true)` — **browser-use 式服务端真浏览器**：在服务器上
+  起一个 headless Chromium（复用 playwright 缓存二进制，裸 CDP 直控，无新增
+  依赖），页面以 screencast JPEG 帧流推给卡片（WS `/api/wv/live/{sid}`），
+  用户在卡片里的点击/拖拽/滚动/键入/粘贴全部转发进真浏览器 —— Cookie 天然
+  落在服务端，`webview_fetch` 抓取前自动把 CDP Cookie + 浏览器 UA 导入
+  requests 罐。Cloudflare 等强质询首选此模式。会话 LRU 3 个、闲置 30 分钟
+  回收；Chrome 路径可用 `SIGMAFLOW_WV_CHROME` 指定。
 
 安全边界：本地文件路由沿用 present 的黑名单护栏（/etc、~/.ssh 等拒绝），
 未知二进制类型不支持预览；会话罐仅存 Cookie 与 UA，不落盘。

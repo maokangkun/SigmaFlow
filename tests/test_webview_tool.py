@@ -157,3 +157,61 @@ def test_webview_ingest_cookies():
     assert d.get("cf_clearance") == "abc"
     assert st["session"].headers["User-Agent"] == "Mozilla/5.0 X"
     assert tools._webview_ingest_cookies("wvnope", "a=1") == -1
+
+
+def test_live_browser_engine():
+    """browser-use 引擎: 起真 Chrome → 点击 → CDP Cookie 导出进罐子。
+
+    无 chromium 二进制的环境跳过(引擎按需发现, 见 _find_chrome)。
+    """
+    if not tools._find_chrome():
+        pytest.skip("no chromium binary")
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class _H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = (
+                b'<button style="width:100%;height:100%" onclick='
+                b'"this.textContent=String(++n);document.cookie=\'wv=ok\'">0'
+                b'</button><script>var n=0</script>'
+            )
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    srv = HTTPServer(("127.0.0.1", 0), _H)
+    port = srv.server_address[1]
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    lv = tools._WvLive("wvengtest", f"http://127.0.0.1:{port}/")
+    try:
+        lv.start()
+        assert not lv.dead
+        assert lv.frames, "screencast frame never arrived"
+        assert "Mozilla" in lv.ua
+        lv.feed({"t": "mouse", "st": "pressed", "x": 640, "y": 400})
+        lv.feed({"t": "mouse", "st": "released", "x": 640, "y": 400})
+        import time as _t
+
+        _t.sleep(1.2)
+        res = lv.call(
+            "Runtime.evaluate",
+            {"expression": "document.querySelector('button').textContent", "returnByValue": True},
+        )
+        assert (res.get("result") or {}).get("value") == "1", "click not dispatched"
+        pairs = lv.cookies()
+        assert ("wv", "ok", "127.0.0.1") in pairs
+        # 导出进 requests 罐(webview_fetch 复用路径): 需先登记进会话表
+        with tools._WV_LIVE_LOCK:
+            tools._WV_LIVE["wvengtest"] = lv
+        assert tools._webview_live_export_cookies("wvengtest") is True
+        jar = tools._WEBVIEW_SESSIONS["wvengtest"]["session"].cookies.get_dict()
+        assert jar.get("wv") == "ok"
+        assert "Mozilla" in tools._WEBVIEW_SESSIONS["wvengtest"]["session"].headers["User-Agent"]
+    finally:
+        lv.close()
+        srv.shutdown()

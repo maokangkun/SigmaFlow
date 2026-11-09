@@ -259,6 +259,73 @@
   CS._presentIO = new IntersectionObserver(entries => {
     for (const en of entries) if (en.isIntersecting) { CS._presentIO.unobserve(en.target); CS._presentLoad(en.target); }
   }, { rootMargin: '260px' });
+  // ---- webview live: 服务端真浏览器帧流 + 输入转发 ----
+  CS._wvLive = new Map();  // sid -> {ws, el}
+  CS._wvLiveAttach = el => {
+    const sid = el.dataset.sid;
+    if (!sid) return;
+    const view = el.querySelector('.wv-live-view');
+    const img = el.querySelector('.wv-live-img');
+    const conn = el.querySelector('.wv-live-conn');
+    const urlbar = el.querySelector('.wv-live-urlbar');
+    if (!view || !img) return;
+    let st = CS._wvLive.get(sid);
+    if (!st) {
+      const base = CS.api.wsUrl().replace(/\/ws$/, '');
+      const url = base + '/wv/live/' + encodeURIComponent(sid);
+      let ws;
+      try { ws = new WebSocket(url); } catch { if (conn) conn.textContent = '无法连接'; return; }
+      st = { ws };
+      CS._wvLive.set(sid, st);
+    }
+    const ws = st.ws;
+    const send = o => { if (ws.readyState === 1) ws.send(JSON.stringify(o)); };
+    ws.addEventListener('open', () => send({ t: 'hello' }));
+    if (ws.readyState === 1) send({ t: 'hello' });
+    // 坐标换算: 显示宽 → 帧宽(设备像素)
+    const pt = ev => {
+      const r = img.getBoundingClientRect();
+      const sx = (parseFloat(img.dataset.w) || r.width) / Math.max(1, r.width);
+      const sy = (parseFloat(img.dataset.h) || r.height) / Math.max(1, r.height);
+      return { x: (ev.clientX - r.left) * sx, y: (ev.clientY - r.top) * sy };
+    };
+    let dragging = false;
+    view.addEventListener('mousedown', ev => { ev.preventDefault(); view.focus(); dragging = true; const p = pt(ev); send({ t: 'mouse', st: 'pressed', x: p.x, y: p.y }); });
+    view.addEventListener('mousemove', ev => { if (!dragging) return; const p = pt(ev); send({ t: 'mouse', st: 'moved', x: p.x, y: p.y, drag: 1 }); });
+    window.addEventListener('mouseup', ev => { if (!dragging) return; dragging = false; const p = pt(ev); send({ t: 'mouse', st: 'released', x: p.x, y: p.y }); });
+    view.addEventListener('wheel', ev => { ev.preventDefault(); send({ t: 'wheel', dx: Math.round(ev.deltaX), dy: Math.round(ev.deltaY) }); }, { passive: false });
+    view.addEventListener('keydown', ev => {
+      const k = ev.key;
+      if (k.length === 1 || ['Enter', 'Backspace', 'Tab', 'Escape', 'ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'Delete', 'Home', 'End', 'PageUp', 'PageDown'].includes(k)) {
+        if (k.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey) ev.preventDefault();
+        send({ t: 'key', key: k, code: ev.code, text: k.length === 1 ? k : '' });
+      }
+    });
+    view.addEventListener('paste', ev => { const txt = (ev.clipboardData || {}).getData ? ev.clipboardData.getData('text') : ''; if (txt) send({ t: 'paste', text: txt.slice(0, 5000) }); });
+    const _cur = () => CS._wvLive.get(sid) === st ? {
+      img: document.querySelector(`.wv-live[data-sid="${CSS.escape(sid)}"] .wv-live-img`),
+      conn: document.querySelector(`.wv-live[data-sid="${CSS.escape(sid)}"] .wv-live-conn`),
+      view: document.querySelector(`.wv-live[data-sid="${CSS.escape(sid)}"] .wv-live-view`),
+      urlbar: document.querySelector(`.wv-live[data-sid="${CSS.escape(sid)}"] .wv-live-urlbar`),
+    } : null;
+    ws.onmessage = m => {
+      let d; try { d = JSON.parse(m.data); } catch { return; }
+      const c = _cur(); if (!c) return;
+      if (d.t === 'frame') {
+        c.img.src = 'data:image/jpeg;base64,' + d.d;
+        c.img.dataset.w = d.w; c.img.dataset.h = d.h;
+        c.img.style.display = 'block'; if (c.conn) c.conn.style.display = 'none';
+        c.view.classList.add('wv-live-on');
+      } else if (d.t === 'url') {
+        if (c.urlbar) c.urlbar.textContent = d.url || '';
+      } else if (d.t === 'err' || d.t === 'done') {
+        if (c.conn) { c.conn.textContent = d.t === 'done' ? '会话已结束' : (d.msg || '连接失败'); c.conn.style.display = ''; }
+        if (c.view) c.view.classList.remove('wv-live-on');
+        CS._wvLive.delete(sid);
+      }
+    };
+    ws.onclose = () => { CS._wvLive.delete(sid); const c = _cur(); if (c?.view) c.view.classList.remove('wv-live-on'); };
+  };
   // 表格/JSON 预览区允许选中文本, 点击不再冒泡触发整卡弹窗(图片点击仍进弹窗)
   document.addEventListener('click', ev => {
     const pv = ev.target && ev.target.closest ? ev.target.closest('.present-preview') : null;
@@ -351,6 +418,8 @@
         el.dataset.state = 'done';
       } else CS._presentIO.observe(el);
     });
+    // webview live 真浏览器卡片: 幂等重绑(Map 里已有连接则只换 el 引用)
+    document.querySelectorAll('.wv-live[data-sid]').forEach(el => { try { CS._wvLiveAttach(el); } catch {} });
     // webview iframe 懒加载: 进入视口前 300px 才设 src(历史卡片不重复打外站);
     // 已加载的帧优先原样搬回(保活), 搬不回的才走懒加载
     document.querySelectorAll('iframe.wv-frame[data-state="idle"]').forEach(el => {
@@ -668,7 +737,7 @@
             if (b.t === 'compact') return { type: 'compact', text: b.x || '' };
             if (b.t === 'deliverables') return { type: 'deliverables', files: Array.isArray(b.files) ? b.files : [] };
             if (b.t === 'present') return { type: 'present', typ: b.typ || 'file', path: b.path, name: b.name, ext: b.ext, klass: b.klass, size: b.size, title: b.title, note: b.note, pid: b.pid || '' };
-            if (b.t === 'webview') return { type: 'webview', mode: b.mode || 'remote', url: b.url, path: b.path, sid: b.sid, title: b.title, note: b.note, height: b.height, pid: b.pid || '' };
+            if (b.t === 'webview') return { type: 'webview', mode: b.mode || 'remote', url: b.url, path: b.path, sid: b.sid, title: b.title, note: b.note, height: b.height, live: b.live ? 1 : 0, pid: b.pid || '' };
             if (b.t === 'sysnote') return { type: 'sysnote', text: b.x || '' };
             return null;
           }).filter(Boolean);
@@ -1299,7 +1368,7 @@
         else if (b.type === 'text') out.push({ t: 'text', x: b.text || '' });
         else if (b.type === 'deliverables') out.push({ t: 'deliverables', files: b.files || [] });
         else if (b.type === 'present') out.push({ t: 'present', typ: b.typ || 'file', path: b.path, name: b.name, ext: b.ext, klass: b.klass, size: b.size, title: b.title, note: b.note, pid: b.pid || '' });
-        else if (b.type === 'webview') out.push({ t: 'webview', mode: b.mode || 'remote', url: b.url, path: b.path, sid: b.sid, title: b.title, note: b.note, height: b.height, pid: b.pid || '' });
+        else if (b.type === 'webview') out.push({ t: 'webview', mode: b.mode || 'remote', url: b.url, path: b.path, sid: b.sid, title: b.title, note: b.note, height: b.height, live: b.live ? 1 : 0, pid: b.pid || '' });
         else if (b.type === 'sysnote') out.push({ t: 'sysnote', x: b.text || '' });
       });
       return out;
@@ -1528,7 +1597,7 @@
         return;
       }
       if (t.kind === 'webview') {
-        reply.blocks.push({ type: 'webview', mode: t.mode || 'remote', url: t.url, path: t.path, sid: t.sid, title: t.title, note: t.note, height: t.height, pid: run?.projectId || CS.state.projectId, at: Date.now() });
+        reply.blocks.push({ type: 'webview', mode: t.mode || 'remote', url: t.url, path: t.path, sid: t.sid, title: t.title, note: t.note, height: t.height, live: t.live ? 1 : 0, pid: run?.projectId || CS.state.projectId, at: Date.now() });
         return;
       }
       // 每次工具调用独立成块, 不再合并进之前的工具列表
@@ -2123,6 +2192,16 @@
       // 远程页打开真实地址: Cloudflare 等强质询只能在真实域名上完成, 代理页里必然失败
       const target = el?.dataset?.real || el?.dataset?.src || '';
       if (target) window.open(target, '_blank', 'noopener');
+    },
+    'wv-live-reload': (id, el) => {
+      const st = CS._wvLive?.get(el?.dataset?.sid || '');
+      if (st && st.ws.readyState === 1) st.ws.send(JSON.stringify({ t: 'reload' }));
+    },
+    'wv-live-end': (id, el) => {
+      const sid = el?.dataset?.sid || '';
+      const st = CS._wvLive?.get(sid);
+      if (st && st.ws.readyState === 1) st.ws.send(JSON.stringify({ t: 'bye' }));
+      CS._wvLive?.delete(sid);
     },
     'wv-cookie': (id, el) => {
       const sid = el?.dataset?.sid || '';
