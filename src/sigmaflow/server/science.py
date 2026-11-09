@@ -27,6 +27,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.responses import StreamingResponse
+from starlette.concurrency import iterate_in_threadpool
 from pydantic import BaseModel, Field
 from .science_common import (
     _CURRENT_USER,
@@ -518,9 +519,8 @@ def _list_provider_models(base_url: str, api_key: str) -> dict:
         except Exception:
             last_err = "响应不是 JSON"
             continue
-        if (
-            isinstance(data, dict)
-            and (data.get("success") is False or (data.get("code") and not data.get("data")))
+        if isinstance(data, dict) and (
+            data.get("success") is False or (data.get("code") and not data.get("data"))
         ):
             # 网关把内部 404/500 包成 200: 视为该端点不可用, 换下一个候选
             last_err = str(data.get("msg") or "网关返回错误")[:200]
@@ -1953,7 +1953,9 @@ class ScienceAPI:
                     "engine": base,
                     "repo": _fly_repo(),
                     "status": data,
-                    "error": None if resp.status_code == 200 else f"HTTP {resp.status_code}",
+                    "error": None
+                    if resp.status_code == 200
+                    else f"HTTP {resp.status_code}",
                 }
             except Exception as err:
                 return {
@@ -1977,7 +1979,9 @@ class ScienceAPI:
                 )
                 return resp.json()
             except Exception as err:
-                raise HTTPException(status_code=502, detail=f"果蝇引擎不可达：{str(err)[:150]}")
+                raise HTTPException(
+                    status_code=502, detail=f"果蝇引擎不可达：{str(err)[:150]}"
+                )
 
         @router.post("/fly/reset")
         async def fly_reset(request: Request):
@@ -1988,7 +1992,9 @@ class ScienceAPI:
                 )
                 return resp.json() if resp.content else {"ok": True}
             except Exception as err:
-                raise HTTPException(status_code=502, detail=f"果蝇引擎不可达：{str(err)[:150]}")
+                raise HTTPException(
+                    status_code=502, detail=f"果蝇引擎不可达：{str(err)[:150]}"
+                )
 
         @router.get("/fly/activity")
         async def fly_activity(request: Request):
@@ -2000,7 +2006,9 @@ class ScienceAPI:
                 )
                 return resp.json()
             except Exception as err:
-                raise HTTPException(status_code=502, detail=f"果蝇引擎不可达：{str(err)[:150]}")
+                raise HTTPException(
+                    status_code=502, detail=f"果蝇引擎不可达：{str(err)[:150]}"
+                )
 
         @router.get("/fly/data/meta.json")
         async def fly_meta(request: Request):
@@ -2016,7 +2024,9 @@ class ScienceAPI:
                     headers={"Cache-Control": "public, max-age=86400"},
                 )
             except Exception as err:
-                raise HTTPException(status_code=502, detail=f"果蝇引擎不可达：{str(err)[:150]}")
+                raise HTTPException(
+                    status_code=502, detail=f"果蝇引擎不可达：{str(err)[:150]}"
+                )
 
         @router.get("/fly/data/lod2/{chunk}")
         async def fly_lod2(chunk: str, request: Request):
@@ -2025,8 +2035,13 @@ class ScienceAPI:
             if not re.fullmatch(r"chunk_\d{3}\.bin", chunk):
                 raise HTTPException(status_code=400, detail="分块名无效")
             try:
-                upstream = requests.get(
-                    _fly_base() + "/data/lod2/" + chunk, stream=True, timeout=120.0
+                # 建连与逐块读取都放线程池: 阻塞 IO 留在事件循环里时, 引擎
+                # 慢/断会把整个服务(聊天 WS 等)一起冻住最长 120s。
+                upstream = await asyncio.to_thread(
+                    requests.get,
+                    _fly_base() + "/data/lod2/" + chunk,
+                    stream=True,
+                    timeout=120.0,
                 )
 
                 def gen():
@@ -2037,12 +2052,15 @@ class ScienceAPI:
                         upstream.close()
 
                 return StreamingResponse(
-                    gen(),
+                    # iterate_in_threadpool: 逐块读取放线程池(引擎慢/断时不冻事件循环)
+                    iterate_in_threadpool(gen()),
                     media_type="application/octet-stream",
                     headers={"Cache-Control": "public, max-age=86400"},
                 )
             except Exception as err:
-                raise HTTPException(status_code=502, detail=f"果蝇引擎不可达：{str(err)[:150]}")
+                raise HTTPException(
+                    status_code=502, detail=f"果蝇引擎不可达：{str(err)[:150]}"
+                )
 
         @router.post("/fs/upload")
         async def fs_upload(payload: _FsUploadIn, request: Request):

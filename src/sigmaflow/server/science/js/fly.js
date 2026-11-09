@@ -102,7 +102,7 @@
         </ol>
         <div class="row wrap">
           <button type="button" class="btn primary" onclick="FlyUI.retry()">重新检测引擎</button>
-          <a class="btn flat" href="${esc(st.repo || 'https://github.com/mkk-archive/flychat')}" target="_blank" rel="noopener">打开下载页</a>
+          <a class="btn flat" href="${esc(st.repo || 'https://github.com/maokangkun/flychat')}" target="_blank" rel="noopener">打开下载页</a>
         </div>
         <p class="tiny muted mt-12">当前探测地址：${esc(st.engine || '')}${st.error ? ' · ' + esc(st.error) : ''}</p>
       </div>`;

@@ -350,7 +350,12 @@ def _fs_exec_payload(project, cmd: str, cwd: str) -> dict:
 
 
 def _fs_upload_staging_dir() -> str:
-    """Per-user staging dir for uploads sent without a project association."""
+    """Staging dir for uploads sent without a project association.
+
+    Shared across accounts under the science data dir (single-user default;
+    multi-user deployments keep their established trust model where every
+    authenticated user already has full local fs access via PTY/fs routes).
+    """
     root = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
         os.path.expanduser("~"), ".sigmaflow", "science"
     )
@@ -368,7 +373,11 @@ def _fs_upload_payload(project, name: str, data_base64: str) -> dict:
     ever associated).
     """
     staging = project is None
-    base = _fs_upload_staging_dir() if staging else str((project or {}).get("dir") or "").strip()
+    base = (
+        _fs_upload_staging_dir()
+        if staging
+        else str((project or {}).get("dir") or "").strip()
+    )
     if not staging and (not base or not os.path.isdir(base)):
         raise HTTPException(
             status_code=404, detail="项目目录不存在，请编辑项目并填写本地路径"
