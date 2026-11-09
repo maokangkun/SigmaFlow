@@ -300,6 +300,9 @@
 .p23d-head { display: flex; align-items: center; justify-content: space-between; padding: 0 2px 6px; color: #dbe2f0; }
 .p23d-head b { font-size: 14px; }
 #patho3d canvas { display: block; border-radius: 8px; cursor: grab; border: 1px solid #232a3a; }
+.p23d-stage { position: relative; width: 620px; height: 460px; border-radius: 8px; overflow: hidden; border: 1px solid #232a3a; background: #10131c; }
+.p23d-stage canvas.p23d-cv { width: 100% !important; height: 100% !important; border: 0; }
+.p23d-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #7d8aa5; background: #10131c; }
 .p23d-hint { color: #7d8aa5; font-size: 11px; padding: 5px 2px 1px; }
 .p23d-cap { color: #9aa7c2; font-size: 11.5px; padding: 2px 2px 4px; max-width: 480px; }
 
