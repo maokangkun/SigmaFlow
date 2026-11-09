@@ -23,6 +23,18 @@
     reset: () => _reset(),
     toggleWire: () => _toggleWire(),
     suspend: () => _teardown(true),
+    // 调试/测试句柄: 投影模型包围盒中心到屏幕坐标(相对画布尺寸的 0~1)
+    probe: () => {
+      const cv = window.CellViewer;
+      if (!cv || !S.scene || !S.camera || !S.meta) return null;
+      const bb = new cv.THREE.Box3();
+      // 与胞体云同源: 用 soma 有效点集建包围盒
+      const soma = S.meta.soma;
+      let n = 0;
+      for (const sp of soma) { if (sp) { if (!n) { bb.min.set(sp[0], sp[1], sp[2]); bb.max.set(sp[0], sp[1], sp[2]); } else bb.expandByPoint(new cv.THREE.Vector3(sp[0], sp[1], sp[2])); n++; if (n > 200000) break; } }
+      const c = bb.getCenter(new cv.THREE.Vector3()).project(S.camera);
+      return { x: (c.x + 1) / 2, y: (1 - c.y) / 2 };
+    },
   };
 
   const stopTimers = () => { S.timers.forEach(t => clearInterval(t)); S.timers = []; if (S.raf) { cancelAnimationFrame(S.raf); S.raf = 0; } };
@@ -195,6 +207,14 @@
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos.slice(0, nv * 3), 3));
     S.scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0x8b96b4, size: 2.2, sizeAttenuation: false })));
+
+    // 包围盒中心 → 相机注视点: 胞体坐标原点不在模型质心, 不居中会把
+    // 大脑顶到视野角落; 相机按初始视角方向平移到中心正前方
+    const bb = new THREE.Box3().setFromBufferAttribute(g.getAttribute('position'));
+    const ctr = bb.getCenter(new THREE.Vector3());
+    S.controls.target.copy(ctr);
+    S.camera.position.set(ctr.x + 45000, ctr.y + 25000, ctr.z + 90000);
+    S.controls.update();
 
     // 活动神经元覆盖层(轮询重建) + 加色辉光二次绘制
     const g2 = new THREE.BufferGeometry();
