@@ -1,3 +1,4 @@
+import os
 import re
 import shlex
 from typing import Any, Optional, cast
@@ -125,6 +126,13 @@ def _bash_timeout(timeout) -> int:
 _DANGEROUS_DEV_RE = re.compile(r">+\s*/dev/(?!null\b|stdout\b|stderr\b|fd/)")
 
 
+_BASH = "/bin/bash" if os.path.exists("/bin/bash") else None
+# bash 工具承诺的就是 bash: shell=True 会退到 /bin/sh(dash), [[ ]]、
+# 进程替换 <()、数组等 bashism 直接语法报错。显式 ["bash", "-c", ...]。
+def _shell_argv(command: str):
+    return [_BASH, "-c", command] if _BASH else command
+
+
 def run_bash(command: str, timeout=None) -> str:
     if command == "":
         return "Error: command cannot be empty"
@@ -133,8 +141,8 @@ def run_bash(command: str, timeout=None) -> str:
         return "Error: Dangerous command blocked"
     _wait = _bash_timeout(timeout)
     proc = subprocess.Popen(
-        command,
-        shell=True,
+        _shell_argv(command),
+        shell=not _BASH,
         cwd=get_session_workdir(),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -283,8 +291,8 @@ def read_arxiv(paper_id: str) -> str:
     command = f"arxiv2md {paper_id} --remove-refs --remove-toc -o -"
     try:
         r = subprocess.run(
-            command,
-            shell=True,
+            _shell_argv(command),
+            shell=not _BASH,
             cwd=get_session_workdir(),
             capture_output=True,
             text=True,
@@ -1245,8 +1253,8 @@ class BackgroundManager:
         proc = None
         try:
             proc = subprocess.Popen(
-                command,
-                shell=True,
+                _shell_argv(command),
+                shell=not _BASH,
                 cwd=workdir or WORKDIR,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
