@@ -1904,6 +1904,8 @@ def _wv_key_lock(key: str) -> threading.Lock:
             lk = threading.Lock()
             _WV_KEY_LOCKS[key] = lk
         return lk
+
+
 _WV_LIVE_MAX = 3
 _WV_LIVE_TTL = 1800.0
 # Chrome 二进制发现顺序: 环境变量 > playwright 缓存 > 系统 chromium
@@ -1949,11 +1951,16 @@ def _start_xvfb(width: int, height: int):
         try:
             proc = _sp.Popen(
                 [
-                    "Xvfb", disp,
-                    "-screen", "0", f"{width}x{height}x24",
-                    "-nolisten", "tcp",
+                    "Xvfb",
+                    disp,
+                    "-screen",
+                    "0",
+                    f"{width}x{height}x24",
+                    "-nolisten",
+                    "tcp",
                 ],
-                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+                stdout=_sp.DEVNULL,
+                stderr=_sp.DEVNULL,
             )
         except Exception:
             return None
@@ -1970,9 +1977,19 @@ def _start_xvfb(width: int, height: int):
 
 def _vk_of(key: str) -> int:
     return {
-        "Enter": 13, "Backspace": 8, "Tab": 9, "Escape": 27,
-        "ArrowLeft": 37, "ArrowUp": 38, "ArrowRight": 39, "ArrowDown": 40,
-        "Delete": 46, "Home": 36, "End": 35, "PageUp": 33, "PageDown": 34,
+        "Enter": 13,
+        "Backspace": 8,
+        "Tab": 9,
+        "Escape": 27,
+        "ArrowLeft": 37,
+        "ArrowUp": 38,
+        "ArrowRight": 39,
+        "ArrowDown": 40,
+        "Delete": 46,
+        "Home": 36,
+        "End": 35,
+        "PageUp": 33,
+        "PageDown": 34,
     }.get(key, 0)
 
 
@@ -2012,18 +2029,28 @@ class _WvLive:
         self.ws.send(json.dumps(msg))
         return mid
 
-    def call(self, method: str, params: dict = None, timeout: float = 10.0, session: bool = True):
+    def call(
+        self,
+        method: str,
+        params: dict = None,
+        timeout: float = 10.0,
+        session: bool = True,
+    ):
         """线程安全命令: 发送 + 等响应(recv 线程回填)。"""
         if self.dead or self.ws is None:
             raise RuntimeError("live session closed")
         mid = self._send(method, params, session=session)
         with self.pend_lock:
             slot = self.pending.get(mid)
-        if slot is None or not slot["ev"].wait(timeout):
-            raise TimeoutError(f"CDP {method} timeout")
-        res = slot["result"]
-        with self.pend_lock:
-            self.pending.pop(mid, None)
+        try:
+            if slot is None or not slot["ev"].wait(timeout):
+                raise TimeoutError(f"CDP {method} timeout")
+            res = slot["result"]
+        finally:
+            # 超时也必须清槽: 响应迟到时 recv 线程只回填不删除,
+            # 慢/丢响应的命令会永久滞留 pending
+            with self.pend_lock:
+                self.pending.pop(mid, None)
         if res is None:
             raise RuntimeError(f"CDP {method} failed")
         return res
@@ -2064,16 +2091,26 @@ class _WvLive:
         if display:
             env = dict(os.environ, DISPLAY=display["id"])
         else:
-            base_flags = ["--headless=new", "--disable-gpu", "--hide-scrollbars"] + base_flags
+            base_flags = [
+                "--headless=new",
+                "--disable-gpu",
+                "--hide-scrollbars",
+            ] + base_flags
         self.proc = _sp.Popen(
             [chrome] + base_flags,
-            stdout=_sp.DEVNULL, stderr=_sp.PIPE, env=env,
+            stdout=_sp.DEVNULL,
+            stderr=_sp.PIPE,
+            env=env,
         )
         # stderr 轮询等 "DevTools listening on ws://..."
         deadline = time.time() + 15
         browser_ws = ""
         while time.time() < deadline:
-            line = self.proc.stderr.readline().decode("utf-8", "replace") if self.proc.stderr else ""
+            line = (
+                self.proc.stderr.readline().decode("utf-8", "replace")
+                if self.proc.stderr
+                else ""
+            )
             m = re.search(r"DevTools listening on (ws://\S+)", line)
             if m:
                 browser_ws = m.group(1)
@@ -2085,6 +2122,19 @@ class _WvLive:
             self.close()
             raise RuntimeError("chrome devtools endpoint not found")
         self.ws = _wsconn(browser_ws, max_size=None)
+
+        # stderr 持续排水: 启动探测后管道若无人读, chrome 累积的 stderr
+        # (GPU/网络告警等)写满 64KB 内核缓冲后会阻塞在 write 上, 整个浏览器
+        # 随之冻结。daemon 线程读到 EOF(进程退出)为止。
+        def _drain_stderr():
+            try:
+                while self.proc and self.proc.poll() is None:
+                    if not self.proc.stderr.readline():
+                        break
+            except Exception:
+                pass
+
+        threading.Thread(target=_drain_stderr, daemon=True).start()
 
         def _boot_call(method: str, params: dict, timeout: float = 10.0):
             """启动阶段内联收包: recv 线程还没起来, 响应只能自己等。"""
@@ -2159,13 +2209,26 @@ class _WvLive:
             self._fire("Network.enable")
             self._fire(
                 "Emulation.setDeviceMetricsOverride",
-                {"width": self.width, "height": self.height, "deviceScaleFactor": 1, "mobile": False},
+                {
+                    "width": self.width,
+                    "height": self.height,
+                    "deviceScaleFactor": 1,
+                    "mobile": False,
+                },
             )
             self._fire(
                 "Page.startScreencast",
-                {"format": "jpeg", "quality": 70, "maxWidth": self.width, "maxHeight": self.height},
+                {
+                    "format": "jpeg",
+                    "quality": 70,
+                    "maxWidth": self.width,
+                    "maxHeight": self.height,
+                },
             )
-            _fire_waitable("Runtime.evaluate", {"expression": "navigator.userAgent", "returnByValue": True})
+            _fire_waitable(
+                "Runtime.evaluate",
+                {"expression": "navigator.userAgent", "returnByValue": True},
+            )
         except Exception as err:
             self.err = str(err)[:200]
             self.dead = True
@@ -2195,7 +2258,14 @@ class _WvLive:
                     slot["ev"].set()
                     if msg["id"] == ua_mid[0] and not self.ua:
                         try:
-                            self.ua = str((((msg.get("result") or {}).get("result") or {}).get("value")) or "")
+                            self.ua = str(
+                                (
+                                    ((msg.get("result") or {}).get("result") or {}).get(
+                                        "value"
+                                    )
+                                )
+                                or ""
+                            )
                         except Exception:
                             pass
                 continue
@@ -2203,15 +2273,27 @@ class _WvLive:
             if m == "Page.screencastFrame":
                 meta = params.get("metadata") or {}
                 self.frames.append(
-                    (params.get("data") or "", int(meta.get("deviceWidth") or self.width), int(meta.get("deviceHeight") or self.height))
+                    (
+                        params.get("data") or "",
+                        int(meta.get("deviceWidth") or self.width),
+                        int(meta.get("deviceHeight") or self.height),
+                    )
                 )
                 self.frame_ev.set()
                 try:
-                    self._send("Page.screencastFrameAck", {"sessionId": params.get("sessionId")})
+                    self._send(
+                        "Page.screencastFrameAck",
+                        {"sessionId": params.get("sessionId")},
+                    )
                 except Exception:
                     pass
-            elif m == "Page.frameNavigated" and (params.get("frame") or {}).get("parentId") is None:
-                self.cur_url = str((params.get("frame") or {}).get("url") or self.cur_url)
+            elif (
+                m == "Page.frameNavigated"
+                and (params.get("frame") or {}).get("parentId") is None
+            ):
+                self.cur_url = str(
+                    (params.get("frame") or {}).get("url") or self.cur_url
+                )
                 self.at = time.time()
         self.dead = True
 
@@ -2223,10 +2305,18 @@ class _WvLive:
                 self._fire(
                     "Input.dispatchMouseEvent",
                     {
-                        "type": {"pressed": "mousePressed", "released": "mouseReleased", "moved": "mouseMoved"}.get(cmd.get("st"), "mouseMoved"),
-                        "x": float(cmd.get("x", 0)), "y": float(cmd.get("y", 0)),
-                        "button": "left", "clickCount": 1,
-                        "buttons": 1 if cmd.get("st") in ("pressed",) or cmd.get("drag") else 0,
+                        "type": {
+                            "pressed": "mousePressed",
+                            "released": "mouseReleased",
+                            "moved": "mouseMoved",
+                        }.get(cmd.get("st"), "mouseMoved"),
+                        "x": float(cmd.get("x", 0)),
+                        "y": float(cmd.get("y", 0)),
+                        "button": "left",
+                        "clickCount": 1,
+                        "buttons": 1
+                        if cmd.get("st") in ("pressed",) or cmd.get("drag")
+                        else 0,
                     },
                 )
             elif t == "wheel":
@@ -2245,7 +2335,13 @@ class _WvLive:
                 key, text = str(cmd.get("key") or ""), str(cmd.get("text") or "")
                 vk = _vk_of(key) or (ord(text) if len(text) == 1 else 0)
                 for typ in ("keyDown", "keyUp"):
-                    p = {"type": typ, "key": key or text, "code": str(cmd.get("code") or ""), "windowsVirtualKeyCode": vk, "nativeVirtualKeyCode": vk}
+                    p = {
+                        "type": typ,
+                        "key": key or text,
+                        "code": str(cmd.get("code") or ""),
+                        "windowsVirtualKeyCode": vk,
+                        "nativeVirtualKeyCode": vk,
+                    }
                     if typ == "keyDown" and text:
                         p["text"] = text
                     self._fire("Input.dispatchKeyEvent", p)
@@ -2303,12 +2399,23 @@ class _WvLive:
 def _wv_live_gc():
     """TTL + 上限回收: 关掉最旧/超时的真浏览器。"""
     now = time.time()
+    doomed = []
     with _WV_LIVE_LOCK:
-        for sid in [k for k, v in _WV_LIVE.items() if v.dead or now - v.at > _WV_LIVE_TTL]:
-            _WV_LIVE.pop(sid, None).close() if sid in _WV_LIVE else None
+        for sid in [
+            k for k, v in _WV_LIVE.items() if v.dead or now - v.at > _WV_LIVE_TTL
+        ]:
+            if sid in _WV_LIVE:
+                doomed.append(_WV_LIVE.pop(sid))
         while len(_WV_LIVE) > _WV_LIVE_MAX:
             oldest = min(_WV_LIVE, key=lambda k: _WV_LIVE[k].at)
-            _WV_LIVE.pop(oldest).close()
+            doomed.append(_WV_LIVE.pop(oldest))
+    # close 在锁外做: terminate/wait(最长 ~5s)+rmtree 期间不阻塞
+    # 其他会话的 feed/帧读取(它们也要拿 _WV_LIVE_LOCK)
+    for sess in doomed:
+        try:
+            sess.close()
+        except Exception:
+            pass
         # URL→sid 映射修剪: 会话两头(live 真浏览器 / requests 罐)都不在了才删,
         # 只查 _WV_LIVE 会把代理罐的去重项误剪
         with _WEBVIEW_LOCK:
@@ -2456,7 +2563,9 @@ def run_webview(url="", title="", note="", height=420, live=False, _notify=None)
         "note": str(note or "")[:500],
         "height": h,
     }
-    if str(live or "").lower() in ("1", "true", "yes") and u.lower().startswith(("http://", "https://")):
+    if str(live or "").lower() in ("1", "true", "yes") and u.lower().startswith(
+        ("http://", "https://")
+    ):
         # 同 URL 去重: 既有活会话直接复用(不新起浏览器, 不重复占 LRU 名额)
         key = u.rstrip("/")
         with _wv_key_lock(key):
@@ -2570,8 +2679,11 @@ def run_webview_fetch(url="", sid="", max_chars=8000):
         body = f"[binary {ctype or 'unknown'}, {len(r.content)} bytes]"
     clipped = len(body) > cap
     return (
-        f"HTTP {r.status_code} {ctype}\n\n" + body[:cap] + ("\n...[clipped]" if clipped else "")
+        f"HTTP {r.status_code} {ctype}\n\n"
+        + body[:cap]
+        + ("\n...[clipped]" if clipped else "")
     )
+
 
 TOOL_HANDLERS = {
     "bash": lambda **kw: run_bash(kw.get("command", ""), kw.get("timeout")),

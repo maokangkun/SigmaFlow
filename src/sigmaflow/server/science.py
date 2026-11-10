@@ -2904,7 +2904,9 @@ class ScienceAPI:
             except Exception as err:
                 raise HTTPException(status_code=500, detail=str(err)[:150])
             if count < 0:
-                raise HTTPException(status_code=404, detail="网页会话已过期，请让助手重新打开")
+                raise HTTPException(
+                    status_code=404, detail="网页会话已过期，请让助手重新打开"
+                )
             return {"ok": True, "cookies": count}
 
         @self.ws_router.websocket("/wv/live/{sid}")
@@ -2927,7 +2929,9 @@ class ScienceAPI:
                 live = jars.get(sid)
             if live is None or live.dead:
                 await ws.accept()
-                await ws.send_text(json.dumps({"t": "err", "msg": "会话已过期，请让助手重新打开"}))
+                await ws.send_text(
+                    json.dumps({"t": "err", "msg": "会话已过期，请让助手重新打开"})
+                )
                 await ws.close()
                 return
             await ws.accept()
@@ -2954,9 +2958,13 @@ class ScienceAPI:
                         continue
                     last_sig[0], last_sent[0] = sig, now
                     await ws.send_text(
-                        json.dumps({"t": "frame", "d": frame[0], "w": frame[1], "h": frame[2]})
+                        json.dumps(
+                            {"t": "frame", "d": frame[0], "w": frame[1], "h": frame[2]}
+                        )
                     )
-                    await ws.send_text(json.dumps({"t": "url", "url": live.cur_url[:500]}))
+                    await ws.send_text(
+                        json.dumps({"t": "url", "url": live.cur_url[:500]})
+                    )
 
             send_task = asyncio.create_task(_sender())
             try:
@@ -5462,9 +5470,7 @@ def _run_agent_chat(
                     except ValueError:
                         continue
                 else:
-                    blocks.append(
-                        {"type": "image_url", "image_url": {"url": url}}
-                    )
+                    blocks.append({"type": "image_url", "image_url": {"url": url}})
             return blocks or text
         return m.get("content", "")
 
@@ -5474,7 +5480,24 @@ def _run_agent_chat(
         if m.get("role") in ("user", "assistant")
     ]
     import sys as _sys
-    print("[dbg multimodal] shapes=" + str([(m.get("role"), type(m.get("content")).__name__, len(m.get("content")) if isinstance(m.get("content"), (str, list)) else 0) for m in raw]), file=_sys.stderr, flush=True)
+
+    print(
+        "[dbg multimodal] shapes="
+        + str(
+            [
+                (
+                    m.get("role"),
+                    type(m.get("content")).__name__,
+                    len(m.get("content"))
+                    if isinstance(m.get("content"), (str, list))
+                    else 0,
+                )
+                for m in raw
+            ]
+        ),
+        file=_sys.stderr,
+        flush=True,
+    )
     # harness 会话上下文: cron 投递按会话绑定; 队友/goal 评估器用同一模型配置
     from sigmaflow.agent import harness as _harness
 
@@ -5896,9 +5919,7 @@ def _archive_row_from_journal(state, model_name: str, streaming: bool = True):
                         "sid": str(value.get("sid") or "")[:32],
                         "title": str(value.get("title") or "")[:200],
                         "note": str(value.get("note") or "")[:500],
-                        "height": max(
-                            240, min(900, int(value.get("height") or 420))
-                        ),
+                        "height": max(240, min(900, int(value.get("height") or 420))),
                         "live": 1 if value.get("live") else 0,
                     }
                 )
@@ -6326,7 +6347,17 @@ def _wv_rewrite_html(html: str, final_url: str, sid: str) -> str:
         if (
             not v
             or v.startswith(
-                ("#", "data:", "blob:", "javascript:", "mailto:", "tel:", "about:", "{", "http://www.w3.org")
+                (
+                    "#",
+                    "data:",
+                    "blob:",
+                    "javascript:",
+                    "mailto:",
+                    "tel:",
+                    "about:",
+                    "{",
+                    "http://www.w3.org",
+                )
             )
             or v.lower().startswith("{{")
         ):
@@ -6390,10 +6421,10 @@ _WV_CF_MARKERS = (
     "Attention Required",
 )
 _WV_CF_BANNER = (
-    "<div style=\"all:initial;display:block;font:14px/1.7 -apple-system,"
+    '<div style="all:initial;display:block;font:14px/1.7 -apple-system,'
     "'Segoe UI',sans-serif;position:sticky;top:0;z-index:2147483647;"
     "padding:12px 18px;background:#fff7e0;color:#7a5b00;"
-    "border-bottom:1px solid #ecd9a0\">⚠ 本站启用了 Cloudflare 人机验证,"
+    'border-bottom:1px solid #ecd9a0">⚠ 本站启用了 Cloudflare 人机验证,'
     "无法在此嵌入页内完成。请点击消息卡片上的「新窗口」在真实浏览器打开原始"
     "网址完成验证;完成后让助手用 webview_fetch 复查是否放行。</div>"
 )
@@ -6406,7 +6437,9 @@ def _wv_inject_cf_banner(html: str) -> str:
     if not any(m.lower() in low for m in _WV_CF_MARKERS):
         return html
     if re.search(r"<body[^>]*>", html, re.I):
-        return re.sub(r"<body[^>]*>", lambda m: m.group(0) + _WV_CF_BANNER, html, count=1)
+        return re.sub(
+            r"<body[^>]*>", lambda m: m.group(0) + _WV_CF_BANNER, html, count=1
+        )
     return _WV_CF_BANNER + html
 
 

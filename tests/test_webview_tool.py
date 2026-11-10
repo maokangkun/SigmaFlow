@@ -173,8 +173,8 @@ def test_live_browser_engine():
         def do_GET(self):
             body = (
                 b'<button style="width:100%;height:100%" onclick='
-                b'"this.textContent=String(++n);document.cookie=\'wv=ok\'">0'
-                b'</button><script>var n=0</script>'
+                b"\"this.textContent=String(++n);document.cookie='wv=ok'\">0"
+                b"</button><script>var n=0</script>"
             )
             self.send_response(200)
             self.send_header("Content-Length", str(len(body)))
@@ -200,7 +200,10 @@ def test_live_browser_engine():
         _t.sleep(1.2)
         res = lv.call(
             "Runtime.evaluate",
-            {"expression": "document.querySelector('button').textContent", "returnByValue": True},
+            {
+                "expression": "document.querySelector('button').textContent",
+                "returnByValue": True,
+            },
         )
         assert (res.get("result") or {}).get("value") == "1", "click not dispatched"
         pairs = lv.cookies()
@@ -211,7 +214,10 @@ def test_live_browser_engine():
         assert tools._webview_live_export_cookies("wvengtest") is True
         jar = tools._WEBVIEW_SESSIONS["wvengtest"]["session"].cookies.get_dict()
         assert jar.get("wv") == "ok"
-        assert "Mozilla" in tools._WEBVIEW_SESSIONS["wvengtest"]["session"].headers["User-Agent"]
+        assert (
+            "Mozilla"
+            in tools._WEBVIEW_SESSIONS["wvengtest"]["session"].headers["User-Agent"]
+        )
     finally:
         lv.close()
         srv.shutdown()
@@ -223,6 +229,12 @@ def test_webview_same_url_dedup():
     tools.run_webview(url="http://example.com/dup", _notify=lambda e: b1.update(e))
     tools.run_webview(url="http://example.com/dup", _notify=lambda e: b2.update(e))
     assert b1["sid"] == b2["sid"], "proxy jar should be reused for same URL"
+    # live 真浏览器段需要 chromium 二进制(引擎测试同款跳过守卫):
+    # 无 chrome 时 run_webview 返回错误串且事件不带 sid, 断言必炸
+    if not tools._find_chrome():
+        import pytest
+
+        pytest.skip("no chromium binary for the live-browser dedup section")
     b3, b4 = {}, {}
     tools.run_webview(
         url="http://example.com/duplive", live=True, _notify=lambda e: b3.update(e)

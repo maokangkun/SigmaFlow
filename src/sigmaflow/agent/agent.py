@@ -1614,8 +1614,7 @@ class Agent:
                     if getattr(_b, "type", "") == "text"
                 ).strip()
                 _turn_tools = any(
-                    getattr(_b, "type", "") == "tool_use"
-                    for _b in response.content
+                    getattr(_b, "type", "") == "tool_use" for _b in response.content
                 )
             else:
                 _turn_text = str(getattr(msg, "content", "") or "").strip()

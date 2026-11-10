@@ -679,7 +679,11 @@
     }
     const sub = b.note || (b.mode === 'local' ? '本地页面预览 · 可交互' : '需要人工操作');
     const hint = b.mode === 'local' || folded ? '' : '<div class="wv-hint small muted">Cloudflare 等强质询无法在嵌入页完成：点「新窗口」在浏览器打开并完成验证，再点「Cookie」粘贴凭据交给助手</div>';
-    const frame = folded ? '' : `<iframe class="wv-frame" data-state="idle" data-src="${e(src)}" style="height:${h}px" referrerpolicy="no-referrer" title="${e(name)}"></iframe>`;
+    // sandbox 不带 allow-same-origin: 被代理页经 /api/wv 同源直出, 若允许同源,
+    // 远程页的 JS 将以本站 origin 运行, 可携带用户 Cookie 调用任意 /api 端点
+    // (含 fs/exec)——等效 XSS。opaque origin 下脚本/表单/弹窗仍可用(质询页能跑),
+    // 但父窗口 DOM、本站 Cookie、localStorage 一律不可见。
+    const frame = folded ? '' : `<iframe class="wv-frame" data-state="idle" data-src="${e(src)}" style="height:${h}px" referrerpolicy="no-referrer" sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox" title="${e(name)}"></iframe>`;
     return `<div class="present-block webview-block${folded ? ' wv-folded' : ''}" data-bi="${bi}"><div class="present-head"${foldAttr}><div class="present-ic">${i('globe', '', 17)}</div><div class="present-body"><div class="present-name">${e(name)}</div><div class="present-sub small muted">${e(sub)}${folded ? ' · 已收起' : ''}</div></div>${chev}<button type="button" class="wv-btn small" data-action="wv-open" data-real="${e(b.mode === 'remote' ? (b.url || '') : src)}" title="在新标签页打开（远程页为真实地址, 可完成 Cloudflare 等强质询）">新窗口</button>${b.mode === 'remote' ? `<button type="button" class="wv-btn small" data-action="wv-cookie" data-sid="${e(b.sid || '')}" title="把浏览器里复制的验证 Cookie 交给服务端会话">Cookie</button>` : ''}<button type="button" class="wv-btn small" data-action="wv-reload" title="重新加载">刷新</button></div>${frame}${hint}</div>`;
   };
   V.presentBlock = (b, bi) => {
