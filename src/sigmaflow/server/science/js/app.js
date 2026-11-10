@@ -820,8 +820,9 @@
         if (oldIdx2 >= 0) CS.state.runs[oldIdx2] = run;
         else CS.state.runs.push(run);
         if (data.projectId) CS.state.projectId = data.projectId;
-        if (CS.state.currentRunId !== id) { CS.state.currentRunId = id; CS.save(); CS.navigate('chat', id); }
-        else CS.save();
+        // 只换数据不拽视图: 加载期间用户可能已切到别的会话, 强制 navigate 会把
+        // 用户硬拉回来(表现为"切换不过去/又被拽回"); currentRunId 只归 applyRoute 管
+        CS.save();
         CS.render();
       }
       let offset = first.length;
@@ -950,8 +951,7 @@
         }
         else CS.state.runs.push(run);
         if (data.projectId) CS.state.projectId = data.projectId;
-        if (CS.state.currentRunId !== id) { CS.state.currentRunId = id; CS.save(); CS.navigate('chat', id); }
-        else CS.save();
+        CS.save();   // 同上: 数据换新即可, 不导航不夺视图
         CS.render();
         if (first.length) CS.toast('已从服务端同步该会话内容。', 'info');
       } else {
@@ -1569,6 +1569,11 @@
     }
     // blocks: 按到达顺序的时间线段(think/tool/text), loop 会话里多轮交替不会互相覆盖;
     // content/reasoning/tools 是从 blocks 汇出的镜像, 兼容历史/持久化/复制等旧读方
+    // 流式可见性: 用户正停在哪个会话由 currentRunId 决定。切走后分片继续
+    // 写 reply(数据不丢), 但不触发整页重渲染 —— 否则后台会话的流式分片会以
+    // 8 次/秒的频率整页重建 innerHTML, 侧栏按钮在 mousedown 与 click 之间被
+    // 销毁, 表现为"会话点击没反应/切换不回来"
+    const visible = () => CS.state.currentRunId === run.id && CS.ui.route === 'chat';
     const mirror = () => {
       reply.content = reply.blocks.filter(b => b.type === 'text').map(b => b.text).join('');
       reply.reasoning = reply.blocks.filter(b => b.type === 'think').map(b => b.text).join('');
@@ -1596,7 +1601,7 @@
         if (lastMsg && lastMsg.streaming && Array.isArray(lastMsg.blocks)) {
           if (lastMsg.blocks.some(b2 => b2 && b2.type === 'compact' && !String(b2.text || '').trim())) return;  // 防重
           lastMsg.blocks.push({ type: 'compact', text: '', at: Date.now() });
-          CS.save(); CS.render();
+          CS.save(); if (visible()) CS.render();
           return;
         }
         return;  // 没有可嵌入的流式回复时静默(等待块由完成事件直接建)
@@ -1607,7 +1612,7 @@
           const empty = target.blocks.find(b2 => b2.type === 'compact' && !String(b2.text || '').trim());
           empty.text = String(t.text);
           empty.end = Date.now();
-          CS.save(); CS.render();
+          CS.save(); if (visible()) CS.render();
           return;
         }
         // 无等待块(事件重放/HTTP 快路径): 嵌入当前流式或最后一条回复
@@ -1712,8 +1717,8 @@
         pushTool(t, reqId);
         mirror();
         CS.save();  // 流式中途刷新会丢失工具/ask 块, 每个工具事件落盘一次
-        const follow = nearBottom() && !CS.ui.followLock && CS.state.settings.autoScroll !== false;
-        CS.render();
+        const follow = visible() && nearBottom() && !CS.ui.followLock && CS.state.settings.autoScroll !== false;
+        if (visible()) CS.render();
         if (follow) scrollToLatest();
       };
       // 模型请求失败进入重试: 在等待指示处显示第 N/5 次失败与原因(间隔随次数递增)
@@ -1722,7 +1727,7 @@
       const retryEvent = r => {
         if (!r || !r.attempt) return;
         CS.ui.chatRetry = { runId: run.id, attempt: r.attempt, total: r.total || 5, error: r.error || '', waitUntil: Date.now() + (r.wait || 0) * 1000 };
-        CS.render();
+        if (visible()) CS.render();
       };
       const done = await CS.api.chat(history, delta => {
         if (CS.ui.chatRetry) CS.ui.chatRetry = null;
@@ -1730,7 +1735,7 @@
         mirror();
         reply.tokens = (reply.tokens || 0) + estTokens(delta);
         const now = Date.now();
-        if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock && CS.state.settings.autoScroll !== false; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
+        if (visible() && now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock && CS.state.settings.autoScroll !== false; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       }, think => {
         if (CS.ui.chatRetry) CS.ui.chatRetry = null;
         pushThink(think);
@@ -1738,13 +1743,13 @@
         reply.tokens = (reply.tokens || 0) + estTokens(think);
         CS.ui.thinkingText = reply.reasoning;
         const now = Date.now();
-        if (now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock && CS.state.settings.autoScroll !== false; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
+        if (visible() && now - _chatRenderAt > 120) { _chatRenderAt = now; const follow = nearBottom() && !CS.ui.followLock && CS.state.settings.autoScroll !== false; if (!updateStreamingDom(reply)) CS.render(); if (follow) scrollToLatest(); }
       }, toolEvent, retryEvent, usage => {
         // 每轮模型调用后的累计 usage: 流式期间即时更新输入与缓存计数
         if (usage.promptTokens) {
           reply.promptTokens = usage.promptTokens;
           const now = Date.now();
-          if (now - _chatRenderAt > 120) { _chatRenderAt = now; CS.render(); }
+          if (visible() && now - _chatRenderAt > 120) { _chatRenderAt = now; CS.render(); }
         }
         if (usage.cacheTokens != null) reply.cacheTokens = usage.cacheTokens;
       }, progress => {
@@ -3323,6 +3328,23 @@
     CS.ui.fsCtx = { path: row.dataset.path || '', type, x: ev.clientX, y: ev.clientY };
     CS.render();
   });
+  // 会话切换点击丢失安全网: 流式/同步期间的整页重渲染会在 mousedown 与
+  // click 之间销毁按钮节点, click 事件随之丢失(表现为点了没反应)。在
+  // pointerdown 记下会话按钮, pointerup 时若原节点已被替换(不在 DOM 里),
+  // 就地补发切换 —— 节点仍在则让正常 click 路径接管, 不重复执行
+  let _convPress = null;
+  document.addEventListener('pointerdown', event => {
+    const t = event.target.closest?.('[data-action="open-conversation"]');
+    if (t) _convPress = { el: t, id: t.dataset.id, at: Date.now() };
+    else _convPress = null;
+  }, true);
+  document.addEventListener('pointerup', () => {
+    const p = _convPress; _convPress = null;
+    if (!p || Date.now() - p.at > 1500) return;   // 长按/误触不算
+    if (p.el.isConnected) return;                 // 节点还活着: 正常 click 会送达
+    const fn = actions['open-conversation'];
+    if (fn) { try { fn(p.id); } catch (error) { console.error(error); } }
+  }, true);
   document.addEventListener('click', async event => {
     if (CS.ui.userMenu && !event.target.closest('.workspace-chip')) { CS.ui.userMenu = false; CS.render(); }
     if (CS.ui.modelMenu && !event.target.closest('.model-select')) { CS.ui.modelMenu = false; CS.render(); }
