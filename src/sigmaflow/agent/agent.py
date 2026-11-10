@@ -223,12 +223,17 @@ class Agent:
         on_tool=None,
         on_retry=None,
         on_usage=None,
+        steer_poll=None,
     ):
         self.on_retry = on_retry  # 重试回调: 每次可重试失败后调用 on_retry({"attempt", "total", "error"})
         self.on_delta = on_delta  # 流式回调: 每收到一段增量文本时调用 on_delta(text)
         self.on_tool = on_tool  # 工具事件回调: on_tool({"kind": "call"|"result", "name": ..., ...})
         # 每轮模型调用后推送累计 usage, 前端流式期间即可更新输入 token
         self.on_usage = on_usage
+        # steering 轮询(pi steer 语义): 返回排队中的用户插话文本列表;
+        # agent 在"当前回合(工具批)结束、下一次模型调用前"注入, 不与
+        # 在途回复并发。无 steer 能力的调用方保持 None(零行为变化)
+        self.steer_poll = steer_poll
         self.method = method
         self.model = model
         self.system = system
@@ -295,6 +300,28 @@ class Agent:
             "max_model_len": max_model_len,
             "tools": self.tools,
         }
+
+    def _drain_steer(self) -> list:
+        """取走全部排队中的 steering 消息; 轮询器异常时静默为空。"""
+        if self.steer_poll is None:
+            return []
+        try:
+            items = self.steer_poll() or []
+        except Exception:
+            return []
+        return [str(t) for t in items if str(t or "").strip()]
+
+    def _inject_steer(self, messages: list, info: dict) -> bool:
+        """把排队的插话追加为 user 消息; 有注入返回 True。"""
+        _steered = self._drain_steer()
+        if not _steered:
+            return False
+        for _st in _steered:
+            messages.append({"role": "user", "content": _st})
+            info.setdefault("messages", []).append(
+                {"role": "user", "content": _st}
+            )
+        return True
 
     def _time_block(self) -> str:
         """Return the per-turn clock context appended after the system prompt."""
@@ -443,6 +470,9 @@ class Agent:
         nudge_armed = 0
         max_model_len = self.max_model_len  # 构造时已定(litellm 或显式传入), 不随轮重查
         while cur_turn < max_turn:
+            # steering 注入点①: 上一回合的工具批已执行完、下一次模型调用
+            # 尚未发出 —— 排队插话在此进入上下文, 成为下一段回复的输入
+            self._inject_steer(messages, info)
             messages[:] = self.compactor.auto_compact(
                 messages, force=manual_compact, context_ratio=ratio
             )
@@ -1045,6 +1075,12 @@ class Agent:
                                     "Max tokens reached, output may be incomplete"
                                 )
 
+                            # steering 注入点②: 模型已给出终文, 但队列里有用户
+                            # 插话 —— 排队消息要求再一次响应(pi: queued message
+                            # requires another response), 不允许终文吞掉插话
+                            if self._inject_steer(messages, info):
+                                continue
+
                             # s17 goal stop hook: 模型停止调工具不等于目标达成,
                             # 有活跃 goal 时先让独立评估器判定, 未达成则注入提示继续下一轮
                             _goal_action, _goal_reason = GOAL.evaluate_after_turn(
@@ -1143,6 +1179,10 @@ class Agent:
                                 info["error"] = (
                                     "Max tokens reached, output may be incomplete"
                                 )
+
+                            # steering 注入点②(同 anthropic 分支): 终文不许吞掉排队插话
+                            if self._inject_steer(messages, info):
+                                continue
 
                             # s17 goal stop hook: 同 anthropic 分支, 无工具调用时先问独立评估
                             _goal_action, _goal_reason = GOAL.evaluate_after_turn(

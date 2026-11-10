@@ -177,6 +177,21 @@ GET    /api/context-info      → {"systemTokens": int, "toolsTokens": int}  # A
 注意区分：`baseUrl` 指向模型服务商，供后端后续接入真实推理使用；浏览器连接 Science 后端的“服务地址”
 （如 `/api` 或 `/sigmaflow/api`）是工作空间的独立设置项，保存在浏览器本地，与模型记录无关。
 
+### 4a. 会话引导（steering，WS action `chat.steer`）
+
+会话回复仍在生成时，用户的新消息**不再并发发起第二个 `chat.send`**（两条
+回复交叉），而是排进该会话的 steer 队列（pi 语义：当前 assistant 回合/
+工具批结束、下一次模型调用前注入上下文）。WS 请求形如
+`{"action": "chat.steer", "requestId": N, "runId": "...", "text": "..."}`；
+
+- 服务端把插话追加进 journal（事件 `chat.steer`，`data.text`），所有订阅端
+  （含发送者）以同一条 user 消息渲染（前端带「引导」角标）；
+- 引导消息即落库（与 `chat.send` 的 user 行同路径），刷新/断线重连后仍在；
+- 该会话无在途回复时回 `error`（前端回退为普通发送）；
+- agent 侧注入点：① 多轮工具循环的回合边界（循环顶）；② 模型给出终文但
+  队列仍有插话时强制再一次响应（`src/sigmaflow/agent/agent.py` 的
+  `steer_poll` / `_inject_steer`）。
+
 ### 5a. 网页展示台（webview 工具代理）
 
 模型可调用两个工具把**可交互网页**呈现在消息流里：

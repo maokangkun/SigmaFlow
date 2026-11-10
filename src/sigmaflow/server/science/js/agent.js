@@ -81,14 +81,27 @@
     }
     return CS.api.request(httpPath, { method: httpMethod, body: body ? JSON.stringify(body) : undefined });
   };
-  // 第 7/8 参: onProgress(长工具心跳"已运行 Xs") / onSystem(实发 system 提示词)
-  CS.api.chat = async (messages, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem) => {
+  // pi 式引导: 会话回复仍在生成时, 把新消息排进服务端 steer 队列(agent 在
+  // 当前回合结束后注入), 而不是并发开第二个 chat.send 造成两条回复交叉。
+  // 返回 {ok:true}=已入队; {ok:false,error}=通道不可用或该会话没有在途回复
+  CS.api.steer = async (runId, text) => {
+    if (!(await CS.api.ws.connect())) return { ok: false, error: '通道未连接' };
+    try {
+      await CS.api.ws.send('chat.steer', { runId, text });
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error?.message || String(error) };
+    }
+  };
+  // 第 7/8/9 参: onProgress(长工具心跳"已运行 Xs") / onSystem(实发 system 提示词)
+  // / onSteer(引导插话回显: 以 user 消息渲染, 见 chat.steer)
+  CS.api.chat = async (messages, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem, onSteer) => {
     // 会话所属项目随请求下发: 服务端把项目工作目录绑定为本次对话的工具执行目录;
     // 优先取当前会话自身绑定的 projectId(全局 state 可能停留在无项目状态)
     const run = CS.state.runs.find(x => x.id === CS.state.currentRunId);
     const payload = { modelId: CS.state.settings.modelId, projectId: run?.projectId ?? CS.state.projectId, runId: CS.state.currentRunId, messages, planMode: !!CS.ui.planMode };
     if (await CS.api.ws.connect()) {
-      const data = await CS.api.ws.chat(payload, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem);
+      const data = await CS.api.ws.chat(payload, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem, onSteer);
       if (data.system && typeof data.system === 'string' && onSystem) onSystem(data.system);
       // 透传 contextTokens/cacheTokens: 标题栏 usage 行与存档回放的数据源头
       return { content: data.content, tokens: data.tokens || 0, promptTokens: data.promptTokens || 0,
@@ -156,6 +169,7 @@
             if (message.event === 'chat.tool' && entry.onTool) { entry.onTool(message.data?.tool || {}, message.requestId); return; }
             if (message.event === 'chat.usage') { entry.onUsage && entry.onUsage(message.data || {}); return; }
             if (message.event === 'chat.system') { entry.onSystem && entry.onSystem(message.data?.content || ''); return; }
+            if (message.event === 'chat.steer') { entry.onSteer && entry.onSteer(message.data || {}); return; }
             if (message.event === 'chat.retry') { entry.resetTimer && entry.resetTimer(); entry.onRetry && entry.onRetry(message.data?.retry || {}); return; }
             if (message.event === 'chat.delta' && entry.onDelta) { entry.onDelta(message.data?.delta || ''); return; }
             CS.api.ws.suspended.delete(message.requestId);
@@ -301,7 +315,7 @@
         this.socket.send(JSON.stringify({ action, requestId, ...payload }));
       });
     },
-    chat(payload, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem) {
+    chat(payload, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem, onSteer) {
       if (!this.open()) return Promise.reject(new Error('WebSocket 未连接。'));
       const requestId = String(++this.seq);
       // runId 随请求记录: 断线自动重连后按 runId 拉取会话存档合并终态
@@ -312,7 +326,7 @@
         // 只折断真正卡死的连接
         const idleMs = ws.chatIdleTimeout || 180000;
         const fail = () => { CS.api.ws.pending.delete(requestId); CS.api.ws.activeChats.forEach(x => { if (x && x.requestId === requestId) CS.api.ws.activeChats.delete(x); }); reject(new Error('模型响应超时。')); };
-        const entry = { resolve, reject, timer: null, resetTimer: null, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem };
+        const entry = { resolve, reject, timer: null, resetTimer: null, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem, onSteer };
         // 空闲触发时先探活通道: 事件停流的常见根因是 WS 半开而非模型真停; 通道
         // 活着就续等(服务端 journal 保证事件不丢, 探活最多宽容 3 轮防真挂死任务
         // 无限等), 只有确认通道死亡才判"模型响应超时"

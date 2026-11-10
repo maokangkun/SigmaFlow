@@ -1,5 +1,6 @@
 import asyncio
 import atexit
+import datetime as _dtmod
 import hmac
 import json
 import math
@@ -1413,6 +1414,20 @@ class ScienceAPI:
                             "requestId": request_id,
                             "seq": cursor,
                             "data": {"content": value or ""},
+                        },
+                    )
+                elif kind == "steer":
+                    _sv = value if isinstance(value, dict) else {}
+                    event, message = (
+                        "chat.steer",
+                        {
+                            "event": "chat.steer",
+                            "requestId": request_id,
+                            "seq": cursor,
+                            "data": {
+                                "text": str(_sv.get("text") or ""),
+                                "at": str(_sv.get("at") or ""),
+                            },
                         },
                     )
                 elif kind == "done":
@@ -3900,6 +3915,59 @@ class ScienceAPI:
                     )
                     chat_tasks.add(_replay)
                     _replay.add_done_callback(chat_tasks.discard)
+                elif action == "chat.steer":
+                    # pi 式引导: 会话仍在流式时把用户新消息排进该会话的
+                    # steer 队列, 由 agent 在当前回合(工具批)结束、下一次
+                    # 模型调用前注入 —— 不再并发跑第二个交叉回复。事件回显
+                    # 进 journal, 所有订阅端(含发送者)以同一条 user 消息渲染。
+                    _steer_text = str(data.get("text") or "").strip()
+                    _steer_run = str(data.get("runId") or "")
+                    if not _steer_text or not _steer_run:
+                        await reply("error", request_id, "引导消息为空")
+                    else:
+                        _hit_state = None
+                        for _k, _v in self._active_runs.items():
+                            if (
+                                _k[0] == _current_user()
+                                and _v.get("runId") == _steer_run
+                            ):
+                                _st = _v.get("state") or {}
+                                if not _st.get("terminal"):
+                                    _hit_state = _st
+                                    break
+                        if _hit_state is None:
+                            await reply(
+                                "error",
+                                request_id,
+                                "该会话当前没有正在进行的回复，可直接发送。",
+                            )
+                        else:
+                            _hit_state.setdefault("steer", []).append(_steer_text)
+                            if len(_hit_state["journal"]) < 50000:
+                                _hit_state["journal"].append(
+                                    (
+                                        "steer",
+                                        {
+                                            "text": _steer_text,
+                                            "at": _dtmod.datetime.now().isoformat(
+                                                timespec="seconds"
+                                            ),
+                                        },
+                                    )
+                                )
+                            # 引导消息即落库(与 chat.send 的 user 行同路径):
+                            # 刷新/断线重连后从存档也能看到这条插话
+                            try:
+                                self.project_store.archive_user_row(
+                                    _steer_run, _steer_text
+                                )
+                            except Exception:
+                                pass
+                            await reply(
+                                "steer.ack",
+                                request_id,
+                                {"queued": len(_hit_state["steer"])},
+                            )
                 elif action == "chat.send":
                     try:
                         base_url, api_key, model_name = _resolve_chat(
@@ -3953,6 +4021,7 @@ class ScienceAPI:
                         "journal": [],
                         "content": [],
                         "stats": stats,
+                        "steer": [],   # 排队中的引导插话(chat.steer 写入, agent 轮询取走)
                         "terminal": False,
                         "stopped": False,
                         "delivered": False,
@@ -4052,6 +4121,14 @@ class ScienceAPI:
 
                             _agent_info_holder = {"info": None}
                             _except_err = None
+
+                            def _steer_poll():
+                                # 排空引导队列(GIL 下 list 赋值原子, 与 chat.steer
+                                # 的 append 不会丢项); agent 在回合边界取走
+                                _items = state.get("steer") or []
+                                state["steer"] = []
+                                return _items
+
                             try:
                                 # _stream_agent_chat 返回 (text, info): info 携工具轨迹,
                                 # 前端断线时兑底归档要用
@@ -4083,6 +4160,7 @@ class ScienceAPI:
                                         lambda u: _emit("usage", u),
                                         model_ctx=_ctx_hit,
                                         conversation_id=str(data.get("runId") or ""),
+                                        steer_poll=_steer_poll,
                                     )
                                 )
                                 _agent_info = (
@@ -5403,6 +5481,7 @@ def _run_agent_chat(
     model_ctx: Optional[int] = None,
     conversation_id: str = "",
     system_extra: str = "",
+    steer_poll=None,
 ) -> str:
     """Run a chat through the SigmaFlow agent/agent.Agent stack.
 
@@ -5613,6 +5692,7 @@ def _run_agent_chat(
         on_tool=on_tool,
         on_retry=on_retry,
         on_usage=on_usage,
+        steer_poll=steer_poll,
     )
     agent.client.timeout = 90
     agent.client.max_retries = 0  # 不用 SDK 内置重试; 统一由 agent 循环重试三次
@@ -6209,6 +6289,7 @@ def _stream_agent_chat(
     on_usage=None,
     model_ctx: Optional[int] = None,
     conversation_id: str = "",
+    steer_poll=None,
 ):
     """Streaming chat. Runs synchronously on the caller's worker thread
     (the WS handler invokes it via asyncio.to_thread); on_delta is called
@@ -6229,6 +6310,7 @@ def _stream_agent_chat(
         on_usage=on_usage,
         model_ctx=model_ctx,
         conversation_id=conversation_id,
+        steer_poll=steer_poll,
     )
 
 

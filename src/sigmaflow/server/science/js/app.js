@@ -1526,6 +1526,22 @@
     // 分页加载未完成时不放行: 契约/压缩卡可能还在后页, 半份历史会让模型
     // 基于截断上下文接续
     if (CS.ui.loadingRunId === run.id) { CS.toast('会话内容仍在加载，稍候再发送。', 'error'); return; }
+    // pi 式引导(steering): 本会话仍有流式回复在跑时, 新消息不再并发开第二个
+    // chat.send(两条回复交叉), 而是排进服务端 steer 队列 —— agent 在当前
+    // 工具批/回合结束后把它注入上下文继续。user 消息由 journal 回显
+    // (chat.steer 事件 → onSteer)统一渲染, 此处不本地预插避免双写。
+    if (!opts.noSteer && run.messages.some(m => m.streaming)) {
+      const r2 = await CS.api.steer(run.id, text);
+      if (r2.ok) {
+        CS.toast('已插入引导消息：当前工具/回合结束后送达模型。', 'info');
+      } else if (/没有正在进行/.test(r2.error || '')) {
+        // 竞态窗口: 流式标记刚清但本轮竞态抢进 —— 回退为普通发送
+        return sendChatMessage(run, text, datasetIds, { ...opts, noSteer: true });
+      } else {
+        CS.toast('引导发送失败：' + (r2.error || '未知错误'), 'error');
+      }
+      return;
+    }
     // 真实流式开始: 停掉刷新恢复用的存档轮询, 避免双源互写
     if (CS._streamPoll) { clearInterval(CS._streamPoll.timer); CS._streamPoll = null; }
     // 上传附件以零宽字符标记(\u200B@path)注入消息尾部: 模型可读路径,
@@ -1729,6 +1745,16 @@
         CS.ui.chatRetry = { runId: run.id, attempt: r.attempt, total: r.total || 5, error: r.error || '', waitUntil: Date.now() + (r.wait || 0) * 1000 };
         if (visible()) CS.render();
       };
+      // 引导插话回显: journal 的 chat.steer 事件把 user 消息送进消息流
+      // (发送者与其他订阅端同一条路径; 回放/续播去重按内容)
+      const steerEvent = sd => {
+        const txt = String(sd.text || '');
+        if (!txt) return;
+        if (run.messages.some(m2 => m2.role === 'user' && m2.content === txt)) return;
+        run.messages.push({ role: 'user', content: txt, steering: true, at: sd.at || new Date().toISOString() });
+        CS.save();
+        if (CS.state.currentRunId === run.id && CS.ui.route === 'chat') CS.render();
+      };
       const done = await CS.api.chat(history, delta => {
         if (CS.ui.chatRetry) CS.ui.chatRetry = null;
         pushDelta(delta);
@@ -1768,7 +1794,7 @@
       }, sysText => {
         // 实发 system 提示词(服务端 bound 后的成品): 写入 run 供 Trace 页 #0 系统条展示
         if (sysText && run) { run.systemPrompt = sysText; CS.save(); }
-      });
+      }, steerEvent);
       // HTTP 降级路径: 服务端在响应里带回压缩元数据, 复用插卡逻辑保持契约一致
       if (done.compaction && done.compaction.text) toolEvent(done.compaction);
       // 正文以流式时间线为准(保留各轮文本); 服务端最终内容仅在本地没收到任何文本时兑底
@@ -3404,6 +3430,26 @@
     // 反馈弹窗备注草稿: 存到 modal 对象不重渲染, 选类别重渲染时带回
     if (el?.id === 'feedback-note' && CS.ui.modal?.type === 'feedback') {
       CS.ui.modal.note = el.value;
+    }
+    // 流式期间在输入框打字: 就地增删"引导发送"键(不整页重渲染防丢焦点)。
+    // 停止键旁边出现一个发送键, 提示此刻发送 = 插入引导而非新会话消息
+    if (el?.id === 'composer-text') {
+      const wrap = el.closest('.composer')?.querySelector('.composer-submit');
+      if (wrap) {
+        const has = !!wrap.querySelector('.send-steer');
+        const want = !!wrap.querySelector('.send-stop') && el.value.trim();
+        if (want && !has) {
+          const btn = document.createElement('button');
+          btn.type = 'submit';
+          btn.className = 'send-button send-steer';
+          btn.title = '作为引导消息插入当前任务 · Enter';
+          btn.setAttribute('aria-label', '插入引导消息');
+          btn.innerHTML = i('up', '', 19);
+          wrap.appendChild(btn);
+        } else if (!want && has) {
+          wrap.querySelector('.send-steer').remove();
+        }
+      }
     }
     // 通用设置的音量滑杆: 只更新状态与数字标签不重渲染, 松手后 change 再落盘
     if (el?.classList?.contains('sound-volume-input')) {
