@@ -730,6 +730,8 @@ class MCPTool:
 
 
 class SLASH_CMD:
+    help = "/help"
+    usage = "/usage"
     history = "/history"
     compact = "/compact"
     team = "/team"

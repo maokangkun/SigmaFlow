@@ -95,6 +95,24 @@ def setup_args():
         default=False,
         help="debug mode",
     )
+    agent_parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="model name (falls back to $MODEL)",
+    )
+    agent_parser.add_argument(
+        "--base-url",
+        type=str,
+        default=None,
+        help="API base URL (falls back to $ANTHROPIC_BASE_URL / $OPENAI_BASE_URL)",
+    )
+    agent_parser.add_argument(
+        "--api-key",
+        type=str,
+        default=None,
+        help="API key (falls back to $API_KEY)",
+    )
 
     # env
     subparsers.add_parser("env", help="Environment mode")
@@ -229,6 +247,9 @@ def main():
                 available_tools=tools,
                 debug=args.debug,
                 support_tool=args.support_tool,
+                model=args.model,
+                base_url=args.base_url,
+                api_key=args.api_key,
             )
         case _:
             pass
