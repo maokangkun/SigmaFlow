@@ -4021,7 +4021,7 @@ class ScienceAPI:
                         "journal": [],
                         "content": [],
                         "stats": stats,
-                        "steer": [],   # 排队中的引导插话(chat.steer 写入, agent 轮询取走)
+                        "steer": [],  # 排队中的引导插话(chat.steer 写入, agent 轮询取走)
                         "terminal": False,
                         "stopped": False,
                         "delivered": False,

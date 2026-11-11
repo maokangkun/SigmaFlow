@@ -318,9 +318,7 @@ class Agent:
             return False
         for _st in _steered:
             messages.append({"role": "user", "content": _st})
-            info.setdefault("messages", []).append(
-                {"role": "user", "content": _st}
-            )
+            info.setdefault("messages", []).append({"role": "user", "content": _st})
         return True
 
     def _time_block(self) -> str:
