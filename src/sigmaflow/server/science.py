@@ -566,6 +566,33 @@ _LITELLM_LOCK = threading.Lock()
 # 断线孤儿 journal 的容量上限: 超出时按最旧淘汰(运行中的任务 journal
 # 挂在活跃注册表上, 不占此区; 被淘汰的极端场景仍有服务端兑底归档兜底)
 _CHAT_JOURNAL_MAX = 16
+
+# ---------------------------------------------------------------------------
+# 结构化调试日志: 单行 kv 事件, 走 "sigmaflow" logger(随 uvicorn 落 web.log)。
+# 级别由 SIGMAFLOW_LOG_LEVEL 控制(INFO 默认; DEBUG 可见逐行落库等细节),
+# 与 uvicorn 自身日志互不干扰。格式固定为 "[sf] event k=v k=v", 可 grep。
+# ---------------------------------------------------------------------------
+_LOGGER_SF = logging.getLogger("sigmaflow")
+try:  # 环境变量在导入期读取一次; 运行中调整请用 logging API
+    _LOGGER_SF.setLevel(
+        str(os.environ.get("SIGMAFLOW_LOG_LEVEL") or "INFO").upper()
+    )
+except Exception:
+    _LOGGER_SF.setLevel(logging.INFO)
+
+
+def _dlog(event: str, level: int = logging.INFO, **kv) -> None:
+    parts = []
+    for key, value in kv.items():
+        text = value if isinstance(value, str) else json.dumps(
+            value, ensure_ascii=False, default=str
+        )
+        if len(text) > 200:
+            text = text[:200] + "…"
+        if any(c in text for c in " \=") or not text:
+            text = '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+        parts.append(f"{key}={text}")
+    _LOGGER_SF.log(level, "[sf] %s%s", event, (" " + " ".join(parts)) if parts else "")
 _LITELLM_DB: Optional[Dict[str, dict]] = None
 _LITELLM_MODULE: Any = None  # 懒加载的 litellm 模块; 未加载为 None, 导入失败为 False
 _LITELLM_LOOKUP_CACHE: Dict[str, Optional[dict]] = {}
@@ -2830,6 +2857,18 @@ class ScienceAPI:
                 out["content"] = [_shape_conversation_row(x) for x in out["content"]]
             return out
 
+        @router.get("/conversations/{conversation_id}/runs")
+        async def get_conversation_runs(conversation_id: str, request: Request):
+            """会话的运行记录(调试/Trace): 每次模型回复的 turns/tokens/steers/终态。
+
+            服务重启后仍在(落会话 JSON), 每会话保留最近 20 条。
+            """
+            _check_origin(request)
+            conv = self.project_store.conversations.get(conversation_id)
+            if conv is None:
+                raise HTTPException(status_code=404, detail="Conversation not found")
+            return {"runs": conv.get("runs") or []}
+
         @router.delete("/conversations/{conversation_id}")
         async def delete_conversation(conversation_id: str, request: Request):
             _check_origin(request)
@@ -3960,6 +3999,20 @@ class ScienceAPI:
                             )
                         else:
                             _hit_state.setdefault("steer", []).append(_steer_text)
+                            _rec = _hit_state.get("run_rec")
+                            if isinstance(_rec, dict):
+                                _rec.setdefault("steers", []).append(
+                                    {"id": _steer_id, "at": int(time.time() * 1000), "len": len(_steer_text)}
+                                )
+                                self.project_store.update_run(_steer_run)
+                            _dlog(
+                                "chat.steer",
+                                user=_current_user(),
+                                runId=_steer_run,
+                                steerId=_steer_id,
+                                queued=len(_hit_state["steer"]),
+                                chars=len(_steer_text),
+                            )
                             if len(_hit_state["journal"]) < 50000:
                                 _hit_state["journal"].append(
                                     (
@@ -3998,6 +4051,12 @@ class ScienceAPI:
                     if _dup_run and _find_active_state(
                         self._active_runs, _current_user(), _dup_run
                     ):
+                        _dlog(
+                            "chat.send.rejected",
+                            user=_current_user(),
+                            runId=_dup_run,
+                            reason="in-flight reply",
+                        )
                         await fail(
                             request_id,
                             "该会话已有回复正在生成，请等它完成或用引导消息插入（生成期间直接发送即引导）。",
@@ -4069,6 +4128,36 @@ class ScienceAPI:
                     _run_key = (_current_user(), request_id)
                     state["registry_key"] = _run_key
                     _run_id = str(data.get("runId") or "")
+                    # 运行记录: 一次回复的可观测档案(turns/tokens/steers/终态),
+                    # 落会话 JSON 的 runs 数组 —— 服务重启后仍可查(Trace/调试)
+                    _run_rec = {
+                        "id": f"rr-{uuid.uuid4().hex[:10]}",
+                        "user": _current_user(),
+                        "model": model_name,
+                        "startedAt": int(time.time() * 1000),
+                        "endedAt": None,
+                        "status": "running",
+                        "error": "",
+                        "turns": 0,
+                        "toolCalls": 0,
+                        "events": 0,
+                        "completionTokens": 0,
+                        "promptTokens": 0,
+                        "cacheTokens": 0,
+                        "steers": [],
+                        "elapsedMs": 0,
+                        "delivered": False,
+                    }
+                    state["run_rec"] = _run_rec
+                    self.project_store.begin_run(_run_id, _run_rec)
+                    _dlog(
+                        "chat.send",
+                        user=_current_user(),
+                        runId=_run_id,
+                        model=model_name,
+                        messages=len(messages),
+                        planMode=bool(data.get("planMode")),
+                    )
                     self._active_runs[_run_key] = {
                         "runId": _run_id,
                         "state": state,
@@ -4133,6 +4222,15 @@ class ScienceAPI:
                                 ):
                                     chat_asks.setdefault(request_id, set()).add(
                                         ev["id"]
+                                    )
+                                if (
+                                    isinstance(ev, dict)
+                                    and ev.get("kind") == "steerDropped"
+                                ):
+                                    _dlog(
+                                        "chat.steer.dropped",
+                                        runId=str(data.get("runId") or ""),
+                                        count=ev.get("count") or 0,
                                     )
                                 if (
                                     isinstance(ev, dict)
@@ -4249,6 +4347,10 @@ class ScienceAPI:
                             except Exception as err:
                                 if not state["terminal"]:
                                     _emit("error", str(err))
+                                state["_failed"] = True
+                                _rec0 = state.get("run_rec")
+                                if isinstance(_rec0, dict):
+                                    _rec0["error"] = str(err)[:300]
                                 _except_err = str(err)
                             # 终态事件已入 journal。pump 在线时会把它送达前端, 前端收到
                             # done/error 后自行归档完整行; 此时服务端再 append 一行就是
@@ -4381,6 +4483,56 @@ class ScienceAPI:
                                 # 跳过会让存档尾行永远停在 streaming 残影
                                 pass
                             finally:
+                                # 运行记录终态: journal 事件计数 + usage + 耗时,
+                                # 落库供事后调试(无需翻实时日志)
+                                try:
+                                    _rec = state.get("run_rec") or {}
+                                    _counts: dict = {}
+                                    for _k, _v in state.get("journal") or []:
+                                        _counts[_k] = _counts.get(_k, 0) + 1
+                                    _rec["events"] = len(state.get("journal") or [])
+                                    _rec["eventCounts"] = _counts
+                                    _rec["toolCalls"] = sum(
+                                        1
+                                        for _k, _v in state.get("journal") or []
+                                        if _k == "tool"
+                                        and isinstance(_v, dict)
+                                        and _v.get("kind") == "call"
+                                    )
+                                    # 轮数: usage 事件(每轮模型调用一次)为主, 无
+                                    # usage 上报的网关退回 delta 段有无, 至少 1
+                                    _rec["turns"] = max(
+                                        _counts.get("usage", 0),
+                                        1 if _counts.get("delta") else 0,
+                                    )
+                                    _st = state.get("stats") or {}
+                                    _rec["completionTokens"] = _st.get("completion_tokens") or 0
+                                    _rec["promptTokens"] = _st.get("prompt_tokens") or 0
+                                    _rec["cacheTokens"] = _st.get("cache_read_tokens") or 0
+                                    _rec["endedAt"] = int(time.time() * 1000)
+                                    _rec["elapsedMs"] = _rec["endedAt"] - int(_rec.get("startedAt") or 0)
+                                    _rec["delivered"] = bool(state.get("delivered"))
+                                    _rec["status"] = (
+                                        "stopped" if state.get("stop") or state.get("stopped")
+                                        else "error" if state.get("_failed")
+                                        else "done"
+                                    )
+                                    self.project_store.update_run(str(data.get("runId") or ""))
+                                    _dlog(
+                                        "chat.done",
+                                        user=_current_user(),
+                                        runId=str(data.get("runId") or ""),
+                                        status=_rec["status"],
+                                        turns=_rec["turns"],
+                                        toolCalls=_rec["toolCalls"],
+                                        events=_rec["events"],
+                                        steers=len(_rec.get("steers") or []),
+                                        completionTokens=_rec["completionTokens"],
+                                        elapsedMs=_rec["elapsedMs"],
+                                        delivered=_rec["delivered"],
+                                    )
+                                except Exception as _log_err:  # noqa: BLE001
+                                    _dlog("run.record.failed", error=str(_log_err)[:120])
                                 # 终态落库: 完整 journal 合成终态行(streaming=False),
                                 # 原位替换流式快照行——刷新过页面的用户再次拉存档
                                 # 即得到最终完整内容(正常完成/停止/出错都适用)
@@ -4679,6 +4831,29 @@ class ScienceProjectStore:
                 conv["status"] = "done"
                 changed = True
         if changed:
+            self._save()
+
+    def begin_run(self, conversation_id: str, rec: dict) -> None:
+        """一次模型回复的运行记录开档(调试与 Trace 数据源)。
+
+        rec 由调用方持有同一 dict 引用, 后续 update_run 只重落盘;
+        每会话保留最近 20 条。
+        """
+        with self._lock:
+            conv = self.conversations.get(conversation_id or "")
+            if conv is None:
+                return
+            runs = conv.setdefault("runs", [])
+            runs.append(rec)
+            del runs[:-20]
+            self._save()
+
+    def update_run(self, conversation_id: str) -> None:
+        """运行记录字段已被调用方(同引用)更新, 落盘一次。"""
+        with self._lock:
+            conv = self.conversations.get(conversation_id or "")
+            if conv is None or not conv.get("runs"):
+                return
             self._save()
 
     def set_conversation_status(self, conversation_id: str, status: str) -> None:
@@ -5199,9 +5374,13 @@ class ScienceProjectStore:
                 # 同内容同形态(如终态行撞上前端整表归档的更完整版本): 保留尾行
                 base[-1] = row_out
                 _ls = last.get("streaming") if isinstance(last, dict) else None
-                print(
-                    f"[stream-archive] replace len={len(new_c)} streaming={row.get('streaming')} lastLen={len(last_c)} lastStreaming={_ls}",
-                    flush=True,
+                _dlog(
+                    "archive.snapshot.replace",
+                    level=logging.DEBUG,
+                    runId=conversation_id,
+                    newLen=len(new_c),
+                    streaming=bool(row.get("streaming")),
+                    lastLen=len(last_c),
                 )
             elif (
                 isinstance(last, dict)
@@ -5215,9 +5394,13 @@ class ScienceProjectStore:
                 return False
             else:
                 base.append(row_out)
-                print(
-                    f"[stream-archive] APPEND len={len(new_c)} streaming={row.get('streaming')} lastRole={last.get('role') if isinstance(last, dict) else None} lastStreaming={last.get('streaming') if isinstance(last, dict) else None} lastLen={len(last_c)}",
-                    flush=True,
+                _dlog(
+                    "archive.snapshot.append",
+                    level=logging.DEBUG,
+                    runId=conversation_id,
+                    newLen=len(new_c),
+                    streaming=bool(row.get("streaming")),
+                    lastRole=str(last.get("role")) if isinstance(last, dict) else "",
                 )
             conv["content"] = base[-200:]
             conv["updatedAt"] = int(time.time() * 1000)

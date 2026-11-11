@@ -177,6 +177,18 @@ GET    /api/context-info      → {"systemTokens": int, "toolsTokens": int}  # A
 注意区分：`baseUrl` 指向模型服务商，供后端后续接入真实推理使用；浏览器连接 Science 后端的“服务地址”
 （如 `/api` 或 `/sigmaflow/api`）是工作空间的独立设置项，保存在浏览器本地，与模型记录无关。
 
+### 3a. 运行记录与会话调试
+
+- **运行记录**：每次模型回复在会话存档里落一条 `runs` 记录（保留最近 20 条，
+  重启仍在）——`turns/toolCalls/events/eventCounts/steers/tokens/elapsedMs/
+  status/delivered` 等；`GET /conversations/{id}/runs` 查询，会话 Trace 页
+  底部有「运行记录」表。
+- **结构化日志**：关键事件以单行 `[sf] event k=v` 形式进入 web.log（logger
+  名 `sigmaflow`）——`chat.send` / `chat.done`（含 turns/tokens/耗时/终态）/
+  `chat.steer` / `chat.steer.dropped` / `chat.send.rejected` /
+  `archive.snapshot.*`（DEBUG 级）。环境变量 `SIGMAFLOW_LOG_LEVEL=DEBUG`
+  可见落库细节。
+
 ### 4a. 会话引导（steering，WS action `chat.steer`）
 
 会话回复仍在生成时，用户的新消息**不再并发发起第二个 `chat.send`**（两条

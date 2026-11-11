@@ -971,11 +971,24 @@
     }).join('');
   };
   // trace 页面: 主区视图替换聊天视图, 侧栏保留; 返回按钮与标题同一行(页内流), 无会话时给出空态并引导返回
+  // 运行记录表(调试): 每次模型回复的 turns/tokens/steers/终态, 数据来自
+  // 服务端会话 JSON 的 runs 数组(重启仍在)。首次进入时异步拉取, 二次渲染填充
+  V.traceRuns = () => {
+    const { run } = _traceCtx();
+    if (!run) return '';
+    const data = CS.ui.runsLog && CS.ui.runsLog[run.id];
+    if (data === undefined) { CS.loadRunsLog?.(run.id); return '<p class="small muted">运行记录加载中…</p>'; }
+    if (data === null) return '<p class="small muted">暂无运行记录(旧会话或尚未生成)。</p>';
+    const rows = (data || []).slice().reverse();
+    const fmtMs = ms => ms >= 60000 ? `${Math.round(ms / 60000)}m${Math.round(ms % 60000 / 1000)}s` : ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+    const statusTag = st => `<span class="runlog-st runlog-st-${e(st)}">${{ running: '运行中', done: '完成', stopped: '已停止', error: '错误' }[st] || e(st)}</span>`;
+    return `<div class="panel-head" style="margin-top:18px"><h3 style="margin:0">运行记录 <span class="tiny muted">服务端存档 · 每次回复一条 · 保留最近 20 条</span></h3></div>${rows.length ? `<div class="table-wrap runlog-table"><table><thead><tr><th>开始</th><th>状态</th><th class="num">轮</th><th class="num">工具</th><th class="num">引导</th><th class="num">事件</th><th class="num">输出 tok</th><th class="num">输入 tok</th><th class="num">耗时</th><th>模型</th></tr></thead><tbody>${rows.map(r => `<tr title="runId=${e(r.id || '')}${r.error ? ' · 错误: ' + e(r.error) : ''}${r.eventCounts ? ' · 事件: ' + e(JSON.stringify(r.eventCounts)) : ''}"><td class="mono">${CS.datetime(r.startedAt)}</td><td>${statusTag(r.status)}</td><td class="num">${e(String(r.turns ?? 0))}</td><td class="num">${e(String(r.toolCalls ?? 0))}</td><td class="num">${(r.steers || []).length}</td><td class="num">${e(String(r.events ?? 0))}</td><td class="num">${CS.num(r.completionTokens || 0)}</td><td class="num">${CS.num(r.promptTokens || 0)}</td><td class="num">${fmtMs(r.elapsedMs || 0)}</td><td title="${e(r.model || '')}">${e((r.model || '').split('/').pop().slice(0, 22))}</td></tr>`).join('')}</tbody></table></div>` : '<p class="small muted">暂无运行记录。</p>'}`;
+  };
   V.trace = () => {
     const { run, msgs } = _traceCtx();
     const back = `<button type="button" class="icon-btn trace-back" data-action="back-to-chat" aria-label="返回会话" title="返回会话（返回原聊天页）">${i('arrowleft', '', 15)}</button>`;
     if (!run || !msgs.length) return `<section class="page trace-page"><div class="trace-head"><div class="trace-head-row">${back}<h1>会话 Trace</h1></div></div>${H.notice(run ? '当前会话还没有消息。' : '没有打开的会话，请先回到聊天页选择会话。')}</section>`;
-    return `<section class="page trace-page"><div class="trace-head"><div class="trace-head-row">${back}<h1>会话 Trace</h1></div><p class="small muted trace-sub text-clip" title="${e(run.title || '')}">${e(run.title || '未命名会话')} <span class="faint">·</span> <span class="mono">${e(run.id || '')}</span></p></div>${V.traceStats()}<div class="trace-list" role="table">${V.traceRows()}</div></section>`;
+    return `<section class="page trace-page"><div class="trace-head"><div class="trace-head-row">${back}<h1>会话 Trace</h1></div><p class="small muted trace-sub text-clip" title="${e(run.title || '')}">${e(run.title || '未命名会话')} <span class="faint">·</span> <span class="mono">${e(run.id || '')}</span></p></div>${V.traceStats()}${V.traceRuns()}<div class="trace-list" role="table">${V.traceRows()}</div></section>`;
   };
 
 V.ctxRing = () => {

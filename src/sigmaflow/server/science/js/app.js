@@ -1891,6 +1891,14 @@
     CS.toast('已复制到剪贴板。');
   };
   const citation = p => `${p.authors} (${p.year}). ${p.title}. ${p.journal}. https://doi.org/${p.doi}`;
+  // 运行记录(调试/Trace): 拉取服务端会话 JSON 里的 runs 数组; 幂等 + 失败缓存 null
+  CS.loadRunsLog = runId => {
+    if (!runId || CS.ui.runsLog?.[runId] !== undefined) return;
+    CS.ui.runsLog = CS.ui.runsLog || {};
+    CS.api.request(`/conversations/${encodeURIComponent(runId)}/runs`, { method: 'GET' })
+      .then(d => { CS.ui.runsLog[runId] = d.runs || []; CS.render(); })
+      .catch(() => { CS.ui.runsLog[runId] = null; CS.render(); });
+  };
   CS.enterAccount = (out, message) => {
     // 账号切换: 清掉上个用户的本地工作区缓存再重新加载; reset 会恢复 defaults
     // (含 me: null 与默认 endpoint), 所以 reset 之后再写入 me 与实际接口地址

@@ -162,6 +162,12 @@ html:has(.auth-page){scrollbar-gutter:auto}
 .user-block .user-message{align-self:auto}
 .send-steer{background:var(--accent,#6764b9);opacity:.92}
 .send-steer:hover{opacity:1}
+.runlog-table{margin-top:8px}
+.runlog-st{display:inline-block;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:600}
+.runlog-st-running{background:rgba(84,134,120,.16);color:#548678}
+.runlog-st-done{background:rgba(103,100,185,.12);color:var(--accent,#6764b9)}
+.runlog-st-stopped{background:rgba(176,133,60,.14);color:#a07c3e}
+.runlog-st-error{background:rgba(200,80,80,.12);color:#c05050}
 .steer-badge{display:inline-block;vertical-align:1px;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:600;letter-spacing:.5px;background:rgba(103,100,185,.16);color:var(--accent,#6764b9);border:1px solid rgba(103,100,185,.35);cursor:help}
 .agent-block .agent-message{max-width:86%;width:100%} /* 固定列宽: 否则收起态思考块(contain:size)会把整列压缩到内容宽度, 展开/收起时列宽跳变 */
 .user-block .message-meta-row{justify-content:flex-end}
