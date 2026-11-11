@@ -3959,7 +3959,7 @@ class ScienceAPI:
                             # 刷新/断线重连后从存档也能看到这条插话
                             try:
                                 self.project_store.archive_user_row(
-                                    _steer_run, _steer_text
+                                    _steer_run, _steer_text, steering=True
                                 )
                             except Exception:
                                 pass
@@ -4822,6 +4822,8 @@ class ScienceProjectStore:
                     "role": _clip(str(msg.get("role", "")), 16),
                     "content": _clip(str(msg.get("content", "")), 20000),
                 }
+                if msg.get("steering"):
+                    item["steering"] = True
                 # 保留思考与工具调用记录, 便于前端回放
                 # 每条消息截断到固定长度, 防止历史无限膨胀
                 reasoning = msg.get("reasoning")
@@ -5205,11 +5207,14 @@ class ScienceProjectStore:
             self._save()
             return True
 
-    def archive_user_row(self, conversation_id: str, content: str) -> bool:
+    def archive_user_row(
+        self, conversation_id: str, content: str, steering: bool = False
+    ) -> bool:
         """chat.send 即落 user 消息行(与 WS 归档共锁)。
 
         尾条同为 user 且内容一致视为重复(停止后原样重发的场景),
-        不再追加。返回是否实际写入。
+        不再追加。返回是否实际写入。steering 标记引导插话行(刷新后
+        前端仍渲染「引导」角标)。
         """
         text = str(content or "")
         if not conversation_id or not text.strip():
@@ -5226,13 +5231,14 @@ class ScienceProjectStore:
                 and str(last.get("content") or "")[:200] == text[:200]
             ):
                 return False
-            base.append(
-                {
-                    "role": "user",
-                    "content": _clip(text, 30000),
-                    "at": int(time.time() * 1000),
-                }
-            )
+            row = {
+                "role": "user",
+                "content": _clip(text, 30000),
+                "at": int(time.time() * 1000),
+            }
+            if steering:
+                row["steering"] = True
+            base.append(row)
             conv["content"] = base[-200:]
             conv["updatedAt"] = int(time.time() * 1000)
             self._save()

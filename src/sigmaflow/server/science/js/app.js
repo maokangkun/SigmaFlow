@@ -766,7 +766,7 @@
       // 存档消息 → 内存消息: 新格式解压块时间线 {t,x}/{t,n,a,r}..., 旧格式压平
       // 记录重建 blocks; 分页循环里每页复用同一解码
       const decodeMsg = m => {
-        const msg = { role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}), ...(m.streaming ? { streaming: true, serverStreaming: true } : {}) };
+        const msg = { role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.steering ? { steering: true } : {}), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}), ...(m.streaming ? { streaming: true, serverStreaming: true } : {}) };
         if (msg.role === 'assistant' && Array.isArray(m.blocks) && m.blocks.length) {
           msg.blocks = m.blocks.map(b => {
             if (!b || typeof b !== 'object') return null;
@@ -1417,7 +1417,7 @@
       id: run.id, title: run.title, projectId: run.projectId,
       pinned: !!conv?.pinned, archived: !!conv?.archived,
       content: run.messages.filter(m => m.role === 'user' || m.role === 'assistant')
-        .map(m => { const sb = m.role === 'assistant' ? savedBlocks(m) : []; return { role: m.role, content: m.content, at: m.at, ...(m.model ? { model: m.model } : {}), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(sb.length ? { blocks: sb } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed, ...(m.contextTokens ? { contextTokens: m.contextTokens } : {}), ...(m.cacheTokens ? { cacheTokens: m.cacheTokens } : {}) } : {}) }; }),
+        .map(m => { const sb = m.role === 'assistant' ? savedBlocks(m) : []; return { role: m.role, content: m.content, at: m.at, ...(m.steering ? { steering: true } : {}), ...(m.model ? { model: m.model } : {}), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(sb.length ? { blocks: sb } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed, ...(m.contextTokens ? { contextTokens: m.contextTokens } : {}), ...(m.cacheTokens ? { cacheTokens: m.cacheTokens } : {}) } : {}) }; }),
     };
     try { await CS.api.modelCall('conversation.save', 'POST', '/conversations', payload); }
     catch { if (retry) setTimeout(() => syncConversation(run, false), 3000); }
