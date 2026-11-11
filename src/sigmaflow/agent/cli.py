@@ -9,9 +9,12 @@
   - 连接参数: --model/--base-url/--api-key(缺省回落环境变量)
 """
 
+import json
+import os
 import select
 import sys
 import threading
+from pathlib import Path
 
 from rich import print
 
@@ -21,13 +24,44 @@ from .input import session
 from .logo import Logo
 
 
+def _resolve_model_store(model_id: str) -> dict | None:
+    """按 web 端模型配置的 id(md-xxx)读取网关参数。
+
+    读 ~/.sigmaflow/science/models.json(SIGMAFLOW_SCIENCE_DIR 可覆盖),
+    命中则返回 {model, baseUrl, apiKey, method}; CLI 即可零环境变量直连
+    已配置的网关。找不到返回 None(调用方回退普通参数)。
+    """
+    base = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
+        os.path.expanduser("~"), ".sigmaflow", "science"
+    )
+    path = Path(base) / "models.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    entry = (data.get("models") or {}).get(model_id)
+    if not isinstance(entry, dict):
+        return None
+    provider = (data.get("providers") or {}).get(entry.get("providerId") or "") or {}
+    base_url = str(provider.get("baseUrl") or "")
+    return {
+        "model": entry.get("model"),
+        "baseUrl": base_url or None,
+        "apiKey": provider.get("apiKey"),
+        # anthropic 兼容端点自动切方言
+        "method": "anthropic" if "anthropic" in base_url.lower() else "openai",
+    }
+
+
 def _print_sysnote(text: str) -> None:
     print(f"{Prompt.System}[dim]{text}[/dim]")
 
 
-def _run_turn_with_steering(agent, history: list) -> dict:
+def _run_turn_with_steering(agent, history: list, first_turn: bool = True) -> tuple:
     """跑一轮 agent; 运行期主线程非阻塞读行收 steering 插话。
 
+    返回 (info, thread): 线程句柄交给调用方做并发回合保护(上一回合尚未
+    收尾时禁止并发起下一轮, 两个 agent 线程同写 history 会互相踩踏)。
     agent 跑在守护线程, 主线程 select(0.4s) 轮询 stdin —— 无第二个常驻
     reader 与 prompt_toolkit 抢输入流, 回合结束即停。终端处于规范模式,
     插话按普通行输入(回车提交)。
@@ -50,7 +84,11 @@ def _run_turn_with_steering(agent, history: list) -> dict:
 
     thread = threading.Thread(target=runner, daemon=True)
     thread.start()
-    _print_sysnote("生成中——直接输入插话(steering)后回车; 本回合结束即送达模型")
+    _print_sysnote(
+        "生成中——直接输入插话(steering)后回车; 本回合结束即送达模型"
+        if first_turn
+        else "生成中(可插话)"
+    )
     try:
         while thread.is_alive():
             ready, _, _ = select.select([sys.stdin], [], [], 0.4)
@@ -84,7 +122,7 @@ def _run_turn_with_steering(agent, history: list) -> dict:
         raise result["err"]
     if result.get("exit"):
         raise SystemExit(0)
-    return result.get("info") or {}
+    return result.get("info") or {}, thread
 
 
 def cli(
@@ -96,6 +134,7 @@ def cli(
     model=None,
     base_url=None,
     api_key=None,
+    model_id=None,
 ):
     def on_tool_event(ev) -> None:
         """系统类工具事件的一行提示(工具执行本体由 agent 循环自行打印)。"""
@@ -112,6 +151,26 @@ def cli(
         elif kind == "ask":
             _print_sysnote("agent 发起了提问(ask); CLI 模式暂不支持交互回答, 请在 web 端处理")
 
+    # --model-id: 直连 web 端已配置的网关(md-xxx), 零环境变量可用
+    if model_id:
+        hit = _resolve_model_store(model_id)
+        if hit is None:
+            _print_sysnote(f"未找到模型配置 {model_id}(检查 ~/.sigmaflow/science/models.json), 回退默认连接")
+        else:
+            method = hit["method"]
+            model = hit["model"] or model
+            base_url = hit["baseUrl"] or base_url
+            api_key = hit["apiKey"] or api_key
+            _print_sysnote(f"使用已配置模型: {model} @ {str(base_url)[:48]}")
+
+    def on_retry_event(r) -> None:
+        """模型请求重试提示: 网关不稳时不再干等数分钟毫无反馈。"""
+        if isinstance(r, dict) and r.get("attempt"):
+            _print_sysnote(
+                f"请求失败({r.get('attempt')}/{r.get('total')}): "
+                f"{str(r.get('error') or '')[:80]} · {r.get('wait') or '?'}s 后重试"
+            )
+
     agent = Agent(
         method,
         available_tools=available_tools,
@@ -121,6 +180,7 @@ def cli(
         base_url=base_url,
         api_key=api_key,
         on_tool=on_tool_event,
+        on_retry=on_retry_event,
     )
 
     logo = Logo.print()
@@ -137,6 +197,8 @@ def cli(
         usage["seconds"] += info.get("cost_time") or 0.0
 
     history: list = []
+    turn_thread: threading.Thread | None = None
+    turns = 0
     if query:
         logo.disable_click_listener()
         history.append({"role": "user", "content": query})
@@ -144,8 +206,15 @@ def cli(
 
     while True:
         if history and history[-1]["role"] == "user":
+            # 并发回合保护: Ctrl+C 放弃收尾/极端卡死的旧线程仍活着时,
+            # 并发起新一轮会让两个 agent 同写 history 互相踩踏
+            if turn_thread is not None and turn_thread.is_alive():
+                _print_sysnote("上一回合仍在收尾(后台工具/重试等待), 等它结束再继续…")
+                turn_thread.join()
+            turns += 1
             try:
-                absorb(_run_turn_with_steering(agent, history))
+                info, turn_thread = _run_turn_with_steering(agent, history, first_turn=(turns == 1))
+                absorb(info)
             except SystemExit:
                 break
             except KeyboardInterrupt:
@@ -187,9 +256,9 @@ def cli(
             case SLASH_CMD.compact:
                 history = agent.compactor.auto_compact(history, force=True)
             case SLASH_CMD.team:
-                ...
+                _print_sysnote("/team 暂未在 CLI 实现(web 端可用)")
             case SLASH_CMD.inbox:
-                ...
+                _print_sysnote("/inbox 暂未在 CLI 实现(web 端可用)")
             case _ if q in SLASH_CMD.reset:
                 print(f"{Prompt.Session}")
                 history = []
@@ -204,3 +273,14 @@ def cli(
             f"输入 {usage['prompt']} tok · 输出 {usage['completion']} tok · "
             f"累计生成 {usage['seconds']:.0f}s"
         )
+    try:
+        from .tools import BG
+
+        running = [t for t in (BG.tasks or {}).values() if t.get("status") == "running"]
+        if running:
+            _print_sysnote(
+                f"{len(running)} 个后台任务仍在运行(如 sleep/组装); 进程退出后失去跟踪, "
+                "命令本身会继续在系统里跑完"
+            )
+    except Exception:
+        pass

@@ -108,6 +108,12 @@ def setup_args():
         help="API base URL (falls back to $ANTHROPIC_BASE_URL / $OPENAI_BASE_URL)",
     )
     agent_parser.add_argument(
+        "--model-id",
+        type=str,
+        default=None,
+        help="use a model configured in the web UI by id (e.g. md-xxxx, reads ~/.sigmaflow/science/models.json)",
+    )
+    agent_parser.add_argument(
         "--api-key",
         type=str,
         default=None,
@@ -250,6 +256,7 @@ def main():
                 model=args.model,
                 base_url=args.base_url,
                 api_key=args.api_key,
+                model_id=args.model_id,
             )
         case _:
             pass
