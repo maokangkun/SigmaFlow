@@ -734,6 +734,8 @@ class SLASH_CMD:
     usage = "/usage"
     history = "/history"
     compact = "/compact"
+    model = "/model"
+    save = "/save"
     team = "/team"
     inbox = "/inbox"
     reset = ["/new", "/reset"]

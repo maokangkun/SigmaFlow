@@ -12,6 +12,7 @@
 import json
 import os
 import select
+import time
 import sys
 import threading
 from pathlib import Path
@@ -22,6 +23,27 @@ from .agent import Agent
 from .conf import Prompt, SLASH_CMD
 from .input import session
 from .logo import Logo
+
+
+def _list_model_store() -> list:
+    """列出 web 端已配置的模型(id/model/baseUrl host), 供 /model 展示。"""
+    base = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
+        os.path.expanduser("~"), ".sigmaflow", "science"
+    )
+    try:
+        data = json.loads((Path(base) / "models.json").read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    providers = data.get("providers") or {}
+    out = []
+    for mid, entry in (data.get("models") or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        provider = providers.get(entry.get("providerId") or "") or {}
+        url = str(provider.get("baseUrl") or "")
+        host = url.split("//")[-1].split("/")[0] if url else "?"
+        out.append({"id": mid, "model": entry.get("model") or "?", "host": host})
+    return out
 
 
 def _resolve_model_store(model_id: str) -> dict | None:
@@ -171,17 +193,20 @@ def cli(
                 f"{str(r.get('error') or '')[:80]} · {r.get('wait') or '?'}s 后重试"
             )
 
-    agent = Agent(
-        method,
-        available_tools=available_tools,
-        debug=debug,
-        support_tool=support_tool,
-        model=model,
-        base_url=base_url,
-        api_key=api_key,
-        on_tool=on_tool_event,
-        on_retry=on_retry_event,
-    )
+    def make_agent(m="anthropic", mdl=None, url=None, key=None):
+        return Agent(
+            m,
+            available_tools=available_tools,
+            debug=debug,
+            support_tool=support_tool,
+            model=mdl,
+            base_url=url,
+            api_key=key,
+            on_tool=on_tool_event,
+            on_retry=on_retry_event,
+        )
+
+    agent = make_agent(method, model, base_url, api_key)
 
     logo = Logo.print()
     info_lines = agent.print_info()
@@ -227,7 +252,13 @@ def cli(
                 Prompt.UserHTML,
                 **logo.prompt_options,
                 vi_mode=False,
-            ).strip()
+            ).rstrip()
+            # 多行续行: 行尾反斜杠进入续行提示, 拼接保留换行
+            while query.endswith("\\"):
+                query = query[:-1]
+                more = session.prompt("…> ").rstrip()
+                query += "\n" + more
+            query = query.strip()
         except (EOFError, KeyboardInterrupt):
             break
 
@@ -239,9 +270,10 @@ def cli(
                 break
             case SLASH_CMD.help:
                 _print_sysnote(
-                    "命令: /help 列表 · /usage 累计 token · /history 原始历史 · "
-                    "/compact 压缩 · /reset 清空 · /exit 退出(空行亦可)\n"
-                    "生成期间直接输入文本并回车 = steering 插话"
+                    "命令: /help 列表 · /usage 累计 token · /history 历史 · "
+                    "/model [id] 查看/切换 · /compact 压缩 · /save 导出 · "
+                    "/reset 清空 · /exit 退出(空行亦可)\n"
+                    "行尾反斜杠续行(多行输入) · 生成期间直接输入文本并回车 = steering 插话"
                 )
             case SLASH_CMD.usage:
                 print(
@@ -249,10 +281,68 @@ def cli(
                     f"输入 {usage['prompt']} tok · 输出 {usage['completion']} tok · "
                     f"累计生成 {usage['seconds']:.0f}s"
                 )
+            case _ if q.startswith(SLASH_CMD.model):
+                arg = query[len(SLASH_CMD.model):].strip()
+                if not arg:
+                    cur = f"当前: {agent.model} @ {agent.client.base_url}"
+                    entries = _list_model_store()
+                    listing = (
+                        "\n".join(
+                            f"  {e['id']}  {e['model']}  @ {e['host']}" for e in entries
+                        )
+                        if entries
+                        else "  (web 端未配置模型)"
+                    )
+                    _print_sysnote(f"{cur}\n可切换(/model <id>):\n{listing}")
+                else:
+                    hit = _resolve_model_store(arg)
+                    if hit is None:
+                        _print_sysnote(f"未找到模型配置 {arg}; /model 查看可用列表")
+                    else:
+                        agent = make_agent(
+                            hit["method"], hit["model"], hit["baseUrl"], hit["apiKey"]
+                        )
+                        _print_sysnote(
+                            f"已切换: {hit['model']} @ {str(hit['baseUrl'])[:48]}"
+                        )
+            case _ if q.startswith(SLASH_CMD.save):
+                arg = query[len(SLASH_CMD.save):].strip()
+                out_dir = Path(
+                    arg
+                    or Path.home() / "sigmaflow-cli-sessions"
+                )
+                if out_dir.is_dir() or arg:
+                    out = out_dir
+                else:
+                    out = out_dir / f"session-{time.strftime('%Y%m%d-%H%M%S')}.json"
+                try:
+                    out.parent.mkdir(parents=True, exist_ok=True)
+                    out.write_text(
+                        json.dumps(
+                            {
+                                "savedAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                                "usage": usage,
+                                "history": history,
+                            },
+                            ensure_ascii=False,
+                            indent=2,
+                        ),
+                        encoding="utf-8",
+                    )
+                    _print_sysnote(f"会话已导出: {out}")
+                except Exception as err:
+                    _print_sysnote(f"导出失败: {err}")
             case SLASH_CMD.history:
                 print(f"{Prompt.History}")
-                if history:
-                    print(history)
+                if not history:
+                    _print_sysnote("(空会话)")
+                for idx, m in enumerate(history):
+                    role = m.get("role", "?")
+                    body = str(m.get("content") or "")
+                    tools = [t.get("name", "?") for t in m.get("tool_calls") or []]
+                    tag = f"[{idx}] {role}" + (f" ({', '.join(tools)})" if tools else "")
+                    text = body if len(body) <= 200 else body[:200] + "…"
+                    print(f"  {tag}: {text}")
             case SLASH_CMD.compact:
                 history = agent.compactor.auto_compact(history, force=True)
             case SLASH_CMD.team:
