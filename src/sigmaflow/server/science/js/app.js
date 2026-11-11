@@ -1535,15 +1535,17 @@
     if (!opts.noSteer && (run.messages.some(m => m.streaming) || run.status === 'running')) {
       const r2 = await CS.api.steer(run.id, text);
       if (r2.ok) {
-        CS.toast('已插入引导消息：当前工具/回合结束后送达模型。', 'info');
+        const attachLeft = (CS.ui.pendingUploads || []).some(u => u.status === 'done');
+        CS.toast('已插入引导消息：当前工具/回合结束后送达模型。' + (attachLeft ? '（附件不随引导发送，已保留待下次发送）' : ''), 'info');
       } else if (/没有正在进行/.test(r2.error || '')) {
         // 竞态窗口: 流式标记刚清但本轮竞态抢进 —— 回退为普通发送
         return sendChatMessage(run, text, datasetIds, { ...opts, noSteer: true });
       } else {
-        // 失败不吞输入: 文本回填输入框(附件芯片也未消费, 仍在)
-        CS.ui.composer = text;
+        // 失败不吞输入: 文本退回输入框 —— 用户若已开始打下一段话, 原文拼在
+        // 前面而不是整体覆盖(覆盖会丢新输入)
+        CS.ui.composer = text + (CS.ui.composer.trim() ? '\n' + CS.ui.composer : '');
         CS.render();
-        CS.toast('引导发送失败：' + (r2.error || '未知错误') + '，已退回输入框。', 'error');
+        CS.toast('引导发送失败：' + (r2.error || '未知错误') + '，原文已退回输入框。', 'error');
       }
       return;
     }
@@ -1825,6 +1827,29 @@
       CS.audio.playDone();  // 回复完成提示音; 出错分支不播放
     } catch (error) {
       const msg = CS.api.friendlyError(error);
+      // 互斥拒绝自动转引导: 刷新恢复窗口/双标签页等场景下, 普通发送撞上服务端
+      // "该会话已有回复正在生成" —— 不渲染错误块, 本地回滚刚推入的 user 消息与
+      // reply(服务端互斥检查在 user 行落库之前, 存档干净), 文本原样转 chat.steer
+      if (/已有回复正在生成/.test(String(error?.message || msg))) {
+        const ui2 = run.messages.indexOf(_lastUser);
+        const ri2 = run.messages.indexOf(reply);
+        if (ri2 >= 0) run.messages.splice(ri2, 1);
+        if (ui2 >= 0) run.messages.splice(ui2, 1);
+        finishTimer();
+        CS.save();
+        const r3 = await CS.api.steer(run.id, text);
+        if (r3.ok) {
+          CS.toast('该会话已有回复在生成，已转为引导消息插入。', 'info');
+          if (CS.state.currentRunId === run.id && CS.ui.route === 'chat') CS.render();
+          // 不做整表归档: steer 行刚由服务端落库, journal 回显未到达时本地表
+          // 不含它, 整表 upsert 会把服务端的 steer 行抹掉(刷新后丢引导消息)
+          return;
+        }
+        // steer 也失败: 回滚无效, 走正常错误呈现(消息重新推回)
+        run.messages.push({ role: 'user', content: text, datasetIds: [...datasetIds], at: new Date().toISOString() });
+        run.messages.push(reply);
+        reply.streaming = true;
+      }
       if (error && (error.silent || String(error.message || '').includes('无法续播'))) {
         // 服务端 journal 已失效(容量淘汰/服务重启)或深度离线: 不把会话
         // 定格成错误——任务结果由服务端兑底归档兜底, 从存档静默合并最新

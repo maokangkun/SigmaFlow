@@ -121,8 +121,7 @@ def test_steered_texts_drive_another_response():
     steer_poll 必须是排空语义(取走即清空, 与服务端 _steer_poll 闭包一致),
     mock 用可耗尽的容器而非常量 lambda。"""
     queue = ["补一句"]
-    agent = _bare_agent(steer_poll=lambda: queue[:] and queue.pop(0) and [] or [])
-    # 直接构造排空式轮询器更直观:
+
     def drain():
         items = list(queue)
         queue.clear()
