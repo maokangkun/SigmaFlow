@@ -127,6 +127,23 @@ from .science_fs import (
 _CONVERSATION_PAGE_MAX_BYTES = 4_000_000
 
 
+def _find_active_state(
+    active_runs: dict, user: str, run_id: str
+) -> Optional[dict]:
+    """按 (用户, 会话) 找在途回复的 state; 无则 None。
+
+    chat.steer 的引导投放与 chat.send 的同会话互斥共用本查找。
+    """
+    for key, rec in active_runs.items():
+        if (
+            key[0] == user
+            and rec.get("runId") == run_id
+            and not (rec.get("state") or {}).get("terminal")
+        ):
+            return rec.get("state") or {}
+    return None
+
+
 def _shape_conversation_row(m):
     """回放视图传输瘦身: 超长工具结果截到 4000 字并标 rc(存储不动);
     展开详情与 Trace 页的完整版走各自的数据通路。"""
@@ -3932,16 +3949,9 @@ class ScienceAPI:
                     if not _steer_text or not _steer_run:
                         await reply("error", request_id, "引导消息为空")
                     else:
-                        _hit_state = None
-                        for _k, _v in self._active_runs.items():
-                            if (
-                                _k[0] == _current_user()
-                                and _v.get("runId") == _steer_run
-                            ):
-                                _st = _v.get("state") or {}
-                                if not _st.get("terminal"):
-                                    _hit_state = _st
-                                    break
+                        _hit_state = _find_active_state(
+                            self._active_runs, _current_user(), _steer_run
+                        )
                         if _hit_state is None:
                             await reply(
                                 "error",
@@ -3985,18 +3995,14 @@ class ScienceAPI:
                     # noSteer 回退、双标签页同时发送等, 否则两个 agent 交叉写同一
                     # 会话(两条回复互相穿插)。引导场景应走 chat.steer。
                     _dup_run = str(data.get("runId") or "")
-                    if _dup_run:
-                        for _k, _v in self._active_runs.items():
-                            if (
-                                _k[0] == _current_user()
-                                and _v.get("runId") == _dup_run
-                                and not (_v.get("state") or {}).get("terminal")
-                            ):
-                                await fail(
-                                    request_id,
-                                    "该会话已有回复正在生成，请等它完成或用引导消息插入（生成期间直接发送即引导）。",
-                                )
-                                return
+                    if _dup_run and _find_active_state(
+                        self._active_runs, _current_user(), _dup_run
+                    ):
+                        await fail(
+                            request_id,
+                            "该会话已有回复正在生成，请等它完成或用引导消息插入（生成期间直接发送即引导）。",
+                        )
+                        return
                     try:
                         base_url, api_key, model_name = _resolve_chat(
                             self.model_store, data.get("modelId")

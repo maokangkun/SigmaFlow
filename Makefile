@@ -42,11 +42,19 @@ tests:
 science-regression:
 	$(PY) src/sigmaflow/server/science/tests/test_backend.py
 	cd src/sigmaflow/server/science && node scripts/check.mjs
+	cd src/sigmaflow/server/science && node scripts/unittest.mjs
 	cd src/sigmaflow/server/science && node scripts/build.mjs
 	git diff --exit-code -- src/sigmaflow/server/science/dist/
 	@test -z "$$(git status --porcelain -- src/sigmaflow/server/science/dist/)" \
 		|| (echo "dist 有未提交的重建差异(源码改了没提交 dist, 或 dist 改了源码没跟上):" && \
 			git status --porcelain -- src/sigmaflow/server/science/dist/ && exit 1)
+
+# 浏览器端到端(需本机起服务与 chromium; 无服务自动 SKIP 不阻塞):
+#   make e2e          全套(patho3d / 会话切换 / steering)
+# E2E 依赖 tests/e2e/node_modules, 首次运行自动 npm install。
+.PHONY: e2e
+e2e:
+	cd tests/e2e && node run.mjs
 
 # 提交前准入: 双套全绿(包级测试 + science 回归)
 .PHONY: test-all

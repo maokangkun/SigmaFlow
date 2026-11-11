@@ -1,0 +1,12 @@
+{
+  "name": "sigmaflow-e2e",
+  "private": true,
+  "description": "常驻 E2E 套件(playwright-core + 本机 chromium 二进制, 复用 ~/.cache/ms-playwright)",
+  "type": "module",
+  "scripts": {
+    "test": "node run.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "1.57.0"
+  }
+}

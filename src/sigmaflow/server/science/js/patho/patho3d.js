@@ -572,6 +572,7 @@
     });
   }
 
-  G.Patho3D = { open, close, state: () => S };
+  // _geom: 纯几何助手的测试后门(scripts/unittest.mjs 在 node 沙箱里加载校验)
+  G.Patho3D = { open, close, state: () => S, _geom: { fibSphere, helixPts } };
   G.openPatho3D = () => G.Patho3D.open();
 })();
