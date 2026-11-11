@@ -1695,6 +1695,23 @@ class Agent:
                     self.on_tool, messages, info, {"role": "user", "content": _fin}
                 )
 
+        # 循环最终退出(终文已续跑过排队插话/预算耗尽/重试耗尽)后仍残留的引导:
+        # 不再驱动模型(预算契约), 但必须显式告知前端 —— steerDropped 事件渲染
+        # "引导未送达"提示, 不静默吞掉用户插话
+        if self.steer_poll is not None:
+            _dropped = self._drain_steer()
+            if _dropped and self.on_tool is not None:
+                try:
+                    self.on_tool(
+                        {
+                            "kind": "steerDropped",
+                            "count": len(_dropped),
+                            "texts": [t[:120] for t in _dropped],
+                        }
+                    )
+                except Exception:
+                    pass
+
         # 轮次预算耗尽且模型从未输出正文(长工具链任务被截停): 标记错误为轮次上限语义,
         # 前端据此给出可理解的提示, 而不是误导性的"模型没有返回内容"
         if not subagent and cur_turn >= max_turn and not info.get("last_response"):

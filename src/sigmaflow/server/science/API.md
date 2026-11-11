@@ -187,7 +187,14 @@ GET    /api/context-info      → {"systemTokens": int, "toolsTokens": int}  # A
 - 服务端把插话追加进 journal（事件 `chat.steer`，`data.text`），所有订阅端
   （含发送者）以同一条 user 消息渲染（前端带「引导」角标）；
 - 引导消息即落库（与 `chat.send` 的 user 行同路径），刷新/断线重连后仍在；
-- 该会话无在途回复时回 `error`（前端回退为普通发送）；
+- 该会话无在途回复时回 `error`（前端仅在错误文案匹配"没有正在进行的回复"时回退
+  为普通发送；WS 断开类错误不回退，文本退回输入框不吞输入）；
+- 引导文本上限 6000 字符（与 composer 一致）；journal 事件带唯一 `id`（steerId），
+  存档行携带 `steering`+`steerId`（前端按 id 去重，刷新后徽章与去重依据都在）；
+- 轮次预算耗尽后才排到的引导不再驱动模型，以 `steerDropped` 工具事件显式提示
+  "未送达"，不静默吞掉；
+- `chat.send` 对已有在途回复的同一会话直接拒绝（双标签页/刷新恢复窗口的并发
+  兜底），提示走引导；
 - agent 侧注入点：① 多轮工具循环的回合边界（循环顶）；② 模型给出终文但
   队列仍有插话时强制再一次响应（`src/sigmaflow/agent/agent.py` 的
   `steer_poll` / `_inject_steer`）。

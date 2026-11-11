@@ -60,23 +60,27 @@
     // 螺旋核衣壳(管几何)
     const ncCurve = new THREE.CatmullRomCurve3(helixPts(4.5, 15, 54).map(p => new THREE.Vector3(...p)));
     g.add(new THREE.Mesh(new THREE.TubeGeometry(ncCurve, 96, 3.4, 10, false), M.mat('#f0e3ea', { roughness: 0.5, clearcoat: 0.3 })));
-    // 刺突: 斐波那契分布的茎+三聚体头
+    // 刺突: 斐波那契分布的茎+三聚体头(几何与材质都循环外共享 —— 38 个刺突
+    // ×4 部件各自 new 材质是纯浪费, 共享后 draw call 与内存都省)
     const stemG = new THREE.CylinderGeometry(1.6, 2.4, 13, 8);
     const headG = new THREE.SphereGeometry(4.4, 14, 10);
+    const stemMat = M.mat(c2, { roughness: 0.35, clearcoat: 0.8 });
+    const headMat = M.mat(c2, { roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.2 });
+    const subMat = M.mat(c2, { roughness: 0.3, clearcoat: 0.9 });
     const up = new THREE.Vector3(0, 1, 0);
     let spikes = 0;
     for (const [x, y, z] of fibSphere(38, 60)) {
       const dir = new THREE.Vector3(x, y, z).normalize();
       const grp = new THREE.Group();
-      const stem = new THREE.Mesh(stemG, M.mat(c2, { roughness: 0.35, clearcoat: 0.8 }));
+      const stem = new THREE.Mesh(stemG, stemMat);
       stem.position.y = 6.5;
       grp.add(stem);
-      const head = new THREE.Mesh(headG, M.mat(c2, { roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.2 }));
+      const head = new THREE.Mesh(headG, headMat);
       head.position.y = 13.5;
       head.scale.set(1.25, 0.85, 1.25);
       grp.add(head);
       for (let k = 0; k < 2; k++) {   // 三聚体侧亚基
-        const sub = new THREE.Mesh(headG, M.mat(c2, { roughness: 0.3, clearcoat: 0.9 }));
+        const sub = new THREE.Mesh(headG, subMat);
         sub.scale.setScalar(0.62);
         const a = k * Math.PI;
         sub.position.set(Math.cos(a) * 4.6, 12.6, Math.sin(a) * 4.6);
@@ -136,8 +140,9 @@
         g.add(grp);
         flagella.push({ grp, phase: f * 1.7, axis: dir });
       }
-      // 菌毛(细短)
-      const pilus = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 13, 5), M.mat(c2, { roughness: 0.6 }));
+      // 菌毛(细短, 材质共享)
+      const pilusMat = M.mat(c2, { roughness: 0.6 });
+      const pilus = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 13, 5), pilusMat);
       for (let i = 0; i < 14; i++) {
         const m = pilus.clone();
         const dir = new THREE.Vector3(rand() - 0.5, rand() - 0.5, rand() - 0.5).normalize();
@@ -179,7 +184,8 @@
       c.position.set(x, y, z);
       g.add(c);
     }
-    const pilus = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 12, 5), M.mat(c2, { roughness: 0.6 }));
+    const pilusMat = M.mat(c2, { roughness: 0.6 });
+    const pilus = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 12, 5), pilusMat);
     for (let i = 0; i < 16; i++) {
       const m = pilus.clone();
       const dir = new THREE.Vector3(rand() - 0.5, rand() - 0.5, rand() - 0.5).normalize();
@@ -350,9 +356,10 @@
     // 头节 + 小钩
     const scolex = new THREE.Mesh(new THREE.SphereGeometry(16, 26, 20), M.mat(c2, { roughness: 0.3, clearcoat: 0.9 }));
     const hooks = new THREE.ConeGeometry(1.7, 6, 6);
+    const hookMat = M.mat('#e8e0c8', { roughness: 0.25, metalness: 0.4 });
     for (let ring = 0; ring < 2; ring++) {
       for (let i = 0; i < 8; i++) {
-        const h = new THREE.Mesh(hooks, M.mat('#e8e0c8', { roughness: 0.25, metalness: 0.4 }));
+        const h = new THREE.Mesh(hooks, hookMat);
         const a = (i / 8) * Math.PI * 2 + ring * 0.39;
         h.position.set(-99, Math.sin(a) * (12 - ring * 4), Math.cos(a) * (12 - ring * 4) * 0.7);
         h.rotation.z = Math.PI / 2;
@@ -385,11 +392,13 @@
           M.mat(s ? c2 : c1, { roughness: 0.38, clearcoat: 0.7, sheen: 0.4 })
         ));
       }
-      // 缀连的单体(错误折叠)
+      // 缀连的单体(错误折叠, 材质共享)
+      const mono1 = M.mat(c1, { roughness: 0.42, clearcoat: 0.6 });
+      const mono2 = M.mat(c2, { roughness: 0.42, clearcoat: 0.6 });
       for (let i = 0; i < 9; i++) {
         const m = new THREE.Mesh(
           new THREE.SphereGeometry(4.2, 12, 9),
-          M.mat(i % 3 === 0 ? c2 : c1, { roughness: 0.42, clearcoat: 0.6 })
+          i % 3 === 0 ? mono2 : mono1
         );
         const a = rand() * 6.28;
         m.position.set(dx * 0 + Math.cos(a) * (11 + rand() * 9), (rand() - 0.5) * 108, Math.sin(a) * (11 + rand() * 9));
@@ -425,7 +434,12 @@
     scene.background = new THREE.Color('#10131c');
     // 环境光照(PBR 反射源) + 主光/轮廓光
     const pmrem = new THREE.PMREMGenerator(s.renderer);
-    scene.environment = pmrem.fromScene(new CV.RoomEnvironment(), 0.04).texture;
+    const envTex = pmrem.fromScene(new CV.RoomEnvironment(), 0.04).texture;
+    scene.environment = envTex;
+    // 环境纹理与生成器随会话保存: close 时显式释放(traverse 只覆盖场景子对象,
+    // 不含 environment 贴图 —— 反复开关形态视图会累积泄漏 GPU 显存)
+    s._pmrem = pmrem;
+    s._envTex = envTex;
     const key = new THREE.DirectionalLight(0xffffff, 2.2);
     key.position.set(120, 160, 180);
     scene.add(key);
@@ -494,6 +508,8 @@
     if (S.raf) cancelAnimationFrame(S.raf);
     try { S.controls && S.controls.dispose(); } catch {}
     try { S.renderer && S.renderer.dispose(); } catch {}
+    try { S._envTex && S._envTex.dispose(); } catch {}
+    try { S._pmrem && S._pmrem.dispose(); } catch {}
     try {
       if (S.scene) S.scene.traverse(o => {
         if (o.geometry) o.geometry.dispose();

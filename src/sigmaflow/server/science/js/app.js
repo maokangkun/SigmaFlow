@@ -766,7 +766,7 @@
       // 存档消息 → 内存消息: 新格式解压块时间线 {t,x}/{t,n,a,r}..., 旧格式压平
       // 记录重建 blocks; 分页循环里每页复用同一解码
       const decodeMsg = m => {
-        const msg = { role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.steering ? { steering: true } : {}), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}), ...(m.streaming ? { streaming: true, serverStreaming: true } : {}) };
+        const msg = { role: m.role, content: m.content, at: m.at || new Date().toISOString(), ...(m.steering ? { steering: true, ...(m.steerId ? { steerId: m.steerId } : {}) } : {}), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed } : {}), ...(m.streaming ? { streaming: true, serverStreaming: true } : {}) };
         if (msg.role === 'assistant' && Array.isArray(m.blocks) && m.blocks.length) {
           msg.blocks = m.blocks.map(b => {
             if (!b || typeof b !== 'object') return null;
@@ -1417,7 +1417,7 @@
       id: run.id, title: run.title, projectId: run.projectId,
       pinned: !!conv?.pinned, archived: !!conv?.archived,
       content: run.messages.filter(m => m.role === 'user' || m.role === 'assistant')
-        .map(m => { const sb = m.role === 'assistant' ? savedBlocks(m) : []; return { role: m.role, content: m.content, at: m.at, ...(m.steering ? { steering: true } : {}), ...(m.model ? { model: m.model } : {}), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(sb.length ? { blocks: sb } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed, ...(m.contextTokens ? { contextTokens: m.contextTokens } : {}), ...(m.cacheTokens ? { cacheTokens: m.cacheTokens } : {}) } : {}) }; }),
+        .map(m => { const sb = m.role === 'assistant' ? savedBlocks(m) : []; return { role: m.role, content: m.content, at: m.at, ...(m.steering ? { steering: true, ...(m.steerId ? { steerId: m.steerId } : {}) } : {}), ...(m.model ? { model: m.model } : {}), ...(m.reasoning ? { reasoning: m.reasoning } : {}), ...(m.tools?.length ? { tools: m.tools } : {}), ...(m.asks?.length ? { asks: m.asks } : {}), ...(sb.length ? { blocks: sb } : {}), ...(m.deliverables?.length ? { deliverables: m.deliverables } : {}), ...(m.error ? { error: m.error } : {}), ...(m.tokens ? { tokens: m.tokens, promptTokens: m.promptTokens, elapsed: m.elapsed, ...(m.contextTokens ? { contextTokens: m.contextTokens } : {}), ...(m.cacheTokens ? { cacheTokens: m.cacheTokens } : {}) } : {}) }; }),
     };
     try { await CS.api.modelCall('conversation.save', 'POST', '/conversations', payload); }
     catch { if (retry) setTimeout(() => syncConversation(run, false), 3000); }
@@ -1530,7 +1530,9 @@
     // chat.send(两条回复交叉), 而是排进服务端 steer 队列 —— agent 在当前
     // 工具批/回合结束后把它注入上下文继续。user 消息由 journal 回显
     // (chat.steer 事件 → onSteer)统一渲染, 此处不本地预插避免双写。
-    if (!opts.noSteer && run.messages.some(m => m.streaming)) {
+    // 刷新恢复早期(3s 存档轮询尚未把 streaming 行补挂)以 run.status==='running'
+    // 兜底; 误判时服务端回"没有正在进行的回复"走 noSteer 回退正常发送
+    if (!opts.noSteer && (run.messages.some(m => m.streaming) || run.status === 'running')) {
       const r2 = await CS.api.steer(run.id, text);
       if (r2.ok) {
         CS.toast('已插入引导消息：当前工具/回合结束后送达模型。', 'info');
@@ -1538,7 +1540,10 @@
         // 竞态窗口: 流式标记刚清但本轮竞态抢进 —— 回退为普通发送
         return sendChatMessage(run, text, datasetIds, { ...opts, noSteer: true });
       } else {
-        CS.toast('引导发送失败：' + (r2.error || '未知错误'), 'error');
+        // 失败不吞输入: 文本回填输入框(附件芯片也未消费, 仍在)
+        CS.ui.composer = text;
+        CS.render();
+        CS.toast('引导发送失败：' + (r2.error || '未知错误') + '，已退回输入框。', 'error');
       }
       return;
     }
@@ -1652,6 +1657,11 @@
         reply.blocks.push({ type: 'sysnote', text: String(t.text || ''), at: Date.now() });
         return;
       }
+      // 引导未送达(轮次预算耗尽后才排到的插话): 显式提示, 不静默吞
+      if (t.kind === 'steerDropped') {
+        reply.blocks.push({ type: 'sysnote', text: `[Steering] ${t.count} 条引导消息未送达模型(本次回复的轮次预算已用尽)：${(t.texts || []).join(' / ')}`, at: Date.now() });
+        return;
+      }
       // present: 模型主动呈现的富媒介文件卡片(typ 字段为将来的非文件形态预留)
       if (t.kind === 'present') {
         reply.blocks.push({ type: 'present', typ: t.typ || 'file', path: t.path, name: t.name, ext: t.ext, klass: t.klass, size: t.size, title: t.title, note: t.note, pid: run?.projectId || CS.state.projectId, at: Date.now() });
@@ -1750,8 +1760,11 @@
       const steerEvent = sd => {
         const txt = String(sd.text || '');
         if (!txt) return;
-        if (run.messages.some(m2 => m2.role === 'user' && m2.content === txt)) return;
-        run.messages.push({ role: 'user', content: txt, steering: true, at: sd.at || new Date().toISOString() });
+        // 按 steerId 去重: journal 回显与断线重放会各送达一次; 同一文本引导
+        // 多次时各是不同 id, 各自渲染(内容去重会把第二条吞掉, 刷新后又出现)
+        const sid = String(sd.id || '');
+        if (sid && run.messages.some(m2 => m2.steerId === sid)) return;
+        run.messages.push({ role: 'user', content: txt, steering: true, ...(sid ? { steerId: sid } : {}), at: sd.at || new Date().toISOString() });
         CS.save();
         if (CS.state.currentRunId === run.id && CS.ui.route === 'chat') CS.render();
       };
@@ -3361,12 +3374,14 @@
   let _convPress = null;
   document.addEventListener('pointerdown', event => {
     const t = event.target.closest?.('[data-action="open-conversation"]');
-    if (t) _convPress = { el: t, id: t.dataset.id, at: Date.now() };
+    if (t) _convPress = { el: t, id: t.dataset.id, at: Date.now(), x: event.clientX, y: event.clientY };
     else _convPress = null;
   }, true);
-  document.addEventListener('pointerup', () => {
+  document.addEventListener('pointerup', event => {
     const p = _convPress; _convPress = null;
     if (!p || Date.now() - p.at > 1500) return;   // 长按/误触不算
+    // 位移阈值: 按下后拖出很远再松开是拖拽而非点击(即使节点已被重渲染替换)
+    if (Math.abs((event.clientX || 0) - p.x) > 12 || Math.abs((event.clientY || 0) - p.y) > 12) return;
     if (p.el.isConnected) return;                 // 节点还活着: 正常 click 会送达
     const fn = actions['open-conversation'];
     if (fn) { try { fn(p.id); } catch (error) { console.error(error); } }
@@ -3514,7 +3529,10 @@
       CS.ui.pendingUploads=(CS.ui.pendingUploads||[]).filter(u=>u.status!=='error');
       const active=CS.currentRun();
       if(CS.ui.route==='chat' && active?.kind === 'chat') {
-        CS.ui.composer=''; CS.ui.attachments=[]; CS.ui.pendingUploads=[]; CS.save();
+        // pendingUploads 不在此清空: 附件路径(​@[[path]] 标记)在 sendChatMessage
+        // 内部读取后注入并自清; 先清会让"已有会话续发"永远丢附件(只有新会话
+        // 的 startChat 路径正常)。steer 分支不消费附件, 芯片保留待下轮正常发送
+        CS.ui.composer=''; CS.ui.attachments=[]; CS.save();
         sendChatMessage(active,prompt,[]);
       } else if(CS.ui.route==='chat' && active) {
         const run=active; run.messages.push({role:'user',content:prompt,datasetIds:[...CS.ui.attachments],at:new Date().toISOString()});

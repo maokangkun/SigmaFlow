@@ -1425,6 +1425,7 @@ class ScienceAPI:
                             "requestId": request_id,
                             "seq": cursor,
                             "data": {
+                                "id": str(_sv.get("id") or ""),
                                 "text": str(_sv.get("text") or ""),
                                 "at": str(_sv.get("at") or ""),
                             },
@@ -3920,8 +3921,14 @@ class ScienceAPI:
                     # steer 队列, 由 agent 在当前回合(工具批)结束、下一次
                     # 模型调用前注入 —— 不再并发跑第二个交叉回复。事件回显
                     # 进 journal, 所有订阅端(含发送者)以同一条 user 消息渲染。
-                    _steer_text = str(data.get("text") or "").strip()
+                    _steer_text = _clip(
+                        str(data.get("text") or "").strip(), 6000
+                    )
                     _steer_run = str(data.get("runId") or "")
+                    # steerId: 引导行的唯一标识 —— 前端按它去重(journal 回显与
+                    # 断线重放各送达一次时不会渲染两条), 存档行也带(刷新后徽章
+                    # 与去重依据都在)
+                    _steer_id = f"steer-{uuid.uuid4().hex[:10]}"
                     if not _steer_text or not _steer_run:
                         await reply("error", request_id, "引导消息为空")
                     else:
@@ -3948,9 +3955,10 @@ class ScienceAPI:
                                     (
                                         "steer",
                                         {
+                                            "id": _steer_id,
                                             "text": _steer_text,
                                             "at": _dtmod.datetime.now().isoformat(
-                                                timespec="seconds"
+                                                timespec="milliseconds"
                                             ),
                                         },
                                     )
@@ -3959,7 +3967,10 @@ class ScienceAPI:
                             # 刷新/断线重连后从存档也能看到这条插话
                             try:
                                 self.project_store.archive_user_row(
-                                    _steer_run, _steer_text, steering=True
+                                    _steer_run,
+                                    _steer_text,
+                                    steering=True,
+                                    steer_id=_steer_id,
                                 )
                             except Exception:
                                 pass
@@ -3969,6 +3980,23 @@ class ScienceAPI:
                                 {"queued": len(_hit_state["steer"])},
                             )
                 elif action == "chat.send":
+                    # 同会话在途回复互斥(steering 的服务端兜底): 前端已在流式期间
+                    # 把新消息转 chat.steer, 这里拦截的是竞态残留 —— 刷新恢复窗口、
+                    # noSteer 回退、双标签页同时发送等, 否则两个 agent 交叉写同一
+                    # 会话(两条回复互相穿插)。引导场景应走 chat.steer。
+                    _dup_run = str(data.get("runId") or "")
+                    if _dup_run:
+                        for _k, _v in self._active_runs.items():
+                            if (
+                                _k[0] == _current_user()
+                                and _v.get("runId") == _dup_run
+                                and not (_v.get("state") or {}).get("terminal")
+                            ):
+                                await fail(
+                                    request_id,
+                                    "该会话已有回复正在生成，请等它完成或用引导消息插入（生成期间直接发送即引导）。",
+                                )
+                                return
                     try:
                         base_url, api_key, model_name = _resolve_chat(
                             self.model_store, data.get("modelId")
@@ -4824,6 +4852,8 @@ class ScienceProjectStore:
                 }
                 if msg.get("steering"):
                     item["steering"] = True
+                    if msg.get("steerId"):
+                        item["steerId"] = _clip(str(msg.get("steerId")), 64)
                 # 保留思考与工具调用记录, 便于前端回放
                 # 每条消息截断到固定长度, 防止历史无限膨胀
                 reasoning = msg.get("reasoning")
@@ -5208,13 +5238,19 @@ class ScienceProjectStore:
             return True
 
     def archive_user_row(
-        self, conversation_id: str, content: str, steering: bool = False
+        self,
+        conversation_id: str,
+        content: str,
+        steering: bool = False,
+        steer_id: str = "",
     ) -> bool:
         """chat.send 即落 user 消息行(与 WS 归档共锁)。
 
         尾条同为 user 且内容一致视为重复(停止后原样重发的场景),
-        不再追加。返回是否实际写入。steering 标记引导插话行(刷新后
-        前端仍渲染「引导」角标)。
+        不再追加。引导行(steering)不参与内容去重 —— "继续"这类高频短句
+        完全可能与上一条撞车, 去重会让引导行凭空消失(前端已回显、存档
+        没有)。返回是否实际写入。steering/steer_id 标记引导插话行(刷新后
+        前端仍渲染「引导」角标并按 id 去重)。
         """
         text = str(content or "")
         if not conversation_id or not text.strip():
@@ -5226,7 +5262,8 @@ class ScienceProjectStore:
             base = list(conv.get("content") or [])
             last = base[-1] if base else None
             if (
-                isinstance(last, dict)
+                not steering
+                and isinstance(last, dict)
                 and last.get("role") == "user"
                 and str(last.get("content") or "")[:200] == text[:200]
             ):
@@ -5238,6 +5275,8 @@ class ScienceProjectStore:
             }
             if steering:
                 row["steering"] = True
+                if steer_id:
+                    row["steerId"] = _clip(str(steer_id), 64)
             base.append(row)
             conv["content"] = base[-200:]
             conv["updatedAt"] = int(time.time() * 1000)

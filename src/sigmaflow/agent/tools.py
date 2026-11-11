@@ -1,6 +1,7 @@
 import os
 import re
 import shlex
+import signal
 from typing import Any, Optional, cast
 import yaml
 import time
@@ -129,6 +130,26 @@ _DANGEROUS_DEV_RE = re.compile(r">+\s*/dev/(?!null\b|stdout\b|stderr\b|fd/)")
 _BASH = "/bin/bash" if os.path.exists("/bin/bash") else None
 
 
+def _kill_proc_tree(proc) -> None:
+    """杀掉命令的整个进程组。
+
+    bash -c "sleep 300" 里只 kill bash 壳时, sleep 会被 init 收养继续跑
+    (bash 工具的输出还告诉用户可以 kill_job 放弃任务)。Popen 以
+    start_new_session 建独立进程组后, 这里按组广播 SIGKILL; 非组会话
+    (历史任务/异常形态)回退只杀主进程。
+    """
+    if proc is None:
+        return
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+
 # bash 工具承诺的就是 bash: shell=True 会退到 /bin/sh(dash), [[ ]]、
 # 进程替换 <()、数组等 bashism 直接语法报错。显式 ["bash", "-c", ...]。
 def _shell_argv(command: str):
@@ -149,6 +170,7 @@ def run_bash(command: str, timeout=None) -> str:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        start_new_session=True,  # 独立进程组: kill_job/超时能整组终止(见 _kill_proc_tree)
     )
     try:
         out, err = proc.communicate(timeout=_wait)
@@ -1261,6 +1283,7 @@ class BackgroundManager:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                start_new_session=True,  # 独立进程组: kill_job 按组终止
             )
             self.tasks[task_id]["proc"] = proc
             out, err = proc.communicate(timeout=300)
@@ -1273,7 +1296,7 @@ class BackgroundManager:
         except subprocess.TimeoutExpired:
             try:
                 if proc is not None:
-                    proc.kill()
+                    _kill_proc_tree(proc)
                     proc.communicate()
             except Exception:
                 pass
@@ -1317,10 +1340,7 @@ class BackgroundManager:
                 self.tasks[tid]["result"] = "(killed by request)"
                 proc = self.tasks[tid].get("proc")
                 if proc is not None and proc.poll() is None:
-                    try:
-                        proc.kill()
-                    except Exception:
-                        pass
+                    _kill_proc_tree(proc)
                 self._notification_queue.append(
                     {
                         "task_id": tid,
