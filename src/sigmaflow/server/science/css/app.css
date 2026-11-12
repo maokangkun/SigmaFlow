@@ -236,8 +236,8 @@ html:has(.auth-page){scrollbar-gutter:auto}
    无边框无背景无分割线, 靠 ">" 形 chevron 与正文区分 */
 .proc-fold-row{display:flex;align-items:center;gap:7px;width:100%;padding:3px 2px;margin:2px 0 6px;background:transparent;color:var(--muted);font-size:12px;cursor:pointer;touch-action:auto}
 .proc-fold-row:hover{color:var(--text)}
-.proc-chev{display:inline-block;flex:0 0 auto;width:7px;height:7px;border:solid var(--muted);border-width:0 1.6px 1.6px 0;transform:rotate(-45deg);transition:transform .15s;margin:0 3px 4px 0}
-.proc-chev-open{transform:rotate(45deg)}
+.proc-chev{display:inline-block;flex:0 0 auto;width:7px;height:7px;border:solid var(--muted);border-width:0 1.6px 1.6px 0;transform:rotate(-45deg) translateY(-.5px);transition:transform .15s;margin:0 4px 0 1px}
+.proc-chev-open{transform:rotate(45deg) translateY(-.5px)}
 .proc-fold-title{font-weight:600;color:var(--text)}
 .proc-fold-meta{color:var(--muted)}
 .think-root{display:flex;flex-direction:column;margin:2px 0 6px}
