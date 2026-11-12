@@ -1127,7 +1127,7 @@ V.ctxRing = () => {
               // 单块渲染: 思考/工具块可折叠(状态存 CS.ui.blockOpen), 正文块渲染 markdown
               const seg = (b, bi) => {
                 // 过程折叠态: 中间块整段隐藏, 只留折叠条摘要
-                if (_procHidden && _isProcPart(b)) return '';
+                if (_procHidden && _isProcPart(b, bi)) return '';
                 // 已返回结果的工具块视为完成; 否则等多轮循环的下一批事件时,
                 // 尾部工具块会一直显示「运行中」
                 const live = m.streaming && bi === lastIdx && b.result == null && b.type !== 'ask';
@@ -1236,18 +1236,26 @@ V.ctxRing = () => {
                 return `<div class="ask-card" data-bi="${bi}" data-ask-state="${state}"><div class="ask-head">${i('help', '', 14)}<span class="ask-title">${e(title)}</span><span class="tool-status">${state === 'pending' ? '等待你的回答…' : '已失效'}</span></div>${body}<div class="ask-foot">${footer}</div></div>`;
               };
               // 中间过程折叠(完成即自动收拢): think/tool/已答ask/sysnote/压缩摘要
-              // 属过程块; 正文/成品卡(present/webview/deliverables/计划)始终显示。
+              // 以及中间解说正文段(非最后一段 text)都属过程 —— 每轮只露出最后的
+              // 总结正文与成品卡(present/webview/deliverables/计划)。
               // 流式中强制展开; 有待回答 ask 的消息不折(问题卡必须可见)。
               // 用户点开过则记住(显式展开), 收起回到默认折叠态。
               const _procKey = `${run.id}|${idxOf}`;
-              const _procParts = blocks.filter(b => b && (b.type === 'think' || b.type === 'tool' || b.type === 'sysnote' || b.type === 'compact' || (b.type === 'ask' && (b.answered || b.stale))));
+              const _lastTextIdx = (() => { let li = -1; blocks.forEach((b, k) => { if (b && b.type === 'text' && String(b.text || '').trim()) li = k; }); return li; })();
+              const _isProcPart = (b, bi) => !!(
+                b && (
+                  b.type === 'think' || b.type === 'tool' || b.type === 'sysnote' || b.type === 'compact'
+                  || (b.type === 'ask' && (b.answered || b.stale))
+                  || (b.type === 'text' && bi !== _lastTextIdx)
+                )
+              );
+              const _procParts = blocks.filter((b, k) => _isProcPart(b, k));
               const _toolCount = blocks.filter(b => b && b.type === 'tool').length;
               const _pendingAsk = blocks.some(b => b && b.type === 'ask' && !b.answered && !b.stale);
               const _procFoldable = !m.streaming && _procParts.length > 0 && !_pendingAsk;
               const _procOpen = !!(CS.ui.procOpen && CS.ui.procOpen.has(_procKey));
               const _procHidden = _procFoldable && !_procOpen;
-              const _isProcPart = b => !!(b && (b.type === 'think' || b.type === 'tool' || b.type === 'sysnote' || b.type === 'compact' || (b.type === 'ask' && (b.answered || b.stale))));
-              const _procBar = _procFoldable ? `<button type="button" class="proc-fold-row" data-action="toggle-proc" data-id="${e(_procKey)}" aria-expanded="${_procOpen}" title="${_procOpen ? '收起中间过程' : '展开中间过程'}"><span class="think-chevron${_procOpen ? ' proc-chev-open' : ''}">${i('chevron', '', 12)}</span><span class="proc-fold-title">处理详情</span><span class="proc-fold-meta">${_procParts.length} 条过程 · ${_toolCount} 次工具调用</span></button>` : '';
+              const _procBar = _procFoldable ? `<button type="button" class="proc-fold-row" data-action="toggle-proc" data-id="${e(_procKey)}" aria-expanded="${_procOpen}" title="${_procOpen ? '收起中间过程' : '展开中间过程'}"><span class="think-chevron${_procOpen ? ' proc-chev-open' : ''}" aria-hidden="true"></span><span class="proc-fold-title">处理详情</span><span class="proc-fold-meta">${_procParts.length} 条过程 · ${_toolCount} 次工具调用</span></button>` : '';
               const tailText = blocks.length && blocks[lastIdx].type === 'text';
               // 未回答的 ask 挂在尾部时, 等待指示改为「等待你的回答」
               const tailAskPending = m.streaming && blocks.length && blocks[lastIdx].type === 'ask' && !blocks[lastIdx].answered && !blocks[lastIdx].stale;
