@@ -1254,13 +1254,32 @@ V.ctxRing = () => {
                   || (b.type === 'text' && bi !== _lastTextIdx)
                 )
               );
-              const _procParts = blocks.filter((b, k) => _isProcPart(b, k));
-              const _toolCount = blocks.filter(b => b && b.type === 'tool').length;
               const _pendingAsk = blocks.some(b => b && b.type === 'ask' && !b.answered && !b.stale);
-              const _procFoldable = !m.streaming && _procParts.length > 0 && !_pendingAsk;
-              const _procOpen = !!(CS.ui.procOpen && CS.ui.procOpen.has(_procKey));
-              const _procHidden = _procFoldable && !_procOpen;
-              const _procBar = _procFoldable ? `<button type="button" class="proc-fold-row" data-action="toggle-proc" data-id="${e(_procKey)}" aria-expanded="${_procOpen}" title="${_procOpen ? '收起中间过程' : '展开中间过程'}"><span class="proc-chev${_procOpen ? ' proc-chev-open' : ''}" aria-hidden="true"></span><span class="proc-fold-title">处理详情</span><span class="proc-fold-meta">${_procParts.length} 条过程 · ${_toolCount} 次工具调用</span></button>` : '';
+              const _procFoldable = !m.streaming && blocks.some((b, k) => _isProcPart(b, k)) && !_pendingAsk;
+              const _procHidden = false;  // 组渲染函数内部按组决定
+              // 组折叠条 HTML 工厂
+              const _foldBar = (gKey, count, tools, open) => `<button type="button" class="proc-fold-row" data-action="toggle-proc" data-id="${e(gKey)}" aria-expanded="${open}" title="${open ? '收起中间过程' : '展开中间过程'}"><span class="proc-chev${open ? ' proc-chev-open' : ''}" aria-hidden="true"></span><span class="proc-fold-title">处理详情</span><span class="proc-fold-meta">${count} 条过程 · ${tools} 次工具调用</span></button>`;
+              // 分组折叠渲染: steer 块把时间线切成多组, 每组过程块独立一条"处理详情",
+              // 引导气泡(右对齐用户样式)夹在组间 —— 引导前的过程折一条、引导后的过程
+              // 折一条, 只有全轮最后一段正文与成品卡露出。展开记忆按组(组键带组号)
+              const _renderGrouped = () => {
+                let out = '', g = 0, pend = [], pendTools = 0;
+                const flush = () => {
+                  if (!pend.length) return;
+                  const gKey = `${_procKey}|g${g}`;
+                  const open = !!(CS.ui.procOpen && CS.ui.procOpen.has(gKey));
+                  out += open ? pend.map(([b, bi]) => seg(b, bi)).join('') : _foldBar(gKey, pend.length, pendTools, open);
+                  pend = []; pendTools = 0;
+                };
+                blocks.forEach((b, bi) => {
+                  if (b.type === 'steer') { flush(); out += seg(b, bi); g++; return; }
+                  if (_isProcPart(b, bi)) { pend.push([b, bi]); if (b.type === 'tool') pendTools++; return; }
+                  flush();
+                  out += seg(b, bi);
+                });
+                flush();
+                return out;
+              };
               const tailText = blocks.length && blocks[lastIdx].type === 'text';
               // 未回答的 ask 挂在尾部时, 等待指示改为「等待你的回答」
               const tailAskPending = m.streaming && blocks.length && blocks[lastIdx].type === 'ask' && !blocks[lastIdx].answered && !blocks[lastIdx].stale;
@@ -1269,7 +1288,7 @@ V.ctxRing = () => {
               const waitingModel = m.streaming && !tailText && !tailAskPending && (!blocks.length || (blocks[lastIdx].type === 'tool' && blocks[lastIdx].result != null) || (blocks[lastIdx].type === 'ask' && (blocks[lastIdx].answered || blocks[lastIdx].stale)));
               const waitHint = (waitingModel || tailAskPending) ? (() => { const rt = CS.ui.chatRetry; const active = rt && rt.runId === run.id; const left = active && rt.waitUntil ? Math.max(0, Math.ceil((rt.waitUntil - Date.now()) / 1000)) : 0; const label = tailAskPending ? '等待你的回答' : active ? `第 ${Math.min(rt.attempt + 1, rt.total)}/${rt.total} 次尝试中` : '等待模型响应'; const cd = active && !tailAskPending && rt.waitUntil ? ` <span class="retry-countdown" data-until="${rt.waitUntil}">${left > 0 ? left + 's 后重试' : '正在重试…'}</span>` : ''; const tip = active && rt.error ? ` title="${e(rt.error)}"` : ''; return `<div class="model-wait" role="status"${tip}><span class="wait-dots" aria-hidden="true"><span class="wait-dot"></span><span class="wait-dot"></span><span class="wait-dot"></span></span><span>${label}${cd}${active && !tailAskPending ? ' · 上次失败' : ''}</span></div>`; })() : '';
               // 流式期间最后一块不是正文时补一个空正文占位, 供增量更新定位与底部跟随
-              segments = `${_procBar}${blocks.map(seg).join('')}${m.streaming && !tailText ? `<div class="agent-intro md-body" data-stream-at="${e(m.at)}"></div>${waitHint}` : ''}`;
+              segments = `${_procFoldable ? _renderGrouped() : blocks.map(seg).join('')}${m.streaming && !tailText ? `<div class="agent-intro md-body" data-stream-at="${e(m.at)}"></div>${waitHint}` : ''}`;
             }
             const err = m.error ? (typeof m.error === 'string' ? { message: m.error } : m.error || {}) : null;
             return `<div class="msg-block agent-block" data-mi="${idxOf}"><div class="agent-message"><div class="agent-avatar${m.streaming ? ' avatar-pulsing' : ' '}">${i('dna','',21)}</div><div class="agent-body"${blocks ? ` data-block-sig="${e(blocks.map(b => b.type).join(','))}"` : ''}><div class="agent-name">SigmaFlow Science${m.streaming && m.tokens ? ` <span class="tok-down" data-start="${m.at}">↓ ${CS.num(m.tokens)}</span>` : (m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span>` : '')}${m.streaming ? ` <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${segments}${err ?(() => { const errKey = (run.id || ['']) + '|' + idxOf; const errOpen = (CS.ui.errorOpenSet || []).has ? CS.ui.errorOpenSet.has(errKey) : false; return `<div class="think-root error-root"${errOpen ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-error" data-errkey="${e(errKey)}" aria-expanded="${errOpen}"><span class="think-leading">${i('alert', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">请求出错</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(String(err.message || '未知错误').split('\n')[0])}</span></span></button>${errOpen ? `<div class="error-body"><pre class="error-detail">${e(err.detail || err.message || '')}</pre></div>` : ''}</div>`; })() : ''}${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.role === 'assistant' && m.tokens ? `<span class="message-meta">${CS.num(m.contextTokens || m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn${m.feedback && m.feedback.rating === 'up' ? ' rated rated-up' : ''}" role="button" data-action="rate-message" data-id="${idxOf}" data-rating="up" title="点赞">${i('thumbup','',13)}</span><span class="icon-btn${m.feedback && m.feedback.rating === 'down' ? ' rated rated-down' : ''}" role="button" data-action="rate-message" data-id="${idxOf}" data-rating="down" title="点踩">${i('thumbdown','',13)}</span><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="branch-chat" data-id="${idxOf}" title="分支到新聊天">${i('workflow','',13)}</span><span class="icon-btn danger-hover" role="button" data-action="delete-message" data-id="${idxOf}" title="删除消息">${i('trash','',13)}</span></span></div>`}</div></div></div>`;
