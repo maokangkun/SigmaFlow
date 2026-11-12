@@ -1356,6 +1356,7 @@ class ScienceAPI:
         request_id: str,
         state: dict,
         start_seq: int,
+        take_token: bool = True,
     ) -> None:
         """journal 消费循环: 从 start_seq 起向连接推送事件直至终态。
 
@@ -1366,12 +1367,17 @@ class ScienceAPI:
         任务的执行与终态兑底归档完全不受连接生命周期影响。
         """
         cursor = start_seq if isinstance(start_seq, int) and start_seq >= -1 else -1
-        # 令牌抢占: 同一 state 同时只允许一个 pump 推送。chat.replay 再次
+        # 令牌抢占: 同一 state 同时只允许一个权威 pump 推送。chat.replay 再次
         # 到达时旧 pump 在下一个事件前发现令牌易主即静默退出, 防止重复
-        # 流(如双标签页/重连竞态)把事件翻倍渲染
-        state["pump_next"] = int(state.get("pump_next") or 0) + 1
-        token = state["pump_next"]
-        state["pump_token"] = token
+        # 流(如双标签页/重连竞态)把事件翻倍渲染。
+        # take_token=False 为观察者模式(chat.observe): 只读 journal 尾部
+        # 续播新增事件, 不参与抢占竞争 —— 刷新后的页面接入实时流不会
+        # 掐断原发起连接的推送
+        token = 0
+        if take_token:
+            state["pump_next"] = int(state.get("pump_next") or 0) + 1
+            token = state["pump_next"]
+            state["pump_token"] = token
         while True:
             # 停止请求(经 state 置位, 跨连接生效): 补发 stopped 终态
             if state.get("stop") and not state.get("terminal"):
@@ -1386,7 +1392,7 @@ class ScienceAPI:
                 await asyncio.sleep(0.05)
                 continue
             for kind, value in items:
-                if state.get("pump_token") != token:
+                if take_token and state.get("pump_token") != token:
                     # 已被更新的 pump 抢占: 本连接不再是权威订阅方
                     return
                 cursor += 1
@@ -3947,6 +3953,43 @@ class ScienceAPI:
                         except Exception:
                             pass
                     await reply("chat.stop.ack", request_id, {"stopped": True})
+                elif action == "chat.observe":
+                    # 页面刷新后的实时流接棒: 按 runId 找到运行中的 journal,
+                    # 从头全量重放 + 续播到终态。重放走内存 journal, 毫秒级
+                    # 追平; 前端在首个事件到达时把存档基线行重置为空, 从零
+                    # 重建块时间线(与发起端同构), 不存在快进对齐的缺口问题。
+                    # 观察者 pump 不抢占令牌, 原发起连接的推送不受影响;
+                    # 运行已结束/journal 失效时回 error, 前端回退存档轮询。
+                    _obs_run = str(data.get("runId") or "")
+                    _obs_state = _find_active_state(
+                        self._active_runs, _current_user(), _obs_run
+                    )
+                    if not isinstance(_obs_state, dict) or "journal" not in _obs_state:
+                        await fail(
+                            request_id,
+                            "该会话当前没有正在运行的回复，将从会话存档同步最新内容",
+                        )
+                        return
+                    # 观察键挂进 journal 表(非 active_runs): 断线后 chat.replay
+                    # 按本连接 requestId 可续播观察流, 且不影响互斥/steer 查找
+                    self._chat_journals[(_current_user(), request_id)] = _obs_state
+                    _dlog(
+                        "chat.observe",
+                        runId=_obs_run,
+                        seq=len(_obs_state["journal"]) - 1,
+                        terminal=bool(_obs_state.get("terminal")),
+                    )
+                    _obs_task = asyncio.create_task(
+                        self._chat_pump(
+                            ws,
+                            request_id,
+                            _obs_state,
+                            -1,
+                            take_token=False,
+                        )
+                    )
+                    chat_tasks.add(_obs_task)
+                    _obs_task.add_done_callback(chat_tasks.discard)
                 elif action == "chat.replay":
                     # 断线续播: 前端携带最后收到的 seq 重连后按原 requestId
                     # 申请从断点继续推送, 中途缺失的事件无损补齐。

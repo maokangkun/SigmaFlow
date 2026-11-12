@@ -931,6 +931,7 @@
           } catch { /* 网络抖动: 下一轮继续 */ }
         };
         CS._streamPoll = { id, timer: setInterval(poll, 3000) };
+        _observeLiveStream(id, run);
       }
       if (hadLocal) {
         // 同 id 旧 run 整体替换为服务端全量版; 用户消息自带的引用上下文
@@ -1358,6 +1359,188 @@
     pre.innerHTML = `${CS.views.hlJSON(CS.views.prettyJSON(ta.value))}\n`;
     CS.sizeSchemaEditors();
   };
+    // 刷新后的实时流接棒: 会话仍在后台运行时向服务端申请 chat.observe,
+  // 从 journal 尾部续播新增事件 —— 恢复真正的逐字流式渲染, 而不是
+  // 3s 存档轮询的一坨一坨整页闪现。失败(已结束/journal 失效/WS 断)时
+  // 静默回退轮询(轮询始终保留作兜底, 此处不关它)。
+  function _observeLiveStream(id, run, attempt = 0) {
+    // reload 后 HTTP 存档先到、WS 可能尚未握完手: 未连接时等连接就绪再试
+    // (上限 5 次 × 1s), 仍失败回退存档轮询。等待期不走幂等检查 —— 否则
+    // 重试会被自己设置的标记挡死(永远挂不上观察)
+    if (!CS.api.ws.open() && attempt < 5) {
+      CS._observing = { id, waiting: true };
+      setTimeout(() => _observeLiveStream(id, run, attempt + 1), 1000);
+      return;
+    }
+    if (CS._observing?.id === id && !CS._observing?.waiting) return;  // 已有活跃观察
+    CS._observing = { id };
+    const visible = () => CS.state.currentRunId === id && CS.ui.route === 'chat';
+    // 目标消息动态取: 轮询补挂/快照替换可能换对象, 每次事件都重新定位尾条流式行
+    const liveReply = () => {
+      const m = run.messages[run.messages.length - 1];
+      return m && m.role === 'assistant' && m.streaming ? m : null;
+    };
+    let renderAt = 0;
+    // 全量重放接棒: 首个事件到达时把存档基线重置为空, 从零重建块时间线
+    // (与发起端同构); 重放走内存 journal 毫秒级追平, 不闪。同时停掉存档
+    // 轮询 —— 轮询的 3s 快照整条覆盖会与实时增量互写, 正文来回跳。
+    let rebased = false;
+    const rebaseOnce = () => {
+      if (rebased) return;
+      rebased = true;
+      const m = liveReply();
+      if (m) { m.blocks = []; m.content = ''; m.reasoning = ''; m.tools = []; m.asks = []; m.deliverables = []; m.tokens = 0; }
+      if (CS._streamPoll?.id === id) { clearInterval(CS._streamPoll.timer); CS._streamPoll = null; }
+    };
+    const liveRender = () => {
+      const m = liveReply();
+      if (!m || !visible() || Date.now() - renderAt < 120) return;
+      renderAt = Date.now();
+      const follow = nearBottom() && !CS.ui.followLock && CS.state.settings.autoScroll !== false;
+      if (!updateStreamingDom(m)) CS.render();
+      if (follow) scrollToLatest();
+    };
+    const toolEvent = (t, reqId) => {
+      const m = liveReply();
+      if (!m) return;
+      CS.liveBlocks.pushTool(m, run, t, reqId);  // compact 分支可能重建消息对象, 事件级落盘在 pushTool 内
+      CS.liveBlocks.mirror(m);
+      CS.save();  // 工具事件落盘, 观察端与发起端同等防丢
+      const follow = visible() && nearBottom() && !CS.ui.followLock && CS.state.settings.autoScroll !== false;
+      if (visible()) CS.render();
+      if (follow) scrollToLatest();
+    };
+    CS.api.ws.chat(
+      { _action: 'chat.observe', runId: id },
+      delta => { rebaseOnce(); const m = liveReply(); if (!m) return; CS.liveBlocks.pushDelta(m, delta); CS.liveBlocks.mirror(m); m.tokens = (m.tokens || 0) + ((delta.match(/[\u3400-\u9fff\u3000-\u303f\uff00-\uffef]/g) || []).length + (delta.length - (delta.match(/[\u3400-\u9fff\u3000-\u303f\uff00-\uffef]/g) || []).length) / 4); liveRender(); },
+      think => { rebaseOnce(); const m = liveReply(); if (!m) return; CS.liveBlocks.pushThink(m, think); CS.liveBlocks.mirror(m); liveRender(); },
+      (t, reqId) => { rebaseOnce(); toolEvent(t, reqId); },
+      null,
+      usage => { rebaseOnce(); const m = liveReply(); if (m && usage.promptTokens) { m.promptTokens = usage.promptTokens; if (visible() && Date.now() - renderAt > 120) { renderAt = Date.now(); CS.render(); } } if (usage.cacheTokens != null && liveReply()) liveReply().cacheTokens = usage.cacheTokens; },
+      null, null,
+      sd => {
+        // 引导插话回显: 与发起端同一条路径, 按 steerId 去重(重放不重复)
+        const txt = String(sd.text || '');
+        const sid = String(sd.id || '');
+        if (!txt || (sid && run.messages.some(m2 => m2.steerId === sid))) return;
+        run.messages.push({ role: 'user', content: txt, steering: true, ...(sid ? { steerId: sid } : {}), at: sd.at || new Date().toISOString() });
+        CS.save();
+        if (visible()) CS.render();
+      }
+    ).then(() => {
+      // 终态到达: 重放构建的内容就是完整终版(与服务端兑底归档同源), 直接
+      // 收尾即可 —— 不再 loadRemoteConversation: done 事件先于兑底归档落库
+      // 到达, 立即回拉会取到旧 streaming 快照, 把已流完的正文推倒重来
+      if (CS._observing?.id === id) CS._observing = null;
+      if (CS._streamPoll?.id === id) { clearInterval(CS._streamPoll.timer); CS._streamPoll = null; }
+      const m = run.messages[run.messages.length - 1];
+      if (m && m.role === 'assistant') delete m.streaming;
+      run.status = 'complete';
+      CS.save(); CS.render();
+      syncConversation(run);
+    }).catch(() => {
+      if (CS._observing?.id === id) CS._observing = null;  // 回退轮询兜底
+    });
+  }
+  // 流式块累积的唯一实现(sendChatMessage 实时流与刷新后的 observe 接棒共用):
+// delta/think/tool/deliverables/present/webview/sysnote/compact/ask 事件
+// 按序累积进目标 assistant 消息的块时间线, mirror() 同步 content/tools 等摘要字段
+CS.liveBlocks = {
+  mirror(reply) {
+    reply.content = reply.blocks.filter(b => b.type === 'text').map(b => b.text).join('');
+    reply.reasoning = reply.blocks.filter(b => b.type === 'think').map(b => b.text).join('');
+    reply.tools = reply.blocks.filter(b => b.type === 'tool').map(b => ({ name: b.name, args: b.args, result: b.result, isError: !!b.isError }));
+    reply.asks = reply.blocks.filter(b => b.type === 'ask').map(b => ({ id: b.id, questions: b.questions, answered: !!b.answered, result: b.result || '', ...(b.answers ? { answers: b.answers } : {}) }));
+    reply.deliverables = reply.blocks.filter(b => b.type === 'deliverables').flatMap(b => b.files || []);
+  },
+  pushThink(reply, think) {
+    const last = reply.blocks[reply.blocks.length - 1];
+    if (last && last.type === 'think') last.text += think;
+    else reply.blocks.push({ type: 'think', text: think, at: Date.now() });
+  },
+  pushDelta(reply, delta) {
+    const last = reply.blocks[reply.blocks.length - 1];
+    if (last && last.type === 'text') last.text += delta;
+    else reply.blocks.push({ type: 'text', text: delta, at: Date.now() });
+  },
+  pushTool(reply, run, t, reqId) {
+    // 压缩两阶段走块内嵌: 开始往当前流式 reply 的块时间线推空 compact 块
+    // (渲染成"正在压缩会话"等待卡), 完成时把摘要填进该块 — 卡的位置与
+    // 压缩实际发生的时刻一致, 不再出现插到回复消息前面的错位
+    if (t.kind === 'compactStart') {
+      const lastMsg = run.messages[run.messages.length - 1];
+      if (lastMsg && lastMsg.streaming && Array.isArray(lastMsg.blocks)) {
+        if (lastMsg.blocks.some(b2 => b2 && b2.type === 'compact' && !String(b2.text || '').trim())) return;  // 防重
+        lastMsg.blocks.push({ type: 'compact', text: '', at: Date.now() });
+        CS.save(); if (visible()) CS.render();
+        return;
+      }
+      return;  // 没有可嵌入的流式回复时静默(等待块由完成事件直接建)
+    }
+    if (t.kind === 'compact' && t.text) {
+      const target = run.messages.find(m => Array.isArray(m.blocks) && m.blocks.some(b2 => b2 && b2.type === 'compact' && !String(b2.text || '').trim()));
+      if (target) {
+        const empty = target.blocks.find(b2 => b2.type === 'compact' && !String(b2.text || '').trim());
+        empty.text = String(t.text);
+        empty.end = Date.now();
+        CS.save(); if (visible()) CS.render();
+        return;
+      }
+      // 无等待块(事件重放/HTTP 快路径): 嵌入当前流式或最后一条回复
+      const lastMsg = run.messages[run.messages.length - 1];
+      const targetMsg = lastMsg && lastMsg.role === 'assistant' && Array.isArray(lastMsg.blocks) ? lastMsg : null;
+      if (targetMsg && !targetMsg.blocks.some(b2 => b2 && b2.type === 'compact' && String(b2.text || '') === String(t.text))) {
+        targetMsg.blocks.push({ type: 'compact', text: String(t.text), at: Date.now() });
+        CS.save(); CS.render();
+        return;
+      }
+      return;
+    }
+    // 产出文件行(dsh deliverables 思路): 后到的事件携带全量清单, 移除旧块重挂尾部
+    if (t.kind === 'deliverables' && Array.isArray(t.files)) {
+      reply.blocks = reply.blocks.filter(b => b.type !== 'deliverables');
+      if (t.files.length) reply.blocks.push({ type: 'deliverables', files: t.files });
+      return;
+    }
+    // sysnote: agent 循环注入的 [System] 提示(nudge/finalize/goal/后台结果回灌)
+    if (t.kind === 'sysnote') {
+      reply.blocks.push({ type: 'sysnote', text: String(t.text || ''), at: Date.now() });
+      return;
+    }
+    // 引导未送达(轮次预算耗尽后才排到的插话): 显式提示, 不静默吞
+    if (t.kind === 'steerDropped') {
+      reply.blocks.push({ type: 'sysnote', text: `[Steering] ${t.count} 条引导消息未送达模型(本次回复的轮次预算已用尽)：${(t.texts || []).join(' / ')}`, at: Date.now() });
+      return;
+    }
+    // present: 模型主动呈现的富媒介文件卡片(typ 字段为将来的非文件形态预留)
+    if (t.kind === 'present') {
+      reply.blocks.push({ type: 'present', typ: t.typ || 'file', path: t.path, name: t.name, ext: t.ext, klass: t.klass, size: t.size, title: t.title, note: t.note, pid: run?.projectId || CS.state.projectId, at: Date.now() });
+      return;
+    }
+    if (t.kind === 'webview') {
+      reply.blocks.push({ type: 'webview', mode: t.mode || 'remote', url: t.url, path: t.path, sid: t.sid, title: t.title, note: t.note, height: t.height, live: t.live ? 1 : 0, pid: run?.projectId || CS.state.projectId, at: Date.now() });
+      return;
+    }
+    // 每次工具调用独立成块, 不再合并进之前的工具列表
+    if (t.kind === 'call') {
+      // ask 的通用工具卡跳过: 问题卡片由专门的 ask 事件负责
+      if (t.isAsk) return;
+      reply.blocks.push({ type: 'tool', name: t.name, args: t.args, result: null, at: Date.now() });
+    } else if (t.kind === 'ask') {
+      reply.blocks.push({ type: 'ask', id: t.id, requestId: reqId, questions: Array.isArray(t.questions) ? t.questions : [], answered: false, at: Date.now() });
+    } else {
+      if (t.isAsk) {
+        const ab = [...reply.blocks].reverse().find(b => b.type === 'ask' && !b.answered);
+        if (ab) { ab.answered = true; if (!ab.result) ab.result = t.result; ab.end = Date.now(); return; }
+      }
+      // FIFO 配对: call 整批广播、工具顺序执行, 结果属于最早未收尾的同名调用
+      const ent = reply.blocks.find(b => b.type === 'tool' && b.name === t.name && b.result == null);
+      if (ent) { ent.result = t.result; ent.isError = !!t.isError; if (typeof ent.at === 'number') ent.end = Date.now(); }
+      else reply.blocks.push({ type: 'tool', name: t.name, result: t.result, isError: !!t.isError, at: Date.now() });
+    }
+  },
+};
+
   const updateStreamingDom = reply => {
     // 时间线增量更新: 块类型签名没变时只就地更新生长中的块, 避免整页重渲染;
     // 签名变化(新块出现)则返回 false 让调用方全量渲染
@@ -1597,100 +1780,10 @@
     // 8 次/秒的频率整页重建 innerHTML, 侧栏按钮在 mousedown 与 click 之间被
     // 销毁, 表现为"会话点击没反应/切换不回来"
     const visible = () => CS.state.currentRunId === run.id && CS.ui.route === 'chat';
-    const mirror = () => {
-      reply.content = reply.blocks.filter(b => b.type === 'text').map(b => b.text).join('');
-      reply.reasoning = reply.blocks.filter(b => b.type === 'think').map(b => b.text).join('');
-      reply.tools = reply.blocks.filter(b => b.type === 'tool').map(b => ({ name: b.name, args: b.args, result: b.result, isError: !!b.isError }));
-      reply.asks = reply.blocks.filter(b => b.type === 'ask').map(b => ({ id: b.id, questions: b.questions, answered: !!b.answered, result: b.result || '', ...(b.answers ? { answers: b.answers } : {}) }));
-      reply.deliverables = reply.blocks.filter(b => b.type === 'deliverables').flatMap(b => b.files || []);
-    };
-    const lastBlock = () => reply.blocks[reply.blocks.length - 1];
-    const pushThink = think => {
-      const last = lastBlock();
-      if (last && last.type === 'think') last.text += think;
-      else reply.blocks.push({ type: 'think', text: think, at: Date.now() });
-    };
-    const pushDelta = delta => {
-      const last = lastBlock();
-      if (last && last.type === 'text') last.text += delta;
-      else reply.blocks.push({ type: 'text', text: delta, at: Date.now() });
-    };
-    const pushTool = (t, reqId) => {
-      // 压缩两阶段走块内嵌: 开始往当前流式 reply 的块时间线推空 compact 块
-      // (渲染成"正在压缩会话"等待卡), 完成时把摘要填进该块 — 卡的位置与
-      // 压缩实际发生的时刻一致, 不再出现插到回复消息前面的错位
-      if (t.kind === 'compactStart') {
-        const lastMsg = run.messages[run.messages.length - 1];
-        if (lastMsg && lastMsg.streaming && Array.isArray(lastMsg.blocks)) {
-          if (lastMsg.blocks.some(b2 => b2 && b2.type === 'compact' && !String(b2.text || '').trim())) return;  // 防重
-          lastMsg.blocks.push({ type: 'compact', text: '', at: Date.now() });
-          CS.save(); if (visible()) CS.render();
-          return;
-        }
-        return;  // 没有可嵌入的流式回复时静默(等待块由完成事件直接建)
-      }
-      if (t.kind === 'compact' && t.text) {
-        const target = run.messages.find(m => Array.isArray(m.blocks) && m.blocks.some(b2 => b2 && b2.type === 'compact' && !String(b2.text || '').trim()));
-        if (target) {
-          const empty = target.blocks.find(b2 => b2.type === 'compact' && !String(b2.text || '').trim());
-          empty.text = String(t.text);
-          empty.end = Date.now();
-          CS.save(); if (visible()) CS.render();
-          return;
-        }
-        // 无等待块(事件重放/HTTP 快路径): 嵌入当前流式或最后一条回复
-        const lastMsg = run.messages[run.messages.length - 1];
-        const targetMsg = lastMsg && lastMsg.role === 'assistant' && Array.isArray(lastMsg.blocks) ? lastMsg : null;
-        if (targetMsg && !targetMsg.blocks.some(b2 => b2 && b2.type === 'compact' && String(b2.text || '') === String(t.text))) {
-          targetMsg.blocks.push({ type: 'compact', text: String(t.text), at: Date.now() });
-          CS.save(); CS.render();
-          return;
-        }
-        return;
-      }
-      // 产出文件行(dsh deliverables 思路): 后到的事件携带全量清单, 移除旧块重挂尾部
-      if (t.kind === 'deliverables' && Array.isArray(t.files)) {
-        reply.blocks = reply.blocks.filter(b => b.type !== 'deliverables');
-        if (t.files.length) reply.blocks.push({ type: 'deliverables', files: t.files });
-        return;
-      }
-      // sysnote: agent 循环注入的 [System] 提示(nudge/finalize/goal/后台结果回灌)
-      if (t.kind === 'sysnote') {
-        reply.blocks.push({ type: 'sysnote', text: String(t.text || ''), at: Date.now() });
-        return;
-      }
-      // 引导未送达(轮次预算耗尽后才排到的插话): 显式提示, 不静默吞
-      if (t.kind === 'steerDropped') {
-        reply.blocks.push({ type: 'sysnote', text: `[Steering] ${t.count} 条引导消息未送达模型(本次回复的轮次预算已用尽)：${(t.texts || []).join(' / ')}`, at: Date.now() });
-        return;
-      }
-      // present: 模型主动呈现的富媒介文件卡片(typ 字段为将来的非文件形态预留)
-      if (t.kind === 'present') {
-        reply.blocks.push({ type: 'present', typ: t.typ || 'file', path: t.path, name: t.name, ext: t.ext, klass: t.klass, size: t.size, title: t.title, note: t.note, pid: run?.projectId || CS.state.projectId, at: Date.now() });
-        return;
-      }
-      if (t.kind === 'webview') {
-        reply.blocks.push({ type: 'webview', mode: t.mode || 'remote', url: t.url, path: t.path, sid: t.sid, title: t.title, note: t.note, height: t.height, live: t.live ? 1 : 0, pid: run?.projectId || CS.state.projectId, at: Date.now() });
-        return;
-      }
-      // 每次工具调用独立成块, 不再合并进之前的工具列表
-      if (t.kind === 'call') {
-        // ask 的通用工具卡跳过: 问题卡片由专门的 ask 事件负责
-        if (t.isAsk) return;
-        reply.blocks.push({ type: 'tool', name: t.name, args: t.args, result: null, at: Date.now() });
-      } else if (t.kind === 'ask') {
-        reply.blocks.push({ type: 'ask', id: t.id, requestId: reqId, questions: Array.isArray(t.questions) ? t.questions : [], answered: false, at: Date.now() });
-      } else {
-        if (t.isAsk) {
-          const ab = [...reply.blocks].reverse().find(b => b.type === 'ask' && !b.answered);
-          if (ab) { ab.answered = true; if (!ab.result) ab.result = t.result; ab.end = Date.now(); return; }
-        }
-        // FIFO 配对: call 整批广播、工具顺序执行, 结果属于最早未收尾的同名调用
-        const ent = reply.blocks.find(b => b.type === 'tool' && b.name === t.name && b.result == null);
-        if (ent) { ent.result = t.result; ent.isError = !!t.isError; if (typeof ent.at === 'number') ent.end = Date.now(); }
-        else reply.blocks.push({ type: 'tool', name: t.name, result: t.result, isError: !!t.isError, at: Date.now() });
-      }
-    };
+    const mirror = () => CS.liveBlocks.mirror(reply);
+    const pushThink = think => CS.liveBlocks.pushThink(reply, think);
+    const pushDelta = delta => CS.liveBlocks.pushDelta(reply, delta);
+    const pushTool = (t, reqId) => CS.liveBlocks.pushTool(reply, run, t, reqId);
     const reply = { role: 'assistant', content: '', blocks: [], streaming: true, at: new Date().toISOString(), model: CS.state.settings.model || '默认模型' };
     run.messages.push(reply);
     CS.save(); CS.render();

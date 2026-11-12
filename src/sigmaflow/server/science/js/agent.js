@@ -318,6 +318,9 @@
     chat(payload, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem, onSteer) {
       if (!this.open()) return Promise.reject(new Error('WebSocket 未连接。'));
       const requestId = String(++this.seq);
+      // 动作可覆盖: chat.observe(刷新后的实时流接棒)复用同一套 entry/事件
+      // 路由/断线续播机制, 只是服务端不起新任务而是按 runId 续播 journal
+      const action = payload._action || 'chat.send';
       // runId 随请求记录: 断线自动重连后按 runId 拉取会话存档合并终态
       this.activeChats.add({ requestId, runId: payload.runId || '' });
       const ws = this;  // Promise executor 内 this 不指向 CS.api.ws
@@ -345,7 +348,8 @@
         // ask 等待期不计常规空闲: 服务端 ask 超时为 1 小时, 前端以 2 小时兜底防永久挂起
         entry.pauseIdle = () => { clearTimeout(entry.timer); entry.timer = setTimeout(fail, 2 * 60 * 60 * 1000); };
         CS.api.ws.pending.set(requestId, entry);
-        ws.socket.send(JSON.stringify({ action: 'chat.send', requestId, ...payload }));
+        const { _action: _skipAction, ...rest } = payload;
+        ws.socket.send(JSON.stringify({ action, requestId, ...rest }));
       });
     },
     // 停止所有进行中的生成: 服务端以已生成内容收尾并下发 chat.done
