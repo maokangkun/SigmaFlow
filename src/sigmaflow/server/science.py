@@ -4383,9 +4383,24 @@ class ScienceAPI:
                                         elif _budget_cut:
                                             _emit("error", _agent_info["error"])
                                         else:
+                                            # 真错误(网关失败/Max tokens 等): error 事件
+                                            # 只带真实原因 —— 拿 _final_text 顶替错误文案
+                                            # 会把"已正常流出的正文尾段"整个塞进 error
+                                            # 字段, 前端渲染成红错块, 用户看到一条
+                                            # 成功回复被标成"请求出错"。正文若尚未流
+                                            # 出(部分场景 agent 只返回不流式), 先以
+                                            # delta 正常流出, 错误仍以错误形态呈现
+                                            if (
+                                                _final_text
+                                                and "".join(
+                                                    state["content"] or []
+                                                ).strip()
+                                                != _final_text.strip()
+                                            ):
+                                                on_delta(_final_text)
                                             _emit(
                                                 "error",
-                                                _final_text or _agent_info["error"],
+                                                str(_agent_info["error"])[:2000],
                                             )
                                 elif not state["terminal"]:
                                     _emit("done", {})
