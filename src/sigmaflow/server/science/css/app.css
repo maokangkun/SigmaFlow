@@ -241,7 +241,7 @@ html:has(.auth-page){scrollbar-gutter:auto}
    伸出该区域 —— 缺口为会话宽的 14%, 以气泡包含块(≈86%)为百分比基准即 14/86 */
 .msg-block.agent-block:has(.steer-insert) .steer-insert{margin-right:calc(-14% / 0.86)}
 .steer-insert{max-width:86%;width:fit-content;margin:12px 0 14px auto;background:#e9eaf1;border-radius:14px 14px 4px 14px;padding:10px 14px;font-size:12px;line-height:1.9;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}
-.steer-insert .steer-badge{display:inline-flex;margin-right:8px;vertical-align:-3px}
+.steer-insert .steer-badge{display:inline-flex;margin-right:8px;vertical-align:1px}
 .proc-chev{display:inline-block;flex:0 0 auto;width:7px;height:7px;border:solid var(--muted);border-width:0 1.6px 1.6px 0;transform:rotate(-45deg) translateY(-.5px);transition:transform .15s;margin:0 4px 0 1px}
 .proc-chev-open{transform:rotate(45deg) translateY(-.5px)}
 .proc-fold-title{font-weight:600;color:var(--text)}

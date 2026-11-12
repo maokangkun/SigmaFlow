@@ -1268,7 +1268,9 @@ V.ctxRing = () => {
                   if (!pend.length) return;
                   const gKey = `${_procKey}|g${g}`;
                   const open = !!(CS.ui.procOpen && CS.ui.procOpen.has(gKey));
-                  out += open ? pend.map(([b, bi]) => seg(b, bi)).join('') : _foldBar(gKey, pend.length, pendTools, open);
+                  // 条常驻: 展开态也显示(chev 朝下), 过程块跟在条后, 再点收起
+                  out += _foldBar(gKey, pend.length, pendTools, open);
+                  if (open) out += pend.map(([b, bi]) => seg(b, bi)).join('');
                   pend = []; pendTools = 0;
                 };
                 blocks.forEach((b, bi) => {
