@@ -5218,6 +5218,15 @@ class ScienceProjectStore:
                                     ),
                                 }
                             )
+                        elif _t == "steer":
+                            # 内嵌引导消息块: 保留 steerId 供前端去重
+                            _sb = {
+                                "t": "steer",
+                                "x": _clip(str(b.get("x", b.get("text", ""))), 6000),
+                            }
+                            if b.get("id"):
+                                _sb["id"] = _clip(str(b.get("id")), 64)
+                            saved_blocks.append(_sb)
                         elif _t == "sysnote":
                             saved_blocks.append(
                                 {
@@ -6225,6 +6234,17 @@ def _archive_row_from_journal(state, model_name: str, streaming: bool = True):
         elif kind == "error":
             # 终态错误物化为行的 error 字段: 刷新后红错块可见
             row_error = str(value or "")[:2000] or None
+        elif kind == "steer":
+            # 引导消息内嵌块: 刷新后从存档恢复时仍显示在插入时刻的位置
+            _sv = value if isinstance(value, dict) else {}
+            if str(_sv.get("text") or "").strip():
+                blocks.append(
+                    {
+                        "t": "steer",
+                        "x": str(_sv.get("text") or ""),
+                        "id": str(_sv.get("id") or ""),
+                    }
+                )
         elif kind == "tool" and isinstance(value, dict):
             k = value.get("kind")
             if k in ("call", "result"):

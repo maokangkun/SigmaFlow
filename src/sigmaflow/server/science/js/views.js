@@ -1157,6 +1157,11 @@ V.ctxRing = () => {
                   const _ecol = !(CS.ui.embedCompactExpanded || (CS.ui.embedCompactExpanded = new Set())).has(_eck);
                   return `<div class="compact-card${_ecol ? ' compact-folded' : ''}" data-bi="${bi}"><button type="button" class="compact-head" data-action="toggle-embed-compact" data-id="${e(_eck)}" aria-expanded="${_ecol ? 'false' : 'true'}" title="${_ecol ? '展开摘要' : '折叠摘要'}"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span></button>${_ecol ? '' : `<div class="compact-body md-body"><div class="compact-subline mono">${e(_chead)}</div>${CS.markdown(_cc.split('\n').slice(1).join('\n'))}</div>`}</div>`;
                 }
+                if (b.type === 'steer') {
+                  // 内嵌引导气泡: 显示在插入时刻, 把一轮回复分成两段;
+                  // 右对齐 user 气泡样式 + 引导徽章
+                  return `<div class="steer-insert"><span class="steer-badge" title="引导消息：生成期间插入，当前回合结束后送达模型">引导</span>${e(String(b.text || ''))}</div>`;
+                }
                 if (b.type === 'ask') return renderAsk(b, bi);
                 if (b.type === 'sysnote') {
                   const _raw = String(b.text || '');

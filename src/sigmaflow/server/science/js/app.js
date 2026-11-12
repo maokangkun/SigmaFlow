@@ -825,6 +825,7 @@
             if (b.t === 'present') return { type: 'present', typ: b.typ || 'file', path: b.path, name: b.name, ext: b.ext, klass: b.klass, size: b.size, title: b.title, note: b.note, pid: b.pid || '' };
             if (b.t === 'webview') return { type: 'webview', mode: b.mode || 'remote', url: b.url, path: b.path, sid: b.sid, title: b.title, note: b.note, height: b.height, live: b.live ? 1 : 0, pid: b.pid || '' };
             if (b.t === 'sysnote') return { type: 'sysnote', text: b.x || '' };
+            if (b.t === 'steer') return { type: 'steer', text: b.x || '', ...(b.id ? { steerId: b.id } : {}) };
             return null;
           }).filter(Boolean);
           // 历史快照行兜底: 服务端早期快照把正文累积进 content 字段而不发
@@ -1465,11 +1466,21 @@
       usage => { rebaseOnce(); const m = liveReply(); if (m && usage.promptTokens) { m.promptTokens = usage.promptTokens; if (visible() && Date.now() - renderAt > 120) { renderAt = Date.now(); CS.render(); } } if (usage.cacheTokens != null && liveReply()) liveReply().cacheTokens = usage.cacheTokens; },
       null, null,
       sd => {
-        // 引导插话回显: 与发起端同一条路径, 按 steerId 去重(重放不重复)
+        // 引导插话回显: 与发起端同一条路径, 按 steerId 去重(重放不重复)。
+        // 内嵌进流式 reply 的块时间线(分割点=插入时刻), 详见 steerEvent
         const txt = String(sd.text || '');
         const sid = String(sd.id || '');
-        if (!txt || (sid && run.messages.some(m2 => m2.steerId === sid))) return;
-        run.messages.push({ role: 'user', content: txt, steering: true, ...(sid ? { steerId: sid } : {}), at: sd.at || new Date().toISOString() });
+        if (!txt) return;
+        const dupRow = sid && run.messages.some(m2 => m2.steerId === sid);
+        const live = liveReply();
+        const dupBlk = sid && live && live.blocks.some(b2 => b2 && b2.type === 'steer' && b2.steerId === sid);
+        if (sid && (dupRow || dupBlk)) return;
+        if (live) {
+          live.blocks.push({ type: 'steer', text: txt, ...(sid ? { steerId: sid } : {}), at: sd.at || new Date().toISOString() });
+          CS.liveBlocks.mirror(live);
+        } else {
+          run.messages.push({ role: 'user', content: txt, steering: true, ...(sid ? { steerId: sid } : {}), at: sd.at || new Date().toISOString() });
+        }
         CS.save();
         if (visible()) CS.render();
       }
@@ -1639,6 +1650,7 @@ CS.liveBlocks = {
         else if (b.type === 'present') out.push({ t: 'present', typ: b.typ || 'file', path: b.path, name: b.name, ext: b.ext, klass: b.klass, size: b.size, title: b.title, note: b.note, pid: b.pid || '' });
         else if (b.type === 'webview') out.push({ t: 'webview', mode: b.mode || 'remote', url: b.url, path: b.path, sid: b.sid, title: b.title, note: b.note, height: b.height, live: b.live ? 1 : 0, pid: b.pid || '' });
         else if (b.type === 'sysnote') out.push({ t: 'sysnote', x: b.text || '' });
+        else if (b.type === 'steer') out.push({ t: 'steer', x: b.text || '', ...(b.steerId ? { id: b.steerId } : {}) });
       });
       return out;
     };
@@ -1904,8 +1916,18 @@ CS.liveBlocks = {
         // 按 steerId 去重: journal 回显与断线重放会各送达一次; 同一文本引导
         // 多次时各是不同 id, 各自渲染(内容去重会把第二条吞掉, 刷新后又出现)
         const sid = String(sd.id || '');
-        if (sid && run.messages.some(m2 => m2.steerId === sid)) return;
-        run.messages.push({ role: 'user', content: txt, steering: true, ...(sid ? { steerId: sid } : {}), at: sd.at || new Date().toISOString() });
+        const dupRow = sid && run.messages.some(m2 => m2.steerId === sid);
+        const dupBlk = sid && reply.blocks.some(b2 => b2 && b2.type === 'steer' && b2.steerId === sid);
+        if (sid && (dupRow || dupBlk)) return;
+        // 引导消息内嵌进回复块时间线: 显示在插入时刻的位置(其后的回应段之前),
+        // 把一轮回复视觉上分成两段 —— 而不是追加在整轮回复之后(那会让分割点
+        // 错位到下一轮)。无流式 reply(罕见, 极端时序)时退回独立消息形态
+        if (reply && reply.streaming) {
+          reply.blocks.push({ type: 'steer', text: txt, ...(sid ? { steerId: sid } : {}), at: sd.at || new Date().toISOString() });
+          CS.liveBlocks.mirror(reply);
+        } else {
+          run.messages.push({ role: 'user', content: txt, steering: true, ...(sid ? { steerId: sid } : {}), at: sd.at || new Date().toISOString() });
+        }
         CS.save();
         if (CS.state.currentRunId === run.id && CS.ui.route === 'chat') CS.render();
       };

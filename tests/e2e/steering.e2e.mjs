@@ -48,7 +48,8 @@ try {
     return {
       assistantCount: r.messages.filter(m => m.role === 'assistant').length,
       streamingCount: r.messages.filter(m => m.streaming).length,
-      steerRows: r.messages.filter(m => m.steering).length,
+      // 引导行形态: 内嵌进回复块时间线(steer 块)或独立 user 行(旧版/fallback), 合计
+      steerRows: r.messages.filter(m => m.steering).length + (r.messages.find(m2 => m2.role === 'assistant' && m2.blocks)?.blocks || []).filter(b => b.type === 'steer').length,
       badge: !!document.querySelector('.steer-badge'),
     };
   });
@@ -79,7 +80,7 @@ try {
   await page.evaluate(id => { CS.navigate('chat', id); }, runId);
   await page.waitForTimeout(4000);
   const after = await page.evaluate(() => ({
-    steerRows: (CS.currentRun()?.messages || []).filter(m => m.steering).length,
+    steerRows: (() => { const rr = CS.currentRun(); if (!rr) return 0; const rows = rr.messages.filter(m => m.steering).length; const reply = [...rr.messages].reverse().find(m2 => m2.role === 'assistant' && m2.blocks); return rows + (reply?.blocks || []).filter(b => b.type === 'steer').length; })(),
     badge: !!document.querySelector('.steer-badge'),
   }));
   log('badge-after-refresh', after);
