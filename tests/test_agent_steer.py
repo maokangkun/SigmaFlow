@@ -61,6 +61,7 @@ def test_inject_returns_false_when_queue_empty():
 # 存档层: 引导行不去重 + steerId 白名单保留(见 review #2/#13)
 # ---------------------------------------------------------------------------
 
+
 def _store_with_conversation(tmp_path):
     from sigmaflow.server.science import ScienceProjectStore
 
@@ -84,8 +85,7 @@ def test_steering_row_skips_content_dedup(tmp_path):
     assert store.archive_user_row("cn-steer", "继续") is False
     # 引导插话: 内容相同也必须落行
     assert (
-        store.archive_user_row("cn-steer", "继续", steering=True, steer_id="s1")
-        is True
+        store.archive_user_row("cn-steer", "继续", steering=True, steer_id="s1") is True
     )
     rows = store.conversations["cn-steer"]["content"]
     assert len(rows) == 2
@@ -105,7 +105,12 @@ def test_upsert_preserves_steering_and_steer_id(tmp_path):
             title="t",
             projectId=None,
             content=[
-                {"role": "user", "content": "看看结果", "steering": True, "steerId": "s9"},
+                {
+                    "role": "user",
+                    "content": "看看结果",
+                    "steering": True,
+                    "steerId": "s9",
+                },
                 {"role": "assistant", "content": "好的"},
             ],
         )

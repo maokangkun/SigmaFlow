@@ -126,9 +126,7 @@ def _run_turn_with_steering(agent, history: list, first_turn: bool = True) -> tu
                 _print_sysnote("将在本回合结束后退出")
                 continue
             queue.append(text)
-            print(
-                f"{Prompt.Tool}[steer] 已排队({len(queue)} 条): {text[:60]}"
-            )
+            print(f"{Prompt.Tool}[steer] 已排队({len(queue)} 条): {text[:60]}")
     except KeyboardInterrupt:
         _print_sysnote("收到中断信号; 等待当前回合收尾(再次 Ctrl+C 可强退)")
         thread.join(timeout=600)
@@ -164,20 +162,26 @@ def cli(
             return
         kind = ev.get("kind")
         if kind == "compact":
-            _print_sysnote(f"会话已压缩: 保留 {ev.get('kept')} 条 / 摘要 {len(str(ev.get('text') or ''))} 字")
+            _print_sysnote(
+                f"会话已压缩: 保留 {ev.get('kept')} 条 / 摘要 {len(str(ev.get('text') or ''))} 字"
+            )
         elif kind == "steerDropped":
             _print_sysnote(
                 f"{ev.get('count')} 条引导消息未送达模型(轮次预算已用尽): "
                 + " / ".join(str(t)[:40] for t in ev.get("texts") or [])
             )
         elif kind == "ask":
-            _print_sysnote("agent 发起了提问(ask); CLI 模式暂不支持交互回答, 请在 web 端处理")
+            _print_sysnote(
+                "agent 发起了提问(ask); CLI 模式暂不支持交互回答, 请在 web 端处理"
+            )
 
     # --model-id: 直连 web 端已配置的网关(md-xxx), 零环境变量可用
     if model_id:
         hit = _resolve_model_store(model_id)
         if hit is None:
-            _print_sysnote(f"未找到模型配置 {model_id}(检查 ~/.sigmaflow/science/models.json), 回退默认连接")
+            _print_sysnote(
+                f"未找到模型配置 {model_id}(检查 ~/.sigmaflow/science/models.json), 回退默认连接"
+            )
         else:
             method = hit["method"]
             model = hit["model"] or model
@@ -238,7 +242,9 @@ def cli(
                 turn_thread.join()
             turns += 1
             try:
-                info, turn_thread = _run_turn_with_steering(agent, history, first_turn=(turns == 1))
+                info, turn_thread = _run_turn_with_steering(
+                    agent, history, first_turn=(turns == 1)
+                )
                 absorb(info)
             except SystemExit:
                 break
@@ -282,7 +288,7 @@ def cli(
                     f"累计生成 {usage['seconds']:.0f}s"
                 )
             case _ if q.startswith(SLASH_CMD.model):
-                arg = query[len(SLASH_CMD.model):].strip()
+                arg = query[len(SLASH_CMD.model) :].strip()
                 if not arg:
                     cur = f"当前: {agent.model} @ {agent.client.base_url}"
                     entries = _list_model_store()
@@ -306,11 +312,8 @@ def cli(
                             f"已切换: {hit['model']} @ {str(hit['baseUrl'])[:48]}"
                         )
             case _ if q.startswith(SLASH_CMD.save):
-                arg = query[len(SLASH_CMD.save):].strip()
-                out_dir = Path(
-                    arg
-                    or Path.home() / "sigmaflow-cli-sessions"
-                )
+                arg = query[len(SLASH_CMD.save) :].strip()
+                out_dir = Path(arg or Path.home() / "sigmaflow-cli-sessions")
                 if out_dir.is_dir() or arg:
                     out = out_dir
                 else:
@@ -340,7 +343,9 @@ def cli(
                     role = m.get("role", "?")
                     body = str(m.get("content") or "")
                     tools = [t.get("name", "?") for t in m.get("tool_calls") or []]
-                    tag = f"[{idx}] {role}" + (f" ({', '.join(tools)})" if tools else "")
+                    tag = f"[{idx}] {role}" + (
+                        f" ({', '.join(tools)})" if tools else ""
+                    )
                     text = body if len(body) <= 200 else body[:200] + "…"
                     print(f"  {tag}: {text}")
             case SLASH_CMD.compact:

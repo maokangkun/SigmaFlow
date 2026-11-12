@@ -149,7 +149,6 @@ def _kill_proc_tree(proc) -> None:
             pass
 
 
-
 # bash 工具承诺的就是 bash: shell=True 会退到 /bin/sh(dash), [[ ]]、
 # 进程替换 <()、数组等 bashism 直接语法报错。显式 ["bash", "-c", ...]。
 def _shell_argv(command: str):

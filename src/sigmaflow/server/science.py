@@ -127,9 +127,7 @@ from .science_fs import (
 _CONVERSATION_PAGE_MAX_BYTES = 4_000_000
 
 
-def _find_active_state(
-    active_runs: dict, user: str, run_id: str
-) -> Optional[dict]:
+def _find_active_state(active_runs: dict, user: str, run_id: str) -> Optional[dict]:
     """按 (用户, 会话) 找在途回复的 state; 无则 None。
 
     chat.steer 的引导投放与 chat.send 的同会话互斥共用本查找。
@@ -574,9 +572,7 @@ _CHAT_JOURNAL_MAX = 16
 # ---------------------------------------------------------------------------
 _LOGGER_SF = logging.getLogger("sigmaflow")
 try:  # 环境变量在导入期读取一次; 运行中调整请用 logging API
-    _LOGGER_SF.setLevel(
-        str(os.environ.get("SIGMAFLOW_LOG_LEVEL") or "INFO").upper()
-    )
+    _LOGGER_SF.setLevel(str(os.environ.get("SIGMAFLOW_LOG_LEVEL") or "INFO").upper())
 except Exception:
     _LOGGER_SF.setLevel(logging.INFO)
 
@@ -584,8 +580,10 @@ except Exception:
 def _dlog(event: str, level: int = logging.INFO, **kv) -> None:
     parts = []
     for key, value in kv.items():
-        text = value if isinstance(value, str) else json.dumps(
-            value, ensure_ascii=False, default=str
+        text = (
+            value
+            if isinstance(value, str)
+            else json.dumps(value, ensure_ascii=False, default=str)
         )
         if len(text) > 200:
             text = text[:200] + "…"
@@ -593,6 +591,8 @@ def _dlog(event: str, level: int = logging.INFO, **kv) -> None:
             text = '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
         parts.append(f"{key}={text}")
     _LOGGER_SF.log(level, "[sf] %s%s", event, (" " + " ".join(parts)) if parts else "")
+
+
 _LITELLM_DB: Optional[Dict[str, dict]] = None
 _LITELLM_MODULE: Any = None  # 懒加载的 litellm 模块; 未加载为 None, 导入失败为 False
 _LITELLM_LOOKUP_CACHE: Dict[str, Optional[dict]] = {}
@@ -3977,9 +3977,7 @@ class ScienceAPI:
                     # steer 队列, 由 agent 在当前回合(工具批)结束、下一次
                     # 模型调用前注入 —— 不再并发跑第二个交叉回复。事件回显
                     # 进 journal, 所有订阅端(含发送者)以同一条 user 消息渲染。
-                    _steer_text = _clip(
-                        str(data.get("text") or "").strip(), 6000
-                    )
+                    _steer_text = _clip(str(data.get("text") or "").strip(), 6000)
                     _steer_run = str(data.get("runId") or "")
                     # steerId: 引导行的唯一标识 —— 前端按它去重(journal 回显与
                     # 断线重放各送达一次时不会渲染两条), 存档行也带(刷新后徽章
@@ -4002,7 +4000,11 @@ class ScienceAPI:
                             _rec = _hit_state.get("run_rec")
                             if isinstance(_rec, dict):
                                 _rec.setdefault("steers", []).append(
-                                    {"id": _steer_id, "at": int(time.time() * 1000), "len": len(_steer_text)}
+                                    {
+                                        "id": _steer_id,
+                                        "at": int(time.time() * 1000),
+                                        "len": len(_steer_text),
+                                    }
                                 )
                                 self.project_store.update_run(_steer_run)
                             _dlog(
@@ -4506,18 +4508,28 @@ class ScienceAPI:
                                         1 if _counts.get("delta") else 0,
                                     )
                                     _st = state.get("stats") or {}
-                                    _rec["completionTokens"] = _st.get("completion_tokens") or 0
+                                    _rec["completionTokens"] = (
+                                        _st.get("completion_tokens") or 0
+                                    )
                                     _rec["promptTokens"] = _st.get("prompt_tokens") or 0
-                                    _rec["cacheTokens"] = _st.get("cache_read_tokens") or 0
+                                    _rec["cacheTokens"] = (
+                                        _st.get("cache_read_tokens") or 0
+                                    )
                                     _rec["endedAt"] = int(time.time() * 1000)
-                                    _rec["elapsedMs"] = _rec["endedAt"] - int(_rec.get("startedAt") or 0)
+                                    _rec["elapsedMs"] = _rec["endedAt"] - int(
+                                        _rec.get("startedAt") or 0
+                                    )
                                     _rec["delivered"] = bool(state.get("delivered"))
                                     _rec["status"] = (
-                                        "stopped" if state.get("stop") or state.get("stopped")
-                                        else "error" if state.get("_failed")
+                                        "stopped"
+                                        if state.get("stop") or state.get("stopped")
+                                        else "error"
+                                        if state.get("_failed")
                                         else "done"
                                     )
-                                    self.project_store.update_run(str(data.get("runId") or ""))
+                                    self.project_store.update_run(
+                                        str(data.get("runId") or "")
+                                    )
                                     _dlog(
                                         "chat.done",
                                         user=_current_user(),
@@ -4532,7 +4544,9 @@ class ScienceAPI:
                                         delivered=_rec["delivered"],
                                     )
                                 except Exception as _log_err:  # noqa: BLE001
-                                    _dlog("run.record.failed", error=str(_log_err)[:120])
+                                    _dlog(
+                                        "run.record.failed", error=str(_log_err)[:120]
+                                    )
                                 # 终态落库: 完整 journal 合成终态行(streaming=False),
                                 # 原位替换流式快照行——刷新过页面的用户再次拉存档
                                 # 即得到最终完整内容(正常完成/停止/出错都适用)
