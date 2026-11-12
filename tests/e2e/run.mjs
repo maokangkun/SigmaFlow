@@ -8,7 +8,14 @@ import { fileURLToPath } from 'node:url';
 const dir = path.dirname(fileURLToPath(import.meta.url));
 if (!fs.existsSync(path.join(dir, 'node_modules/playwright-core'))) {
   console.log('首次运行: 安装 playwright-core(复用本机 chromium, 不下载浏览器)...');
-  execSync('npm install --no-audit --no-fund', { cwd: dir, stdio: 'inherit' });
+  try {
+    execSync('npm install --no-audit --no-fund', { cwd: dir, stdio: 'inherit' });
+  } catch (e) {
+    // 离线/registry 不可达: 按套件"环境缺失不挂红"的哲学整体 SKIP,
+    // 而不是以一屏 npm 报错砸红 make test-all
+    console.log('SKIP: npm install 失败(离线?), E2E 跳过 —— 有网后重跑会自动补装');
+    process.exit(0);
+  }
 }
 
 const suites = fs.readdirSync(dir).filter(f => f.endsWith('.e2e.mjs')).sort();

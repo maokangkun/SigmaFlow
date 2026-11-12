@@ -36,7 +36,14 @@ export function skip(msg) {
 /** playwright-core 不下载浏览器: 复用本机 ~/.cache/ms-playwright 的 chromium。 */
 export function chromiumPath() {
   const cache = path.join(os.homedir(), '.cache/ms-playwright');
-  const dirs = fs.readdirSync(cache).filter(d => /^chromium-\d+$/.test(d)).sort();
+  // 目录整体不存在(从未装过 playwright)时 readdirSync 会 ENOENT 崩掉整个套件,
+  // 走不到 launch() 的 skip —— 读失败一律视为无 chromium, 交给 skip 兜底
+  let dirs = [];
+  try {
+    dirs = fs.readdirSync(cache).filter(d => /^chromium-\d+$/.test(d)).sort();
+  } catch {
+    return null;
+  }
   for (const d of dirs.reverse()) {
     for (const sub of ['chrome-linux64/chrome', 'chrome-linux/chrome']) {
       const p = path.join(cache, d, sub);

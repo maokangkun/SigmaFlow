@@ -6,13 +6,18 @@
 |---|---|---|
 | 包级单元/集成 | `make tests`（pytest） | agent 循环、管线引擎、压缩器、webview 工具、science 存储耐久、steering 注入与互斥等 |
 | Science 回归 | `make science-regression` | 后端契约（HTTP+SSE+WS）+ 前端语法与纯函数检查（check.mjs）+ 几何助手单测（unittest.mjs）+ dist 一致性校验 |
-| 浏览器 E2E | `make e2e` | 见下文 |
+| E2E 冒烟 | `make e2e-smoke` | 自起一次性本地服务（空模型库），纯前端套件照跑、需模型套件自跳过 —— 已纳入 `make test-all`（pre-push 门禁） |
+| 浏览器 E2E 全套 | `make e2e` | 对常驻服务跑全部套件（见下文） |
 | 覆盖率 | `make coverage` | coverage run -m pytest，阈值 95% |
+
+`git commit` 有秒级 ruff format 门禁（`scripts/git-hooks/pre-commit`），
+`git push` 走 `make pre-push` 全量门禁 —— 均由 `make hooks` 一次性启用。
 
 ## 浏览器 E2E（tests/e2e/）
 
 `make e2e` 跑常驻浏览器端到端套件（playwright-core 复用本机
-`~/.cache/ms-playwright` 的 chromium，首次运行自动 `npm install`）：
+`~/.cache/ms-playwright` 的 chromium，首次运行自动 `npm install`，
+离线时整体 SKIP 不挂红）：
 
 - `patho3d.e2e.mjs` —— 3D 形态视图六大类渲染回归（不依赖模型）
 - `session_switch.e2e.mjs` —— 流式中会话切换/不被拽回/零整页重建/
@@ -23,6 +28,11 @@
 服务不可达时整套 SKIP（exit 0），无模型时仅跳过需要真实生成的场景；
 `SIGMAFLOW_E2E_BASE` 可覆盖目标地址。新增套件只需添加 `*.e2e.mjs`，
 `run.mjs` 自动纳入。
+
+日常开发用 `make e2e-smoke`：它在本机起一次性服务（127.0.0.1 随机端口、
+临时 science 目录、空模型库），无需常驻服务与模型 —— patho3d 等纯前端
+套件照跑，需模型套件自动跳过。该冒烟已进 `make test-all`（即 pre-push
+门禁），重大前端改动的全套 E2E（含模型场景）仍建议手动跑一次 `make e2e`。
 
 ## steering 相关测试速查
 

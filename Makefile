@@ -50,15 +50,22 @@ science-regression:
 			git status --porcelain -- src/sigmaflow/server/science/dist/ && exit 1)
 
 # 浏览器端到端(需本机起服务与 chromium; 无服务自动 SKIP 不阻塞):
-#   make e2e          全套(patho3d / 会话切换 / steering)
-# E2E 依赖 tests/e2e/node_modules, 首次运行自动 npm install。
+#   make e2e          全套(patho3d / 会话切换 / steering), 对常驻服务
+#   make e2e-smoke    冒烟: 自起一次性本地服务(127.0.0.1 随机端口, 空模型库),
+#                     需模型的套件自跳过, 纯前端套件照跑 —— 不依赖常驻服务
+# E2E 依赖 tests/e2e/node_modules, 首次运行自动 npm install(离线时 SKIP)。
+# 常驻服务的地址经 SIGMAFLOW_E2E_BASE 覆盖(默认 LAN 部署地址见 helpers.mjs)。
 .PHONY: e2e
 e2e:
 	cd tests/e2e && node run.mjs
 
-# 提交前准入: 双套全绿(包级测试 + science 回归)
+.PHONY: e2e-smoke
+e2e-smoke:
+	$(PY) tests/e2e/smoke.py
+
+# 提交前准入: 双套全绿(包级测试 + science 回归) + E2E 冒烟
 .PHONY: test-all
-test-all: tests science-regression
+test-all: tests science-regression e2e-smoke
 
 # push 前全量门禁: 格式/静态检查 + 双套测试; 由 git pre-push 钩子自动调用。
 # dist 重建需要 esbuild(压缩产物); 没有它也能过, 只是产物体积回到未压缩档。

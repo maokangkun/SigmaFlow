@@ -1,0 +1,8 @@
+#!/bin/sh
+# 提交前秒级格式门禁: 拦"漏跑 ruff format 就提交"(连续两轮 review 都在补格式化)。
+# 修复: make format && git add -u   (急事绕过: git commit --no-verify)
+echo "[pre-commit] ruff format check"
+make format-check >/dev/null 2>&1 || {
+    echo "[pre-commit] 未过 ruff format —— 运行 'make format' 后重新暂存提交" >&2
+    exit 1
+}
