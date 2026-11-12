@@ -2693,6 +2693,13 @@ CS.liveBlocks = {
       if (opening) CS.ui.followLock = true;
     }),
     'toggle-tools': (id, el) => _toggleAnchored(el, () => { CS.ui.toolsOpen = !CS.ui.toolsOpen; }),
+    'toggle-proc': (id, el) => {
+      const set = CS.ui.procOpen || (CS.ui.procOpen = new Set());
+      const opening = !set.has(id);
+      if (opening) { set.add(id); CS.ui.followLock = true; }  // 展开大量增高, 暂停跟随防视口乱跳
+      else set.delete(id);
+      CS.render();
+    },
     'toggle-error': (id, el) => _toggleAnchored(el, () => {
       // 展开状态按 消息键 存储: 点哪条只开哪条, 不再全局串开
       const k = el?.dataset?.errkey;
