@@ -237,6 +237,9 @@ html:has(.auth-page){scrollbar-gutter:auto}
 .proc-fold-row{display:flex;align-items:center;gap:7px;width:100%;padding:3px 2px;margin:2px 0 6px;background:transparent;color:var(--muted);font-size:12px;cursor:pointer;touch-action:auto}
 .proc-fold-row:hover{color:var(--text)}
 /* 内嵌引导气泡: 插在回复块时间线的分割点, 右对齐 user 样式 */
+/* 引导气泡要贴到用户消息的右缘: .agent-message 自身限宽 86%(正文阅读宽度),
+   引导所在的轮放宽到 100%, 气泡的 margin-left:auto 才能推到与用户消息对齐 */
+.msg-block.agent-block:has(.steer-insert) .agent-message{max-width:100%}
 .steer-insert{max-width:86%;width:fit-content;margin:12px 0 14px auto;background:#e9eaf1;border-radius:14px 14px 4px 14px;padding:10px 14px;font-size:12px;line-height:1.9;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;display:flex;flex-direction:column;gap:4px;align-items:flex-start}
 .steer-insert .steer-badge{align-self:flex-start}
 .proc-chev{display:inline-block;flex:0 0 auto;width:7px;height:7px;border:solid var(--muted);border-width:0 1.6px 1.6px 0;transform:rotate(-45deg) translateY(-.5px);transition:transform .15s;margin:0 4px 0 1px}
