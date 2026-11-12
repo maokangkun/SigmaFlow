@@ -617,6 +617,21 @@
     const reduced = document.documentElement.dataset.motion === 'reduced';
     t.el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
     if (flash) { t.el.setAttribute('data-flash', ''); setTimeout(() => t.el.removeAttribute('data-flash'), 1200); }
+    // 落点校验补滚: present 卡/图片/懒加载内容会在滚动进行中继续撑高容器,
+    // smooth 动画锁定的是启动时刻的目标位置, 落点常停在半路(目标元素还在
+    // 视口下方几千像素)。落定后量一次实际偏差, 仍偏则瞬时补滚到位; 内容
+    // 还在长就再校验, 最多三轮防抖动循环
+    const settle = n => {
+      setTimeout(() => {
+        if (!t.el.isConnected || n <= 0) return;
+        const top = t.el.getBoundingClientRect().top;
+        if (Math.abs(top) > 80) {
+          t.el.scrollIntoView({ behavior: 'auto', block: 'start' });
+          settle(n - 1);
+        }
+      }, reduced ? 80 : 750);
+    };
+    settle(3);
   };
   const _anchorClearWave = () => {
     _anchorRail.waveIndex = -1;
