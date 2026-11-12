@@ -355,16 +355,37 @@
     const pv = ev.target && ev.target.closest ? ev.target.closest('.present-preview') : null;
     if (pv && pv.dataset.kind !== 'image') ev.stopPropagation();
   }, true);
-  // 折叠条上的滚轮兜底转发(见 toggle-proc 附近的说明)
-  document.addEventListener('wheel', e => {
-    const bar = e.target && e.target.closest ? e.target.closest('.proc-fold-row') : null;
-    if (!bar) return;
-    const conv = bar.closest('.conversation');
-    if (!conv) return;
-    conv.scrollTop += e.deltaY;
-    if (e.deltaX) conv.scrollLeft += e.deltaX;
-    e.preventDefault();
-  }, { passive: false });
+  // 会话滚动容器的平滑滚轮: Linux/无平滑系统的原生滚轮是逐格直跳,
+  // 且指针落在折叠条上时默认增量会整段丢失 —— 统一接管: 滚轮增量累积
+  // 成目标位置, rAF 指数缓动逼近(非线性平滑), 新增量到达即并入目标。
+  // 拖动滚动条/触摸/键盘滚动时目标是即时 scrollTop, 不受影响
+  (() => {
+    const state = new WeakMap();  // conv -> {target, raf}
+    const ease = conv => {
+      const st = state.get(conv);
+      if (!st) return;
+      const dist = st.target - conv.scrollTop;
+      if (Math.abs(dist) < 0.5) { conv.scrollTop = st.target; state.delete(conv); return; }
+      conv.scrollTop += dist * 0.18;  // 指数逼近: 快落慢收的非线性曲线
+      st.raf = requestAnimationFrame(() => ease(conv));
+    };
+    document.addEventListener('wheel', e => {
+      const conv = e.target && e.target.closest ? e.target.closest('.conversation') : null;
+      if (!conv || conv.scrollHeight <= conv.clientHeight) return;
+      // 容器内嵌套的横向滚动条(轨迹热力图/表格)自己能消费时让位
+      if (e.deltaX !== 0) return;
+      const nested = e.target.closest('.run-track,.table-wrap,pre,.term-wrap');
+      if (nested && nested.scrollWidth > nested.clientWidth) return;
+      const factor = e.deltaMode === 1 ? 16 : 1;  // 行模式增量转像素
+      const max = conv.scrollHeight - conv.clientHeight;
+      let st = state.get(conv);
+      if (!st) { st = { target: conv.scrollTop, raf: 0 }; state.set(conv, st); }
+      else if (!st.raf) st.raf = 0;
+      st.target = Math.max(0, Math.min(max, st.target + e.deltaY * factor));
+      e.preventDefault();
+      if (!st.raf) st.raf = requestAnimationFrame(() => ease(conv));
+    }, { passive: false, capture: true });
+  })();
   // 轨迹热力图: 纯竖向滚轮转为横向滚动(容器只横向溢出; 触控板自带
   // 横向增量时走原生行为)
   document.addEventListener('wheel', e => {
