@@ -1255,7 +1255,7 @@ V.ctxRing = () => {
               const _procFoldable = !m.streaming && _procParts.length > 0 && !_pendingAsk;
               const _procOpen = !!(CS.ui.procOpen && CS.ui.procOpen.has(_procKey));
               const _procHidden = _procFoldable && !_procOpen;
-              const _procBar = _procFoldable ? `<button type="button" class="proc-fold-row" data-action="toggle-proc" data-id="${e(_procKey)}" aria-expanded="${_procOpen}" title="${_procOpen ? '收起中间过程' : '展开中间过程'}"><span class="think-chevron${_procOpen ? ' proc-chev-open' : ''}" aria-hidden="true"></span><span class="proc-fold-title">处理详情</span><span class="proc-fold-meta">${_procParts.length} 条过程 · ${_toolCount} 次工具调用</span></button>` : '';
+              const _procBar = _procFoldable ? `<button type="button" class="proc-fold-row" data-action="toggle-proc" data-id="${e(_procKey)}" aria-expanded="${_procOpen}" title="${_procOpen ? '收起中间过程' : '展开中间过程'}"><span class="proc-chev${_procOpen ? ' proc-chev-open' : ''}" aria-hidden="true"></span><span class="proc-fold-title">处理详情</span><span class="proc-fold-meta">${_procParts.length} 条过程 · ${_toolCount} 次工具调用</span></button>` : '';
               const tailText = blocks.length && blocks[lastIdx].type === 'text';
               // 未回答的 ask 挂在尾部时, 等待指示改为「等待你的回答」
               const tailAskPending = m.streaming && blocks.length && blocks[lastIdx].type === 'ask' && !blocks[lastIdx].answered && !blocks[lastIdx].stale;
