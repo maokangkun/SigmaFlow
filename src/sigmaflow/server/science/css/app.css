@@ -232,14 +232,14 @@ html:has(.auth-page){scrollbar-gutter:auto}
 .tok-rate{font-size:10px;color:var(--faint);font-variant-numeric:tabular-nums;font-weight:400;margin-left:4px}
 .tok-down{font-size:10px;color:var(--accent);font-variant-numeric:tabular-nums;font-weight:400;margin-left:4px}
 /* 思考行(dsh ReasoningRow): 图标+标题+分隔点+流式摘要, 扫光动画 */
-/* 中间过程折叠条: 回复完成后 think/tool 等过程块自动收拢为一行摘要 */
-.proc-fold-row{display:flex;align-items:center;gap:8px;width:100%;padding:6px 10px;margin:2px 0 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--muted);font-size:12px;cursor:pointer;transition:border-color .15s,background .15s}
-.proc-fold-row:hover{border-color:var(--accent);color:var(--text)}
-.proc-fold-row .think-chevron{display:inline-flex;transition:transform .15s}
+/* 中间过程折叠条: 回复完成后 think/tool 等过程块自动收拢为一行摘要。
+   无边框无背景无分割线, 靠 ">" 形 chevron 与正文区分 */
+.proc-fold-row{display:flex;align-items:center;gap:7px;width:100%;padding:3px 2px;margin:2px 0 6px;background:transparent;color:var(--muted);font-size:12px;cursor:pointer;touch-action:auto}
+.proc-fold-row:hover{color:var(--text)}
+.proc-fold-row .think-chevron{display:inline-flex;color:var(--faint)}
 .proc-fold-row .proc-chev-open{transform:rotate(90deg)}
 .proc-fold-title{font-weight:600;color:var(--text)}
 .proc-fold-meta{color:var(--muted)}
-.proc-fold-line{flex:1;height:1px;background:var(--line);margin-left:4px}
 .think-root{display:flex;flex-direction:column;margin:2px 0 6px}
 .think-root:not([data-expanded]){contain:size layout;height:24px;overflow:hidden}
 .think-row{position:relative;overflow:hidden;display:flex;align-items:center;height:24px;min-width:0;background:0 0;border:0;padding:0;cursor:pointer;text-align:left;width:100%}

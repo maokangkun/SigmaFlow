@@ -355,6 +355,16 @@
     const pv = ev.target && ev.target.closest ? ev.target.closest('.present-preview') : null;
     if (pv && pv.dataset.kind !== 'image') ev.stopPropagation();
   }, true);
+  // 折叠条上的滚轮兜底转发(见 toggle-proc 附近的说明)
+  document.addEventListener('wheel', e => {
+    const bar = e.target && e.target.closest ? e.target.closest('.proc-fold-row') : null;
+    if (!bar) return;
+    const conv = bar.closest('.conversation');
+    if (!conv) return;
+    conv.scrollTop += e.deltaY;
+    if (e.deltaX) conv.scrollLeft += e.deltaX;
+    e.preventDefault();
+  }, { passive: false });
   // 轨迹热力图: 纯竖向滚轮转为横向滚动(容器只横向溢出; 触控板自带
   // 横向增量时走原生行为)
   document.addEventListener('wheel', e => {
