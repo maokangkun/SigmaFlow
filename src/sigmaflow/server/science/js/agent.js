@@ -118,7 +118,10 @@
   // WebSocket transport: one long-lived connection, request/reply matched by
   // requestId, interleaved with pushed "state" snapshots for subscribed runs.
   CS.api.ws = {
-    socket: null, state: 'closed', seq: 0, connecting: null, failedAt: 0,
+    socket: null, state: 'closed', seq: 0,
+    // 连接随机前缀: 见 chat() 内注释 —— requestId 是服务端注册键的组成部分,
+    // 必须全局唯一, 不能是裸的连接内自增小整数
+    seqPrefix: Math.random().toString(36).slice(2, 7), connecting: null, failedAt: 0,
     pending: new Map(), onState: new Map(), activeChats: new Set(), suspended: new Map(),
     lastFrameAt: 0, _kaTimer: null, _probing: false, _pongWaiters: new Map(),
     open() { return this.socket && this.socket.readyState === 1; },
@@ -308,7 +311,7 @@
     },
     send(action, payload = {}, timeout = 10000) {
       if (!this.open()) return Promise.reject(new Error('WebSocket 未连接。'));
-      const requestId = String(++this.seq);
+      const requestId = this.seqPrefix + '.' + (++this.seq);
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => { CS.api.ws.pending.delete(requestId); reject(new Error('WebSocket 响应超时。')); }, timeout);
         this.pending.set(requestId, { resolve, reject, timer });
@@ -317,7 +320,12 @@
     },
     chat(payload, onDelta, onThink, onTool, onRetry, onUsage, onProgress, onSystem, onSteer) {
       if (!this.open()) return Promise.reject(new Error('WebSocket 未连接。'));
-      const requestId = String(++this.seq);
+      // requestId 必须全局唯一(随机连接前缀 + 自增): 服务端以 (user, requestId)
+      // 注册在途回复与 journal 续播。多标签页各自从 1 计数、刷新后新连接重新
+      // 从 1 计数, 裸自增必然撞号 —— 曾导致: ①在途回复注册被覆盖, 会话互斥
+      // 查不到它, 第二条回复被放行并发同会话(历史正文被错重放进新回复);
+      // ②断线 replay 撞上旧轮终态 journal, 旧轮事件流进新请求
+      const requestId = this.seqPrefix + '.' + (++this.seq);
       // 动作可覆盖: chat.observe(刷新后的实时流接棒)复用同一套 entry/事件
       // 路由/断线续播机制, 只是服务端不起新任务而是按 runId 续播 journal
       const action = payload._action || 'chat.send';
