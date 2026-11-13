@@ -359,6 +359,15 @@ def skills_dir_from_listing(text: str):
     return m.group(1).strip() if m else None
 
 
+def parse_skill_frontmatter(text: str) -> tuple:
+    """Parse YAML frontmatter between --- delimiters."""
+    match = re.match(r"^---\n(.*?)\n---\n(.*)", text, re.DOTALL)
+    if not match:
+        return {}, text
+    meta = yaml.safe_load(match.group(1).strip())
+    return meta, match.group(2).strip()
+
+
 # -- SkillLoader: scan skills/<name>/SKILL.md with YAML frontmatter --
 class SkillLoader:
     def __init__(self, skills_dir: Path):
@@ -377,11 +386,7 @@ class SkillLoader:
 
     def _parse_frontmatter(self, text: str) -> tuple:
         """Parse YAML frontmatter between --- delimiters."""
-        match = re.match(r"^---\n(.*?)\n---\n(.*)", text, re.DOTALL)
-        if not match:
-            return {}, text
-        meta = yaml.safe_load(match.group(1).strip())
-        return meta, match.group(2).strip()
+        return parse_skill_frontmatter(text)
 
     def get_descriptions(self) -> str:
         """Layer 1: short descriptions for the system prompt."""
@@ -408,6 +413,130 @@ class SkillLoader:
 
 
 skill_loader = SkillLoader(SKILLS_DIR)
+
+
+# -- 会话项目技能: 实时扫描 <workdir>/skills, 同名优先于全局 --
+# 会话项目目录复用上文的 session workdir 机制(_SESSION_WORKDIR, 服务端在
+# 会话进入/结束时绑定/清除), load_skill/create_skill 据此解析项目技能。
+def _bound_project_dir():
+    """线程上显式绑定的项目目录; 不回落 WORKDIR —— 项目技能语义必须真实绑定。
+
+    get_session_workdir() 对文件工具有 WORKDIR 回落(服务 cwd), 直接沿用会把
+    无项目会话的"项目技能"错误地写进服务目录, 故这里单独读取原始绑定值。"""
+    return getattr(_SESSION_WORKDIR, "workdir", None)
+
+
+def project_skills_scan(workdir) -> dict:
+    """Live scan of <workdir>/skills/**/SKILL.md -> {name: {meta, body, path}}.
+
+    Called fresh on every use (system-prompt assembly / load_skill) so that
+    edits made to project skills mid-session are picked up immediately.
+    """
+    out: dict[str, Any] = {}
+    if not workdir:
+        return out
+    root = Path(workdir) / "skills"
+    if not root.exists():
+        return out
+    for f in sorted(root.rglob("SKILL.md")):
+        try:
+            text = f.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        meta, body = parse_skill_frontmatter(text)
+        if not isinstance(meta, dict):
+            meta = {}
+        name = str(meta.get("name") or "").strip() or f.parent.name
+        out[name] = {"meta": meta, "body": body, "path": str(f), "project": True}
+    return out
+
+
+def load_skill_resolved(name: str) -> str:
+    """load_skill with project precedence: a same-name project skill wins."""
+    name = str(name or "").strip()
+    wd = _bound_project_dir()
+    if wd:
+        sk = project_skills_scan(str(wd)).get(name)
+        if sk:
+            return (
+                f'<skill name="{name}" path="{sk["path"]}" scope="project">\n'
+                f"{sk['body']}\n</skill>"
+            )
+    return skill_loader.get_content(name)
+
+
+_SKILL_NAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+
+
+def create_skill(
+    name: str = "",
+    description: str = "",
+    content: str = "",
+    scope: str = "project",
+    overwrite: bool = False,
+) -> str:
+    """Create a skill (dir + SKILL.md with frontmatter, agentskills.io form).
+
+    scope='project' writes to <workdir>/skills/<name>/ (requires a bound
+    project directory); scope='global' writes to the loader's skills dir.
+    Project skills take effect on the next turn (live scan); the global
+    loader view is rebuilt right away when the backend supports it.
+    """
+    name = str(name or "").strip()
+    if not _SKILL_NAME_RE.fullmatch(name):
+        return (
+            "Error: name 必须是 1-64 位小写字母/数字/连字符，"
+            "不能以连字符开头或结尾（如 pdf-processing）。"
+        )
+    description = str(description or "").strip()
+    if not description:
+        return "Error: description 必填——模型依据它判断何时加载该技能，请写具体。"
+    body = str(content or "").strip()
+    if not body:
+        return "Error: content 必填：SKILL.md 正文（markdown，不要自带 frontmatter）。"
+    scope = str(scope or "project").strip().lower()
+    if scope in ("project", "workdir", "local"):
+        wd = _bound_project_dir()
+        if not wd:
+            return "Error: 当前会话未绑定项目目录，无法创建项目技能；请改用 scope='global'。"
+        root = Path(wd) / "skills" / name
+        scope_label = "project"
+    elif scope in ("global", "user"):
+        root = Path(str(skill_loader.skills_dir)) / name
+        scope_label = "global"
+    else:
+        return "Error: scope 只支持 'project' 或 'global'。"
+    target = root / "SKILL.md"
+    if target.exists() and not overwrite:
+        return f"Error: 技能已存在：{target}。如需覆盖请传 overwrite=true。"
+    if body.startswith("---"):
+        # 模型直接给了完整 frontmatter 文本: 原样落盘
+        text = body if body.endswith("\n") else body + "\n"
+    else:
+        front = yaml.safe_dump(
+            {"name": name, "description": description},
+            allow_unicode=True,
+            sort_keys=False,
+        )
+        text = f"---\n{front}---\n\n{body}\n"
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+    except OSError as e:
+        return f"Error: 写入失败：{e}"
+    # 全局目录落盘后立刻刷新 loader 视图(项目技能靠实时扫描, 无需刷新);
+    # rebuild 是 science 多用户视图, 单机 SkillLoader 回落 _load_all
+    if scope_label == "global":
+        try:
+            getattr(skill_loader, "rebuild", skill_loader._load_all)()
+        except Exception:
+            pass
+    return f"Skill created: {target}\nscope: {scope_label}\nname: {name}\n" + (
+        "项目技能下一轮对话即生效（实时扫描）。"
+        if scope_label == "project"
+        else "全局技能清单已刷新。"
+    )
+
 
 # -- Compactor: compact history --
 # 参考 pi 的 compaction 设计重写: 触发提前(window-reserve)/保尾窗口/
@@ -2751,7 +2880,14 @@ TOOL_HANDLERS = {
         kw.get("path", ""), kw.get("old_text", ""), kw.get("new_text", "")
     ),
     "present": run_present,  # 直接引用: 事件通道参数 _notify 需要透传(与 run_ask 同款)
-    "load_skill": lambda **kw: skill_loader.get_content(kw.get("name", "")),
+    "load_skill": lambda **kw: load_skill_resolved(kw.get("name", "")),
+    "create_skill": lambda **kw: create_skill(
+        kw.get("name", ""),
+        kw.get("description", ""),
+        kw.get("content", ""),
+        kw.get("scope", "project"),
+        bool(kw.get("overwrite", False)),
+    ),
     "arxiv_search": lambda **kw: arxiv_search(
         kw.get("query", ""), kw.get("max_results", 5)
     ),

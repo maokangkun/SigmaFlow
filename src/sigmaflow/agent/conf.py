@@ -346,6 +346,43 @@ CHILD_TOOLS = [
         },
     },
     {
+        "name": "create_skill",
+        "description": (
+            "Create a new skill so it can be loaded with load_skill later. "
+            "A skill is a directory with a SKILL.md (YAML frontmatter: name + description, "
+            "then markdown instructions). scope='project' writes to the current project's "
+            "skills/ directory (takes precedence over global skills of the same name); "
+            "scope='global' writes to the shared skills directory."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Skill id: 1-64 lowercase letters/digits/hyphens, no leading/trailing hyphen (e.g. pdf-processing)",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "What the skill does and when to use it. Be specific — the model picks skills by this line.",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Markdown body of SKILL.md (instructions, workflows, commands). Do NOT include the frontmatter block.",
+                },
+                "scope": {
+                    "type": "string",
+                    "enum": ["project", "global"],
+                    "description": "Where to create the skill. Defaults to project.",
+                },
+                "overwrite": {
+                    "type": "boolean",
+                    "description": "Overwrite an existing skill of the same name. Defaults to false.",
+                },
+            },
+            "required": ["name", "description", "content"],
+        },
+    },
+    {
         "name": "arxiv_search",
         "description": "Search papers on arXiv.",
         "input_schema": {

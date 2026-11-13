@@ -5673,6 +5673,36 @@ def _bind_main_system(
     system, _sub = _effective_system_prompts()
     bound_system = system
     active_dir = str(workdir or _agent_conf.WORKDIR)
+    # 技能实时性: 全局 loader 视图每轮重建(几十个 SKILL.md 的 IO, 毫秒级),
+    # 让设置页之外直接改盘的技能改动即时进入清单; 项目技能另附加段(见下)
+    try:
+        _tools_mod = _agent_tools_module()
+        _loader = _tools_mod.skill_loader
+        if hasattr(_loader, "rebuild"):
+            _loader.rebuild()
+    except Exception as _sk_err:
+        logging.getLogger("uvicorn.error").info(
+            "skill view rebuild skipped: %s", _sk_err
+        )
+    if workdir:
+        # 项目技能段: <workdir>/skills 每轮实时扫描, 同名技能 load_skill 时项目优先
+        try:
+            _pscan = _agent_tools_module().project_skills_scan(workdir)
+            if _pscan:
+                _plines = [
+                    f"  - {n}: {str((s.get('meta') or {}).get('description') or 'No description')} [project]"
+                    for n, s in sorted(_pscan.items())
+                ]
+                bound_system += (
+                    "\n\n# Project Skills\n"
+                    f"Project skills live in {Path(workdir) / 'skills'} and are re-scanned live on every turn; "
+                    "when using `load_skill`, a project skill with the same name takes precedence over the global one.\n"
+                    "Skills available:\n" + "\n".join(_plines)
+                )
+        except Exception as _ps_err:
+            logging.getLogger("uvicorn.error").info(
+                "project skills skipped: %s", _ps_err
+            )
     if workdir:
         # 内置提示词首句形如 "You are a ... agent at <服务进程 cwd>", 会覆盖末尾的
         # 项目目录说明; 先把这类句子里的路径改写为会话工作目录, 再附加显式说明。
