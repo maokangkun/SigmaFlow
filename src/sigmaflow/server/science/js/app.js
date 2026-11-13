@@ -1339,12 +1339,16 @@
     CS.updateContextRing();
   };
   // Agent 技能设置: 进入设置页时懒加载, 保存或恢复后刷新上下文圆环
-  CS.loadAgentSkills = async () => {
-    if (CS.ui.agentSkills) return;
+  CS.loadAgentSkills = async projectId => {
+    // projectId 提供时合并该项目的 skills 目录(同名覆盖全局, 项目行只读);
+    // 项目目录改动实时生效, 因此弹窗每次打开都重新拉取, 不吃缓存
+    if (CS.ui.agentSkills && !projectId) return;
     try {
-      const d = await CS.api.request('/skills');
+      const q = projectId ? '?projectId=' + encodeURIComponent(projectId) : '';
+      const d = await CS.api.request('/skills' + q);
       CS.ui.agentSkills = d.skills || [];
-      if (!CS.ui.skillDraft) CS.ui.skillDraft = CS.ui.agentSkills.map(s => ({ ...s }));
+      if (!projectId) { if (!CS.ui.skillDraft) CS.ui.skillDraft = CS.ui.agentSkills.map(s => ({ ...s })); }
+      else CS.ui.skillDraft = null;
       CS.render();
     } catch (error) { CS.toast('技能列表加载失败：' + CS.api.friendlyError(error), 'error'); }
   };
@@ -2205,7 +2209,7 @@ CS.liveBlocks = {
         groups.sort((a, b) => a.rank - b.rank);
         list = groups.map(g => `<div class="session-list-group">${e(g.label)}<span class="count">${g.items.length} 个工具</span></div>${g.items.map(t => item(t.name, t.description)).join('')}`).join('');
       } else {
-        list = rows.map(s => item(s.name, s.description, s.builtin ? '<span class="pill green">内置</span>' : '')).join('');
+        list = rows.map(s => item(s.name, s.description, s.source === 'project' ? '<span class="pill green">项目</span>' : s.builtin ? '<span class="pill green">内置</span>' : '')).join('');
       }
       const empty = rows.length ? '' : H.notice(isTools ? '当前没有启用的工具。可在设置的 Agent 工具里开启。' : '当前没有启用的技能。可在设置的 Agent 技能里开启。');
       body = `<p class="small muted mb-20">${isTools ? '当前对话 Agent 可调用的工具, 与设置页“Agent 工具”的启用状态一致; 禁用的工具不会发给模型、也不占用上下文。' : '当前对话 Agent 可用的技能; 技能清单作为系统提示词的一部分自动附加, 禁用的技能不进入会话、不占用上下文。'}</p>${empty}<div class="session-list">${list}</div>`;
@@ -3172,9 +3176,10 @@ CS.liveBlocks = {
       CS.render();
     },
     'save-skills': async () => {
-      if (!CS.ui.skillDraft?.length) { CS.toast('没有需要保存的修改。'); return; }
+      const globals = (CS.ui.skillDraft || []).filter(x => x.source !== 'project');
+      if (!globals.length) { CS.toast('没有需要保存的修改。'); return; }
       try {
-        const d = await CS.api.request('/skills', { method: 'POST', body: JSON.stringify({ skills: CS.ui.skillDraft }) });
+        const d = await CS.api.request('/skills', { method: 'POST', body: JSON.stringify({ skills: globals }) });
         CS.ui.agentSkills = d.skills || [];
         CS.ui.skillDraft = null;
         await CS.refreshContextInfo();
@@ -3504,7 +3509,7 @@ CS.liveBlocks = {
     'attach-dataset': id => { CS.ui.attachments=[id]; CS.state.currentRunId=null; CS.save(); CS.navigate('home'); },
     'attach-preview': id => { CS.closeModal(); actions['attach-dataset'](id); },
     'choose-tools': async () => { await CS.loadAgentTools(); CS.showModal('agent-tools'); },
-    'choose-skills': async () => { await CS.loadAgentSkills(); CS.showModal('agent-skills'); },
+    'choose-skills': async () => { await CS.loadAgentSkills(CS.state.projectId || ''); CS.showModal('agent-skills'); },
     'open-tool-settings': () => { CS.closeModal(); CS.ui.settingsTab = 'tools'; CS.navigate('settings'); CS.loadAgentTools(); CS.loadAgentTokens(); },
     'open-skill-settings': () => { CS.closeModal(); CS.ui.settingsTab = 'skills'; CS.navigate('settings'); CS.loadAgentSkills(); },
     'approve-run': () => CS.agent.approve(CS.currentRun()),

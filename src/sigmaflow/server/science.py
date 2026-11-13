@@ -2315,10 +2315,53 @@ class ScienceAPI:
             return {"tools": _tool_listing(defaults, overrides)}
 
         @router.get("/skills")
-        async def list_skills():
+        async def list_skills(projectId: str = ""):
+            """技能清单; 带 projectId 时合并该项目的 skills 目录(实时扫描)。
+
+            项目同名技能覆盖全局条目(与 system prompt / load_skill 的优先序
+            一致), 行带 source='project' 标记; 前端对项目行只读展示, 保存时
+            剔除(overrides 只管理全局技能)。
+            """
             overrides = await asyncio.to_thread(_load_skill_overrides)
             defaults = await asyncio.to_thread(_discover_skills)
-            return {"skills": _skill_listing(defaults, overrides)}
+            listing = _skill_listing(defaults, overrides)
+            pid = (projectId or "").strip()
+            if pid:
+                try:
+                    proj_dir = self.project_store.projects.get(pid, {}).get("dir")
+                    if proj_dir:
+                        scan = await asyncio.to_thread(
+                            _agent_tools_module().project_skills_scan, proj_dir
+                        )
+                        gnames = {row["name"] for row in listing}
+                        prows = []
+                        for name, sk in sorted(scan.items()):
+                            prows.append(
+                                {
+                                    "id": name,
+                                    "name": name,
+                                    "description": str(
+                                        (sk.get("meta") or {}).get("description") or ""
+                                    ),
+                                    "enabled": True,
+                                    "builtin": False,
+                                    "modified": False,
+                                    "source": "project",
+                                    "path": str(sk.get("path") or ""),
+                                }
+                            )
+                        # 项目同名条目替换全局行(排前面), 其余项目条目附加在后
+                        listing = [
+                            row
+                            for row in listing
+                            if row["name"] not in {r["name"] for r in prows}
+                        ] + prows
+                        _ = gnames
+                except Exception as _ps_err:
+                    logging.getLogger("uvicorn.error").info(
+                        "project skills listing skipped: %s", _ps_err
+                    )
+            return {"skills": listing}
 
         @router.post("/skills")
         async def save_skills(payload: SkillsUpdateIn, request: Request):
