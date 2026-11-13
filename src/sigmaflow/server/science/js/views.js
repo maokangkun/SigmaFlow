@@ -845,11 +845,16 @@
       if (mm.role !== 'assistant' || !blocks.some(b => b && b.type === 'steer')) return [mm];
       const rows = [];
       let cur = [];
+      const previewOf = seg => {
+        let p = '';
+        for (const b of seg) if (b && b.type === 'text' && String(b.text || '').trim()) p = b.text;
+        return String(p || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+      };
       const emitRow = tail => {
         if (!rows.length && !tail) {
-          rows.push({ ...mm, blocks: cur });
+          rows.push({ ...mm, blocks: cur, _preview: previewOf(cur) });
         } else {
-          rows.push({ ...mm, blocks: cur, tokens: 0, promptTokens: 0, cacheTokens: 0, elapsed: 0, tools: [], asks: [], ...(tail ? { _steerTail: true } : {}) });
+          rows.push({ ...mm, blocks: cur, _preview: previewOf(cur), tokens: 0, promptTokens: 0, cacheTokens: 0, elapsed: 0, tools: [], asks: [], ...(tail ? { _steerTail: true } : {}) });
         }
         cur = [];
       };
@@ -926,7 +931,8 @@
       const errText = typeof m.error === 'object' ? (m.error.message || '出错了') : String(m.error || '出错了');
       // 出错消息带块轨迹时不能只列一行错误: 先展开已执行的思考/工具块, 末尾补错误条目
       const errHasTimeline = kind === 'error' && Array.isArray(m.blocks) && m.blocks.length > 0;
-      if (kind === 'user') blocks = [{ k: 'user', t: m.content }];
+      if (kind === 'steer') blocks = [{ k: 'steer', t: m.content }];
+      else if (kind === 'user') blocks = [{ k: 'user', t: m.content }];
       else if (kind === 'error' && !errHasTimeline) blocks = [{ k: 'error', t: errText }];
       else if (kind === 'system') blocks = [{ k: 'system', t: m.content }];
       else if (kind === 'compact') blocks = [{ k: 'compact', t: m.content }];
@@ -994,7 +1000,7 @@
       return b.text || '';
     };
       const detail = isOpen ? `<div class="trace-detail"><div class="trace-props">${props.map(([k, v]) => `<span class="tpair"><span class="tk">${e(k)}</span><span class="tv mono">${e(v)}</span></span>`).join('')}</div>${blocks.length ? `<div class="trace-blocks">${blocks.map((b, ri) => { const ms = b.ms || 0; const raw = b.raw || (b.t ? { type: 'text', text: b.t } : null); const bkey = idx + ':' + ri; const bOpen = blockOpen.has(bkey); return `<span class="tb-item clickable${bOpen ? ' open' : ''}" role="button" data-action="toggle-trace-block" data-id="${bkey}" aria-expanded="${bOpen}" title="点击展开完整输入/输出"><span class="tk-${b.k}">${KIND[b.k]}</span><span class="tb-txt" title="${prev(b.t, 140)}">${prev(b.t, 70)}</span>${ms > 0 ? `<span class="tb-dur mono">${CS.elapsedMs(ms)}</span>` : ''}</span>${bOpen ? `<span class="tb-body"><pre>${e(bFull(raw))}</pre></span>` : ''}`; }).join('')}</div>` : ''}</div>` : '';
-      return `<div class="trace-row${isOpen ? ' open' : ''}"><button type="button" class="trace-main" data-action="toggle-trace-row" data-id="${idx}" aria-expanded="${isOpen}"><span class="trace-idx mono">#${idx}</span><span class="trace-kind tk-${kind}">${KIND[kind]}${kind === 'reply' && streaming ? ' · 生成中' : ''}</span><span class="trace-preview" title="${prev(kind === 'error' && !(m.content || '').trim() ? errText : m.content, 140)}">${prev(kind === 'error' && !(m.content || '').trim() ? errText : m.content)}</span><span class="trace-tools mono">${nTools || ''}</span><span class="trace-tok mono">${tok}</span><span class="trace-dur mono">${dur > 0 ? CS.elapsedMs(dur) : ''}</span><span class="trace-bar">${barHtml}</span></button>${detail}</div>`;
+      return `<div class="trace-row${isOpen ? ' open' : ''}"><button type="button" class="trace-main" data-action="toggle-trace-row" data-id="${idx}" aria-expanded="${isOpen}"><span class="trace-idx mono">#${idx}</span><span class="trace-kind tk-${kind}">${KIND[kind]}${kind === 'reply' && streaming ? ' · 生成中' : ''}</span><span class="trace-preview" title="${prev(kind === 'error' && !(m.content || '').trim() ? errText : (m._preview || m.content), 140)}">${prev(kind === 'error' && !(m.content || '').trim() ? (m._preview || m.content) : (m._preview || m.content))}</span><span class="trace-tools mono">${nTools || ''}</span><span class="trace-tok mono">${tok}</span><span class="trace-dur mono">${dur > 0 ? CS.elapsedMs(dur) : ''}</span><span class="trace-bar">${barHtml}</span></button>${detail}</div>`;
     }).join('');
   };
   // trace 页面: 主区视图替换聊天视图, 侧栏保留; 返回按钮与标题同一行(页内流), 无会话时给出空态并引导返回

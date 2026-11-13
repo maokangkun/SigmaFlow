@@ -742,7 +742,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .trace-idx{color:var(--faint);font-size:10px}
 .trace-main .trace-kind{justify-self:start}
 .trace-kind{font-size:9.5px;font-weight:570;padding:3px 8px;border-radius:999px;white-space:nowrap;text-align:center}
-.tk-user{background:color-mix(in srgb,var(--tr-user) 14%,transparent);color:var(--tr-user)}
+.tk-user{background:color-mix(in srgb,var(--tr-user) 14%,transparent);color:var(--tr-user)}.tk-steer{background:var(--accent-bg);color:var(--accent-dark)}
 .tk-reply{background:color-mix(in srgb,var(--tr-reply) 13%,transparent);color:var(--tr-reply)}
 .tk-think{background:color-mix(in srgb,var(--tr-think) 13%,transparent);color:var(--tr-think)}
 .tk-tool{background:color-mix(in srgb,var(--tr-tool) 16%,transparent);color:var(--tr-tool)}
