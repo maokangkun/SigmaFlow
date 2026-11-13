@@ -5889,6 +5889,7 @@ def _run_agent_chat(
     conversation_id: str = "",
     system_extra: str = "",
     steer_poll=None,
+    stop_poll=None,
 ) -> str:
     """Run a chat through the SigmaFlow agent/agent.Agent stack.
 
@@ -6100,6 +6101,7 @@ def _run_agent_chat(
         on_retry=on_retry,
         on_usage=on_usage,
         steer_poll=steer_poll,
+        stop_poll=stop_poll,
     )
     agent.client.timeout = 90
     agent.client.max_retries = 0  # 不用 SDK 内置重试; 统一由 agent 循环重试三次
@@ -6708,6 +6710,7 @@ def _stream_agent_chat(
     model_ctx: Optional[int] = None,
     conversation_id: str = "",
     steer_poll=None,
+    stop_poll=None,
 ):
     """Streaming chat. Runs synchronously on the caller's worker thread
     (the WS handler invokes it via asyncio.to_thread); on_delta is called
@@ -6729,6 +6732,7 @@ def _stream_agent_chat(
         model_ctx=model_ctx,
         conversation_id=conversation_id,
         steer_poll=steer_poll,
+        stop_poll=stop_poll,
     )
 
 
