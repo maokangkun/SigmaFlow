@@ -4338,6 +4338,7 @@ class ScienceAPI:
                                         model_ctx=_ctx_hit,
                                         conversation_id=str(data.get("runId") or ""),
                                         steer_poll=_steer_poll,
+                                        stop_poll=lambda: bool(state.get("stop")),
                                     )
                                 )
                                 _agent_info = (
@@ -4405,9 +4406,13 @@ class ScienceAPI:
                                 elif not state["terminal"]:
                                     _emit("done", {})
                             except Exception as err:
-                                if not state["terminal"]:
+                                # 用户主动停止(轮次边界从 Agent 循环退出/流中断):
+                                # pump 已合成 stopped 终态, 不再补红错块
+                                if state.get("stop") and not state["terminal"]:
+                                    _emit("done", {})
+                                elif not state["terminal"]:
                                     _emit("error", str(err))
-                                state["_failed"] = True
+                                state["_failed"] = not state.get("stop")
                                 _rec0 = state.get("run_rec")
                                 if isinstance(_rec0, dict):
                                     _rec0["error"] = str(err)[:300]
@@ -5673,6 +5678,14 @@ def _bind_main_system(
     system, _sub = _effective_system_prompts()
     bound_system = system
     active_dir = str(workdir or _agent_conf.WORKDIR)
+    if workdir:
+        # 内置提示词首句形如 "You are a ... agent at <服务进程 cwd>", 会覆盖末尾的
+        # 项目目录说明; 先把这类句子里的路径改写为会话工作目录, 再附加显式说明。
+        # 注意这行会从原始 system 重建 bound_system —— 技能附加段必须放在其后,
+        # 否则附加内容会被这里整体覆盖(曾经因此项目技能段静默丢失)。
+        bound_system = re.sub(
+            r"(agent at )\S+", lambda mo: mo.group(1) + workdir, f"{system}", count=1
+        )
     # 技能实时性: 全局 loader 视图每轮重建(几十个 SKILL.md 的 IO, 毫秒级),
     # 让设置页之外直接改盘的技能改动即时进入清单; 项目技能另附加段(见下)
     try:
@@ -5685,10 +5698,22 @@ def _bind_main_system(
             "skill view rebuild skipped: %s", _sk_err
         )
     if workdir:
-        # 项目技能段: <workdir>/skills 每轮实时扫描, 同名技能 load_skill 时项目优先
+        # 项目技能段: <workdir>/skills 每轮实时扫描, 同名技能 load_skill 时项目优先;
+        # 全局清单里的同名条目同时剔除 —— 两份不同版本的描述并存会误导模型
         try:
             _pscan = _agent_tools_module().project_skills_scan(workdir)
             if _pscan:
+                _pnames = set(_pscan.keys())
+
+                def _is_global_dup(line: str) -> bool:
+                    t = line.strip()
+                    if not t.startswith("- "):
+                        return False
+                    return t[2:].split(":", 1)[0].strip() in _pnames
+
+                bound_system = "\n".join(
+                    ln for ln in bound_system.split("\n") if not _is_global_dup(ln)
+                )
                 _plines = [
                     f"  - {n}: {str((s.get('meta') or {}).get('description') or 'No description')} [project]"
                     for n, s in sorted(_pscan.items())
@@ -5696,19 +5721,13 @@ def _bind_main_system(
                 bound_system += (
                     "\n\n# Project Skills\n"
                     f"Project skills live in {Path(workdir) / 'skills'} and are re-scanned live on every turn; "
-                    "when using `load_skill`, a project skill with the same name takes precedence over the global one.\n"
+                    "these take precedence over global skills (same-name global entries are omitted above).\n"
                     "Skills available:\n" + "\n".join(_plines)
                 )
         except Exception as _ps_err:
             logging.getLogger("uvicorn.error").info(
                 "project skills skipped: %s", _ps_err
             )
-    if workdir:
-        # 内置提示词首句形如 "You are a ... agent at <服务进程 cwd>", 会覆盖末尾的
-        # 项目目录说明; 先把这类句子里的路径改写为会话工作目录, 再附加显式说明。
-        bound_system = re.sub(
-            r"(agent at )\S+", lambda mo: mo.group(1) + workdir, f"{system}", count=1
-        )
     # 目录段模板: 用户目录 + 项目工作目录 + 仅在工作目录内操作; 占位符由 _fill_dynamic_blocks 填值
     bound_system += "\n\n" + _DIRECTORY_BLOCK.replace(
         "{home}", os.path.expanduser("~")

@@ -224,6 +224,7 @@ class Agent:
         on_retry=None,
         on_usage=None,
         steer_poll=None,
+        stop_poll=None,
     ):
         self.on_retry = on_retry  # 重试回调: 每次可重试失败后调用 on_retry({"attempt", "total", "error"})
         self.on_delta = on_delta  # 流式回调: 每收到一段增量文本时调用 on_delta(text)
@@ -234,6 +235,9 @@ class Agent:
         # agent 在"当前回合(工具批)结束、下一次模型调用前"注入, 不与
         # 在途回复并发。无 steer 能力的调用方保持 None(零行为变化)
         self.steer_poll = steer_poll
+        # 轮次边界停止探测: 返回 True 时主循环立即退出(当前轮的 LLM 流/工具
+        # 执行完成后才检查到, 故停止语义是"当前轮自然收尾 + 不再进入下一轮")
+        self.stop_poll = stop_poll
         self.method = method
         self.model = model
         self.system = system
@@ -468,6 +472,14 @@ class Agent:
         nudge_armed = 0
         max_model_len = self.max_model_len  # 构造时已定(litellm 或显式传入), 不随轮重查
         while cur_turn < max_turn:
+            # 用户停止探测(轮次边界): 置位后当前轮收尾即退出, 不再发起下一轮
+            try:
+                _user_stopped = bool(self.stop_poll()) if self.stop_poll else False
+            except Exception:
+                _user_stopped = False
+            if _user_stopped:
+                info["stopped"] = True
+                break
             # steering 注入点①: 上一回合的工具批已执行完、下一次模型调用
             # 尚未发出 —— 排队插话在此进入上下文, 成为下一段回复的输入
             self._inject_steer(messages, info)
