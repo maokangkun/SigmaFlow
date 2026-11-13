@@ -131,7 +131,8 @@
     }
     document.getElementById('app').innerHTML = `<div class="app-shell">${fullscreen ? '' : CS.views.sidebar()}<main id="main" class="main-shell ${fullscreen ? 'main-fullscreen' : ''}" tabindex="-1"><header class="topbar ${fullscreen ? 'topbar-fullscreen' : 'topbar-menu'}"${fullscreen ? ' style="height:auto;align-items:flex-start"' : ''}>${fullscreen ? `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:12px;"><button type="button" class="text-button" data-nav="home">${i('arrowleft','',14)}<span>返回工作空间</span></button></div><div class="topbar-status"></div>` : `<div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div>`}</header><div class="main-cols">${page()}${typeof CS.views.terminalDrawer === 'function' ? CS.views.terminalDrawer() : ''}</div></main></div>`;
     const sidebar = document.querySelector('.sidebar-scroll'); if (sidebar) sidebar.scrollTop = sidebarScroll;
-    const conversation = document.querySelector('.conversation'); if (conversation) conversation.scrollTop = conversationScroll;
+    const conversation = document.querySelector('.conversation');
+    if (conversation) conversation.scrollTop = CS._convSbDrag && Number.isFinite(CS._convSbTop) ? CS._convSbTop : conversationScroll;
     const inspector = document.querySelector('.inspector'); if (inspector) inspector.scrollTop = inspectorScroll;
     if (focus) {
       const target = document.getElementById(focus.id);
@@ -355,6 +356,28 @@
     const pv = ev.target && ev.target.closest ? ev.target.closest('.present-preview') : null;
     if (pv && pv.dataset.kind !== 'image') ev.stopPropagation();
   }, true);
+  // 滚动条拖拽检测: 指针按在 .conversation 右缘竖向滚动条上时置全局标志。
+  // 全量渲染(流式 tick/轮询)期间用户拖动滑块, 渲染完成后的 scrollTop 回写
+  // 会把滑块拉回拖拽前的位置 —— 回写前必须查此标志让位。
+  if (!CS._convSbBound) {
+    CS._convSbBound = true;
+    document.addEventListener('pointerdown', e => {
+      const conv = e.target && e.target.closest ? e.target.closest('.conversation') : null;
+      if (!conv) return;
+      const r = conv.getBoundingClientRect();
+      if (e.clientX >= r.right - 18 && e.clientX <= r.right + 2) {
+        CS._convSbDrag = true;
+        CS._convSbTop = conv.scrollTop;
+      }
+    }, true);
+    // 拖拽期间实时跟记位置: 渲染会重建 .conversation 元素, savedTop 是渲染
+    // 开始时的旧值, 恢复必须用拖拽的最新位置
+    document.addEventListener('scroll', e => {
+      const conv = e.target;
+      if (CS._convSbDrag && conv && conv.classList && conv.classList.contains('conversation')) CS._convSbTop = conv.scrollTop;
+    }, true);
+    document.addEventListener('pointerup', () => { CS._convSbDrag = false; }, true);
+  }
   // 会话滚动容器的平滑滚轮: Linux/无平滑系统的原生滚轮是逐格直跳,
   // 且指针落在折叠条上时默认增量会整段丢失 —— 统一接管: 滚轮增量累积
   // 成目标位置, rAF 指数缓动逼近(非线性平滑), 新增量到达即并入目标。
@@ -363,7 +386,7 @@
     const state = new WeakMap();  // conv -> {target, raf}
     const ease = conv => {
       const st = state.get(conv);
-      if (!st) return;
+      if (!st || CS._convSbDrag) { state.delete(conv); return; }
       const dist = st.target - conv.scrollTop;
       if (Math.abs(dist) < 0.5) { conv.scrollTop = st.target; state.delete(conv); return; }
       conv.scrollTop += dist * 0.18;  // 指数逼近: 快落慢收的非线性曲线
@@ -520,7 +543,7 @@
     });
     const el = document.getElementById('sys-stats');
     if (el && _sysStatsHtml) el.innerHTML = _sysStatsHtml;
-    if (hadConv) { const fresh = document.querySelector('.conversation'); if (fresh) fresh.scrollTop = savedTop; }
+    if (hadConv) { const fresh = document.querySelector('.conversation'); if (fresh && CS._convSbDrag && Number.isFinite(CS._convSbTop)) fresh.scrollTop = CS._convSbTop; else if (fresh) fresh.scrollTop = savedTop; }
     CS.syncAnchorRail();
     // 超长轨迹格视觉截断检测: 首列越出容器左缘时挂 tr-trunc(左缘渐隐)。
     // 数据层已放宽到全部渲染, 截断完全交给视觉层; justify-flex-end 的
