@@ -837,9 +837,17 @@
     const run = CS.currentRun();
     // #0 系统条: 会话实发 system 提示词(存档属性 systemPrompt, 在线时由
     // chat.system 事件写入), 合成在最前不进 run.messages, 主对话流不受影响
+    // 内嵌引导块展开成独立轨迹行: 会话页里引导作为分割点嵌在回复块时间线中,
+    // Trace 的时间线粒度是消息 —— 引导行紧随其所在回复行之后(这轮回复期间的插话)
     const msgs = (run?.systemPrompt
       ? [{ role: 'system', content: run.systemPrompt, at: (run?.messages?.[0]?.at) || '' }]
-      : []).concat((run?.messages || []).filter(mm => !mm.hidden));  // 归位后的独立压缩卡本体不再占 Trace 槽位
+      : []).concat(
+        (run?.messages || []).filter(mm => !mm.hidden).flatMap(mm => {
+          const steers = (Array.isArray(mm.blocks) ? mm.blocks : []).filter(b => b && b.type === 'steer');
+          if (!steers.length) return [mm];
+          return [mm, ...steers.map(b => ({ role: 'user', steering: true, ...(b.steerId ? { steerId: b.steerId } : {}), content: b.text || '', at: b.at || mm.at }))];
+        })
+      );
     const kindOf = m => m.role === 'user' ? 'user' : m.error ? 'error' : /^\[Conversation compressed/.test(m.content || '') ? 'compact' : (m.role !== 'assistant' && m.role !== 'user') ? 'system' : 'reply';
     const prev = (s, n = 70) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return e(t.slice(0, n)) + (t.length > n ? '…' : ''); };
     let tools = 0, tin = 0, tout = 0, tcache = 0;
