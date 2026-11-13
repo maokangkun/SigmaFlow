@@ -89,6 +89,11 @@ class _ScopedProxy:
 
 def set_session_workdir(path) -> None:
     """Bind the calling thread's session workdir; None restores the default."""
+    import logging as _lg
+
+    _lg.getLogger("uvicorn.error").info(
+        "set_session_workdir %r thread=%s", str(path), threading.get_ident()
+    )
     _SESSION_WORKDIR.workdir = Path(path).resolve() if path else None
 
 
@@ -426,6 +431,14 @@ def _bound_project_dir():
     return getattr(_SESSION_WORKDIR, "workdir", None)
 
 
+def bound_project_dir():
+    """Public alias of _bound_project_dir: raw binding without WORKDIR fallback.
+
+    Agent 的并行工具线程重绑定时必须用原始值 —— 经 get_session_workdir() 捕获
+    会把 WORKDIR 回落值固化成"绑定", 项目技能解析随之指向服务 cwd。"""
+    return _bound_project_dir()
+
+
 def project_skills_scan(workdir) -> dict:
     """Live scan of <workdir>/skills/**/SKILL.md -> {name: {meta, body, path}}.
 
@@ -455,6 +468,17 @@ def load_skill_resolved(name: str) -> str:
     """load_skill with project precedence: a same-name project skill wins."""
     name = str(name or "").strip()
     wd = _bound_project_dir()
+    try:
+        import logging as _lg
+
+        _lg.getLogger("uvicorn.error").info(
+            "load_skill name=%r bound_workdir=%r thread=%s",
+            name,
+            str(wd),
+            threading.get_ident(),
+        )
+    except Exception:
+        pass
     if wd:
         sk = project_skills_scan(str(wd)).get(name)
         if sk:

@@ -24,9 +24,9 @@ from .tools import (
     BG,
     MCP,
     get_session_scope,
-    get_session_workdir,
     set_session_scope,
     set_session_workdir,
+    bound_project_dir,
 )
 from .harness import GOAL
 from .utils import KnightRiderStatus, extract_json
@@ -1334,7 +1334,9 @@ class Agent:
                     except Exception:
                         pass
 
-            session_wd = get_session_workdir()
+            # 原始绑定值: None 原样传递, 不经 get_session_workdir() 的 WORKDIR 回落 ——
+            # 回落值一旦被 set 回线程, 项目技能解析(load_skill)会指向服务 cwd
+            session_wd = bound_project_dir()
             session_scope = get_session_scope()
 
             def _tool_exec(c):
@@ -1392,7 +1394,7 @@ class Agent:
                     # 会话工作目录是 thread-local: 超时包装可能把 handler 挪到新线程,
                     # 必须在执行前把当前会话的目录绑到那个线程, 否则相对路径会
                     # 回退到进程根目录, 破坏项目隔离
-                    _wd = get_session_workdir()
+                    _wd = bound_project_dir()
                     _scope = get_session_scope()
 
                     def _run_handler():
@@ -1465,22 +1467,22 @@ class Agent:
                 elif repeats >= 1:
                     c["repeat_note"] = repeats
 
-            needs_wd = {"bash", "grep", "read", "write", "edit"}
-
             # 长工具执行心跳: bash 等 360s 内无任何 WS 事件时, 前端 180s 空闲计时
             # 会误杀会话("模型响应超时")。看门狗线程每 45s 发一次 progress 事件,
             # 前端 resetTimer 保持连接; 事件对模型不可见, 纯展示层保活。
             def _tool_exec_cwd(c):
-                # 工具的工作目录与会话作用域存在 thread-local 上, 并行线程需要重新绑定
+                # 工具的工作目录与会话作用域存在 thread-local 上, 并行线程需要重新
+                # 绑定。对所有工具统一重绑(不仅 needs_wd 文件工具): load_skill 的
+                # 项目技能解析同样依赖这份绑定, 并行批里它可能落在任意池线程 ——
+                # 池线程的残留/未绑定状态会把项目解析悄悄降级成全局
                 try:
                     set_session_scope(session_scope)
                 except Exception:
                     pass
-                if c["func"] in needs_wd:
-                    try:
-                        set_session_workdir(session_wd)
-                    except Exception:
-                        pass
+                try:
+                    set_session_workdir(session_wd)
+                except Exception:
+                    pass
                 return _tool_exec(c)
 
             def _with_heartbeat(c):
