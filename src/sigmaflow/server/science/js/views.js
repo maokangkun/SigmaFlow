@@ -837,22 +837,41 @@
     const run = CS.currentRun();
     // #0 系统条: 会话实发 system 提示词(存档属性 systemPrompt, 在线时由
     // chat.system 事件写入), 合成在最前不进 run.messages, 主对话流不受影响
-    // 内嵌引导块展开成独立轨迹行: 会话页里引导作为分割点嵌在回复块时间线中,
-    // Trace 的时间线粒度是消息 —— 引导行紧随其所在回复行之后(这轮回复期间的插话)
+    // 内嵌引导块把所在回复拆成两段轨迹: 引导前段(#14) → 引导行(#15, 专属
+    // 引导 tag) → 引导后段(#16) —— 与会话页"引导分割一轮回复"的语义一致。
+    // 多次引导切多段; 轮级统计(tokens/tools/elapsed)挂首段, 尾段清零防重复
+    const splitSteers = mm => {
+      const blocks = Array.isArray(mm.blocks) ? mm.blocks : [];
+      if (mm.role !== 'assistant' || !blocks.some(b => b && b.type === 'steer')) return [mm];
+      const rows = [];
+      let cur = [];
+      const emitRow = tail => {
+        if (!rows.length && !tail) {
+          rows.push({ ...mm, blocks: cur });
+        } else {
+          rows.push({ ...mm, blocks: cur, tokens: 0, promptTokens: 0, cacheTokens: 0, elapsed: 0, tools: [], asks: [], ...(tail ? { _steerTail: true } : {}) });
+        }
+        cur = [];
+      };
+      blocks.forEach(b => {
+        if (b && b.type === 'steer') {
+          emitRow(false);
+          rows.push({ role: 'user', steering: true, ...(b.steerId ? { steerId: b.steerId } : {}), content: b.text || '', at: b.at || mm.at });
+          return;
+        }
+        cur.push(b);
+      });
+      emitRow(true);
+      return rows;
+    };
     const msgs = (run?.systemPrompt
       ? [{ role: 'system', content: run.systemPrompt, at: (run?.messages?.[0]?.at) || '' }]
-      : []).concat(
-        (run?.messages || []).filter(mm => !mm.hidden).flatMap(mm => {
-          const steers = (Array.isArray(mm.blocks) ? mm.blocks : []).filter(b => b && b.type === 'steer');
-          if (!steers.length) return [mm];
-          return [mm, ...steers.map(b => ({ role: 'user', steering: true, ...(b.steerId ? { steerId: b.steerId } : {}), content: b.text || '', at: b.at || mm.at }))];
-        })
-      );
-    const kindOf = m => m.role === 'user' ? 'user' : m.error ? 'error' : /^\[Conversation compressed/.test(m.content || '') ? 'compact' : (m.role !== 'assistant' && m.role !== 'user') ? 'system' : 'reply';
+      : []).concat((run?.messages || []).filter(mm => !mm.hidden).flatMap(splitSteers));
+    const kindOf = m => m.steering ? 'steer' : m.role === 'user' ? 'user' : m.error ? 'error' : /^\[Conversation compressed/.test(m.content || '') ? 'compact' : (m.role !== 'assistant' && m.role !== 'user') ? 'system' : 'reply';
     const prev = (s, n = 70) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return e(t.slice(0, n)) + (t.length > n ? '…' : ''); };
     let tools = 0, tin = 0, tout = 0, tcache = 0;
     msgs.forEach(m => {
-      if (m.role === 'assistant') { tin += m.promptTokens || 0; tout += m.tokens || 0; tcache += m.cacheTokens || 0; tools += (m.tools?.length || 0) + (m.asks?.length || 0); }
+      if (m.role === 'assistant' && !m._steerTail) { tin += m.promptTokens || 0; tout += m.tokens || 0; tcache += m.cacheTokens || 0; tools += (m.tools?.length || 0) + (m.asks?.length || 0); }
     });
     return { run, msgs, kindOf, prev, tools, tin, tout, tcache };
   };
@@ -863,7 +882,7 @@
   V.traceRows = () => {
     const { msgs, kindOf, prev } = _traceCtx();
     if (!msgs.length) return '';
-    const KIND = { user: '用户', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误', sysnote: '注入', compact: '压缩', present: '展示', webview: '网页' };
+    const KIND = { user: '用户', steer: '引导', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误', sysnote: '注入', compact: '压缩', present: '展示', webview: '网页' };
     // 运行耗时占比时间轴: 分母 = 各条消息运行耗时之和(流式实时计入), 消息间空闲时段不占条, 段连续堆叠
     // 行内再分段: 优先块边界时间戳(相邻差), 缺省按文本量等比; 段色随块类型(思考/工具/回复)
     // 带时长块集与 blocks 数组分开过滤(sysnote/compact 无时长), 行内块行按 timedKind 依序对位取 ms
