@@ -783,6 +783,7 @@
           else if (b.type === 'sysnote' && !/Conversation history was just compacted/.test(b.text || '')) blocks.push({ k: 'system', txt: '系统注入', live: on, mi, bi });
           else if (b.type === 'compact') blocks.push({ k: 'compact', txt: String(b.text || '').trim() ? '上下文已压缩' : '正在压缩会话', live: on, mi, bi });
           else if (b.type === 'ask') blocks.push({ k: 'tool', txt: 'ask 提问', live: on, mi, bi });
+          else if (b.type === 'steer') blocks.push({ k: 'steer', txt: b.text || '引导', live: false, mi, bi });
           else if (b.type === 'text' && (b.text || '').trim()) blocks.push({ k: 'reply', txt: b.text, live: on, mi, bi });
         });
       } else {
@@ -806,12 +807,12 @@
     const cols = [];
     let cur = [];
     shown.forEach(b => {
-      if (b.k === 'user' && cur.length) { cols.push(cur); cur = []; }
+      if ((b.k === 'user' || b.k === 'steer') && cur.length) { cols.push(cur); cur = []; }
       else if (cur.length >= 4) { cols.push(cur); cur = []; }
       cur.push(b);
     });
     if (cur.length) cols.push(cur);
-    const name = { user: '用户', think: '思考', tool: '工具', reply: '回复', system: '系统', error: '错误', compact: '压缩', present: '展示' };
+    const name = { user: '用户', steer: '引导', think: '思考', tool: '工具', reply: '回复', system: '系统', error: '错误', compact: '压缩', present: '展示' };
     const cell = (b, gi) => `<span role="button" class="tr-cell tr-${b.k}${b.err ? ' tr-err' : ''}${b.live ? ' tr-live' : ''}" data-action="track-jump" data-id="${b.bi == null ? b.mi : b.mi + ':' + b.bi}" title="#${start + gi + 1} ${name[b.k]}${b.err ? ' · 出错' : ''}${b.live ? ' · 生成中' : ''} · ${e(String(b.txt || '').replace(/\s+/g, ' ').slice(0, 80))} · 点击跳转到该消息"></span>`;
     // 超长会话被截掉头部时加渐隐类, 在左缘用 mask 提示“还有更早的”
     return `<div class="run-track${start ? ' tr-trunc' : ''}" aria-hidden="true"${start ? ` title="还有更早的 ${start} 条消息未展示"` : ''} data-blocks="${blocks.length}"><span class="tr-strip">${cols.map(c => `<span class="tr-col">${c.map(cell).join('')}</span>`).join('')}</span></div>`;
