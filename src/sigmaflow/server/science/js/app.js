@@ -2873,6 +2873,23 @@ CS.liveBlocks = {
         if (!isNaN(bi)) {
           const blk = target.querySelector('[data-bi="' + bi + '"]');
           if (blk) anchor = blk;
+          else if (!anchor) {
+            // 过程折叠: 目标块藏在"处理详情"里(元素不在 DOM) —— 计算它所属的
+            // 组(组号 = 该块之前的引导块数), 展开该组后重试定位
+            const run = CS.currentRun();
+            const m = run?.messages?.[mi];
+            const blkData = m?.blocks?.[bi];
+            if (m && blkData) {
+              const g = m.blocks.slice(0, bi).filter(x => x && x.type === 'steer').length;
+              const gKey = (run.id || '') + '|' + mi + '|g' + g;
+              const set = CS.ui.procOpen || (CS.ui.procOpen = new Set());
+              if (!set.has(gKey)) {
+                set.add(gKey);
+                CS.render();
+                anchor = document.querySelector('.conversation [data-mi="' + mi + '"] [data-bi="' + bi + '"]') || null;
+              }
+            }
+          }
         }
       }
       if (!anchor) {
