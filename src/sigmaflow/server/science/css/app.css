@@ -862,6 +862,12 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .present-block{border:1px solid #ffffffd9;border-radius:14px;background:var(--bg);box-shadow:6px 6px 18px #dce0e7a3,-5px -5px 14px #ffffffcf;margin:8px 0;overflow:hidden}
 .present-head{display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer;background:transparent}
 .present-preview{border-top:1px solid #dfe3ea;background:#fff;cursor:default}
+/* 连续图片成品卡合并缩略网格: 定高格子裁剪展示, 点击进完整弹窗 */
+.img-grid{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0}
+.img-cell{display:flex;flex-direction:column;align-items:stretch;width:132px;padding:0;border:1px solid #dfe3ea;border-radius:8px;background:#fff;overflow:hidden;cursor:pointer;text-align:left}
+.img-cell:hover{border-color:var(--accent, #7c6cf0)}
+.img-cell img{width:100%;height:88px;object-fit:cover;display:block;background:#f2f3f7}
+.img-cell .img-cell-name{padding:3px 6px;font-size:10px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .present-preview img.present-img{display:block;max-width:100%;max-height:420px;margin:0 auto}
 .present-caption{padding:8px 12px 9px;font-size:10.5px;color:var(--muted);border-top:1px dashed var(--line-soft);line-height:1.75;text-align:center}
 .present-table-wrap{max-height:320px;overflow:auto}
