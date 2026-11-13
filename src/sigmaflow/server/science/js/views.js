@@ -846,9 +846,9 @@
       const rows = [];
       let cur = [];
       const previewOf = seg => {
-        let p = '';
-        for (const b of seg) if (b && b.type === 'text' && String(b.text || '').trim()) p = b.text;
-        return String(p || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+        // 段首预览: 第一个回复正文块的开头
+        const first = seg.find(b => b && b.type === 'text' && String(b.text || '').trim());
+        return String(first ? first.text : '').replace(/\s+/g, ' ').trim().slice(0, 160);
       };
       const emitRow = tail => {
         if (!rows.length && !tail) {
