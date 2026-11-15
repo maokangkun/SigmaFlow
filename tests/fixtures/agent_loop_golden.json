@@ -1,0 +1,224 @@
+{
+ "basic_tool": {
+  "transcript": [
+   {
+    "role": "system",
+    "content": "You are a team lead and coding agent at /data/mkk/github/SigmaFlow.\nUse `task` tools to plan and track work. Use run_job for long-running commands; check_job to inspect and kill_job to stop them. Spawn teammates and communicate via inboxes.\nSave durable user preferences, feedback and project facts with `memory_save` so later sessions can recall them. Schedule future work with `schedule_cron`. For 'keep working until X holds' requests, set a `goal_set` condition instead of relying on a single pass.\n\nWorking style (important for user visibility):\n- Narrate your work: before and between tool calls, tell the user in one or two plain sentences (same language as the user) what you are about to do, why, and what the previous results imply.\n- Never chain many tool calls silently. After a batch of calls, explain the findings and the plan before continuing; the user must be able to follow your thinking at any point.\n- Surface key intermediate results with the `present` tool - e.g. a chart, table or data summary you just produced - so the user can see findings as they emerge. Use it sparingly: only for genuinely informative milestones (a few per task at most), not for every intermediate output.\n\n# Skills\nUse `load_skill` to access specialized knowledge before tackling unfamiliar topics.\nSkills dir: /data/mkk/github/SigmaFlow/skills\nSkills available:\n(no skills available)\n\nNote: The agent is allowed to use tools. If the agent needs to use a tool, it should respond with a tool call in the format of <tool_call><function=tool_name><parameter=param_name>param_value</parameter></function></tool_call>. The agent should not provide any other text in its response when using a tool."
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "thinking": "I should run the command.",
+      "type": "thinking"
+     },
+     {
+      "text": "Let me run that for you.",
+      "type": "text"
+     },
+     {
+      "id": "tu_1",
+      "input": {
+       "command": "echo hello-replay"
+      },
+      "name": "bash",
+      "type": "tool_use"
+     }
+    ]
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "text": "The command printed `hello-replay`. Done.",
+      "type": "text"
+     }
+    ]
+   }
+  ],
+  "tool_events": [
+   {
+    "kind": "call",
+    "name": "bash"
+   },
+   {
+    "kind": "result",
+    "name": "bash"
+   }
+  ],
+  "deltas": [
+   "Let me run that for you.",
+   "The command printed `hello-replay`. Done."
+  ],
+  "used_tools": [
+   [
+    "bash",
+    {
+     "command": "echo hello-replay"
+    },
+    "hello-replay"
+   ]
+  ],
+  "used_skills": [],
+  "error": null,
+  "llm_calls": [
+   {
+    "model": "fake-model",
+    "n_msgs": 2
+   },
+   {
+    "model": "fake-model",
+    "n_msgs": 4
+   }
+  ]
+ },
+ "file_roundtrip": {
+  "transcript": [
+   {
+    "role": "system",
+    "content": "You are a team lead and coding agent at /data/mkk/github/SigmaFlow.\nUse `task` tools to plan and track work. Use run_job for long-running commands; check_job to inspect and kill_job to stop them. Spawn teammates and communicate via inboxes.\nSave durable user preferences, feedback and project facts with `memory_save` so later sessions can recall them. Schedule future work with `schedule_cron`. For 'keep working until X holds' requests, set a `goal_set` condition instead of relying on a single pass.\n\nWorking style (important for user visibility):\n- Narrate your work: before and between tool calls, tell the user in one or two plain sentences (same language as the user) what you are about to do, why, and what the previous results imply.\n- Never chain many tool calls silently. After a batch of calls, explain the findings and the plan before continuing; the user must be able to follow your thinking at any point.\n- Surface key intermediate results with the `present` tool - e.g. a chart, table or data summary you just produced - so the user can see findings as they emerge. Use it sparingly: only for genuinely informative milestones (a few per task at most), not for every intermediate output.\n\n# Skills\nUse `load_skill` to access specialized knowledge before tackling unfamiliar topics.\nSkills dir: /data/mkk/github/SigmaFlow/skills\nSkills available:\n(no skills available)\n\nNote: The agent is allowed to use tools. If the agent needs to use a tool, it should respond with a tool call in the format of <tool_call><function=tool_name><parameter=param_name>param_value</parameter></function></tool_call>. The agent should not provide any other text in its response when using a tool."
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "id": "tu_w",
+      "input": {
+       "content": "line1\nline2\n",
+       "path": "note.txt"
+      },
+      "name": "write",
+      "type": "tool_use"
+     }
+    ]
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "id": "tu_r",
+      "input": {
+       "path": "note.txt"
+      },
+      "name": "read",
+      "type": "tool_use"
+     }
+    ]
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "text": "Read back successfully.",
+      "type": "text"
+     }
+    ]
+   }
+  ],
+  "tool_events": [
+   {
+    "kind": "call",
+    "name": "write"
+   },
+   {
+    "kind": "result",
+    "name": "write"
+   },
+   {
+    "kind": "call",
+    "name": "read"
+   },
+   {
+    "kind": "result",
+    "name": "read"
+   },
+   {
+    "kind": "deliverables"
+   }
+  ],
+  "deltas": [
+   "Read back successfully."
+  ],
+  "used_tools": [
+   [
+    "write",
+    {
+     "path": "note.txt",
+     "content": "line1\nline2\n"
+    },
+    "Wrote 12 bytes to note.txt"
+   ],
+   [
+    "read",
+    {
+     "path": "note.txt"
+    },
+    "line1\nline2"
+   ]
+  ],
+  "used_skills": [],
+  "error": null,
+  "llm_calls": [
+   {
+    "model": "fake-model",
+    "n_msgs": 2
+   },
+   {
+    "model": "fake-model",
+    "n_msgs": 4
+   },
+   {
+    "model": "fake-model",
+    "n_msgs": 6
+   }
+  ]
+ },
+ "steer_injection": {
+  "transcript": [
+   {
+    "role": "system",
+    "content": "You are a team lead and coding agent at /data/mkk/github/SigmaFlow.\nUse `task` tools to plan and track work. Use run_job for long-running commands; check_job to inspect and kill_job to stop them. Spawn teammates and communicate via inboxes.\nSave durable user preferences, feedback and project facts with `memory_save` so later sessions can recall them. Schedule future work with `schedule_cron`. For 'keep working until X holds' requests, set a `goal_set` condition instead of relying on a single pass.\n\nWorking style (important for user visibility):\n- Narrate your work: before and between tool calls, tell the user in one or two plain sentences (same language as the user) what you are about to do, why, and what the previous results imply.\n- Never chain many tool calls silently. After a batch of calls, explain the findings and the plan before continuing; the user must be able to follow your thinking at any point.\n- Surface key intermediate results with the `present` tool - e.g. a chart, table or data summary you just produced - so the user can see findings as they emerge. Use it sparingly: only for genuinely informative milestones (a few per task at most), not for every intermediate output.\n\n# Skills\nUse `load_skill` to access specialized knowledge before tackling unfamiliar topics.\nSkills dir: /data/mkk/github/SigmaFlow/skills\nSkills available:\n(no skills available)\n\nNote: The agent is allowed to use tools. If the agent needs to use a tool, it should respond with a tool call in the format of <tool_call><function=tool_name><parameter=param_name>param_value</parameter></function></tool_call>. The agent should not provide any other text in its response when using a tool."
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "text": "First answer.",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "content": "先看这里"
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "text": "Steered answer.",
+      "type": "text"
+     }
+    ]
+   }
+  ],
+  "tool_events": [],
+  "deltas": [
+   "First answer.",
+   "Steered answer."
+  ],
+  "used_tools": [],
+  "used_skills": [],
+  "error": null,
+  "llm_calls": [
+   {
+    "model": "fake-model",
+    "n_msgs": 2
+   },
+   {
+    "model": "fake-model",
+    "n_msgs": 4
+   }
+  ]
+ }
+}
