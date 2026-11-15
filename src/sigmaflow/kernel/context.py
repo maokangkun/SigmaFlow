@@ -7,11 +7,24 @@ mod 的 ``entry.py`` 暴露 ``activate(ctx)``(可选 ``deactivate(ctx)``);
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any, Callable, Dict, List, Optional
 
 from .hooks import HookBus, Subscription
 from .permissions import SERVICE_CAPABILITY, CapabilityGate
 from .services import ServiceRegistry, ServiceView
+
+# 加载期"当前 mod"线程局部: 服务实现据此把注册归属到 mod(卸载时回收),
+# mod 侧 API 无需显式传 owner。
+_current_mod = threading.local()
+
+
+def current_mod_id() -> Optional[str]:
+    return getattr(_current_mod, "id", None)
+
+
+def _set_current_mod(mod_id: Optional[str]) -> None:
+    _current_mod.id = mod_id
 
 
 class ModContext:

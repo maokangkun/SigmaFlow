@@ -1,0 +1,18 @@
+# 示例 loop mod — agent.tool.exec 审计 + 轮次计数, 展示 loop 扩展面。
+[mod]
+id = "example-loop-hooks"
+name = "示例 Loop 钩子"
+version = "1.0.0"
+description = "agent.tool.exec 包裹器把每次工具调用追加到审计日志; agent.turn.begin 计数"
+license = "MIT"
+reload = "run-boundary"
+
+[api]
+loop = 1
+
+[contributions]
+hooks = "entry.py"
+
+[config.defaults]
+audit = true
+audit-path = ""   # 空 = ~/.sigmaflow/logs/tool-audit.jsonl

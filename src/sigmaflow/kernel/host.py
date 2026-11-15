@@ -90,7 +90,13 @@ class ModHost:
             activate = getattr(module, "activate", None)
             if not callable(activate):
                 raise TypeError(f"{mod_id}: entry.py lacks activate(ctx)")
-            activate(ctx)
+            from .context import _set_current_mod
+
+            _set_current_mod(mod_id)
+            try:
+                activate(ctx)
+            finally:
+                _set_current_mod(None)
             self._modules[mod_id] = module.__name__
         # 纯数据 mod(无 entry.py): contributions 直接来自 manifest
         self._contexts[mod_id] = ctx

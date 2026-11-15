@@ -189,6 +189,14 @@ def cli(
             api_key = hit["apiKey"] or api_key
             _print_sysnote(f"使用已配置模型: {model} @ {str(base_url)[:48]}")
 
+    # mod 装配(幂等): 工具 mod / loop mod 在 CLI 同样生效(设计 §6.1)
+    try:
+        from .mods import agent_bootstrap
+
+        agent_bootstrap()
+    except Exception as _mods_err:  # noqa: BLE001 — mod 故障不阻断 CLI
+        _print_sysnote(f"mod 装配跳过: {_mods_err}")
+
     def on_retry_event(r) -> None:
         """模型请求重试提示: 网关不稳时不再干等数分钟毫无反馈。"""
         if isinstance(r, dict) and r.get("attempt"):

@@ -22,7 +22,6 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..kernel import (
-    HookBus,
     ModHost,
     ModStore,
     PatchEntry,
@@ -201,10 +200,15 @@ class ModSubsystem:
             return cls._instance
 
     def __init__(self) -> None:
+        from ..agent.loop import LoopService, loop_hooks
+
+        # agent 事件总线从构造起就是进程共享实例: mod 注册的 agent.* 钩子
+        # 直达 loop(设计 §6.1), 错误隔离沿用 error_sink
         self.services = ServiceRegistry()
-        self.hooks = HookBus()
+        self.hooks = loop_hooks()
         self.envs = EnvRegistry()
         self.tools = LegacyToolBridge()
+        self.loop = LoopService()
         self._events: deque = deque(maxlen=500)
         self.hooks.error_sink = self._push_event
         self.host = ModHost(
@@ -245,6 +249,8 @@ class ModSubsystem:
                 return {"loaded": 0, "blocked": 0, "errored": 0, "skipped": 0}
             self.services.provide("envs", self.envs, owner="core")
             self.services.provide("tools", self.tools, owner="core")
+            # loop 扩展面(P2): 阶段覆盖/驱动替换/agent.* 钩子
+            self.services.provide("loop", self.loop, owner="core")
             store = ModStore(home or self.home_dir())
             self.host.store = store
             stats = self.host.bootstrap(

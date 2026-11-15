@@ -44,6 +44,7 @@ class CapabilityGate:
 # prompt/mcp 影响模型输入面与外联, 显式声明后才开放。
 SERVICE_CAPABILITY = {
     "tools": None,
+    "loop": None,
     "prompts": "prompt",
     "skills": None,
     "mcp": "mcp",

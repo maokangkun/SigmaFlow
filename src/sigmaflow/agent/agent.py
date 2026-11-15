@@ -1352,7 +1352,18 @@ class Agent:
                     set_session_scope(_scope)
                     return handler(**inp)
 
-                out = _call_with_timeout(_run_handler, int(timeout), func)
+                # agent.tool.exec 包裹点(P2): mod 可拦截/改参/改结果/跳过
+                # (next_fn() 执行真实调用); 无订阅时零开销直通。
+                if lc.hooks is not None:
+                    _exec_chain = lc.hooks.resolve(
+                        "agent.tool.exec",
+                        lambda **_kw: _call_with_timeout(
+                            _run_handler, int(timeout), func
+                        ),
+                    )
+                    out = _exec_chain(func=func, inp=inp)
+                else:
+                    out = _call_with_timeout(_run_handler, int(timeout), func)
                 if out is _TIMEOUT_HIT:
                     # 结构化超时错误: 让模型知道该换路, 而不是拿到裸异常
                     return _ToolError(
@@ -1813,6 +1824,11 @@ class Agent:
         )  # 构造时已定(litellm 或显式传入), 不随轮重查
 
         lc.info = info
+        # mod 扩展面(P2): 事件总线 + 当前世代的阶段覆盖快照(设计 §6.1/§8)
+        from .loop import loop_hooks, loop_overrides_snapshot
+
+        lc.hooks = loop_hooks()
+        lc.stage_overrides = loop_overrides_snapshot()
         return lc
 
     @__call__.register(str)

@@ -73,10 +73,21 @@ class LoopContext:
 def run_agent_loop(agent, lc: LoopContext):
     """核心驱动: 与原单体循环等价的阶段编排。
 
+    钩子面(P2 Step B):
+    - observe: ``agent.turn.begin`` / ``agent.turn.end`` / ``agent.loop.end``
+    - around:  ``agent.stage.<name>``(<name> ∈ turn_begin/llm_call/settle/
+      exec_tools/turn_end)包裹整阶段; ``agent.tool.exec`` 在工具执行点包裹
+      (见 _stage_exec_tools 内 _exec_chain)。
     ``agent`` 是 Agent 实例(阶段方法宿主); 阶段可被 lc.stage_overrides
-    覆盖(扩展点接线后由 loop 服务注入), 覆盖函数签名 ``fn(agent, lc)``。
+    覆盖(loop 服务注入, fn(agent, lc)); _LOOP_DRIVER 可整体替换 loop。
+    无订阅时钩子为零行为差(金轨对拍守护)。
     """
+    if _LOOP_DRIVER is not None:
+        return _LOOP_DRIVER(agent, lc)
+    hooks = lc.hooks
     while lc.cur_turn < lc.max_turn:
+        if hooks is not None:
+            hooks.emit("agent.turn.begin", lc)
         r = _run_stage(agent, lc, "_stage_turn_begin")
         if r == LOOP_END:
             break
@@ -87,9 +98,15 @@ def run_agent_loop(agent, lc: LoopContext):
         if r == LOOP_END:
             break
         if r == LOOP_NEXT_TURN:
+            if hooks is not None:
+                hooks.emit("agent.turn.end", lc, "next_turn")
             continue
         _run_stage(agent, lc, "_stage_exec_tools")
         _run_stage(agent, lc, "_stage_turn_end")
+        if hooks is not None:
+            hooks.emit("agent.turn.end", lc, "tools")
+    if hooks is not None:
+        hooks.emit("agent.loop.end", lc)
     return agent._loop_teardown(lc)
 
 
@@ -97,4 +114,111 @@ def _run_stage(agent, lc: LoopContext, attr: str):
     override = lc.stage_overrides.get(attr)
     if override is not None:
         return override(agent, lc)
-    return getattr(agent, attr)(lc)
+    fn = getattr(agent, attr)
+    if lc.hooks is not None:
+        event = "agent.stage." + attr.removeprefix("_stage_")
+        fn = lc.hooks.resolve(event, fn)
+    return fn(lc)
+
+
+# --------------------------------------------------------------- mod 接线面
+# 进程级 loop 扩展点状态: Agent 每次 __call__ 时快照(= 世代语义, 设计 §8 L1)。
+_STAGE_OVERRIDES: Dict[str, Callable] = {}
+_LOOP_DRIVER: Optional[Callable] = None
+_LOOP_DRIVER_OWNER: Optional[str] = None
+
+# 进程共享的 agent 事件总线(服务端由 MODS 接管同一实例, CLI 由 agent 侧引导装配)
+LOOP_HOOKS = None  # 延迟创建, 避免 import 期拉起 kernel
+
+
+def loop_hooks():
+    """惰性取进程总线; server/mods 与 agent/mods 各自 ensure 后共享。"""
+    global LOOP_HOOKS
+    if LOOP_HOOKS is None:
+        from ..kernel.hooks import HookBus
+
+        LOOP_HOOKS = HookBus()
+    return LOOP_HOOKS
+
+
+class LoopService:
+    """``ctx.services.loop`` — loop 扩展点的注册面(experimental, 设计 §6.1)。
+
+    - override_stage: 替换单个阶段(签名 fn(agent, lc) -> LOOP_*)
+    - replace_driver: 整体替换驱动循环(声明 replaces=["core-loop"] 的 mod)
+    - on/around: 直接挂 agent.* 事件
+    注册自动归属到当前加载的 mod, 卸载时回收(kernel dispose_owner 约定)。
+    """
+
+    def __init__(self) -> None:
+        self.hooks = loop_hooks()
+        self._owned_stages: Dict[str, List[str]] = {}
+        self._owned_driver: Dict[str, None] = {}
+
+    # ---------------------------------------------------------- 阶段替换
+    def override_stage(self, stage: str, fn: Callable) -> None:
+        """stage ∈ turn_begin/llm_call/settle/exec_tools/turn_end。"""
+        attr = "_stage_" + stage
+        if attr not in STAGE_ATTRS:
+            raise ValueError(f"unknown stage {stage!r}; known: {sorted(STAGE_ATTRS)}")
+        owner = _current_owner()
+        _STAGE_OVERRIDES[attr] = fn
+        if owner:
+            self._owned_stages.setdefault(owner, []).append(attr)
+
+    def replace_driver(self, fn: Callable) -> None:
+        """整体替换驱动循环; 同一时刻仅一个 driver(后注册者覆盖并记审计)。"""
+        global _LOOP_DRIVER, _LOOP_DRIVER_OWNER
+        owner = _current_owner()
+        _LOOP_DRIVER = fn
+        _LOOP_DRIVER_OWNER = owner
+        if owner:
+            self._owned_driver[owner] = None
+
+    # -------------------------------------------------------------- 钩子
+    def on(self, event: str, fn: Callable, **kw: Any) -> None:
+        kw.setdefault("owner", _current_owner() or "core")
+        self.hooks.subscribe(event, fn, **kw)
+
+    def around(self, event: str, fn: Callable, **kw: Any) -> None:
+        kw.setdefault("owner", _current_owner() or "core")
+        self.hooks.add_wrapper(event, fn, **kw)
+
+    # ---------------------------------------------------------- 卸载回收
+    def dispose_owner(self, owner: str) -> None:
+        global _LOOP_DRIVER, _LOOP_DRIVER_OWNER
+        for attr in self._owned_stages.pop(owner, []):
+            _STAGE_OVERRIDES.pop(attr, None)
+        if owner in self._owned_driver:
+            self._owned_driver.pop(owner, None)
+            if _LOOP_DRIVER_OWNER == owner:
+                _LOOP_DRIVER = None
+                _LOOP_DRIVER_OWNER = None
+        self.hooks.unsubscribe_owner(owner)
+
+    # -------------------------------------------------------------- 内省
+    def describe(self) -> dict:
+        return {
+            "stage_overrides": dict(_STAGE_OVERRIDES),
+            "driver_replaced": _LOOP_DRIVER is not None,
+            "driver_owner": _LOOP_DRIVER_OWNER,
+            "hooks": self.hooks.describe(),
+        }
+
+
+STAGE_ATTRS = {
+    "_stage_" + name
+    for name in ("turn_begin", "llm_call", "settle", "exec_tools", "turn_end")
+}
+
+
+def _current_owner() -> Optional[str]:
+    """当前注册归属: 加载期是 mod id; 非加载期(测试/内核直用)记匿名哨兵。"""
+    from ..kernel.context import current_mod_id
+
+    return current_mod_id() or "__anonymous__"
+
+
+def loop_overrides_snapshot() -> Dict[str, Callable]:
+    """__call__ 装配期取当前世代快照(运行中的对话持旧代跑完)。"""
+    return dict(_STAGE_OVERRIDES)
