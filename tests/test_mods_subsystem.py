@@ -33,7 +33,7 @@ class TestBuiltinEnvMods:
         host = ModHost(
             services=services, hooks=HookBus(), store=ModStore(tmp_path / "home")
         )
-        stats = host.bootstrap(builtin_dirs=[BUILTIN], target="server")
+        host.bootstrap(builtin_dirs=[BUILTIN], target="server")
         prefixes = {s.prefix for s in envs.all()}
         assert "patenv" in prefixes
         assert "pathenv" in prefixes

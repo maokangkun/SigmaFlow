@@ -337,7 +337,7 @@ class TestModHost:
         return d
 
     def test_bootstrap_and_hooks(self, tmp_path):
-        d = self._make_mod(
+        self._make_mod(
             tmp_path,
             "greet",
             entry_body="""
@@ -356,7 +356,7 @@ def activate(ctx):
         assert host.registry.get("greet").state == "enabled"
 
     def test_unload_cleans_hooks(self, tmp_path):
-        d = self._make_mod(
+        self._make_mod(
             tmp_path,
             "hooker",
             entry_body="""

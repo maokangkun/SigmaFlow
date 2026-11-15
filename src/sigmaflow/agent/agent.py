@@ -1658,7 +1658,6 @@ class Agent:
 
     def _loop_teardown(self, lc):
         """阶段 6(epilogue): 残留引导通告/预算耗尽标记/汇总返回。"""
-        messages = lc.messages
         info = lc.info
         # 循环最终退出(终文已续跑过排队插话/预算耗尽/重试耗尽)后仍残留的引导:
         # 不再驱动模型(预算契约), 但必须显式告知前端 —— steerDropped 事件渲染
