@@ -121,10 +121,16 @@
       CS.ui.route = 'auth';
       location.hash = '#/auth';
     }
-    // 设置页刷新/直达: 恢复上次所在 tab 的数据加载(切换持久化见 settings-tab)
-    if (CS.ui.route === 'settings' && CS.ui.settingsTab && CS.ui.settingsTab !== 'general') {
-      const t = CS.ui.settingsTab;
-      setTimeout(() => { try { actions['settings-tab'](t); } catch (e) { /* 首帧分发尽力而为 */ } }, 0);
+    // 设置页刷新/直达: 恢复上次所在 tab 的数据加载。只在"进入设置页"的
+    // 路由跳变时分发一次 — 挂在每次渲染上会与 tab 加载器的 CS.render()
+    // 形成渲染→加载→渲染死循环(每轮一个超时 toast, 实测满屏报错的根因)
+    if (CS.ui._prevRoute !== CS.ui.route) {
+      const entering = CS.ui.route === 'settings';
+      CS.ui._prevRoute = CS.ui.route;
+      if (entering && CS.ui.settingsTab && CS.ui.settingsTab !== 'general') {
+        const t = CS.ui.settingsTab;
+        setTimeout(() => { try { actions['settings-tab'](t); } catch (e) { /* 首帧分发尽力而为 */ } }, 0);
+      }
     }
     const page = CS.views[CS.ui.route] || CS.views.home;
     const fullscreen = CS.ui.route === 'settings';
@@ -1389,12 +1395,21 @@
   };
   // Mod 管理: 每次都拉新(启停/重载后服务端 epoch 已变, 缓存无意义)
   CS.loadMods = async () => {
+    // 在途守卫 + 失败退避: 请求超时(15s)期间的重入与失败后的立即重试
+    // 都会形成"渲染→加载→toast→渲染"风暴(服务繁忙时 toast 刷屏的根因)
+    if (CS.ui._modsInFlight) return;
+    const now = Date.now();
+    if (now - (CS.ui._modsLastFail || 0) < 30000) return;
+    CS.ui._modsInFlight = true;
     try {
       const d = await CS.api.request('/mods');
       CS.ui.modsList = d.mods || [];
       CS.ui.modsEpoch = d.epoch;
       CS.render();
-    } catch (error) { CS.toast('Mod 清单加载失败：' + CS.api.friendlyError(error), 'error'); }
+    } catch (error) {
+      CS.ui._modsLastFail = Date.now();
+      CS.toast('Mod 清单加载失败：' + CS.api.friendlyError(error), 'error');
+    } finally { CS.ui._modsInFlight = false; }
   };
   // 系统提示词设置: 懒加载内置默认与自定义配置; 草稿仅含 prompt/enabled
   CS.loadSystemPrompt = async () => {
