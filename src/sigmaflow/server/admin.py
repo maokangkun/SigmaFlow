@@ -2,7 +2,7 @@ import uuid
 from typing import Optional, Dict
 from datetime import datetime, timedelta
 from pydantic import ValidationError
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 
 from .constant import (
     EventRequest,
@@ -42,13 +42,51 @@ from ..log import log
 class AdminAPI:
     def __init__(self, pipeline_manager=None, storage_dir=None):
         """Initialize AdminAPI with optional pipeline manager and storage directory"""
-        self.router = router = APIRouter(prefix="/admin/api")
+        router = APIRouter(prefix="/admin/api")
+
+        def _admin_gate(request: Request) -> None:
+            """统一鉴权门: 单用户模式免登录(与 science 一致); 多用户模式
+            复用 science 会话 cookie, 或接受原有 Bearer JWT(CLI/旧客户端)。"""
+            from .science_common import _multi_user
+
+            if not _multi_user():
+                return
+            # auth 端点自守(mode 要能匿名探测, setup/login 有各自的凭据校验)
+            if request.url.path.startswith("/admin/api/auth/"):
+                return
+            from .science_auth import _cookie_user
+
+            if _cookie_user(request):
+                return
+            auth = request.headers.get("authorization") or ""
+            if auth.startswith("Bearer "):
+                try:
+                    verify_jwt(auth[7:])
+                    return
+                except Exception as exc:  # noqa: BLE001
+                    raise HTTPException(status_code=401, detail=str(exc))
+            raise HTTPException(status_code=401, detail="未登录")
+
+        router.dependencies = [Depends(_admin_gate)]
+        self.router = router
         self.storage = get_admin_storage(storage_dir=storage_dir)
         self.pipeline_manager = pipeline_manager
 
         # ====================================================================
         # AUTH Endpoints
         # ====================================================================
+
+        @router.get("/auth/mode")
+        async def auth_mode(request: Request):
+            """前端引导: single=免登录直进; multi=复用 science 会话。"""
+            from .science_common import _multi_user
+
+            if _multi_user():
+                from .science_auth import _cookie_user
+
+                user = _cookie_user(request) or ""
+                return {"mode": "multi", "authenticated": bool(user), "user": user}
+            return {"mode": "single", "authenticated": True, "user": ""}
 
         @router.get("/auth/setup-status", response_model=SetupStatusResponse)
         async def get_setup_status():
@@ -109,11 +147,12 @@ class AdminAPI:
             """Create new user (admin only)"""
             try:
                 # Verify JWT token
-                if not authorization or not authorization.startswith("Bearer "):
-                    raise HTTPException(status_code=401, detail="No token provided")
-
-                jwt_payload = verify_jwt(authorization[7:])
-                if jwt_payload.role != "ADMIN":
+                # 鉴权统一在路由依赖(_admin_gate): science 会话或 Bearer 皆可;
+                # 这里仅在显式提供 header 时校验其有效性
+                jwt_payload = None
+                if authorization and authorization.startswith("Bearer "):
+                    jwt_payload = verify_jwt(authorization[7:])
+                if jwt_payload is not None and jwt_payload.role != "ADMIN":
                     raise HTTPException(status_code=403, detail="Unauthorized")
 
                 # Check if user already exists
@@ -222,10 +261,9 @@ class AdminAPI:
             """List traces with filtering and pagination"""
             try:
                 # Verify JWT token
-                if not authorization or not authorization.startswith("Bearer "):
-                    raise HTTPException(status_code=401, detail="No token provided")
-
-                verify_jwt(authorization[7:])
+                # 鉴权统一在路由依赖(_admin_gate); 见上
+                if authorization and authorization.startswith("Bearer "):
+                    verify_jwt(authorization[7:])
 
                 # Build filters
                 filters = {}
@@ -360,10 +398,9 @@ class AdminAPI:
             """Delete a trace and its associated spans"""
             try:
                 # Verify JWT token
-                if not authorization or not authorization.startswith("Bearer "):
-                    raise HTTPException(status_code=401, detail="No token provided")
-
-                verify_jwt(authorization[7:])
+                # 鉴权统一在路由依赖(_admin_gate); 见上
+                if authorization and authorization.startswith("Bearer "):
+                    verify_jwt(authorization[7:])
 
                 success = self.storage.delete_trace(trace_id)
                 if not success:
@@ -380,10 +417,9 @@ class AdminAPI:
             """Get single trace by ID"""
             try:
                 # Verify JWT token
-                if not authorization or not authorization.startswith("Bearer "):
-                    raise HTTPException(status_code=401, detail="No token provided")
-
-                verify_jwt(authorization[7:])
+                # 鉴权统一在路由依赖(_admin_gate); 见上
+                if authorization and authorization.startswith("Bearer "):
+                    verify_jwt(authorization[7:])
 
                 trace = self.storage.get_trace(trace_id)
                 if not trace:
@@ -436,11 +472,12 @@ class AdminAPI:
             """Create a new API key"""
             try:
                 # Verify JWT token and check admin role
-                if not authorization or not authorization.startswith("Bearer "):
-                    raise HTTPException(status_code=401, detail="No token provided")
-
-                jwt_payload = verify_jwt(authorization[7:])
-                if jwt_payload.role != "ADMIN":
+                # 鉴权统一在路由依赖(_admin_gate): science 会话或 Bearer 皆可;
+                # 这里仅在显式提供 header 时校验其有效性
+                jwt_payload = None
+                if authorization and authorization.startswith("Bearer "):
+                    jwt_payload = verify_jwt(authorization[7:])
+                if jwt_payload is not None and jwt_payload.role != "ADMIN":
                     raise HTTPException(status_code=403, detail="Unauthorized")
 
                 # Generate API key
@@ -480,11 +517,12 @@ class AdminAPI:
             """List all active API keys"""
             try:
                 # Verify JWT token
-                if not authorization or not authorization.startswith("Bearer "):
-                    raise HTTPException(status_code=401, detail="No token provided")
-
-                jwt_payload = verify_jwt(authorization[7:])
-                if jwt_payload.role != "ADMIN":
+                # 鉴权统一在路由依赖(_admin_gate): science 会话或 Bearer 皆可;
+                # 这里仅在显式提供 header 时校验其有效性
+                jwt_payload = None
+                if authorization and authorization.startswith("Bearer "):
+                    jwt_payload = verify_jwt(authorization[7:])
+                if jwt_payload is not None and jwt_payload.role != "ADMIN":
                     raise HTTPException(status_code=403, detail="Unauthorized")
 
                 # Get API keys
@@ -522,11 +560,12 @@ class AdminAPI:
             """Get single API key"""
             try:
                 # Verify JWT token
-                if not authorization or not authorization.startswith("Bearer "):
-                    raise HTTPException(status_code=401, detail="No token provided")
-
-                jwt_payload = verify_jwt(authorization[7:])
-                if jwt_payload.role != "ADMIN":
+                # 鉴权统一在路由依赖(_admin_gate): science 会话或 Bearer 皆可;
+                # 这里仅在显式提供 header 时校验其有效性
+                jwt_payload = None
+                if authorization and authorization.startswith("Bearer "):
+                    jwt_payload = verify_jwt(authorization[7:])
+                if jwt_payload is not None and jwt_payload.role != "ADMIN":
                     raise HTTPException(status_code=403, detail="Unauthorized")
 
                 key = self.storage.get_api_key(key_id)
@@ -562,10 +601,9 @@ class AdminAPI:
             """Get all model pricing configurations"""
             try:
                 # Verify JWT token
-                if not authorization or not authorization.startswith("Bearer "):
-                    raise HTTPException(status_code=401, detail="No token provided")
-
-                verify_jwt(authorization[7:])
+                # 鉴权统一在路由依赖(_admin_gate); 见上
+                if authorization and authorization.startswith("Bearer "):
+                    verify_jwt(authorization[7:])
 
                 # Load pricing data
                 pricing_data = self.storage.load_model_pricing()
@@ -621,11 +659,12 @@ class AdminAPI:
             """Update or create pricing for a specific model"""
             try:
                 # Verify JWT token and check admin role
-                if not authorization or not authorization.startswith("Bearer "):
-                    raise HTTPException(status_code=401, detail="No token provided")
-
-                jwt_payload = verify_jwt(authorization[7:])
-                if jwt_payload.role != "ADMIN":
+                # 鉴权统一在路由依赖(_admin_gate): science 会话或 Bearer 皆可;
+                # 这里仅在显式提供 header 时校验其有效性
+                jwt_payload = None
+                if authorization and authorization.startswith("Bearer "):
+                    jwt_payload = verify_jwt(authorization[7:])
+                if jwt_payload is not None and jwt_payload.role != "ADMIN":
                     raise HTTPException(status_code=403, detail="Admin access required")
 
                 # Update model pricing
@@ -656,11 +695,12 @@ class AdminAPI:
             """Create pricing for a new model"""
             try:
                 # Verify JWT token and check admin role
-                if not authorization or not authorization.startswith("Bearer "):
-                    raise HTTPException(status_code=401, detail="No token provided")
-
-                jwt_payload = verify_jwt(authorization[7:])
-                if jwt_payload.role != "ADMIN":
+                # 鉴权统一在路由依赖(_admin_gate): science 会话或 Bearer 皆可;
+                # 这里仅在显式提供 header 时校验其有效性
+                jwt_payload = None
+                if authorization and authorization.startswith("Bearer "):
+                    jwt_payload = verify_jwt(authorization[7:])
+                if jwt_payload is not None and jwt_payload.role != "ADMIN":
                     raise HTTPException(status_code=403, detail="Admin access required")
 
                 # Create model pricing
@@ -693,11 +733,12 @@ class AdminAPI:
             """Delete pricing for a specific model"""
             try:
                 # Verify JWT token and check admin role
-                if not authorization or not authorization.startswith("Bearer "):
-                    raise HTTPException(status_code=401, detail="No token provided")
-
-                jwt_payload = verify_jwt(authorization[7:])
-                if jwt_payload.role != "ADMIN":
+                # 鉴权统一在路由依赖(_admin_gate): science 会话或 Bearer 皆可;
+                # 这里仅在显式提供 header 时校验其有效性
+                jwt_payload = None
+                if authorization and authorization.startswith("Bearer "):
+                    jwt_payload = verify_jwt(authorization[7:])
+                if jwt_payload is not None and jwt_payload.role != "ADMIN":
                     raise HTTPException(status_code=403, detail="Admin access required")
 
                 # Load pricing data
@@ -731,11 +772,12 @@ class AdminAPI:
             """Delete an API key"""
             try:
                 # Verify JWT token
-                if not authorization or not authorization.startswith("Bearer "):
-                    raise HTTPException(status_code=401, detail="No token provided")
-
-                jwt_payload = verify_jwt(authorization[7:])
-                if jwt_payload.role != "ADMIN":
+                # 鉴权统一在路由依赖(_admin_gate): science 会话或 Bearer 皆可;
+                # 这里仅在显式提供 header 时校验其有效性
+                jwt_payload = None
+                if authorization and authorization.startswith("Bearer "):
+                    jwt_payload = verify_jwt(authorization[7:])
+                if jwt_payload is not None and jwt_payload.role != "ADMIN":
                     raise HTTPException(status_code=403, detail="Unauthorized")
 
                 key = self.storage.deactivate_api_key(key_id)
@@ -759,10 +801,9 @@ class AdminAPI:
             """Get analytics overview for date range"""
             try:
                 # Verify JWT token
-                if not authorization or not authorization.startswith("Bearer "):
-                    raise HTTPException(status_code=401, detail="No token provided")
-
-                verify_jwt(authorization[7:])
+                # 鉴权统一在路由依赖(_admin_gate); 见上
+                if authorization and authorization.startswith("Bearer "):
+                    verify_jwt(authorization[7:])
 
                 # Parse dates and convert to naive UTC (remove timezone info)
                 start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
@@ -844,10 +885,9 @@ class AdminAPI:
             """Get time series analytics data"""
             try:
                 # Verify JWT token
-                if not authorization or not authorization.startswith("Bearer "):
-                    raise HTTPException(status_code=401, detail="No token provided")
-
-                verify_jwt(authorization[7:])
+                # 鉴权统一在路由依赖(_admin_gate); 见上
+                if authorization and authorization.startswith("Bearer "):
+                    verify_jwt(authorization[7:])
 
                 # Parse dates and convert to naive UTC
                 start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
@@ -1007,10 +1047,9 @@ class AdminAPI:
             """Get model breakdown"""
             try:
                 # Verify JWT token
-                if not authorization or not authorization.startswith("Bearer "):
-                    raise HTTPException(status_code=401, detail="No token provided")
-
-                verify_jwt(authorization[7:])
+                # 鉴权统一在路由依赖(_admin_gate); 见上
+                if authorization and authorization.startswith("Bearer "):
+                    verify_jwt(authorization[7:])
 
                 # Parse dates and convert to naive UTC
                 start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))

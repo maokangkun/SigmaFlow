@@ -131,7 +131,10 @@ export default function TracesPage() {
       } else {
         setTraces(response.data);
       }
-      setPagination(response.pagination);
+      // 防御: 异形响应(如网关 404 页)缺 pagination 时不至于整页崩溃
+      if (response && response.pagination) {
+        setPagination(response.pagination);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load traces');
     } finally {

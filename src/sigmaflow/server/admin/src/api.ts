@@ -1,7 +1,12 @@
 import axios from 'axios';
 import type { TracesResponse, TraceResponse } from './types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || window.location.origin;
+// 前缀部署自适应: 应用挂在 <prefix>/admin/ 时, API 同样要带该前缀。
+// 注意只取 /admin 之前的部分 — baseURL 下方自己拼 /admin/api,
+// 若把 /admin 也截进来会变成 /admin/admin/api 双段 404。
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  window.location.origin + window.location.pathname.replace(/^(.*)\/admin.*$/, '$1');
 
 const api = axios.create({
   baseURL: `${API_BASE_URL}/admin/api`,
@@ -51,6 +56,13 @@ export interface SetupResponse {
 }
 
 export const authApi = {
+  getMode: async () => {
+    const response = await api.get<{ mode: string; authenticated: boolean; user: string }>(
+      '/auth/mode'
+    );
+    return response.data;
+  },
+
   getSetupStatus: async () => {
     const response = await api.get<SetupStatusResponse>('/auth/setup-status');
     return response.data;
