@@ -46,11 +46,14 @@
       const stale = state.loaded.filter(m => !(reg.mods || []).some(x => x.id === m.id));
       for (const m of stale) this._unmount(m.id);
       for (const m of reg.mods || []) {
-        if (state.loaded.some(x => x.id === m.id && x.entry === m.entry)) continue;
+        if (state.loaded.some(x => x.id === m.id && x.path === m.entryPath)) continue;
         this._unmount(m.id);
+        // 部署在 /sigmaflow 等前缀后时, 根绝对路径会丢前缀; 统一经
+        // CS.api.url(按 settings.endpoint 基址)拼全, 与其余 API 同源同则
+        const url = CS.api.url('/' + m.entryPath) + '?v=' + reg.epoch;
         try {
-          await import(/* @vite-ignore */ m.entry);
-          state.loaded.push(m);
+          await import(/* @vite-ignore */ url);
+          state.loaded.push({ id: m.id, path: m.entryPath });
           console.info('[sfm] loaded', m.id, m.version);
         } catch (err) {
           console.warn('[sfm] failed to load', m.id, err);

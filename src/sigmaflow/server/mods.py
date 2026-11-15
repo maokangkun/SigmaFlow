@@ -825,15 +825,14 @@ def mods_api(subsystem: ModSubsystem = MODS) -> APIRouter:
                 continue
             if not rec.manifest.capabilities.ui:
                 continue  # 未声明 ui 能力不装(设计 §9)
-            entry_url = (
-                f"/science/m/{rec.mod_id}/entry.js?v={subsystem.host.registry.epoch}"
-            )
+            # 相对路径(无根斜杠): 前端经 CS.api.url 按 endpoint 基址拼全,
+            # 自动兼容 /sigmaflow 等部署前缀; ?v=epoch 防缓存也由前端加
             entries.append(
                 {
                     "id": rec.mod_id,
                     "name": rec.manifest.name,
                     "version": rec.manifest.version,
-                    "entry": entry_url,
+                    "entryPath": f"science/m/{rec.mod_id}/entry.js",
                 }
             )
         return {"mods": entries, "epoch": subsystem.host.registry.epoch}
