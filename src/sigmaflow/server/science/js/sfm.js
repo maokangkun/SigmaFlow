@@ -8,7 +8,21 @@
  */
 (() => {
   'use strict';
+  // SFM 自身的加载地址是推导静态基址的最可靠依据: 页面无论部署在
+  // 前缀下(/sigmaflow/science/a/sfm.<hash>.js)还是本地(js/sfm.js),
+  // 脚本目录的上一级就是 science 应用根。endpoint 不能用 — 它指向
+  // API 根(通常以 /api 结尾), 拼静态路径会多出 /api。
+  const SELF_SRC = (document.currentScript && document.currentScript.src) || '';
   const state = { views: {}, cards: {}, settings: {}, order: [], epoch: 0, loaded: [] };
+
+  function scienceRoot() {
+    const m = SELF_SRC.match(/^(.*\/science\/)a\/[^/]*\.js$/) || SELF_SRC.match(/^(.*\/science\/)js\/[^/]*\.js$/);
+    if (m) return m[1];
+    // 兜底: hash 路由下 pathname 恒为 <prefix>/science/(index.html)
+    let p = location.pathname.replace(/index\.html$/, '');
+    if (!p.endsWith('/')) p += '/';
+    return p;
+  }
 
   const SFM = {
     /* 注册侧栏视图: {id, title, icon?, order?, mount(el), unmount?} */
@@ -38,19 +52,35 @@
     /* views 暴露为只读引用(app.js 渲染钩子按路由查挂载点) */
     views: state.views,
 
+    /* 注册表拉取: 等应用就绪(endpoint/CS.api 由主应用启动期异步加载),
+     * 404/异常按 500ms 退避重试至多 20 次 — 固定 300ms 时序会在配置
+     * 未就绪时把请求打到 /mods/...(丢 /api 前缀) 并静默失败 */
+    async _fetchRegistry() {
+      for (let i = 0; i < 20; i++) {
+        if (window.CS && CS.api && CS.state && CS.state.settings) {
+          try {
+            const reg = await CS.api.request('/mods/ui/registry');
+            if (reg && Array.isArray(reg.mods)) return reg;
+          } catch (e) { /* 配置未就绪或瞬时错误: 退避重试 */ }
+        }
+        await new Promise(r => setTimeout(r, 500));
+      }
+      return null;
+    },
+
     /* 启动引导: 拉注册表并装载全部 UI mod(幂等, epoch 变化才重装) */
     async bootstrap() {
-      let reg;
-      try { reg = await CS.api.request('/mods/ui/registry'); } catch (e) { return; }
+      const reg = await this._fetchRegistry();
       if (!reg || reg.epoch === state.epoch) return;
       const stale = state.loaded.filter(m => !(reg.mods || []).some(x => x.id === m.id));
       for (const m of stale) this._unmount(m.id);
       for (const m of reg.mods || []) {
         if (state.loaded.some(x => x.id === m.id && x.path === m.entryPath)) continue;
         this._unmount(m.id);
-        // 部署在 /sigmaflow 等前缀后时, 根绝对路径会丢前缀; 统一经
-        // CS.api.url(按 settings.endpoint 基址)拼全, 与其余 API 同源同则
-        const url = CS.api.url('/' + m.entryPath) + '?v=' + reg.epoch;
+        // entryPath 形如 "science/m/<id>/entry.js": 相对 science 应用根
+        // 解析(基址来自本脚本地址/页面路径, 自动兼容任意部署前缀)
+        const rel = m.entryPath.replace(/^science\//, '');
+        const url = scienceRoot() + rel + '?v=' + reg.epoch;
         try {
           await import(/* @vite-ignore */ url);
           state.loaded.push({ id: m.id, path: m.entryPath });
