@@ -7040,6 +7040,39 @@ def _check_origin(request: Request):
 _sys_state: Dict[str, Any] = {"net": None, "gpu_at": 0.0, "gpu": None}
 
 
+# 宿主机真实外部流量的网速统计: 排除回环与容器/虚拟交换产生的虚拟接口,
+# veth 成对存在会把同一份流量在两端各计一次, bond 从属口与主口重复。
+_NET_VIRTUAL_PREFIXES = (
+    "lo",
+    "veth",
+    "docker",
+    "br-",
+    "tap",
+    "virbr",
+    "vxlan",
+    "cali",
+    "cni",
+    "flannel",
+    "tun",
+    "wg",
+    "zt",
+)
+
+
+def _real_net_nics(pernic: Dict[str, Any]) -> Dict[str, Any]:
+    """Filter the per-NIC counters down to host-facing interfaces."""
+    keep: Dict[str, Any] = {}
+    for nic, st in pernic.items():
+        name = nic.lower()
+        if name.startswith(_NET_VIRTUAL_PREFIXES):
+            continue
+        # bond/bridge 的从属接口带 master 链接, 流量已计入主口
+        if os.path.exists(f"/sys/class/net/{nic}/master"):
+            continue
+        keep[nic] = st
+    return keep
+
+
 def _gpu_stats() -> list:
     """nvidia-smi 查询 GPU 利用率/显存; 不可用时静默返回空列表(结果缓存 5s)。"""
     now = time.time()
@@ -7132,15 +7165,23 @@ def _system_stats() -> Dict[str, Any]:
     if disks:
         disk = disks[0]
     # 无可用磁盘统计时使用零值占位
-    # 网速按两次采样差值估算
+    # 网速按两次采样差值估算(仅宿主机真实网卡, 排除虚拟接口的重复计数)
     up_bps = down_bps = 0.0
-    net = psutil.net_io_counters()
+    net = psutil.net_io_counters(pernic=True)
     prev = _sys_state.get("net")
     if prev:
         dt = time.time() - prev[0]
-        if dt > 0:
-            up_bps = max(0, net.bytes_sent - prev[1].bytes_sent) / dt
-            down_bps = max(0, net.bytes_recv - prev[1].bytes_recv) / dt
+        prev_nics = _real_net_nics(prev[1])
+        if dt > 0 and prev_nics:
+            sent = recv = 0
+            for nic, st in _real_net_nics(net).items():
+                old_st = prev_nics.get(nic)
+                if old_st is None:
+                    continue
+                sent += max(0, st.bytes_sent - old_st.bytes_sent)
+                recv += max(0, st.bytes_recv - old_st.bytes_recv)
+            up_bps = sent / dt
+            down_bps = recv / dt
     _sys_state["net"] = (time.time(), net)
     # 快照存入全局状态, 供下次计算差值
     vm = psutil.virtual_memory()
