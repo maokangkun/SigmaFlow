@@ -2,7 +2,9 @@
 (() => {
   'use strict';
   const e = CS.escape, i = CS.icon, H = CS.viewHelpers;
-  const allowedRoutes = Object.keys(CS.views).filter(x => !['sidebar','topbar','composer','inspector','scatterPanel','reportDocument','sequenceTool'].includes(x));
+  const coreRoutes = Object.keys(CS.views).filter(x => !['sidebar','topbar','composer','inspector','scatterPanel','reportDocument','sequenceTool'].includes(x));
+  // SFM(P3): 动态视图路由 — mod 视图运行期注册进 CS.views, 白名单随之取实时值
+  const allowedRoutes = new Proxy(coreRoutes, { get(t, k) { if (k === 'includes') return v => t.includes(v) || !!(CS.views[v]); return t[k]; } });
   let uploadContext = 'data', modalReturnFocus = null;
   const parseHash = () => {
     const value = location.hash.replace(/^#\/?/, '').split('?')[0];
@@ -550,6 +552,19 @@
     if (el && _sysStatsHtml) el.innerHTML = _sysStatsHtml;
     if (hadConv) { const fresh = document.querySelector('.conversation'); if (fresh && CS._convSbDrag && Number.isFinite(CS._convSbTop)) fresh.scrollTop = CS._convSbTop; else if (fresh) fresh.scrollTop = savedTop; }
     CS.syncAnchorRail();
+    // SFM(P3): mod 视图/设置区块挂载 — 渲染重建 DOM 后把控制权交给注册的 mount()
+    if (CS.sfm) {
+      if (CS.ui.route && CS.sfm.views[CS.ui.route]) {
+        const host = document.getElementById('sfm-view-' + CS.ui.route);
+        if (host) { try { CS.sfm.views[CS.ui.route].mount(host); } catch (err) { host.innerHTML = '<div class="panel"><h2>Mod 视图出错</h2><p class="small muted">' + String(err && err.message || err) + '</p></div>'; } }
+      }
+      if (CS.ui.route === 'settings' && CS.ui.settingsTab === 'mods') {
+        for (const s of CS.sfm.settingsSections()) {
+          const el = document.getElementById('sfm-setting-' + s.id);
+          if (el) { try { s.render(el); } catch (err) { el.innerHTML = '<p class="small">mod 设置区块出错: ' + String(err && err.message || err) + '</p>'; } }
+        }
+      }
+    }
     // 超长轨迹格视觉截断检测: 首列越出容器左缘时挂 tr-trunc(左缘渐隐)。
     // 数据层已放宽到全部渲染, 截断完全交给视觉层; justify-flex-end 的
     // 左溢出 scrollWidth 测不到, 用首列几何判定, 幂等无循环渲染

@@ -69,6 +69,22 @@ class PipelineServer:
         # 注册环境路由之前就位(设计 §4.2); CLI 进程另有 agent 侧引导。
         MODS.bootstrap()
 
+        # UI mod 静态资源: /science/m/<mod-id>/... 按注册表现查目录伺服。
+        # 与 /science/a/ 同策略: 内容可长缓存, entry 由注册表端点带 epoch 版本号。
+        from fastapi import HTTPException
+        from fastapi.responses import FileResponse
+
+        @self.app.get("/science/m/{mod_id}/{file_path:path}")
+        async def mod_ui_asset(mod_id: str, file_path: str):
+            rec = MODS.host.registry.get(mod_id)
+            if rec is None or rec.state != "enabled":
+                raise HTTPException(status_code=404, detail="unknown mod")
+            root = (rec.path / "ui").resolve()
+            target = (root / file_path).resolve()
+            if not str(target).startswith(str(root) + "/") or not target.is_file():
+                raise HTTPException(status_code=404, detail="not found")
+            return FileResponse(target)
+
         api = PipelineAPI(pipeline_manager)
         task = TaskAPI(pipeline_manager)
         workspace = WorkspaceAPI(pipeline_manager)

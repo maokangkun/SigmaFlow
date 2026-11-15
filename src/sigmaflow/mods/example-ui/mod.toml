@@ -1,0 +1,17 @@
+# 示例 UI mod — SFM SDK 的活模板: 侧栏视图 + 设置区块。
+[mod]
+id = "example-ui"
+name = "示例 UI Mod"
+version = "1.0.0"
+description = "演示 science 工作台运行时装入 UI: 一个侧栏视图(Mod 速览)与一个设置区块"
+license = "MIT"
+reload = "instant"
+
+[api]
+ui = 1
+
+[capabilities]
+ui = true
+
+[contributions]
+ui = "ui/entry.js"

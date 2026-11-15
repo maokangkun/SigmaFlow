@@ -379,6 +379,34 @@ def mods_api(subsystem: ModSubsystem = MODS) -> APIRouter:
     async def list_mods():
         return subsystem.describe()
 
+    @router.get("/ui/registry")
+    async def ui_registry():
+        """前端启动引导: 启用中的 UI mod 清单(entry 带 ?v=epoch 防缓存污染)。
+
+        UI mod 判据: manifest 声明 ui 能力或有 ui/entry.js; 未启用/无 UI 不出单。
+        """
+        entries = []
+        for rec in subsystem.host.registry.all():
+            if rec.state != "enabled":
+                continue
+            entry = rec.path / "ui" / "entry.js"
+            if not entry.is_file():
+                continue
+            if not rec.manifest.capabilities.ui:
+                continue  # 未声明 ui 能力不装(设计 §9)
+            entry_url = (
+                f"/science/m/{rec.mod_id}/entry.js?v={subsystem.host.registry.epoch}"
+            )
+            entries.append(
+                {
+                    "id": rec.mod_id,
+                    "name": rec.manifest.name,
+                    "version": rec.manifest.version,
+                    "entry": entry_url,
+                }
+            )
+        return {"mods": entries, "epoch": subsystem.host.registry.epoch}
+
     @router.get("/events")
     async def mod_events(limit: int = 100):
         return {"events": subsystem.events(limit)}
