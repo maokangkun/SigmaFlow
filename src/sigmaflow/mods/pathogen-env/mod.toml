@@ -1,0 +1,16 @@
+# 虚拟病原体环境 mod — 分子/宿主内/诊断/群体/试验五层工具面按组暴露为
+# 多个 MCP 端点, 智能体只挂需要的尺度(实现见 server/pathenv.py)。
+[mod]
+id = "pathogen-env"
+name = "虚拟病原体环境"
+version = "1.0.0"
+description = "分子→宿主内→群体→试验台的虚拟病原体仿真环境, 五组 MCP 端点按尺度分层暴露"
+license = "MIT"
+reload = "restart"
+target = "server"
+
+[api]
+env = 1
+
+[contributions]
+env = "entry.py"

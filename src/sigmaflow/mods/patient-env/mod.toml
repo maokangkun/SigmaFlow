@@ -1,0 +1,16 @@
+# 虚拟患者环境 mod — 由 server/patenv.py(实现) + 本清单(接线)组成。
+# science 侧不再硬编码装配, 启动时经 envs 注册表遍历生成路由与侧栏项目。
+[mod]
+id = "patient-env"
+name = "虚拟患者环境"
+version = "1.0.0"
+description = "浏览器内生理引擎的病例挑战环境: 页面是环境宿主, 智能体经 MCP 工具面做诊断与治疗决策"
+license = "MIT"
+reload = "restart"
+target = "server"
+
+[api]
+env = 1
+
+[contributions]
+env = "entry.py"

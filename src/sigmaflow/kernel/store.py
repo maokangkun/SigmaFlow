@@ -205,4 +205,5 @@ def _toml_kv(key: str, val: Any) -> str:
         return f"{key} = {'true' if val else 'false'}"
     if isinstance(val, (int, float)):
         return f"{key} = {val}"
-    return f"{key} = {json.dumps(str(val), ensure_ascii=False)}"
+    # 字符串/数组/嵌套结构: JSON 子集与 TOML 字面量兼容(字符串/数组尤其如此)
+    return f"{key} = {json.dumps(val, ensure_ascii=False)}"

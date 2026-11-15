@@ -40,16 +40,18 @@ class CapabilityGate:
 
 
 # 服务名 → 所需能力的映射表: ModContext.services 视图按此过滤。
+# None = 基础功能(工具/技能/环境/流水线注册是 mod 的本职), 无需额外能力;
+# prompt/mcp 影响模型输入面与外联, 显式声明后才开放。
 SERVICE_CAPABILITY = {
-    "tools": "registry",
+    "tools": None,
     "prompts": "prompt",
-    "skills": "registry",
+    "skills": None,
     "mcp": "mcp",
-    "envs": "registry",
-    "nodes": "registry",
-    "clients": "registry",
-    "blocks": "registry",
-    "runs": None,  # None = 无需能力(只读/通用服务)
+    "envs": None,
+    "nodes": None,
+    "clients": None,
+    "blocks": None,
+    "runs": None,  # 只读/通用服务
     "models": None,
     "projects": None,
     "fs": None,  # fs 服务内部再按 fs-read/fs-write 逐路径门控

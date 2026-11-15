@@ -1,0 +1,18 @@
+# 示例工具 mod — 10 分钟写一个能跑的 mod 的活模板。
+# 停用即从工具面消失: 设置页 Mod 面板开关, 或 patch.toml enabled=false。
+[mod]
+id = "example-tools"
+name = "示例工具"
+version = "1.0.0"
+description = "演示 mod 工具注册: current_time 返回指定时区的当前时间"
+license = "MIT"
+reload = "run-boundary"
+
+[api]
+tools = 1
+
+[contributions]
+tools = "entry.py"
+
+[config.defaults]
+extra-timezones = []

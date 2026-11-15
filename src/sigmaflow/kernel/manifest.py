@@ -36,6 +36,11 @@ API_VERSIONS: Dict[str, int] = {
 
 RELOAD_LEVELS = ("instant", "run-boundary", "restart")
 
+# 运行面: mod 代码需要在哪里执行。服务进程内 agent 工具也在服务进程跑,
+# 所以 "agent 工具类 mod" 用默认 all 即可; 纯 server 接线类(如 env 桥)标
+# server, CLI 进程跳过; 极少数只该在 CLI 跑的标 cli。
+TARGETS = ("all", "server", "cli")
+
 _VALID_ID = re.compile(r"^[a-z][a-z0-9-]*$")
 
 _KNOWN_CAPS = {
@@ -124,6 +129,7 @@ class Manifest:
     authors: List[str] = field(default_factory=list)
     license: str = ""
     reload: str = "run-boundary"
+    target: str = "all"
     api: Dict[str, int] = field(default_factory=dict)
     requires_sigmaflow: Optional[str] = None
     requires_mods: Dict[str, str] = field(default_factory=dict)
@@ -145,6 +151,7 @@ class Manifest:
             "authors": self.authors,
             "license": self.license,
             "reload": self.reload,
+            "target": self.target,
             "api": self.api,
             "requires": {
                 "sigmaflow": self.requires_sigmaflow,
@@ -185,6 +192,12 @@ def manifest_from_dict(data: Dict[str, Any], *, source: str = "<memory>") -> Man
     if reload_level not in RELOAD_LEVELS:
         raise ManifestError(
             f"{source}: mod.reload must be one of {RELOAD_LEVELS}, got {reload_level!r}"
+        )
+
+    target = str(mod.get("target") or "all")
+    if target not in TARGETS:
+        raise ManifestError(
+            f"{source}: mod.target must be one of {TARGETS}, got {target!r}"
         )
 
     api_raw = data.get("api") or {}
@@ -246,6 +259,7 @@ def manifest_from_dict(data: Dict[str, Any], *, source: str = "<memory>") -> Man
         authors=[str(a) for a in (mod.get("authors") or [])],
         license=str(mod.get("license") or ""),
         reload=reload_level,
+        target=target,
         api=api,
         requires_sigmaflow=(str(req["sigmaflow"]) if req.get("sigmaflow") else None),
         requires_mods={str(k): str(v) for k, v in req_mods.items()},

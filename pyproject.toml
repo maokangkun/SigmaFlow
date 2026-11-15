@@ -74,6 +74,7 @@ where = ["src"]
 version = {attr = "sigmaflow.version.__version__"}
 
 [tool.setuptools.package-data]
+"sigmaflow" = ["mods/**/mod.toml", "mods/**/entry.py", "mods/**/README.md"]
 "sigmaflow.server" = [
     "object_info.json",
     "models.json",

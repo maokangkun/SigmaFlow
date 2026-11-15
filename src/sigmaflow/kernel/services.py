@@ -95,6 +95,11 @@ class ServiceRegistry:
         with self._lock:
             return dict(self._owners)
 
+    def instances(self):
+        """全部已物化服务对象(mod 卸载时按 dispose_owner 约定回收, 设计 §4.3)。"""
+        with self._lock:
+            return list(self._services.values())
+
     def view(self, allowed: Optional[set] = None) -> "ServiceView":
         """按能力过滤的只读视图(mod 视角)。``allowed=None`` 表示全量。"""
         return ServiceView(self, allowed)

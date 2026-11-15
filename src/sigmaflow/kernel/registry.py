@@ -10,11 +10,11 @@ import itertools
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, List, Optional
 
 from .manifest import Manifest, manifest_from_dict
 
-MOD_STATES = ("installed", "enabled", "disabled", "blocked", "error")
+MOD_STATES = ("installed", "enabled", "disabled", "blocked", "error", "skipped")
 
 
 @dataclass

@@ -115,7 +115,7 @@ class ModHost:
 
     # ------------------------------------------------------------ 卸载
     def unload(self, mod_id: str) -> List[str]:
-        """卸载: 停钩子 → 跑卸载回调 → 摘服务 → 摘模块。返回错误列表。"""
+        """卸载: 停钩子 → 跑卸载回调 → 服务按 dispose_owner 约定回收 → 摘模块。"""
         with self._lock:
             ctx = self._contexts.pop(mod_id, None)
             errors: List[str] = []
@@ -123,6 +123,15 @@ class ModHost:
                 return errors
             errors.extend(ctx.run_unload_callbacks() or [])
             self.hooks.unsubscribe_owner(mod_id)
+            # 服务约定: 任何实现 dispose_owner(mod_id) 的服务在此回收该 mod 的
+            # 贡献(工具桥、环境注册表、提示词组装器…), mod 侧无需样板卸载代码
+            for svc in self.services.instances():
+                dispose = getattr(svc, "dispose_owner", None)
+                if callable(dispose):
+                    try:
+                        dispose(mod_id)
+                    except Exception as exc:  # noqa: BLE001 — 回收尽力而为
+                        errors.append(f"dispose:{type(exc).__name__}: {exc}")
             for name, owner in list(self.services.names().items()):
                 if owner == mod_id:
                     self.services.remove(name, owner="core")
@@ -133,11 +142,18 @@ class ModHost:
             return errors
 
     # ---------------------------------------------------------- 批量装载
-    def bootstrap(self, builtin_dirs: Optional[List[Path]] = None) -> Dict[str, int]:
+    def bootstrap(
+        self,
+        builtin_dirs: Optional[List[Path]] = None,
+        *,
+        target: str = "all",
+    ) -> Dict[str, int]:
         """进程启动期的完整装配: 扫描目录 → 应用 profile/patch → 拓扑加载。
 
         返回统计 {loaded, blocked, errored}。目录优先级: 项目 > 用户 > 内置
-        (同名前者遮蔽后者, 设计 §10)。
+        (同名前者遮蔽后者, 设计 §10)。``target`` 为本进程的运行面
+        ("server"/"cli"/"all"), manifest.target 不含本面的 mod 跳过加载
+        (记录保留, 状态标记 skipped)。
         """
         with self._lock:
             builtin_dirs = builtin_dirs or []
@@ -147,8 +163,21 @@ class ModHost:
                 self.store.ensure_layout()
                 self._scan_dir(self.store.mods_dir, origin="local")
                 self._apply_profile_patch()
+            # 运行面过滤: 不属于本进程面的 mod 保持 installed/skipped, 不参与拓扑
+            for rec in self.registry.all():
+                if (
+                    rec.manifest.target != "all"
+                    and rec.manifest.target != target
+                    and target != "all"
+                ):
+                    if rec.state in ("enabled", "installed"):
+                        rec.state = "skipped"
+                        rec.state_reason = f"target {rec.manifest.target!r} not loaded in {target!r} process"
             plan = self.registry.load_plan()
-            stats = {"loaded": 0, "blocked": 0, "errored": 0}
+            stats = {"loaded": 0, "blocked": 0, "errored": 0, "skipped": 0}
+            for rec in self.registry.all():
+                if rec.state == "skipped":
+                    stats["skipped"] += 1
             for mod_id, reason in plan.blocked.items():
                 rec = self.registry.get(mod_id)
                 if rec:

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import dataclasses
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Tuple
 
 MAIN = "main"

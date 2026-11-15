@@ -59,19 +59,7 @@ from .science_auth import (
 )
 
 from sigmaflow.agent import conf as _agent_conf
-from .patenv import (
-    HUB as PATENV_HUB,
-    PATIENT_PROJECT_ID,
-    PATIENT_PROJECT_NAME,
-    patient_agent_prompt,
-)
-from .pathenv import (
-    HUB as PATHENV_HUB,
-    GROUPS as PATHENV_GROUPS,
-    PATHOGEN_PROJECT_ID,
-    PATHOGEN_PROJECT_NAME,
-    pathogen_agent_prompt,
-)
+from .mods import MODS
 from .science_admin import (
     _ScienceSkillView,
     _TOOL_ALIASES,
@@ -1326,17 +1314,23 @@ class ScienceAPI:
 
         self._register_conversation_routes(router)
 
-        self._register_patenv_routes(router, mcp_router)
-        self._register_pathenv_routes(router, mcp_router)
+        self._register_env_mod_routes(router, mcp_router)
 
         self._register_pty_routes(router, ws_router)
 
         @router.on_event("startup")
         async def startup_event():
             await self.manager.start()
-            # 侧栏「虚拟患者」「虚拟病原体」项目启动即就位, 会话才能落在固定项目里
-            self._patenv_ensure_project()
-            self._pathenv_ensure_project()
+            # 侧栏固定项目(虚拟患者/虚拟病原体等 env mod)启动即就位,
+            # 会话才能落在固定项目里 — 清单来自 envs 注册表
+            for spec in MODS.envs.all():
+                self._ensure_env_project(
+                    spec.project_id,
+                    spec.project_name,
+                    spec.project_description,
+                    spec.project_tags,
+                    spec.project_icon,
+                )
             # MCP 工具在 tools 模块 import 时接线, 而本服务自托管的 patenv MCP
             # 走 127.0.0.1:<自身端口>——此时端口可能还没监听, 首次列工具会落空。
             # 监听就绪后再重挂一次, 顺便把远端 MCP(rcsb/anysearch) 的临时失败补上。
@@ -3400,26 +3394,6 @@ class ScienceAPI:
             )
         return project_id
 
-    def _patenv_ensure_project(self) -> str:
-        """侧栏固定项目「虚拟患者」: 所有病例挑战会话都归到这里。"""
-        return self._ensure_env_project(
-            PATIENT_PROJECT_ID,
-            PATIENT_PROJECT_NAME,
-            "AI 智能体在虚拟患者环境里做病例挑战的会话集合",
-            ["虚拟患者", "病例挑战"],
-            "patient",
-        )
-
-    def _pathenv_ensure_project(self) -> str:
-        """侧栏固定项目「虚拟病原体」: 所有病原体实验会话都归到这里。"""
-        return self._ensure_env_project(
-            PATHOGEN_PROJECT_ID,
-            PATHOGEN_PROJECT_NAME,
-            "AI 智能体在虚拟病原体环境里做仿真实验的会话集合",
-            ["虚拟病原体", "仿真实验"],
-            "virus",
-        )
-
     def _register_env_routes(
         self,
         router: APIRouter,
@@ -3661,34 +3635,33 @@ class ScienceAPI:
                 f"/{prefix}/mcp/{group}", _make(), methods=["POST"]
             )
 
-    def _register_patenv_routes(self, router: APIRouter, mcp_router: APIRouter) -> None:
-        self._register_env_routes(
-            router,
-            mcp_router,
-            hub=PATENV_HUB,
-            prefix="patenv",
-            project_id=PATIENT_PROJECT_ID,
-            project_name=PATIENT_PROJECT_NAME,
-            prompt_fn=patient_agent_prompt,
-            page_title="虚拟患者",
-            ensure_project=self._patenv_ensure_project,
-        )
-
-    def _register_pathenv_routes(
+    def _register_env_mod_routes(
         self, router: APIRouter, mcp_router: APIRouter
     ) -> None:
-        self._register_env_routes(
-            router,
-            mcp_router,
-            hub=PATHENV_HUB,
-            prefix="pathenv",
-            project_id=PATHOGEN_PROJECT_ID,
-            project_name=PATHOGEN_PROJECT_NAME,
-            prompt_fn=pathogen_agent_prompt,
-            page_title="虚拟病原体",
-            ensure_project=self._pathenv_ensure_project,
-            groups=PATHENV_GROUPS,
-        )
+        """遍历 envs 注册表装配环境路由(env mod 的接线点, 设计 §6.4)。
+
+        hub/prefix/项目元信息全在 EnvSpec 里; ensure_project 闭包由本类按
+        spec 元数据生成(项目 store 属于服务, mod 不直接持有)。
+        """
+        for spec in MODS.envs.all():
+            self._register_env_routes(
+                router,
+                mcp_router,
+                hub=spec.hub,
+                prefix=spec.prefix,
+                project_id=spec.project_id,
+                project_name=spec.project_name,
+                prompt_fn=spec.prompt_fn,
+                page_title=spec.page_title,
+                ensure_project=lambda s=spec: self._ensure_env_project(
+                    s.project_id,
+                    s.project_name,
+                    s.project_description,
+                    s.project_tags,
+                    s.project_icon,
+                ),
+                groups=spec.groups,
+            )
 
     def _register_pty_routes(self, router: APIRouter, ws_router: APIRouter) -> None:
         """Register routes for this domain (order preserved)."""

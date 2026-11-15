@@ -10,6 +10,7 @@ from .task import TaskAPI
 from .workspace import WorkspaceAPI
 from .admin import AdminAPI
 from .science import ScienceAPI
+from .mods import MODS, mods_api
 
 
 class SPAStaticFiles(StaticFiles):
@@ -64,6 +65,10 @@ class PipelineServer:
                 )
             return response
 
+        # mod 装配先于一切 API 构造: env mod 的注册表条目要在 ScienceAPI
+        # 注册环境路由之前就位(设计 §4.2); CLI 进程另有 agent 侧引导。
+        MODS.bootstrap()
+
         api = PipelineAPI(pipeline_manager)
         task = TaskAPI(pipeline_manager)
         workspace = WorkspaceAPI(pipeline_manager)
@@ -78,6 +83,7 @@ class PipelineServer:
         self.app.include_router(science.ws_router)
         self.app.include_router(science.mcp_router)
         self.app.include_router(science.auth_router)
+        self.app.include_router(mods_api())
 
         web_root = Path(f"{__file__[: __file__.rindex('/')]}/website/dist/")
         work_root = Path(f"{__file__[: __file__.rindex('/')]}/comfyui/dist")
