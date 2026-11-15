@@ -3,6 +3,19 @@
   const e = CS.escape, i = CS.icon;
   // 轻量 UI 片段(app.js 的 H 没有跨模块共享, 这里给空态分支各补一份)
   const H = { notice: t => `<div class="notice">${e(t)}</div>` };
+  // 超长用户消息折叠展示: 头尾保留、中段省略为一条可点击折叠条; 键=会话id|消息序号
+  // (与压缩摘要卡同套路, 展开状态存 CS.ui.userExpandedSet, 追加式列表里序号稳定)
+  const USER_FOLD_LIMIT = 800, USER_FOLD_HEAD = 400, USER_FOLD_TAIL = 200;
+  const userTextHTML = (content, key) => {
+    const vis = String(content || '').replace(/\u200B@\[\[[^\]]*\]\]/g, '').replace(/\u200B@\S+/g, '').trim();
+    if (!vis) return '';
+    if (vis.length <= USER_FOLD_LIMIT) return e(vis);
+    const set = CS.ui.userExpandedSet || (CS.ui.userExpandedSet = new Set());
+    if (set.has(key)) return `${e(vis)}<button type="button" class="user-fold-bar" data-action="toggle-user-fold" data-id="${e(key)}" title="收起全文">⋯ 收起全文（共 ${vis.length} 字）</button>`;
+    const head = vis.slice(0, USER_FOLD_HEAD), tail = vis.slice(vis.length - USER_FOLD_TAIL);
+    const hidden = vis.length - head.length - tail.length;
+    return `${e(head)}<button type="button" class="user-fold-bar" data-action="toggle-user-fold" data-id="${e(key)}" title="展开全部 ${vis.length} 字">⋯ 已折叠中段 ${hidden} 字 · 展开全部（共 ${vis.length} 字）</button>${e(tail)}`;
+  };
   const btn = (action, label, icon = '', kind = '', extra = '') => `<button type="button" class="btn ${kind}" data-action="${action}" ${extra}>${icon ? i(icon, '', 15) : ''}${label ? `<span>${e(label)}</span>` : ''}</button>`;
   const iconBtn = (action, icon, label, extra = '') => `<button type="button" class="icon-btn" data-action="${action}" title="${e(label)}" aria-label="${e(label)}" ${extra}>${i(icon)}</button>`;
   const pill = (label, type = '') => `<span class="pill ${type}">${e(label)}</span>`;
@@ -1137,7 +1150,7 @@ V.ctxRing = () => {
         if (m.role === 'assistant' && isCompactMsg(m)) return V_COMPACT_REPLY(m, idxOf);
         if (m.compact || String(m.content || '').startsWith('[Conversation compressed')) return V_COMPACT(m, idxOf);
         return m.role === 'user'
-        ? `<div class="msg-block user-block" data-mi="${idxOf}">${V.refImages(m.content, run.projectId || CS.state.projectId)}${V.refChips(m.content, run.projectId || CS.state.projectId)}${m.datasetIds?.length ? `<div class="attachment-list ref-outside">${m.datasetIds.map(id => `<span class="attachment">${i('file')}${e(CS.state.datasets.find(d => d.id === id)?.name || id)}</span>`).join('')}</div>` : ''}<div class="user-message">${m.steering ? '<span class="steer-badge" title="引导消息：生成期间插入，当前回合结束后送达模型">引导</span>' : ''}${(() => { const vis = String(m.content || '').replace(/\u200B@\[\[[^\]]*\]\]/g, '').replace(/\u200B@\S+/g, '').trim(); return vis ? e(vis) : ''; })()}</div><div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span><span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="edit-message" data-id="${idxOf}" title="修改">${i('edit','',13)}</span><span class="icon-btn danger-hover" role="button" data-action="delete-message" data-id="${idxOf}" title="删除消息">${i('trash','',13)}</span></span></div></div>`
+        ? `<div class="msg-block user-block" data-mi="${idxOf}">${V.refImages(m.content, run.projectId || CS.state.projectId)}${V.refChips(m.content, run.projectId || CS.state.projectId)}${m.datasetIds?.length ? `<div class="attachment-list ref-outside">${m.datasetIds.map(id => `<span class="attachment">${i('file')}${e(CS.state.datasets.find(d => d.id === id)?.name || id)}</span>`).join('')}</div>` : ''}<div class="user-message">${m.steering ? '<span class="steer-badge" title="引导消息：生成期间插入，当前回合结束后送达模型">引导</span>' : ''}${userTextHTML(m.content, run.id + '|' + idxOf)}</div><div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span><span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="edit-message" data-id="${idxOf}" title="修改">${i('edit','',13)}</span><span class="icon-btn danger-hover" role="button" data-action="delete-message" data-id="${idxOf}" title="删除消息">${i('trash','',13)}</span></span></div></div>`
         : (() => {
             // present 专属身份: 图标与名称"展示"(标题不再拼原始工具名, 展开详情保留)
             const blockMeta = t => t.name === 'bash' ? {icon: 'terminal', label: '终端'} : t.name === 'present' ? {icon: 'present', label: '展示'} : t.name === 'webview' ? {icon: 'globe', label: '网页'} : t.name === 'create_skill' ? {icon: 'spark', label: '创建技能'} : {icon: 'code', label: '工具'};

@@ -326,6 +326,10 @@ html:has(.auth-page){scrollbar-gutter:auto}
 /* 终端主题下拉(通用设置) */
 .setting-input-inline{height:38px;width:96px;max-width:96px;padding:0 10px;background:var(--surface);border:1px solid var(--line);border-radius:10px;font-size:12px;color:var(--ink);text-align:right}
 .setting-input-inline:focus{border-color:var(--accent);outline:none}
+/* 超长用户消息的折叠条: 气泡内自成一行, 虚线分隔, 点击展开/收起全文 */
+.user-fold-bar{display:block;width:100%;margin:9px 0;padding:7px 10px;border:1px dashed var(--line);border-radius:8px;background:rgba(255,255,255,.55);color:var(--muted);font-size:10px;line-height:1.5;text-align:center;white-space:normal;cursor:pointer;font-family:inherit}
+.user-fold-bar:hover{color:var(--accent);border-color:var(--accent)}
+
 /* 日志与反馈页: 日志尾部查看区(等宽字体 + 级别着色), 风格沿用 inset 面板 */
 .logs-wrap{margin-top:8px}
 .logs-pre{background:var(--inset);border-radius:9px;padding:12px 14px;max-height:52vh;overflow:auto;font-size:11px;line-height:1.55;white-space:pre;font-family:"DejaVu Sans Mono","SFMono-Regular",Consolas,"Liberation Mono","Noto Sans Mono CJK SC",monospace;margin:0}

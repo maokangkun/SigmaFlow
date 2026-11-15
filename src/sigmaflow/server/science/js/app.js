@@ -2792,6 +2792,13 @@ CS.liveBlocks = {
       const set = CS.ui.errorOpenSet || (CS.ui.errorOpenSet = new Set());
       if (set.has(k)) set.delete(k); else set.add(k);
     }),
+    'toggle-user-fold': id => {
+      // 超长用户消息展开/收起: 键=会话id|消息序号, 与压缩摘要卡同套路
+      if (!id) return;
+      const set = CS.ui.userExpandedSet || (CS.ui.userExpandedSet = new Set());
+      if (set.has(id)) set.delete(id); else set.add(id);
+      CS.render();
+    },
     'toggle-compact': (id, el) => {
       // 摘要卡点击折叠/展开: 卡默认折叠, 点开过的进已展开集(键 = 会话id+消息序号)
       const k = el?.dataset?.ckey;
