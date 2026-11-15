@@ -5,15 +5,12 @@
 逐字节一致 — 后续阶段把消费方切到注册表后, 同一对拍继续守护。
 """
 
-import json
-
 import pytest
 
 from sigmaflow.kernel import (
     HookBus,
     ManifestError,
     ModHost,
-    ModRegistry,
     ModStore,
     PromptComposer,
     PromptSection,
@@ -22,7 +19,6 @@ from sigmaflow.kernel import (
     ToolSpec,
     parse_manifest,
     parse_patch,
-    parse_profile,
     resolve_config,
 )
 
@@ -341,8 +337,6 @@ class TestModHost:
         return d
 
     def test_bootstrap_and_hooks(self, tmp_path):
-        from sigmaflow.kernel import ServiceRegistry as SR
-
         d = self._make_mod(
             tmp_path,
             "greet",

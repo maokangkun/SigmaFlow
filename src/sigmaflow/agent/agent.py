@@ -28,6 +28,14 @@ from .tools import (
     set_session_workdir,
     bound_project_dir,
 )
+from .loop import (
+    LOOP_END,
+    LOOP_NEXT_TURN,
+    LOOP_PROCEED,
+    LOOP_TOOLS,
+    LoopContext,
+    run_agent_loop,
+)
 from .harness import GOAL
 from .utils import KnightRiderStatus, extract_json
 from .conf import *
@@ -381,326 +389,356 @@ class Agent:
         show_processing=True,
         max_turn=None,
         on_delta=None,
-    ):
-        if on_delta is not None:
-            self.on_delta = on_delta
-        # system 恒定字节级稳定, 最大化网关前缀缓存命中; 不再注入任何会变内容
-        # (模型需要当前时间时可自行调用 bash 等工具获取)
-        if not subagent:
-            self.system = self._system_base
-            # goal 评估器随主 Agent 配置: 否则 _client 恒 None, evaluate_after_turn
-            # 每轮走 error 分支且不计入 consecutive_blocks, goal_set 后循环注入
-            # "继续工作" 直到烧完轮次预算(goal 工具的 schema 与提示词一直在暴露)
-            GOAL.configure(self.client, self.model)
-        if self.method == "openai" and messages[0]["role"] != "system":
+    ) -> dict:
+        """单入口不变(str 重载仍在类体末尾)。
+
+        P2 起 __call__ 只做装配: 构造 LoopContext 后交 run_agent_loop 驱动
+        阶段管线(设计 §6.1); loop 可被 mod 整体替换(experimental)。
+        """
+        lc = self._loop_setup(
+            messages,
+            tools,
+            subagent,
+            print_inp,
+            is_print,
+            show_processing,
+            max_turn,
+            on_delta,
+        )
+        return run_agent_loop(self, lc)
+
+    # ------------------------------------------------------------ loop 阶段
+    # 阶段方法: 逐字搬移自原 __call__, 共享态经 lc; 控制流返回 LOOP_* 常量。
+    # LOOP_PROCEED=继续, LOOP_NEXT_TURN=下一轮, LOOP_END=结束, LOOP_TOOLS=放行工具分发。
+
+    def _stage_turn_begin(self, lc):
+        """阶段 1: 停止探测 → steer① → 压缩 → system 补插 → 后台通知。"""
+        messages = lc.messages
+        info = lc.info
+        # 用户停止探测(轮次边界): 置位后当前轮收尾即退出, 不再发起下一轮
+        try:
+            _user_stopped = bool(self.stop_poll()) if self.stop_poll else False
+        except Exception:
+            _user_stopped = False
+        if _user_stopped:
+            info["stopped"] = True
+            return LOOP_END
+        # steering 注入点①: 上一回合的工具批已执行完、下一次模型调用
+        # 尚未发出 —— 排队插话在此进入上下文, 成为下一段回复的输入
+        self._inject_steer(messages, info)
+        messages[:] = self.compactor.auto_compact(
+            messages, force=lc.manual_compact, context_ratio=lc.ratio
+        )
+        # 压缩发生时同步通知前端: 前端丢弃被摘要的轮次并渲染摘要卡(pi CompactionEntry)
+        cmeta = getattr(self.compactor, "last_meta", None)
+        if cmeta and isinstance(cmeta, dict) and cmeta.get("applied"):
+            info["compaction"] = {k: v for k, v in cmeta.items() if k != "text"}
+            if self.on_tool is not None:
+                try:
+                    self.on_tool(
+                        {
+                            "kind": "compact",
+                            "removed": cmeta.get("removed"),
+                            "dropOldIdx": cmeta.get("dropOldIdx", -1),
+                            "kept": cmeta.get("kept"),
+                            "tokensBefore": cmeta.get("tokens_before"),
+                            "transcript": cmeta.get("transcript"),
+                            "text": cmeta.get("text"),
+                        }
+                    )
+                except Exception:
+                    pass
+            # 压缩对模型也要显式宣告: 只给摘要不给说明时, 模型可能把截断的
+            # 上下文当成会话本就如此, 重复已完成工作或答非所问。
+            # 仅注入 messages 不发前端事件: 用户側的"压缩会话"等待卡承担全部呈现
+            _compact_note = {
+                "role": "user",
+                "content": (
+                    "[System] Conversation history was just compacted: "
+                    "earlier turns were replaced by the summary above "
+                    "(marked [Conversation compressed]). Continue the "
+                    "current task from that summary; do not redo work "
+                    "that is already recorded."
+                ),
+            }
+            messages.append(_compact_note)
+            info.setdefault("messages", []).append(_compact_note)
+        # 压缩只收缩上下文(摘要卡追加尾部), 原本占头部的 system 消息可能被
+        # 摘要吞掉: 每轮压缩后都补插一次, 与函数开头的装配保持一致
+        if messages[0]["role"] != "system":
             messages.insert(
                 0,
                 {
                     "role": "system",
-                    "content": self.system if not subagent else self.sub_system,
+                    "content": self.system if not lc.subagent else self.sub_system,
                 },
             )
-        elif self.method == "anthropic" and messages[0]["role"] == "system":
-            messages.pop(0)
+        lc.manual_compact = False
 
-        info = {
-            "config": self.config,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": self.system if not subagent else self.sub_system,
-                }
-            ]
-            + copy.deepcopy(messages[1:]),
-            "last_response": None,
-            "cost_tokens": 0,
-            "completion_tokens": 0,  # 辅助上屏 tok/s 统计: 与 cost_tokens 分开, 只计补全侧
-            "prompt_tokens": 0,  # 输入侧 token, 多轮工具循环时逐轮累加
-            "cache_read_tokens": 0,  # 缓存读取 token(成本远低于未命中输入), 逐轮累加
-            "cost_time": 0,
-            "used_tools": [],
-            "used_skills": [],
-            "error": None,
-        }
-
-        print = console.print if is_print else lambda *_a, **_k: None
-
-        if print_inp:
-            for msg in info["messages"]:
-                match msg.get("role"):
-                    case "user":
-                        print(f"{Prompt.User}{msg['content']}")
-                    case "assistant":
-                        print(f"{Prompt.Assistant}{msg['content']}")
-                    case "system":
-                        print(f"{Prompt.System}{msg['content']}")
-                    case "tool":
-                        print(f"{Prompt.Tool}{msg['content']}")
-                    case _:
-                        print(f"{Prompt.Unknown}{msg}")
-
-        for m in messages:
-            if m["role"] == "user":
-                m["content"] = self._process_query(m["content"])
-
-        T = self.sub_tools if subagent else self.tools
-        usable_tools = (
-            []
-            if not self.support_tool
-            else (
-                T
-                if tools is None
-                else [
-                    t
-                    for t in T
-                    if t.get("name", t.get("function", {}).get("name")) in tools
-                ]
+        lc.notifs = BG.drain_notifications()
+        if lc.notifs and messages:
+            for n in lc.notifs:
+                lc.print(
+                    f"{Prompt.Bgtask}Task ID: {n['task_id']}, Status: {n['status']}, Result: {n['result']}"
+                )
+            notif_text = "\n".join(
+                f"[bg:{n['task_id']}] {n['status']}: {n['result']}" for n in lc.notifs
             )
+            _bg_msg = {
+                "role": "user",
+                "content": f"<background-results>\n{notif_text}\n</background-results>",
+            }
+            _inject_sysnote(self.on_tool, messages, info, _bg_msg)
+            messages.append(
+                {"role": "assistant", "content": "Noted background results."}
+            )
+
+        lc.knight_rider = (
+            KnightRiderStatus("", width=11, color="#5c9cf5", fps=30)
+            if lc.is_print and lc.show_processing and not self.debug
+            else None
         )
 
-        cur_turn = len([m for m in messages if m["role"] == "assistant"])
-        max_turn = max_turn or self.max_turn
-        _nudge_at = (
-            self.nudge_threshold
-            if self.nudge_threshold is not None
-            else _SILENT_TURN_NUDGE_THRESHOLD
-        )
-        begin_time = time.time()
-        manual_compact = False
-        ratio = 0
-        silent_tools = 0
-        nudge_armed = 0
-        max_model_len = self.max_model_len  # 构造时已定(litellm 或显式传入), 不随轮重查
-        while cur_turn < max_turn:
-            # 用户停止探测(轮次边界): 置位后当前轮收尾即退出, 不再发起下一轮
+    def _stage_llm_call(self, lc):
+        """阶段 2: 带重试的模型调用(anthropic 流式 / openai 双形态)。"""
+        messages = lc.messages
+        info = lc.info
+        lc.tried = 0
+        while lc.tried < self.retry:
             try:
-                _user_stopped = bool(self.stop_poll()) if self.stop_poll else False
-            except Exception:
-                _user_stopped = False
-            if _user_stopped:
-                info["stopped"] = True
-                break
-            # steering 注入点①: 上一回合的工具批已执行完、下一次模型调用
-            # 尚未发出 —— 排队插话在此进入上下文, 成为下一段回复的输入
-            self._inject_steer(messages, info)
-            messages[:] = self.compactor.auto_compact(
-                messages, force=manual_compact, context_ratio=ratio
-            )
-            # 压缩发生时同步通知前端: 前端丢弃被摘要的轮次并渲染摘要卡(pi CompactionEntry)
-            cmeta = getattr(self.compactor, "last_meta", None)
-            if cmeta and isinstance(cmeta, dict) and cmeta.get("applied"):
-                info["compaction"] = {k: v for k, v in cmeta.items() if k != "text"}
-                if self.on_tool is not None:
-                    try:
-                        self.on_tool(
+                if lc.knight_rider:
+                    lc.knight_rider.start()
+                start_time = time.time()
+                match self.method:
+                    case "anthropic":
+                        # 流式优先: ThinkingEvent/TextEvent 边到边推 on_delta,
+                        # 终态由 get_final_message 聚合(usage/stop_reason/内容块
+                        # 与非流式完全同构, 下游逻辑零改动); SDK 不支持 stream
+                        # 上下文管理器时回退非流式并整段补发
+                        _streamed = [False]
+
+                        def _anthropic_call():
+                            try:
+                                with self.client.messages.stream(
+                                    model=self.model,
+                                    system=self.system,
+                                    messages=messages,
+                                    tools=lc.usable_tools,
+                                    max_tokens=MAX_TOKENS,
+                                ) as _stream:
+                                    _streamed[0] = True
+                                    for _ev in _stream:
+                                        _t = type(_ev).__name__
+                                        if self.on_delta is not None:
+                                            if _t == "ThinkingEvent" and getattr(
+                                                _ev, "thinking", ""
+                                            ):
+                                                self.on_delta(None, _ev.thinking)
+                                            elif _t == "TextEvent" and getattr(
+                                                _ev, "text", ""
+                                            ):
+                                                self.on_delta(_ev.text)
+                                    return _stream.get_final_message()
+                            except TypeError:
+                                return self.client.messages.create(
+                                    model=self.model,
+                                    system=self.system,
+                                    messages=messages,
+                                    tools=lc.usable_tools,
+                                    max_tokens=MAX_TOKENS,
+                                )
+
+                        lc.response = _anthropic_call()
+                        lc.response.content = sorted(
+                            lc.response.content,
+                            key=lambda x: 0 if x.type == "thinking" else 1,
+                        )
+                        # 回退路径(未走流式)整段补发思考/正文, 保证服务端聊天
+                        # 管线(science 的 stream_chat)总能收到增量事件
+                        if self.on_delta is not None and not _streamed[0]:
+                            for _blk in lc.response.content:
+                                if getattr(_blk, "type", "") == "thinking":
+                                    if getattr(_blk, "thinking", ""):
+                                        self.on_delta(None, _blk.thinking)
+                                elif getattr(_blk, "type", "") == "text":
+                                    if getattr(_blk, "text", ""):
+                                        self.on_delta(_blk.text)
+                        info["cost_tokens"] += (
+                            lc.response.usage.input_tokens
+                            + lc.response.usage.output_tokens
+                        )
+                        info["prompt_tokens"] += (
+                            getattr(lc.response.usage, "input_tokens", 0) or 0
+                        )
+                        info["completion_tokens"] += (
+                            getattr(lc.response.usage, "output_tokens", 0) or 0
+                        )
+                        info["last_prompt_tokens"] = (
+                            getattr(lc.response.usage, "input_tokens", 0) or 0
+                        )
+                        info["cache_read_tokens"] += _usage_cache_read(
+                            lc.response.usage
+                        )
+                        messages.append(
+                            {"role": "assistant", "content": lc.response.content}
+                        )
+                        info["messages"].append(
                             {
-                                "kind": "compact",
-                                "removed": cmeta.get("removed"),
-                                "dropOldIdx": cmeta.get("dropOldIdx", -1),
-                                "kept": cmeta.get("kept"),
-                                "tokensBefore": cmeta.get("tokens_before"),
-                                "transcript": cmeta.get("transcript"),
-                                "text": cmeta.get("text"),
+                                "role": "assistant",
+                                "content": [i.dict() for i in lc.response.content],
                             }
                         )
-                    except Exception:
-                        pass
-                # 压缩对模型也要显式宣告: 只给摘要不给说明时, 模型可能把截断的
-                # 上下文当成会话本就如此, 重复已完成工作或答非所问。
-                # 仅注入 messages 不发前端事件: 用户側的"压缩会话"等待卡承担全部呈现
-                _compact_note = {
-                    "role": "user",
-                    "content": (
-                        "[System] Conversation history was just compacted: "
-                        "earlier turns were replaced by the summary above "
-                        "(marked [Conversation compressed]). Continue the "
-                        "current task from that summary; do not redo work "
-                        "that is already recorded."
-                    ),
-                }
-                messages.append(_compact_note)
-                info.setdefault("messages", []).append(_compact_note)
-            # 压缩只收缩上下文(摘要卡追加尾部), 原本占头部的 system 消息可能被
-            # 摘要吞掉: 每轮压缩后都补插一次, 与函数开头的装配保持一致
-            if messages[0]["role"] != "system":
-                messages.insert(
-                    0,
-                    {
-                        "role": "system",
-                        "content": self.system if not subagent else self.sub_system,
-                    },
-                )
-            manual_compact = False
+                    case "openai" if self.on_delta is not None:
+                        # 流式路径: 逐块推送增量文本/思考, 同时累积完整响应供后续逻辑使用。
+                        # 支持工具调用: 增量聚合 tool_calls 分片, 聚合结果走与非流式
+                        # 分支相同的工具执行路径。
+                        class _DeltaMsg:
+                            # 动态聚合的流式响应壳: 字段在流过程中逐个赋值
+                            content: Any = None
+                            tool_calls: Any = None
+                            usage: Any = None
+                            choices: Any = None
 
-            notifs = BG.drain_notifications()
-            if notifs and messages:
-                for n in notifs:
-                    print(
-                        f"{Prompt.Bgtask}Task ID: {n['task_id']}, Status: {n['status']}, Result: {n['result']}"
-                    )
-                notif_text = "\n".join(
-                    f"[bg:{n['task_id']}] {n['status']}: {n['result']}" for n in notifs
-                )
-                _bg_msg = {
-                    "role": "user",
-                    "content": f"<background-results>\n{notif_text}\n</background-results>",
-                }
-                _inject_sysnote(self.on_tool, messages, info, _bg_msg)
-                messages.append(
-                    {"role": "assistant", "content": "Noted background results."}
-                )
+                        class _DeltaUsage:
+                            def __init__(self):
+                                self.total_tokens = 0
+                                self.prompt_tokens = 0
+                                self.completion_tokens = 0
+                                self.prompt_tokens_details: Any = None
 
-            knight_rider = (
-                KnightRiderStatus("", width=11, color="#5c9cf5", fps=30)
-                if is_print and show_processing and not self.debug
-                else None
-            )
-            tried = 0
-            while tried < self.retry:
-                try:
-                    if knight_rider:
-                        knight_rider.start()
-                    start_time = time.time()
-                    match self.method:
-                        case "anthropic":
-                            # 流式优先: ThinkingEvent/TextEvent 边到边推 on_delta,
-                            # 终态由 get_final_message 聚合(usage/stop_reason/内容块
-                            # 与非流式完全同构, 下游逻辑零改动); SDK 不支持 stream
-                            # 上下文管理器时回退非流式并整段补发
-                            _streamed = [False]
+                        class _ToolCall:
+                            def __init__(self, id, name, arguments):
+                                self.id, self.type = id, "function"
+                                self.function = type(
+                                    "F", (), {"name": name, "arguments": arguments}
+                                )()
 
-                            def _anthropic_call():
-                                try:
-                                    with self.client.messages.stream(
-                                        model=self.model,
-                                        system=self.system,
-                                        messages=messages,
-                                        tools=usable_tools,
-                                        max_tokens=MAX_TOKENS,
-                                    ) as _stream:
-                                        _streamed[0] = True
-                                        for _ev in _stream:
-                                            _t = type(_ev).__name__
-                                            if self.on_delta is not None:
-                                                if _t == "ThinkingEvent" and getattr(
-                                                    _ev, "thinking", ""
-                                                ):
-                                                    self.on_delta(None, _ev.thinking)
-                                                elif _t == "TextEvent" and getattr(
-                                                    _ev, "text", ""
-                                                ):
-                                                    self.on_delta(_ev.text)
-                                        return _stream.get_final_message()
-                                except TypeError:
-                                    return self.client.messages.create(
-                                        model=self.model,
-                                        system=self.system,
-                                        messages=messages,
-                                        tools=usable_tools,
-                                        max_tokens=MAX_TOKENS,
-                                    )
-
-                            response = _anthropic_call()
-                            response.content = sorted(
-                                response.content,
-                                key=lambda x: 0 if x.type == "thinking" else 1,
-                            )
-                            # 回退路径(未走流式)整段补发思考/正文, 保证服务端聊天
-                            # 管线(science 的 stream_chat)总能收到增量事件
-                            if self.on_delta is not None and not _streamed[0]:
-                                for _blk in response.content:
-                                    if getattr(_blk, "type", "") == "thinking":
-                                        if getattr(_blk, "thinking", ""):
-                                            self.on_delta(None, _blk.thinking)
-                                    elif getattr(_blk, "type", "") == "text":
-                                        if getattr(_blk, "text", ""):
-                                            self.on_delta(_blk.text)
-                            info["cost_tokens"] += (
-                                response.usage.input_tokens
-                                + response.usage.output_tokens
-                            )
-                            info["prompt_tokens"] += (
-                                getattr(response.usage, "input_tokens", 0) or 0
-                            )
-                            info["completion_tokens"] += (
-                                getattr(response.usage, "output_tokens", 0) or 0
-                            )
-                            info["last_prompt_tokens"] = (
-                                getattr(response.usage, "input_tokens", 0) or 0
-                            )
-                            info["cache_read_tokens"] += _usage_cache_read(
-                                response.usage
-                            )
-                            messages.append(
-                                {"role": "assistant", "content": response.content}
-                            )
-                            info["messages"].append(
-                                {
-                                    "role": "assistant",
-                                    "content": [i.dict() for i in response.content],
-                                }
-                            )
-                        case "openai" if self.on_delta is not None:
-                            # 流式路径: 逐块推送增量文本/思考, 同时累积完整响应供后续逻辑使用。
-                            # 支持工具调用: 增量聚合 tool_calls 分片, 聚合结果走与非流式
-                            # 分支相同的工具执行路径。
-                            class _DeltaMsg:
-                                # 动态聚合的流式响应壳: 字段在流过程中逐个赋值
-                                content: Any = None
-                                tool_calls: Any = None
-                                usage: Any = None
-                                choices: Any = None
-
-                            class _DeltaUsage:
-                                def __init__(self):
-                                    self.total_tokens = 0
-                                    self.prompt_tokens = 0
-                                    self.completion_tokens = 0
-                                    self.prompt_tokens_details: Any = None
-
-                            class _ToolCall:
-                                def __init__(self, id, name, arguments):
-                                    self.id, self.type = id, "function"
-                                    self.function = type(
-                                        "F", (), {"name": name, "arguments": arguments}
-                                    )()
-
-                            response_text_parts: list[Any] = []
-                            tool_calls_acc: list = []
-                            # 思考按轮聚合: reasoning_parts 是跨轮扁平流, 没有轮次边界;
-                            # think_acc 把本轮思考挂到 info 记录上, 兜底归档的块时间线
-                            # 才能按「每轮先思考后工具」交错还原
-                            think_acc: list = []
-                            think_key = None
-                            usage = _DeltaUsage()
-                            stream_kwargs = {
-                                "stream": True,
-                                "stream_options": {"include_usage": True},
+                        response_text_parts: list[Any] = []
+                        tool_calls_acc: list = []
+                        # 思考按轮聚合: reasoning_parts 是跨轮扁平流, 没有轮次边界;
+                        # think_acc 把本轮思考挂到 info 记录上, 兜底归档的块时间线
+                        # 才能按「每轮先思考后工具」交错还原
+                        think_acc: list = []
+                        think_key = None
+                        usage = _DeltaUsage()
+                        stream_kwargs = {
+                            "stream": True,
+                            "stream_options": {"include_usage": True},
+                        }
+                        if lc.usable_tools:
+                            stream_kwargs |= {
+                                "tools": lc.usable_tools,
+                                "tool_choice": "auto",
                             }
-                            if usable_tools:
-                                stream_kwargs |= {
-                                    "tools": usable_tools,
-                                    "tool_choice": "auto",
-                                }
+                        try:
+                            _stream = self.client.chat.completions.create(
+                                model=self.model,
+                                messages=messages,
+                                max_tokens=MAX_TOKENS,
+                                **stream_kwargs,
+                            )
+                        except Exception:
+                            # 部分兼容网关不支持 stream_options, 去掉后重试
+                            _fallback = dict(stream_kwargs)
+                            _fallback.pop("stream_options", None)
+                            _stream = self.client.chat.completions.create(
+                                model=self.model,
+                                messages=messages,
+                                max_tokens=MAX_TOKENS,
+                                **_fallback,
+                            )
+                        # 空流检测: 部分网关(deepseek/pjlab)对 stream_options 返回无 deltas 的流
+                        # (HTTP 200 但 completion=1 token 直接收 eos) — 此时去掉 stream_options 重发一次。
+                        _had_content = False
+                        for chunk in _stream:
+                            if getattr(chunk, "usage", None):
+                                usage.total_tokens = (
+                                    getattr(chunk.usage, "total_tokens", 0) or 0
+                                )
+                                usage.prompt_tokens = (
+                                    getattr(chunk.usage, "prompt_tokens", 0) or 0
+                                )
+                                usage.completion_tokens = (
+                                    getattr(chunk.usage, "completion_tokens", 0) or 0
+                                )
+                                # 缓存字段引用透传: 手工壳只拷标准三字段会丢
+                                # prompt_tokens_details, 网关(http cache 命中)的上报无处可取
+                                _ptd = getattr(
+                                    chunk.usage, "prompt_tokens_details", None
+                                )
+                                if _ptd is not None:
+                                    usage.prompt_tokens_details = _ptd
+                            choices = getattr(chunk, "choices", None)
+                            if not choices:
+                                continue
+                            delta = choices[0].delta
+                            think = getattr(
+                                delta, "reasoning_content", None
+                            ) or getattr(delta, "reasoning", None)
+                            if think:
+                                _had_content = True
+                                # 同一条流内来源字段恒定, 以首个 chunk 判定
+                                if think_key is None:
+                                    think_key = (
+                                        "reasoning_content"
+                                        if getattr(delta, "reasoning_content", None)
+                                        else "reasoning"
+                                    )
+                                think_acc.append(think)
+                                info.setdefault("reasoning_parts", []).append(think)
+                                try:
+                                    self.on_delta(None, think)
+                                except Exception:
+                                    pass
+                            piece = getattr(delta, "content", None)
+                            if piece:
+                                _had_content = True
+                                response_text_parts.append(piece)
+                                try:
+                                    self.on_delta(piece)
+                                except Exception:
+                                    pass
+                            for tc in getattr(delta, "tool_calls", None) or []:
+                                _had_content = True
+                                if tc.index is None:
+                                    tc.index = len(tool_calls_acc)
+                                while len(tool_calls_acc) <= tc.index:
+                                    tool_calls_acc.append(
+                                        {
+                                            "id": None,
+                                            "type": "function",
+                                            "function": {
+                                                "name": "",
+                                                "arguments": "",
+                                            },
+                                        }
+                                    )
+                                if tc.id:
+                                    tool_calls_acc[tc.index]["id"] = tc.id
+                                if getattr(tc.function, "name", None):
+                                    tool_calls_acc[tc.index]["function"]["name"] += (
+                                        tc.function.name
+                                    )
+                                if getattr(tc.function, "arguments", None):
+                                    tool_calls_acc[tc.index]["function"][
+                                        "arguments"
+                                    ] += tc.function.arguments
+                        if not _had_content and stream_kwargs.get("stream_options"):
+                            # 空流(无 deltas 无 tool_calls)且带了 stream_options: 认定网关不支持,
+                            # 去掉后重发一次; usage 由不含 stream_options 的路径无法获得, 保持 0。
                             try:
-                                _stream = self.client.chat.completions.create(
-                                    model=self.model,
-                                    messages=messages,
-                                    max_tokens=MAX_TOKENS,
-                                    **stream_kwargs,
-                                )
+                                _stream.close()
                             except Exception:
-                                # 部分兼容网关不支持 stream_options, 去掉后重试
-                                _fallback = dict(stream_kwargs)
-                                _fallback.pop("stream_options", None)
-                                _stream = self.client.chat.completions.create(
-                                    model=self.model,
-                                    messages=messages,
-                                    max_tokens=MAX_TOKENS,
-                                    **_fallback,
-                                )
-                            # 空流检测: 部分网关(deepseek/pjlab)对 stream_options 返回无 deltas 的流
-                            # (HTTP 200 但 completion=1 token 直接收 eos) — 此时去掉 stream_options 重发一次。
+                                pass
+                            _fallback = dict(stream_kwargs)
+                            _fallback.pop("stream_options", None)
+                            _stream = self.client.chat.completions.create(
+                                model=self.model,
+                                messages=messages,
+                                max_tokens=MAX_TOKENS,
+                                **_fallback,
+                            )
+                            stream_kwargs = _fallback
                             _had_content = False
                             for chunk in _stream:
                                 if getattr(chunk, "usage", None):
@@ -714,13 +752,6 @@ class Agent:
                                         getattr(chunk.usage, "completion_tokens", 0)
                                         or 0
                                     )
-                                    # 缓存字段引用透传: 手工壳只拷标准三字段会丢
-                                    # prompt_tokens_details, 网关(http cache 命中)的上报无处可取
-                                    _ptd = getattr(
-                                        chunk.usage, "prompt_tokens_details", None
-                                    )
-                                    if _ptd is not None:
-                                        usage.prompt_tokens_details = _ptd
                                 choices = getattr(chunk, "choices", None)
                                 if not choices:
                                     continue
@@ -729,8 +760,6 @@ class Agent:
                                     delta, "reasoning_content", None
                                 ) or getattr(delta, "reasoning", None)
                                 if think:
-                                    _had_content = True
-                                    # 同一条流内来源字段恒定, 以首个 chunk 判定
                                     if think_key is None:
                                         think_key = (
                                             "reasoning_content"
@@ -745,14 +774,12 @@ class Agent:
                                         pass
                                 piece = getattr(delta, "content", None)
                                 if piece:
-                                    _had_content = True
                                     response_text_parts.append(piece)
                                     try:
                                         self.on_delta(piece)
                                     except Exception:
                                         pass
                                 for tc in getattr(delta, "tool_calls", None) or []:
-                                    _had_content = True
                                     if tc.index is None:
                                         tc.index = len(tool_calls_acc)
                                     while len(tool_calls_acc) <= tc.index:
@@ -776,939 +803,863 @@ class Agent:
                                         tool_calls_acc[tc.index]["function"][
                                             "arguments"
                                         ] += tc.function.arguments
-                            if not _had_content and stream_kwargs.get("stream_options"):
-                                # 空流(无 deltas 无 tool_calls)且带了 stream_options: 认定网关不支持,
-                                # 去掉后重发一次; usage 由不含 stream_options 的路径无法获得, 保持 0。
-                                try:
-                                    _stream.close()
-                                except Exception:
-                                    pass
-                                _fallback = dict(stream_kwargs)
-                                _fallback.pop("stream_options", None)
-                                _stream = self.client.chat.completions.create(
-                                    model=self.model,
-                                    messages=messages,
-                                    max_tokens=MAX_TOKENS,
-                                    **_fallback,
-                                )
-                                stream_kwargs = _fallback
-                                _had_content = False
-                                for chunk in _stream:
-                                    if getattr(chunk, "usage", None):
-                                        usage.total_tokens = (
-                                            getattr(chunk.usage, "total_tokens", 0) or 0
-                                        )
-                                        usage.prompt_tokens = (
-                                            getattr(chunk.usage, "prompt_tokens", 0)
-                                            or 0
-                                        )
-                                        usage.completion_tokens = (
-                                            getattr(chunk.usage, "completion_tokens", 0)
-                                            or 0
-                                        )
-                                    choices = getattr(chunk, "choices", None)
-                                    if not choices:
-                                        continue
-                                    delta = choices[0].delta
-                                    think = getattr(
-                                        delta, "reasoning_content", None
-                                    ) or getattr(delta, "reasoning", None)
-                                    if think:
-                                        if think_key is None:
-                                            think_key = (
-                                                "reasoning_content"
-                                                if getattr(
-                                                    delta, "reasoning_content", None
-                                                )
-                                                else "reasoning"
-                                            )
-                                        think_acc.append(think)
-                                        info.setdefault("reasoning_parts", []).append(
-                                            think
-                                        )
-                                        try:
-                                            self.on_delta(None, think)
-                                        except Exception:
-                                            pass
-                                    piece = getattr(delta, "content", None)
-                                    if piece:
-                                        response_text_parts.append(piece)
-                                        try:
-                                            self.on_delta(piece)
-                                        except Exception:
-                                            pass
-                                    for tc in getattr(delta, "tool_calls", None) or []:
-                                        if tc.index is None:
-                                            tc.index = len(tool_calls_acc)
-                                        while len(tool_calls_acc) <= tc.index:
-                                            tool_calls_acc.append(
-                                                {
-                                                    "id": None,
-                                                    "type": "function",
-                                                    "function": {
-                                                        "name": "",
-                                                        "arguments": "",
-                                                    },
-                                                }
-                                            )
-                                        if tc.id:
-                                            tool_calls_acc[tc.index]["id"] = tc.id
-                                        if getattr(tc.function, "name", None):
-                                            tool_calls_acc[tc.index]["function"][
-                                                "name"
-                                            ] += tc.function.name
-                                        if getattr(tc.function, "arguments", None):
-                                            tool_calls_acc[tc.index]["function"][
-                                                "arguments"
-                                            ] += tc.function.arguments
-                            info["cost_tokens"] += usage.total_tokens
-                            info["prompt_tokens"] += usage.prompt_tokens or 0
-                            info["completion_tokens"] += usage.completion_tokens or 0
-                            info["cache_read_tokens"] += _usage_cache_read(usage)
-                            # 最后一轮当次 prompt: 反映单次请求的真实窗口占用(累计值是多轮求和)
-                            info["last_prompt_tokens"] = usage.prompt_tokens or 0
-                            msg = _DeltaMsg()
-                            msg.content = "".join(response_text_parts)
-                            msg.tool_calls = [
-                                _ToolCall(
-                                    t["id"],
-                                    t["function"]["name"],
-                                    t["function"]["arguments"],
-                                )
-                                for t in tool_calls_acc
-                            ] or None
-                            # 空响应校验在写回 messages 之前: 空轮次不能进入历史,
-                            # 否则重试时发回"空 assistant 消息"会触发上游 400。
-                            if not msg.tool_calls and not (msg.content or "").strip():
-                                raise ValueError(
-                                    "Model returned an empty response (no content, no tool calls)"
-                                )
-                            _think_txt = "".join(think_acc) or None
-                            if msg.tool_calls:
-                                # 与非流式分支一致: 工具调用轮的 assistant 消息要写回 messages,
-                                # 供下一轮连同 tool 结果一起发送
-                                m = {"role": "assistant"}
-                                if msg.content and msg.content.strip():
-                                    m["content"] = msg.content
-                                m["tool_calls"] = tool_calls_acc
-                                messages.append(m)
-                                # 思考只进记录副本, 不改写上行请求形态, 网关兼容零风险
-                                info["messages"].append(
-                                    {**m, think_key: _think_txt}
-                                    if _think_txt and think_key
-                                    else m
-                                )
-                            elif _think_txt:
-                                info["last_reasoning"] = _think_txt
-                            response = _DeltaMsg()
-                            response.usage = usage
-                            response.choices = [_DeltaMsg()]
-                            response.choices[0].message = msg
-                        case "openai":
-                            tool_param = (
-                                {"tools": usable_tools, "tool_choice": "auto"}
-                                if usable_tools
-                                else {}
+                        info["cost_tokens"] += usage.total_tokens
+                        info["prompt_tokens"] += usage.prompt_tokens or 0
+                        info["completion_tokens"] += usage.completion_tokens or 0
+                        info["cache_read_tokens"] += _usage_cache_read(usage)
+                        # 最后一轮当次 prompt: 反映单次请求的真实窗口占用(累计值是多轮求和)
+                        info["last_prompt_tokens"] = usage.prompt_tokens or 0
+                        lc.msg = _DeltaMsg()
+                        lc.msg.content = "".join(response_text_parts)
+                        lc.msg.tool_calls = [
+                            _ToolCall(
+                                t["id"],
+                                t["function"]["name"],
+                                t["function"]["arguments"],
                             )
-                            response = self.client.chat.completions.create(
-                                model=self.model,
-                                messages=messages,
-                                max_tokens=MAX_TOKENS,
-                                **tool_param,
+                            for t in tool_calls_acc
+                        ] or None
+                        # 空响应校验在写回 messages 之前: 空轮次不能进入历史,
+                        # 否则重试时发回"空 assistant 消息"会触发上游 400。
+                        if not lc.msg.tool_calls and not (lc.msg.content or "").strip():
+                            raise ValueError(
+                                "Model returned an empty response (no content, no tool calls)"
                             )
-                            if isinstance(response, str) or not hasattr(
-                                response, "usage"
-                            ):
-                                raise ValueError(
-                                    f"Unexpected response from provider: {str(response)[:200]}"
-                                )
-                            info["cost_tokens"] += (
-                                getattr(response.usage, "total_tokens", 0)
-                                if response.usage
-                                else 0
-                            )
-                            info["prompt_tokens"] += (
-                                getattr(response.usage, "prompt_tokens", 0)
-                                if response.usage
-                                else 0
-                            )
-                            info["last_prompt_tokens"] = (
-                                getattr(response.usage, "prompt_tokens", 0)
-                                if response.usage
-                                else 0
-                            )
-                            info["cache_read_tokens"] += (
-                                _usage_cache_read(response.usage)
-                                if response.usage
-                                else 0
-                            )
-                            info["completion_tokens"] += (
-                                getattr(response.usage, "completion_tokens", 0)
-                                if response.usage
-                                else 0
-                            )
-                            assert response.choices is not None, (
-                                f"Response is None: {response}"
-                            )
-                            msg = response.choices[0].message
-                            # 与流式分支一致: 空轮次不进入历史, 直接触发重试。
-                            if (
-                                not getattr(msg, "tool_calls", None)
-                                and not (getattr(msg, "content", None) or "").strip()
-                            ):
-                                raise ValueError(
-                                    "Model returned an empty response (no content, no tool calls)"
-                                )
+                        _think_txt = "".join(think_acc) or None
+                        if lc.msg.tool_calls:
+                            # 与非流式分支一致: 工具调用轮的 assistant 消息要写回 messages,
+                            # 供下一轮连同 tool 结果一起发送
                             m = {"role": "assistant"}
-                            if msg.content and msg.content.strip():
-                                m["content"] = msg.content
-                            if msg.tool_calls:
-                                m["tool_calls"] = [t.dict() for t in msg.tool_calls]
+                            if lc.msg.content and lc.msg.content.strip():
+                                m["content"] = lc.msg.content
+                            m["tool_calls"] = tool_calls_acc
                             messages.append(m)
-                            if (
-                                r := msg.reasoning_content
-                                if hasattr(msg, "reasoning_content")
-                                else None
-                            ):
-                                if msg.tool_calls:
-                                    m["reasoning_content"] = r
-                                    info["messages"].append(m)
-                                else:
-                                    info["messages"].append(
-                                        m | {"reasoning_content": r}
-                                    )
-                            elif (
-                                r := msg.reasoning
-                                if hasattr(msg, "reasoning")
-                                else None
-                            ):
-                                if msg.tool_calls:
-                                    m["reasoning"] = r
-                                    info["messages"].append(m)
-                                else:
-                                    info["messages"].append(m | {"reasoning": r})
-                            else:
-                                info["messages"].append(m)
-
-                    cost_time = time.time() - start_time
-                    if knight_rider:
-                        knight_rider.stop()
-                    info["error"] = None
-                    break
-                except Exception as e:
-                    if knight_rider:
-                        knight_rider.stop()
-                    console.print(f"{Prompt.Error}[red]{e}[/]")
-                    info["error"] = str(e)
-                    if any([e in info["error"] for e in API_ERRORS]):
-                        tried = self.retry
-                    else:
-                        tried += 1
-                        if tried < self.retry:
-                            # 重试间隔指数递增(约 5s/15s/45s/135s/300s, 封顶 300s)加随机抖动;
-                            # 网关明确给了 retry_after(如集群 RPM 限流 429, 常见 40~60s)时
-                            # 尊重之: 按自己的短退避只会连吃 429 烧光重试次数。
-                            _backoff = min(300, 5 * 3 ** (tried - 1))
-                            _backoff = max(_backoff, _retry_after_seconds(str(e)))
-                            # 只对还会重试的失败发通知; UI 显示第 N 次失败、原因与
-                            # 等待倒计时(wait 为本次退避秒数)
-                            if self.on_retry is not None:
-                                try:
-                                    self.on_retry(
-                                        {
-                                            "attempt": tried,
-                                            "total": self.retry,
-                                            "error": str(e)[:200],
-                                            "wait": int(_backoff),
-                                        }
-                                    )
-                                except Exception:
-                                    pass
-                            time.sleep(_backoff + random.uniform(0, 2))
-                        if tried == self.retry:
-                            console.print(f"{Prompt.Error}{traceback.format_exc()}")
-            else:
-                break
-
-            match self.method:
-                case "anthropic":
-                    if response.stop_reason != "tool_use":
-                        if (
-                            "qwen" in self.model.lower()
-                            and (t := response.content[-1].text.strip())
-                            and "<tool_call>" in t
-                            and "</tool_call>" in t
-                        ):
-                            response.content = self._parse_to_anthropic_toolcall(t)
-                            response.stop_reason = "tool_use"
-                        else:
-                            for block in response.content:
-                                if block.type == "text":
-                                    md = Markdown(block.text)
-                                    print(f"{Prompt.Assistant}")
-                                    print(md)
-                                    info["last_response"] = block.text
-                                elif block.type == "thinking":
-                                    print(
-                                        f"{Prompt.Assistant}[dim][italic]thinking[/]\n{block.thinking}[/]"
-                                    )
-                                else:
-                                    print(f"{Prompt.Assistant}{block}")
-
-                            ratio = (
-                                response.usage.input_tokens
-                                + response.usage.output_tokens
-                            ) / max_model_len
-                            print(
-                                f"{Prompt.Tokens}inp: {response.usage.input_tokens}, out: {response.usage.output_tokens}, time: {cost_time:.2f}s, {response.usage.output_tokens / cost_time:.2f} tokens/s, tools: {sum(not i[-1].startswith('Error:') for i in info['used_tools'])}/{len(info['used_tools'])}, skills: {sum(not i[-1].startswith('Error:') for i in info['used_skills'])}/{len(info['used_skills'])}, context: {Prompt.RedLine * round(ratio * 10)}{Prompt.BlueLine * (10 - round(ratio * 10))} {ratio:.1%}"
+                            # 思考只进记录副本, 不改写上行请求形态, 网关兼容零风险
+                            info["messages"].append(
+                                {**m, think_key: _think_txt}
+                                if _think_txt and think_key
+                                else m
                             )
-
-                            if not BG.is_finished or BG._notification_queue:
-                                with KnightRiderStatus(
-                                    "run background tasks",
-                                    width=11,
-                                    color="#fbd367",
-                                    fps=30,
-                                ):
-                                    while not BG.is_finished:
-                                        time.sleep(0.1)
-                                continue
-
-                            if response.stop_reason == "max_tokens" or (
-                                info["last_response"] is None
-                                and response.usage.output_tokens == MAX_TOKENS
-                            ):
-                                console.print(
-                                    f"{Prompt.Error}[red]Max tokens reached[/]"
-                                )
-                                info["error"] = (
-                                    "Max tokens reached, output may be incomplete"
-                                )
-
-                            # steering 注入点②: 模型已给出终文, 但队列里有用户
-                            # 插话 —— 排队消息要求再一次响应(pi: queued message
-                            # requires another response), 不允许终文吞掉插话
-                            if self._inject_steer(messages, info):
-                                continue
-
-                            # s17 goal stop hook: 模型停止调工具不等于目标达成,
-                            # 有活跃 goal 时先让独立评估器判定, 未达成则注入提示继续下一轮
-                            _goal_action, _goal_reason = GOAL.evaluate_after_turn(
-                                messages, background_running=not BG.is_finished
-                            )
-                            if _goal_action in ("block", "error"):
-                                _goal_msg = {
-                                    "role": "user",
-                                    "content": (
-                                        "[Goal still active]\n"
-                                        f"Condition: {GOAL.active['condition'] if GOAL.active else ''}\n"
-                                        f"Evaluator: {_goal_action}: {_goal_reason}\n"
-                                        "Continue working and surface the missing evidence."
-                                    ),
-                                }
-                                _inject_sysnote(self.on_tool, messages, info, _goal_msg)
-                                continue
-
-                            if nudge_armed > 0:
-                                # nudge 复活: 模型把说明写成了终点, 强制接续一次
-                                _inject_sysnote(
-                                    self.on_tool,
-                                    messages,
-                                    info,
-                                    {"role": "user", "content": _CONTINUE_AFTER_NUDGE},
-                                )
-                                nudge_armed = 0
-                                continue
-
-                            break
-                case "openai":
-                    if (
-                        r := msg.reasoning_content
-                        if hasattr(msg, "reasoning_content")
-                        else (msg.reasoning if hasattr(msg, "reasoning") else None)
-                    ):
-                        print(f"{Prompt.Assistant}[dim][italic]thinking[/]\n{r}[/]")
-
-                    # content 可能为 None(deepseek 只回 reasoning/工具调用时给 content:null), 统一安全化
-                    content_txt = msg.content or ""
-                    if not msg.tool_calls:
-                        if (
-                            "qwen" in self.model.lower()
-                            and content_txt
-                            and "<tool_call>" in content_txt
-                            and content_txt.endswith("</tool_call>")
-                        ):
-                            msg.tool_calls = self._parse_to_openai_toolcall(content_txt)
-                        elif (
-                            "intern" in self.model.lower()
-                            and content_txt
-                            and (
-                                "```tool" in content_txt
-                                or '"tool_calls": [' in content_txt
-                            )
-                        ):
-                            msg.tool_calls = self._parse_intern_to_openai_toolcall(
-                                content_txt
-                            )
-                        elif self.support_tool and (
-                            (
-                                "<tool_call>" in content_txt
-                                and content_txt.endswith("</tool_call>")
-                            )
-                            or ("｜DSML｜invoke" in content_txt)
-                        ):
-                            msg.tool_calls = self._parse_to_openai_toolcall(content_txt)
-                        else:
-                            # 空响应(无内容也无工具调用)视为可重试失败: 提供商偶发提前断流时
-                            # 原实现把空串当最终回复返回, 上层只报"模型没有返回内容"且不重试。
-                            if not content_txt.strip():
-                                raise ValueError(
-                                    "Model returned an empty response (no content, no tool calls)"
-                                )
-                            print(f"{Prompt.Assistant}{content_txt}")
-                            info["last_response"] = content_txt
-
-                            _usage = (
-                                response.usage
-                                if hasattr(response.usage, "total_tokens")
-                                else None
-                            )
-                            ratio = _usage.total_tokens / max_model_len if _usage else 0
-                            print(
-                                f"{Prompt.Tokens}inp: {_usage.prompt_tokens if _usage else '?'}, out: {_usage.completion_tokens if _usage else '?'}, time: {cost_time:.2f}s, {(_usage.completion_tokens or 0) / cost_time if _usage else 0:.2f} tokens/s, tools: {sum(not i[-1].startswith('Error:') for i in info['used_tools'])}/{len(info['used_tools'])}, skills: {sum(not i[-1].startswith('Error:') for i in info['used_skills'])}/{len(info['used_skills'])}, context: {Prompt.RedLine * round(ratio * 10)}{Prompt.BlueLine * (10 - round(ratio * 10))} {ratio:.1%}"
-                            )
-
-                            if (
-                                info["last_response"] is None
-                                and _usage
-                                and _usage.completion_tokens == MAX_TOKENS
-                            ):
-                                console.print(
-                                    f"{Prompt.Error}[red]Max tokens reached[/]"
-                                )
-                                info["error"] = (
-                                    "Max tokens reached, output may be incomplete"
-                                )
-
-                            # steering 注入点②(同 anthropic 分支): 终文不许吞掉排队插话
-                            if self._inject_steer(messages, info):
-                                continue
-
-                            # s17 goal stop hook: 同 anthropic 分支, 无工具调用时先问独立评估
-                            _goal_action, _goal_reason = GOAL.evaluate_after_turn(
-                                messages, background_running=not BG.is_finished
-                            )
-                            if _goal_action in ("block", "error"):
-                                _goal_msg = {
-                                    "role": "user",
-                                    "content": (
-                                        "[Goal still active]\n"
-                                        f"Condition: {GOAL.active['condition'] if GOAL.active else ''}\n"
-                                        f"Evaluator: {_goal_action}: {_goal_reason}\n"
-                                        "Continue working and surface the missing evidence."
-                                    ),
-                                }
-                                _inject_sysnote(self.on_tool, messages, info, _goal_msg)
-                                continue
-
-                            if nudge_armed > 0:
-                                # nudge 复活: 模型把说明写成了终点, 强制接续一次
-                                _inject_sysnote(
-                                    self.on_tool,
-                                    messages,
-                                    info,
-                                    {"role": "user", "content": _CONTINUE_AFTER_NUDGE},
-                                )
-                                nudge_armed = 0
-                                continue
-
-                            break
-                    else:
-                        if msg.content and msg.content.strip():
-                            print(f"{Prompt.Assistant}{msg.content}")
-
-            match self.method:
-                case "anthropic":
-                    ratio = (
-                        response.usage.input_tokens + response.usage.output_tokens
-                    ) / max_model_len
-                    tool_count = len(
-                        [b for b in response.content if b.type == "tool_use"]
-                    )
-                    print(
-                        f"{Prompt.Tokens}inp: {response.usage.input_tokens}, out: {response.usage.output_tokens}, time: {cost_time:.2f}s, {response.usage.output_tokens / cost_time:.2f} tokens/s, tools: {tool_count}, context: {Prompt.RedLine * round(ratio * 10)}{Prompt.BlueLine * (10 - round(ratio * 10))} {ratio:.1%}"
-                    )
-                case "openai":
-                    ratio = (
-                        response.usage.total_tokens / max_model_len
-                        if response.usage
-                        else 0
-                    )
-                    print(
-                        f"{Prompt.Tokens}inp: {response.usage.prompt_tokens}, out: {response.usage.completion_tokens}, time: {cost_time:.2f}s, {(response.usage.completion_tokens or 0) / cost_time:.2f} tokens/s, tool calls: {len(msg.tool_calls)}, context: {Prompt.RedLine * round(ratio * 10)}{Prompt.BlueLine * (10 - round(ratio * 10))} {ratio:.1%}"
-                    )
-
-            # Tools calling
-            # 两段式: 第一段解析 tool_use 块并广播 call 事件; 第二段执行、打印并回填结果。
-            # 同轮的多个普通工具互不依赖, 可并行执行; task(子 agent)与单工具保持串行。
-            nudge_armed = 0  # 有工具调用的响应说明模型已在正常接续
-            calls = []
-            for block in (
-                response.content if self.method == "anthropic" else msg.tool_calls
-            ):
-                match block.type:
-                    case "text":
-                        print(f"{Prompt.Assistant}{block.text}")
-                    case "thinking":
-                        print(
-                            f"{Prompt.Assistant}[dim][italic]thinking[/]\n{block.thinking}[/]"
-                        )
-                    case "tool_use" | "function":
-                        if block.type == "tool_use":
-                            func = block.name
-                            inp = block.input
-                        else:
-                            func = block.function.name
-                            try:
-                                inp = json.loads(block.function.arguments or "{}")
-                            except json.JSONDecodeError:
-                                inp = block.function.arguments
-                                print(
-                                    f"{Prompt.Error}Failed to parse function arguments as JSON, using raw string. Function: {func}, Arguments: {inp}"
-                                )
-                                calls.append(
-                                    {
-                                        "block": block,
-                                        "func": func,
-                                        "inp": None,
-                                        "output": _ToolError(
-                                            "Failed to parse function arguments as JSON."
-                                        ),
-                                        "task": False,
-                                    }
-                                )
-                                continue
-                        if (
-                            func == "write"
-                            and (t := inp.get("content", ""))
-                            and len(t) > 1000
-                        ):
-                            inp_prt = inp.copy()
-                            inp_prt["content"] = t[:400] + "..." + t[-400:]
-                        elif func == "edit":
-                            inp_prt = inp.copy()
-                            if (t := inp.get("old_text", "")) and len(t) > 1000:
-                                inp_prt["old_text"] = t[:400] + "..." + t[-400:]
-                            if (t := inp.get("new_text", "")) and len(t) > 1000:
-                                inp_prt["new_text"] = t[:400] + "..." + t[-400:]
-                        else:
-                            inp_prt = inp
-                        print(
-                            f"{Prompt.Assistant}[orange3][italic]tool_use[/]\nname: {func}\ninput: [/]{inp_prt}"
-                        )
-                        calls.append(
-                            {
-                                "block": block,
-                                "func": func,
-                                "inp": inp,
-                                "output": None,
-                                "task": func == "task",
-                            }
-                        )
-                    case _:
-                        print(f"{Prompt.Assistant}{block}")
-
-            # call 事件按原始顺序广播, 前端按 name 与未完成状态配对结果
-            for c in calls:
-                if self.on_tool is not None:
-                    try:
-                        self.on_tool(
-                            {
-                                "kind": "call",
-                                "name": c["func"],
-                                "args": c["inp"]
-                                if isinstance(c["inp"], dict)
-                                else str(c["inp"]),
-                            }
-                        )
-                    except Exception:
-                        pass
-
-            # 原始绑定值: None 原样传递, 不经 get_session_workdir() 的 WORKDIR 回落 ——
-            # 回落值一旦被 set 回线程, 项目技能解析(load_skill)会指向服务 cwd
-            session_wd = bound_project_dir()
-            session_scope = get_session_scope()
-
-            def _tool_exec(c):
-                # 失败不中断会话: 任何异常都转成错误文本, 作为该次调用的结果返回给模型
-                func, inp = c["func"], c["inp"]
-                try:
-                    if c["task"]:
-                        console.rule("Subagent Started", style="bold red")
-                        self.print_info(subagent=True)
-                        sub_messages = [{"role": "user", "content": inp["prompt"]}]
-                        sub_info = {}
-                        try:
-                            sub_info = self(sub_messages, subagent=True) or {}
-                            sub_out = (
-                                sub_messages[-1]["content"][0].text
-                                if sub_messages
-                                else "(no summary)"
-                            )
-                        except Exception as sub_err:
-                            sub_out = _ToolError(
-                                f"subagent failed: {type(sub_err).__name__}: {str(sub_err)[:300]}"
-                            )
-                        # 子代理改过的文件并入父会话的产出清单(dsh deliverables 思路)
-                        _dl = info.setdefault("deliverables", [])
-                        for d in sub_info.get("deliverables") or []:
-                            if not any(x.get("path") == d.get("path") for x in _dl):
-                                _dl.append(d)
-                        console.rule("Subagent End", style="bold red")
-                        return sub_out
-                    handler = TOOL_HANDLERS.get(func)
-                    if handler is None:
-                        return _ToolError(f"unknown tool {func}")
-                    # ask 类工具需要把问题卡片推给前端并阻塞等待回答,
-                    # 通过 _notify 注入本会话的 on_tool 回调(允许被用户重命名, 认 __ask_tool__ 标记)
-                    if getattr(handler, "__ask_tool__", False):
-                        # ask 由用户回答节奏决定, 不设外层超时
-                        inp.pop("_notify", None)
-                        return str(handler(_notify=self.on_tool, **inp))
-                    if getattr(handler, "__notify_tool__", False):
-                        # 需要事件通道的工具(present): 弹答案走 on_tool,
-                        # 与 ask 同一注入机制但保留外层超时
-                        inp.pop("_notify", None)
-                        return str(handler(_notify=self.on_tool, **inp))
-                    timeout = TOOL_TIMEOUTS.get(func, TOOL_TIMEOUT_DEFAULT)
-                    # bash 的模型自报等待: 外层超时退让(内层 + 30s 余量),
-                    # 保证先触发的是"收养为后台 job"语义而不是外层硬截
-                    if func == "bash" and isinstance(inp, dict) and inp.get("timeout"):
-                        try:
-                            timeout = max(
-                                timeout,
-                                int(inp["timeout"]) + 30,
-                            )
-                        except (TypeError, ValueError):
-                            pass
-                    # 会话工作目录是 thread-local: 超时包装可能把 handler 挪到新线程,
-                    # 必须在执行前把当前会话的目录绑到那个线程, 否则相对路径会
-                    # 回退到进程根目录, 破坏项目隔离
-                    _wd = bound_project_dir()
-                    _scope = get_session_scope()
-
-                    def _run_handler():
-                        # workdir 与会话作用域都是 thread-local: 超时包装把 handler
-                        # 挪进新线程, 必须在执行前把两者都绑过去, 否则相对路径
-                        # 回退进程根目录、task/job/inbox 落回全局共享
-                        set_session_workdir(_wd)
-                        set_session_scope(_scope)
-                        return handler(**inp)
-
-                    out = _call_with_timeout(_run_handler, int(timeout), func)
-                    if out is _TIMEOUT_HIT:
-                        # 结构化超时错误: 让模型知道该换路, 而不是拿到裸异常
-                        return _ToolError(
-                            f"Tool {func} did not finish within {int(timeout)}s "
-                            "(timeout). The call was abandoned and may still be running "
-                            "in the background. Try a different approach or split the work; "
-                            "do not repeat this exact call."
-                        )
-                    return str(out)
-                except Exception as tool_err:
-                    return _ToolError(f"{type(tool_err).__name__}: {tool_err}")[:400]
-
-            # 渐进式重复守卫(dsh repeat-tool-reminder 思路): 同一工具+完全相同参数
-            # 第 2/3 次仍放行(合法场景: 改完代码重跑同一条测试), 但在结果后附提醒;
-            # 第 4 次起判定为死循环, 不再执行, 直接回上次结果并强制要求作答。
-            # 计数在 info['used_tools'] 上, 其生命周期=一个用户轮次, 天然随新消息清零。
-            def _call_key(inp):
-                try:
-                    return json.dumps(inp, sort_keys=True, ensure_ascii=False)
-                except Exception:
-                    return repr(inp)
-
-            def _count_repeats(c):
-                k = _call_key(c["inp"])
-                n = 0
-                for u in info["used_tools"]:
-                    try:
-                        if u[0] == c["func"] and (
-                            u[1] == c["inp"] or _call_key(u[1]) == k
-                        ):
-                            n += 1
-                    except Exception:
-                        continue
-                return n
-
-            for c in calls:
-                if c["output"] is not None:
-                    continue
-                repeats = _count_repeats(c)
-                if repeats >= 3:
-                    k = _call_key(c["inp"])
-                    prev = next(
-                        (
-                            u
-                            for u in reversed(info["used_tools"])
-                            if u[0] == c["func"]
-                            and (u[1] == c["inp"] or _call_key(u[1]) == k)
-                        ),
-                        None,
-                    )
-                    if prev is not None:
-                        c["output"] = (
-                            str(prev[2])[:4000]
-                            + "\n[System] This exact tool call was already executed "
-                            f"{repeats} time(s) with the result above. This is a repeated-loop pattern. "
-                            "Do NOT call it again; answer the user now based on the results you already have."
-                        )
-                        continue
-                elif repeats >= 1:
-                    c["repeat_note"] = repeats
-
-            # 长工具执行心跳: bash 等 360s 内无任何 WS 事件时, 前端 180s 空闲计时
-            # 会误杀会话("模型响应超时")。看门狗线程每 45s 发一次 progress 事件,
-            # 前端 resetTimer 保持连接; 事件对模型不可见, 纯展示层保活。
-            def _tool_exec_cwd(c):
-                # 工具的工作目录与会话作用域存在 thread-local 上, 并行线程需要重新
-                # 绑定。对所有工具统一重绑(不仅 needs_wd 文件工具): load_skill 的
-                # 项目技能解析同样依赖这份绑定, 并行批里它可能落在任意池线程 ——
-                # 池线程的残留/未绑定状态会把项目解析悄悄降级成全局
-                try:
-                    set_session_scope(session_scope)
-                except Exception:
-                    pass
-                try:
-                    set_session_workdir(session_wd)
-                except Exception:
-                    pass
-                return _tool_exec(c)
-
-            def _with_heartbeat(c):
-                """执行工具并每 45s 发一次 progress 心跳, 结果返回后停止。"""
-                if self.on_tool is None:
-                    return _tool_exec_cwd(c)
-                done = {"v": False}
-                started = time.time()
-
-                def beat():
-                    while not done["v"]:
-                        time.sleep(45)
-                        if done["v"]:
-                            break
-                        try:
-                            self.on_tool(
-                                {
-                                    "kind": "progress",
-                                    "name": c["func"],
-                                    "elapsed": int(time.time() - started),
-                                }
-                            )
-                        except Exception:
-                            return
-
-                heartbeat = threading.Thread(target=beat, daemon=True)
-                heartbeat.start()
-                try:
-                    return _tool_exec_cwd(c)
-                finally:
-                    done["v"] = True
-
-            runnable = [c for c in calls if c["output"] is None]
-
-            def _note(c, o):
-                # 第 n 次重复执行的软提醒: 只附在成功结果后面, 不影响错误回传
-                n = c.pop("repeat_note", None)
-                if n and isinstance(o, str) and not o.startswith("Error:"):
-                    o += (
-                        "\n[System] Reminder: this exact call has now been executed "
-                        f"{n + 1} time(s) with identical arguments. If nothing changed "
-                        "since the previous run the result will be the same — review it "
-                        "and continue, or change your approach."
-                    )
-                return o
-
-            if len(runnable) > 1 and not any(c["task"] for c in runnable):
-                with concurrent.futures.ThreadPoolExecutor(
-                    max_workers=min(4, len(runnable))
-                ) as pool:
-                    outs = list(pool.map(_with_heartbeat, runnable))
-                for c, o in zip(runnable, outs):
-                    c["output"] = _note(c, o)
-            else:
-                for c in runnable:
-                    c["output"] = _note(
-                        c, _with_heartbeat(c) if not c["task"] else _tool_exec(c)
-                    )
-
-            results = []
-            for c in calls:
-                func, inp, output = c["func"], c["inp"], c["output"]
-                out_prt = output
-                if len(output) > 1000:
-                    out_prt = output[:400] + "\n......\n" + output[-400:]
-                if func in MCP.tools:
-                    print(f"{Prompt.MCP}[magenta]{func.upper()}[/]\n{out_prt}")
-                elif func == "edit" and not output.startswith("Error:"):
-                    print(f"{Prompt.Tool}[magenta]{func.upper()}[/]")
-                    self._print_syntax(output, "diff")
-                elif func in {"read", "write"} and not output.startswith("Error:"):
-                    code = output if func == "read" else inp.get("content", "")
-                    print(f"{Prompt.Tool}[magenta]{func.upper()}[/]")
-                    offset = inp.get("offset")
-                    start_line = (
-                        offset
-                        if offset and code.startswith(f"[{offset} lines skipped]")
-                        else 1
-                    )
-                    self._print_syntax(
-                        code,
-                        Syntax.guess_lexer(inp.get("path", ""), code=code),
-                        start_line=start_line,
-                    )
-                    if func == "write":
-                        print(out_prt)
-                else:
-                    print(f"{Prompt.Tool}[magenta]{func.upper()}[/]\n{out_prt}")
-
-                if self.on_tool is not None:
-                    try:
-                        self.on_tool(
-                            {
-                                "kind": "result",
-                                "name": func,
-                                "result": str(output)[:30000],
-                                "isError": isinstance(output, _ToolError),
-                            }
-                        )
-                    except Exception:
-                        pass
-                # 超长结果截短后才进 messages: 全文直入会让下一轮窗口估算爆炸误触压缩
-                result_text = str(output)[: self.tool_result_limit]
-                if len(str(output)) > self.tool_result_limit:
-                    result_text += (
-                        f"\n[... {len(str(output)) - self.tool_result_limit} "
-                        "chars omitted]"
-                    )
-                match self.method:
-                    case "anthropic":
-                        results.append(
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": c["block"].id,
-                                "content": result_text,
-                            }
-                        )
-                        # anthropic: 同样把 tool_result 补回 messages, 供下一轮发送。
-                        messages.append(
-                            {
-                                "role": "user",
-                                "content": [
-                                    {
-                                        "type": "tool_result",
-                                        "tool_use_id": c["block"].id,
-                                        "content": result_text,
-                                    }
-                                ],
-                            }
-                        )
+                        elif _think_txt:
+                            info["last_reasoning"] = _think_txt
+                        lc.response = _DeltaMsg()
+                        lc.response.usage = usage
+                        lc.response.choices = [_DeltaMsg()]
+                        lc.response.choices[0].message = lc.msg
                     case "openai":
-                        results.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": c["block"].id,
-                                "content": result_text,
-                            }
+                        tool_param = (
+                            {"tools": lc.usable_tools, "tool_choice": "auto"}
+                            if lc.usable_tools
+                            else {}
                         )
-                        # 工具结果必须进入 messages, 否则下一轮模型看不到结果 (deepseek 等会反复空回)
-                        messages.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": c["block"].id,
-                                "content": result_text,
-                            }
+                        lc.response = self.client.chat.completions.create(
+                            model=self.model,
+                            messages=messages,
+                            max_tokens=MAX_TOKENS,
+                            **tool_param,
                         )
+                        if isinstance(lc.response, str) or not hasattr(
+                            lc.response, "usage"
+                        ):
+                            raise ValueError(
+                                f"Unexpected response from provider: {str(lc.response)[:200]}"
+                            )
+                        info["cost_tokens"] += (
+                            getattr(lc.response.usage, "total_tokens", 0)
+                            if lc.response.usage
+                            else 0
+                        )
+                        info["prompt_tokens"] += (
+                            getattr(lc.response.usage, "prompt_tokens", 0)
+                            if lc.response.usage
+                            else 0
+                        )
+                        info["last_prompt_tokens"] = (
+                            getattr(lc.response.usage, "prompt_tokens", 0)
+                            if lc.response.usage
+                            else 0
+                        )
+                        info["cache_read_tokens"] += (
+                            _usage_cache_read(lc.response.usage)
+                            if lc.response.usage
+                            else 0
+                        )
+                        info["completion_tokens"] += (
+                            getattr(lc.response.usage, "completion_tokens", 0)
+                            if lc.response.usage
+                            else 0
+                        )
+                        assert lc.response.choices is not None, (
+                            f"Response is None: {lc.response}"
+                        )
+                        lc.msg = lc.response.choices[0].message
+                        # 与流式分支一致: 空轮次不进入历史, 直接触发重试。
+                        if (
+                            not getattr(lc.msg, "tool_calls", None)
+                            and not (getattr(lc.msg, "content", None) or "").strip()
+                        ):
+                            raise ValueError(
+                                "Model returned an empty response (no content, no tool calls)"
+                            )
+                        m = {"role": "assistant"}
+                        if lc.msg.content and lc.msg.content.strip():
+                            m["content"] = lc.msg.content
+                        if lc.msg.tool_calls:
+                            m["tool_calls"] = [t.dict() for t in lc.msg.tool_calls]
+                        messages.append(m)
+                        if (
+                            r := lc.msg.reasoning_content
+                            if hasattr(lc.msg, "reasoning_content")
+                            else None
+                        ):
+                            if lc.msg.tool_calls:
+                                m["reasoning_content"] = r
+                                info["messages"].append(m)
+                            else:
+                                info["messages"].append(m | {"reasoning_content": r})
+                        elif (
+                            r := lc.msg.reasoning
+                            if hasattr(lc.msg, "reasoning")
+                            else None
+                        ):
+                            if lc.msg.tool_calls:
+                                m["reasoning"] = r
+                                info["messages"].append(m)
+                            else:
+                                info["messages"].append(m | {"reasoning": r})
+                        else:
+                            info["messages"].append(m)
 
-                # 产出文件收集(dsh deliverables 思路): 只信 edit/write 的参数位置,
-                # 不依赖模型正文提名, 前端在回合结束渲染「本轮修改文件」
-                if func in ("write", "edit") and isinstance(inp, dict):
-                    _p = str(inp.get("path") or "").strip()
-                    if _p and not str(output).startswith("Error:"):
-                        _dl = info.setdefault("deliverables", [])
-                        if not any(d["path"] == _p for d in _dl):
-                            _dl.append({"path": _p, "op": func})
-
-                if func == "load_skill":
-                    info["used_skills"].append((inp.get("name"), output))
+                lc.cost_time = time.time() - start_time
+                if lc.knight_rider:
+                    lc.knight_rider.stop()
+                info["error"] = None
+                return LOOP_PROCEED
+            except Exception as e:
+                if lc.knight_rider:
+                    lc.knight_rider.stop()
+                console.print(f"{Prompt.Error}[red]{e}[/]")
+                info["error"] = str(e)
+                if any([e in info["error"] for e in API_ERRORS]):
+                    lc.tried = self.retry
                 else:
-                    info["used_tools"].append((func, inp, output))
+                    lc.tried += 1
+                    if lc.tried < self.retry:
+                        # 重试间隔指数递增(约 5s/15s/45s/135s/300s, 封顶 300s)加随机抖动;
+                        # 网关明确给了 retry_after(如集群 RPM 限流 429, 常见 40~60s)时
+                        # 尊重之: 按自己的短退避只会连吃 429 烧光重试次数。
+                        _backoff = min(300, 5 * 3 ** (lc.tried - 1))
+                        _backoff = max(_backoff, _retry_after_seconds(str(e)))
+                        # 只对还会重试的失败发通知; UI 显示第 N 次失败、原因与
+                        # 等待倒计时(wait 为本次退避秒数)
+                        if self.on_retry is not None:
+                            try:
+                                self.on_retry(
+                                    {
+                                        "attempt": lc.tried,
+                                        "total": self.retry,
+                                        "error": str(e)[:200],
+                                        "wait": int(_backoff),
+                                    }
+                                )
+                            except Exception:
+                                pass
+                        time.sleep(_backoff + random.uniform(0, 2))
+                    if lc.tried == self.retry:
+                        console.print(f"{Prompt.Error}{traceback.format_exc()}")
+        else:
+            return LOOP_END
 
-            if getattr(self, "on_usage", None):
-                try:
-                    self.on_usage(
+    def _stage_settle(self, lc):
+        """阶段 3: 终文判定(后台等待/steer②/goal/nudge)或放行工具分发。"""
+        messages = lc.messages
+        info = lc.info
+        match self.method:
+            case "anthropic":
+                if lc.response.stop_reason != "tool_use":
+                    if (
+                        "qwen" in self.model.lower()
+                        and (t := lc.response.content[-1].text.strip())
+                        and "<tool_call>" in t
+                        and "</tool_call>" in t
+                    ):
+                        lc.response.content = self._parse_to_anthropic_toolcall(t)
+                        lc.response.stop_reason = "tool_use"
+                    else:
+                        for block in lc.response.content:
+                            if block.type == "text":
+                                md = Markdown(block.text)
+                                lc.print(f"{Prompt.Assistant}")
+                                lc.print(md)
+                                info["last_response"] = block.text
+                            elif block.type == "thinking":
+                                lc.print(
+                                    f"{Prompt.Assistant}[dim][italic]thinking[/]\n{block.thinking}[/]"
+                                )
+                            else:
+                                lc.print(f"{Prompt.Assistant}{block}")
+
+                        lc.ratio = (
+                            lc.response.usage.input_tokens
+                            + lc.response.usage.output_tokens
+                        ) / lc.max_model_len
+                        lc.print(
+                            f"{Prompt.Tokens}inp: {lc.response.usage.input_tokens}, out: {lc.response.usage.output_tokens}, time: {lc.cost_time:.2f}s, {lc.response.usage.output_tokens / lc.cost_time:.2f} tokens/s, tools: {sum(not i[-1].startswith('Error:') for i in info['used_tools'])}/{len(info['used_tools'])}, skills: {sum(not i[-1].startswith('Error:') for i in info['used_skills'])}/{len(info['used_skills'])}, context: {Prompt.RedLine * round(lc.ratio * 10)}{Prompt.BlueLine * (10 - round(lc.ratio * 10))} {lc.ratio:.1%}"
+                        )
+
+                        if not BG.is_finished or BG._notification_queue:
+                            with KnightRiderStatus(
+                                "run background tasks",
+                                width=11,
+                                color="#fbd367",
+                                fps=30,
+                            ):
+                                while not BG.is_finished:
+                                    time.sleep(0.1)
+                            return LOOP_NEXT_TURN
+
+                        if lc.response.stop_reason == "max_tokens" or (
+                            info["last_response"] is None
+                            and lc.response.usage.output_tokens == MAX_TOKENS
+                        ):
+                            console.print(f"{Prompt.Error}[red]Max tokens reached[/]")
+                            info["error"] = (
+                                "Max tokens reached, output may be incomplete"
+                            )
+
+                        # steering 注入点②: 模型已给出终文, 但队列里有用户
+                        # 插话 —— 排队消息要求再一次响应(pi: queued message
+                        # requires another response), 不允许终文吞掉插话
+                        if self._inject_steer(messages, info):
+                            return LOOP_NEXT_TURN
+
+                        # s17 goal stop hook: 模型停止调工具不等于目标达成,
+                        # 有活跃 goal 时先让独立评估器判定, 未达成则注入提示继续下一轮
+                        _goal_action, _goal_reason = GOAL.evaluate_after_turn(
+                            messages, background_running=not BG.is_finished
+                        )
+                        if _goal_action in ("block", "error"):
+                            _goal_msg = {
+                                "role": "user",
+                                "content": (
+                                    "[Goal still active]\n"
+                                    f"Condition: {GOAL.active['condition'] if GOAL.active else ''}\n"
+                                    f"Evaluator: {_goal_action}: {_goal_reason}\n"
+                                    "Continue working and surface the missing evidence."
+                                ),
+                            }
+                            _inject_sysnote(self.on_tool, messages, info, _goal_msg)
+                            return LOOP_NEXT_TURN
+
+                        if lc.nudge_armed > 0:
+                            # nudge 复活: 模型把说明写成了终点, 强制接续一次
+                            _inject_sysnote(
+                                self.on_tool,
+                                messages,
+                                info,
+                                {"role": "user", "content": _CONTINUE_AFTER_NUDGE},
+                            )
+                            lc.nudge_armed = 0
+                            return LOOP_NEXT_TURN
+
+                        return LOOP_END
+            case "openai":
+                if (
+                    r := lc.msg.reasoning_content
+                    if hasattr(lc.msg, "reasoning_content")
+                    else (lc.msg.reasoning if hasattr(lc.msg, "reasoning") else None)
+                ):
+                    lc.print(f"{Prompt.Assistant}[dim][italic]thinking[/]\n{r}[/]")
+
+                # content 可能为 None(deepseek 只回 reasoning/工具调用时给 content:null), 统一安全化
+                content_txt = lc.msg.content or ""
+                if not lc.msg.tool_calls:
+                    if (
+                        "qwen" in self.model.lower()
+                        and content_txt
+                        and "<tool_call>" in content_txt
+                        and content_txt.endswith("</tool_call>")
+                    ):
+                        lc.msg.tool_calls = self._parse_to_openai_toolcall(content_txt)
+                    elif (
+                        "intern" in self.model.lower()
+                        and content_txt
+                        and (
+                            "```tool" in content_txt or '"tool_calls": [' in content_txt
+                        )
+                    ):
+                        lc.msg.tool_calls = self._parse_intern_to_openai_toolcall(
+                            content_txt
+                        )
+                    elif self.support_tool and (
+                        (
+                            "<tool_call>" in content_txt
+                            and content_txt.endswith("</tool_call>")
+                        )
+                        or ("｜DSML｜invoke" in content_txt)
+                    ):
+                        lc.msg.tool_calls = self._parse_to_openai_toolcall(content_txt)
+                    else:
+                        # 空响应(无内容也无工具调用)视为可重试失败: 提供商偶发提前断流时
+                        # 原实现把空串当最终回复返回, 上层只报"模型没有返回内容"且不重试。
+                        if not content_txt.strip():
+                            raise ValueError(
+                                "Model returned an empty response (no content, no tool calls)"
+                            )
+                        lc.print(f"{Prompt.Assistant}{content_txt}")
+                        info["last_response"] = content_txt
+
+                        _usage = (
+                            lc.response.usage
+                            if hasattr(lc.response.usage, "total_tokens")
+                            else None
+                        )
+                        lc.ratio = (
+                            _usage.total_tokens / lc.max_model_len if _usage else 0
+                        )
+                        lc.print(
+                            f"{Prompt.Tokens}inp: {_usage.prompt_tokens if _usage else '?'}, out: {_usage.completion_tokens if _usage else '?'}, time: {lc.cost_time:.2f}s, {(_usage.completion_tokens or 0) / lc.cost_time if _usage else 0:.2f} tokens/s, tools: {sum(not i[-1].startswith('Error:') for i in info['used_tools'])}/{len(info['used_tools'])}, skills: {sum(not i[-1].startswith('Error:') for i in info['used_skills'])}/{len(info['used_skills'])}, context: {Prompt.RedLine * round(lc.ratio * 10)}{Prompt.BlueLine * (10 - round(lc.ratio * 10))} {lc.ratio:.1%}"
+                        )
+
+                        if (
+                            info["last_response"] is None
+                            and _usage
+                            and _usage.completion_tokens == MAX_TOKENS
+                        ):
+                            console.print(f"{Prompt.Error}[red]Max tokens reached[/]")
+                            info["error"] = (
+                                "Max tokens reached, output may be incomplete"
+                            )
+
+                        # steering 注入点②(同 anthropic 分支): 终文不许吞掉排队插话
+                        if self._inject_steer(messages, info):
+                            return LOOP_NEXT_TURN
+
+                        # s17 goal stop hook: 同 anthropic 分支, 无工具调用时先问独立评估
+                        _goal_action, _goal_reason = GOAL.evaluate_after_turn(
+                            messages, background_running=not BG.is_finished
+                        )
+                        if _goal_action in ("block", "error"):
+                            _goal_msg = {
+                                "role": "user",
+                                "content": (
+                                    "[Goal still active]\n"
+                                    f"Condition: {GOAL.active['condition'] if GOAL.active else ''}\n"
+                                    f"Evaluator: {_goal_action}: {_goal_reason}\n"
+                                    "Continue working and surface the missing evidence."
+                                ),
+                            }
+                            _inject_sysnote(self.on_tool, messages, info, _goal_msg)
+                            return LOOP_NEXT_TURN
+
+                        if lc.nudge_armed > 0:
+                            # nudge 复活: 模型把说明写成了终点, 强制接续一次
+                            _inject_sysnote(
+                                self.on_tool,
+                                messages,
+                                info,
+                                {"role": "user", "content": _CONTINUE_AFTER_NUDGE},
+                            )
+                            lc.nudge_armed = 0
+                            return LOOP_NEXT_TURN
+
+                        return LOOP_END
+                else:
+                    if lc.msg.content and lc.msg.content.strip():
+                        lc.print(f"{Prompt.Assistant}{lc.msg.content}")
+
+        return LOOP_TOOLS
+
+    def _stage_exec_tools(self, lc):
+        """阶段 4: 工具提取/分发/并行执行/结果后处理。"""
+        messages = lc.messages
+        info = lc.info
+        match self.method:
+            case "anthropic":
+                lc.ratio = (
+                    lc.response.usage.input_tokens + lc.response.usage.output_tokens
+                ) / lc.max_model_len
+                tool_count = len(
+                    [b for b in lc.response.content if b.type == "tool_use"]
+                )
+                lc.print(
+                    f"{Prompt.Tokens}inp: {lc.response.usage.input_tokens}, out: {lc.response.usage.output_tokens}, time: {lc.cost_time:.2f}s, {lc.response.usage.output_tokens / lc.cost_time:.2f} tokens/s, tools: {tool_count}, context: {Prompt.RedLine * round(lc.ratio * 10)}{Prompt.BlueLine * (10 - round(lc.ratio * 10))} {lc.ratio:.1%}"
+                )
+            case "openai":
+                lc.ratio = (
+                    lc.response.usage.total_tokens / lc.max_model_len
+                    if lc.response.usage
+                    else 0
+                )
+                lc.print(
+                    f"{Prompt.Tokens}inp: {lc.response.usage.prompt_tokens}, out: {lc.response.usage.completion_tokens}, time: {lc.cost_time:.2f}s, {(lc.response.usage.completion_tokens or 0) / lc.cost_time:.2f} tokens/s, tool calls: {len(lc.msg.tool_calls)}, context: {Prompt.RedLine * round(lc.ratio * 10)}{Prompt.BlueLine * (10 - round(lc.ratio * 10))} {lc.ratio:.1%}"
+                )
+
+        # Tools calling
+        # 两段式: 第一段解析 tool_use 块并广播 call 事件; 第二段执行、打印并回填结果。
+        # 同轮的多个普通工具互不依赖, 可并行执行; task(子 agent)与单工具保持串行。
+        lc.nudge_armed = 0  # 有工具调用的响应说明模型已在正常接续
+        lc.calls = []
+        for block in (
+            lc.response.content if self.method == "anthropic" else lc.msg.tool_calls
+        ):
+            match block.type:
+                case "text":
+                    lc.print(f"{Prompt.Assistant}{block.text}")
+                case "thinking":
+                    lc.print(
+                        f"{Prompt.Assistant}[dim][italic]thinking[/]\n{block.thinking}[/]"
+                    )
+                case "tool_use" | "function":
+                    if block.type == "tool_use":
+                        func = block.name
+                        inp = block.input
+                    else:
+                        func = block.function.name
+                        try:
+                            inp = json.loads(block.function.arguments or "{}")
+                        except json.JSONDecodeError:
+                            inp = block.function.arguments
+                            lc.print(
+                                f"{Prompt.Error}Failed to parse function arguments as JSON, using raw string. Function: {func}, Arguments: {inp}"
+                            )
+                            lc.calls.append(
+                                {
+                                    "block": block,
+                                    "func": func,
+                                    "inp": None,
+                                    "output": _ToolError(
+                                        "Failed to parse function arguments as JSON."
+                                    ),
+                                    "task": False,
+                                }
+                            )
+                            continue
+                    if (
+                        func == "write"
+                        and (t := inp.get("content", ""))
+                        and len(t) > 1000
+                    ):
+                        inp_prt = inp.copy()
+                        inp_prt["content"] = t[:400] + "..." + t[-400:]
+                    elif func == "edit":
+                        inp_prt = inp.copy()
+                        if (t := inp.get("old_text", "")) and len(t) > 1000:
+                            inp_prt["old_text"] = t[:400] + "..." + t[-400:]
+                        if (t := inp.get("new_text", "")) and len(t) > 1000:
+                            inp_prt["new_text"] = t[:400] + "..." + t[-400:]
+                    else:
+                        inp_prt = inp
+                    lc.print(
+                        f"{Prompt.Assistant}[orange3][italic]tool_use[/]\nname: {func}\ninput: [/]{inp_prt}"
+                    )
+                    lc.calls.append(
                         {
-                            "promptTokens": info.get("prompt_tokens", 0),
-                            "completionTokens": info.get("completion_tokens", 0),
-                            "cacheTokens": info.get("cache_read_tokens", 0),
+                            "block": block,
+                            "func": func,
+                            "inp": inp,
+                            "output": None,
+                            "task": func == "task",
+                        }
+                    )
+                case _:
+                    lc.print(f"{Prompt.Assistant}{block}")
+
+        # call 事件按原始顺序广播, 前端按 name 与未完成状态配对结果
+        for c in lc.calls:
+            if self.on_tool is not None:
+                try:
+                    self.on_tool(
+                        {
+                            "kind": "call",
+                            "name": c["func"],
+                            "args": c["inp"]
+                            if isinstance(c["inp"], dict)
+                            else str(c["inp"]),
                         }
                     )
                 except Exception:
                     pass
-            # 静默轮计分: 本轮有可见文字即清零; 纯工具轮累计, 超阈值注入滚动
-            # nudge(旧 nudge 先移除, 历史不叠加)。只看本轮 assistant 是否对
-            # 用户产出了文字, 与 ask/后台通知等 user 注入无关。
-            if self.method == "anthropic":
-                # anthropic 分支无 openai 的 msg 壳: 文本/工具信息在 response.content 块里
-                _turn_text = "".join(
-                    getattr(_b, "text", "")
-                    for _b in response.content
-                    if getattr(_b, "type", "") == "text"
-                ).strip()
-                _turn_tools = any(
-                    getattr(_b, "type", "") == "tool_use" for _b in response.content
-                )
-            else:
-                _turn_text = str(getattr(msg, "content", "") or "").strip()
-                _turn_tools = bool(getattr(msg, "tool_calls", None))
-            if _turn_text:
-                silent_tools = 0
-                messages[:] = [
-                    m
-                    for m in messages
-                    if not (
-                        m.get("role") == "user"
-                        and m.get("content") == _SILENT_TURN_NUDGE
+
+        # 原始绑定值: None 原样传递, 不经 get_session_workdir() 的 WORKDIR 回落 ——
+        # 回落值一旦被 set 回线程, 项目技能解析(load_skill)会指向服务 cwd
+        session_wd = bound_project_dir()
+        session_scope = get_session_scope()
+
+        def _tool_exec(c):
+            # 失败不中断会话: 任何异常都转成错误文本, 作为该次调用的结果返回给模型
+            func, inp = c["func"], c["inp"]
+            try:
+                if c["task"]:
+                    console.rule("Subagent Started", style="bold red")
+                    self.print_info(subagent=True)
+                    sub_messages = [{"role": "user", "content": inp["prompt"]}]
+                    sub_info = {}
+                    try:
+                        sub_info = self(sub_messages, subagent=True) or {}
+                        sub_out = (
+                            sub_messages[-1]["content"][0].text
+                            if sub_messages
+                            else "(no summary)"
+                        )
+                    except Exception as sub_err:
+                        sub_out = _ToolError(
+                            f"subagent failed: {type(sub_err).__name__}: {str(sub_err)[:300]}"
+                        )
+                    # 子代理改过的文件并入父会话的产出清单(dsh deliverables 思路)
+                    _dl = info.setdefault("deliverables", [])
+                    for d in sub_info.get("deliverables") or []:
+                        if not any(x.get("path") == d.get("path") for x in _dl):
+                            _dl.append(d)
+                    console.rule("Subagent End", style="bold red")
+                    return sub_out
+                handler = TOOL_HANDLERS.get(func)
+                if handler is None:
+                    return _ToolError(f"unknown tool {func}")
+                # ask 类工具需要把问题卡片推给前端并阻塞等待回答,
+                # 通过 _notify 注入本会话的 on_tool 回调(允许被用户重命名, 认 __ask_tool__ 标记)
+                if getattr(handler, "__ask_tool__", False):
+                    # ask 由用户回答节奏决定, 不设外层超时
+                    inp.pop("_notify", None)
+                    return str(handler(_notify=self.on_tool, **inp))
+                if getattr(handler, "__notify_tool__", False):
+                    # 需要事件通道的工具(present): 弹答案走 on_tool,
+                    # 与 ask 同一注入机制但保留外层超时
+                    inp.pop("_notify", None)
+                    return str(handler(_notify=self.on_tool, **inp))
+                timeout = TOOL_TIMEOUTS.get(func, TOOL_TIMEOUT_DEFAULT)
+                # bash 的模型自报等待: 外层超时退让(内层 + 30s 余量),
+                # 保证先触发的是"收养为后台 job"语义而不是外层硬截
+                if func == "bash" and isinstance(inp, dict) and inp.get("timeout"):
+                    try:
+                        timeout = max(
+                            timeout,
+                            int(inp["timeout"]) + 30,
+                        )
+                    except (TypeError, ValueError):
+                        pass
+                # 会话工作目录是 thread-local: 超时包装可能把 handler 挪到新线程,
+                # 必须在执行前把当前会话的目录绑到那个线程, 否则相对路径会
+                # 回退到进程根目录, 破坏项目隔离
+                _wd = bound_project_dir()
+                _scope = get_session_scope()
+
+                def _run_handler():
+                    # workdir 与会话作用域都是 thread-local: 超时包装把 handler
+                    # 挪进新线程, 必须在执行前把两者都绑过去, 否则相对路径
+                    # 回退进程根目录、task/job/inbox 落回全局共享
+                    set_session_workdir(_wd)
+                    set_session_scope(_scope)
+                    return handler(**inp)
+
+                out = _call_with_timeout(_run_handler, int(timeout), func)
+                if out is _TIMEOUT_HIT:
+                    # 结构化超时错误: 让模型知道该换路, 而不是拿到裸异常
+                    return _ToolError(
+                        f"Tool {func} did not finish within {int(timeout)}s "
+                        "(timeout). The call was abandoned and may still be running "
+                        "in the background. Try a different approach or split the work; "
+                        "do not repeat this exact call."
                     )
-                ]
-            elif _turn_tools:
-                # 按连续工具调用数而非轮数累计: 一轮并行多工具时同等计数
-                silent_tools += max(1, len(calls))
-                if _nudge_at > 0 and silent_tools >= _nudge_at:
-                    _inject_sysnote(
-                        self.on_tool,
-                        messages,
-                        info,
-                        {"role": "user", "content": _SILENT_TURN_NUDGE},
+                return str(out)
+            except Exception as tool_err:
+                return _ToolError(f"{type(tool_err).__name__}: {tool_err}")[:400]
+
+        # 渐进式重复守卫(dsh repeat-tool-reminder 思路): 同一工具+完全相同参数
+        # 第 2/3 次仍放行(合法场景: 改完代码重跑同一条测试), 但在结果后附提醒;
+        # 第 4 次起判定为死循环, 不再执行, 直接回上次结果并强制要求作答。
+        # 计数在 info['used_tools'] 上, 其生命周期=一个用户轮次, 天然随新消息清零。
+        def _call_key(inp):
+            try:
+                return json.dumps(inp, sort_keys=True, ensure_ascii=False)
+            except Exception:
+                return repr(inp)
+
+        def _count_repeats(c):
+            k = _call_key(c["inp"])
+            n = 0
+            for u in info["used_tools"]:
+                try:
+                    if u[0] == c["func"] and (u[1] == c["inp"] or _call_key(u[1]) == k):
+                        n += 1
+                except Exception:
+                    continue
+            return n
+
+        for c in lc.calls:
+            if c["output"] is not None:
+                continue
+            repeats = _count_repeats(c)
+            if repeats >= 3:
+                k = _call_key(c["inp"])
+                prev = next(
+                    (
+                        u
+                        for u in reversed(info["used_tools"])
+                        if u[0] == c["func"]
+                        and (u[1] == c["inp"] or _call_key(u[1]) == k)
+                    ),
+                    None,
+                )
+                if prev is not None:
+                    c["output"] = (
+                        str(prev[2])[:4000]
+                        + "\n[System] This exact tool call was already executed "
+                        f"{repeats} time(s) with the result above. This is a repeated-loop pattern. "
+                        "Do NOT call it again; answer the user now based on the results you already have."
                     )
-                    nudge_armed = 1
-                    silent_tools = 0
-            cur_turn += 1
-            if cur_turn == max_turn - 1:
-                console.print(
-                    f"{Prompt.Warning}Max turn {max_turn} will be reached in the next turn, stopping to avoid infinite loop."
+                    continue
+            elif repeats >= 1:
+                c["repeat_note"] = repeats
+
+        # 长工具执行心跳: bash 等 360s 内无任何 WS 事件时, 前端 180s 空闲计时
+        # 会误杀会话("模型响应超时")。看门狗线程每 45s 发一次 progress 事件,
+        # 前端 resetTimer 保持连接; 事件对模型不可见, 纯展示层保活。
+        def _tool_exec_cwd(c):
+            # 工具的工作目录与会话作用域存在 thread-local 上, 并行线程需要重新
+            # 绑定。对所有工具统一重绑(不仅 needs_wd 文件工具): load_skill 的
+            # 项目技能解析同样依赖这份绑定, 并行批里它可能落在任意池线程 ——
+            # 池线程的残留/未绑定状态会把项目解析悄悄降级成全局
+            try:
+                set_session_scope(session_scope)
+            except Exception:
+                pass
+            try:
+                set_session_workdir(session_wd)
+            except Exception:
+                pass
+            return _tool_exec(c)
+
+        def _with_heartbeat(c):
+            """执行工具并每 45s 发一次 progress 心跳, 结果返回后停止。"""
+            if self.on_tool is None:
+                return _tool_exec_cwd(c)
+            done = {"v": False}
+            started = time.time()
+
+            def beat():
+                while not done["v"]:
+                    time.sleep(45)
+                    if done["v"]:
+                        break
+                    try:
+                        self.on_tool(
+                            {
+                                "kind": "progress",
+                                "name": c["func"],
+                                "elapsed": int(time.time() - started),
+                            }
+                        )
+                    except Exception:
+                        return
+
+            heartbeat = threading.Thread(target=beat, daemon=True)
+            heartbeat.start()
+            try:
+                return _tool_exec_cwd(c)
+            finally:
+                done["v"] = True
+
+        runnable = [c for c in lc.calls if c["output"] is None]
+
+        def _note(c, o):
+            # 第 n 次重复执行的软提醒: 只附在成功结果后面, 不影响错误回传
+            n = c.pop("repeat_note", None)
+            if n and isinstance(o, str) and not o.startswith("Error:"):
+                o += (
+                    "\n[System] Reminder: this exact call has now been executed "
+                    f"{n + 1} time(s) with identical arguments. If nothing changed "
+                    "since the previous run the result will be the same — review it "
+                    "and continue, or change your approach."
                 )
-                _fin = (
-                    "[System] Max turn will be reached in the next turn. "
-                    "Do NOT call any more tools in the next response: reply with a "
-                    "final summary of what has been done so far, what remains, and "
-                    "how to continue. Stopping to avoid infinite loop."
-                )
-                print(f"{Prompt.User}{_fin}")
-                _inject_sysnote(
-                    self.on_tool, messages, info, {"role": "user", "content": _fin}
+            return o
+
+        if len(runnable) > 1 and not any(c["task"] for c in runnable):
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=min(4, len(runnable))
+            ) as pool:
+                outs = list(pool.map(_with_heartbeat, runnable))
+            for c, o in zip(runnable, outs):
+                c["output"] = _note(c, o)
+        else:
+            for c in runnable:
+                c["output"] = _note(
+                    c, _with_heartbeat(c) if not c["task"] else _tool_exec(c)
                 )
 
+        results = []
+        for c in lc.calls:
+            func, inp, output = c["func"], c["inp"], c["output"]
+            out_prt = output
+            if len(output) > 1000:
+                out_prt = output[:400] + "\n......\n" + output[-400:]
+            if func in MCP.tools:
+                lc.print(f"{Prompt.MCP}[magenta]{func.upper()}[/]\n{out_prt}")
+            elif func == "edit" and not output.startswith("Error:"):
+                lc.print(f"{Prompt.Tool}[magenta]{func.upper()}[/]")
+                self._print_syntax(output, "diff")
+            elif func in {"read", "write"} and not output.startswith("Error:"):
+                code = output if func == "read" else inp.get("content", "")
+                lc.print(f"{Prompt.Tool}[magenta]{func.upper()}[/]")
+                offset = inp.get("offset")
+                start_line = (
+                    offset
+                    if offset and code.startswith(f"[{offset} lines skipped]")
+                    else 1
+                )
+                self._print_syntax(
+                    code,
+                    Syntax.guess_lexer(inp.get("path", ""), code=code),
+                    start_line=start_line,
+                )
+                if func == "write":
+                    lc.print(out_prt)
+            else:
+                lc.print(f"{Prompt.Tool}[magenta]{func.upper()}[/]\n{out_prt}")
+
+            if self.on_tool is not None:
+                try:
+                    self.on_tool(
+                        {
+                            "kind": "result",
+                            "name": func,
+                            "result": str(output)[:30000],
+                            "isError": isinstance(output, _ToolError),
+                        }
+                    )
+                except Exception:
+                    pass
+            # 超长结果截短后才进 messages: 全文直入会让下一轮窗口估算爆炸误触压缩
+            result_text = str(output)[: self.tool_result_limit]
+            if len(str(output)) > self.tool_result_limit:
+                result_text += (
+                    f"\n[... {len(str(output)) - self.tool_result_limit} chars omitted]"
+                )
+            match self.method:
+                case "anthropic":
+                    results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": c["block"].id,
+                            "content": result_text,
+                        }
+                    )
+                    # anthropic: 同样把 tool_result 补回 messages, 供下一轮发送。
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": c["block"].id,
+                                    "content": result_text,
+                                }
+                            ],
+                        }
+                    )
+                case "openai":
+                    results.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": c["block"].id,
+                            "content": result_text,
+                        }
+                    )
+                    # 工具结果必须进入 messages, 否则下一轮模型看不到结果 (deepseek 等会反复空回)
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": c["block"].id,
+                            "content": result_text,
+                        }
+                    )
+
+            # 产出文件收集(dsh deliverables 思路): 只信 edit/write 的参数位置,
+            # 不依赖模型正文提名, 前端在回合结束渲染「本轮修改文件」
+            if func in ("write", "edit") and isinstance(inp, dict):
+                _p = str(inp.get("path") or "").strip()
+                if _p and not str(output).startswith("Error:"):
+                    _dl = info.setdefault("deliverables", [])
+                    if not any(d["path"] == _p for d in _dl):
+                        _dl.append({"path": _p, "op": func})
+
+            if func == "load_skill":
+                info["used_skills"].append((inp.get("name"), output))
+            else:
+                info["used_tools"].append((func, inp, output))
+
+    def _stage_turn_end(self, lc):
+        """阶段 5: usage 推送/静默 nudge 计分/轮次推进/收官提示。"""
+        messages = lc.messages
+        info = lc.info
+        if getattr(self, "on_usage", None):
+            try:
+                self.on_usage(
+                    {
+                        "promptTokens": info.get("prompt_tokens", 0),
+                        "completionTokens": info.get("completion_tokens", 0),
+                        "cacheTokens": info.get("cache_read_tokens", 0),
+                    }
+                )
+            except Exception:
+                pass
+        # 静默轮计分: 本轮有可见文字即清零; 纯工具轮累计, 超阈值注入滚动
+        # nudge(旧 nudge 先移除, 历史不叠加)。只看本轮 assistant 是否对
+        # 用户产出了文字, 与 ask/后台通知等 user 注入无关。
+        if self.method == "anthropic":
+            # anthropic 分支无 openai 的 msg 壳: 文本/工具信息在 response.content 块里
+            _turn_text = "".join(
+                getattr(_b, "text", "")
+                for _b in lc.response.content
+                if getattr(_b, "type", "") == "text"
+            ).strip()
+            _turn_tools = any(
+                getattr(_b, "type", "") == "tool_use" for _b in lc.response.content
+            )
+        else:
+            _turn_text = str(getattr(lc.msg, "content", "") or "").strip()
+            _turn_tools = bool(getattr(lc.msg, "tool_calls", None))
+        if _turn_text:
+            lc.silent_tools = 0
+            messages[:] = [
+                m
+                for m in messages
+                if not (
+                    m.get("role") == "user" and m.get("content") == _SILENT_TURN_NUDGE
+                )
+            ]
+        elif _turn_tools:
+            # 按连续工具调用数而非轮数累计: 一轮并行多工具时同等计数
+            lc.silent_tools += max(1, len(lc.calls))
+            if lc._nudge_at > 0 and lc.silent_tools >= lc._nudge_at:
+                _inject_sysnote(
+                    self.on_tool,
+                    messages,
+                    info,
+                    {"role": "user", "content": _SILENT_TURN_NUDGE},
+                )
+                lc.nudge_armed = 1
+                lc.silent_tools = 0
+        lc.cur_turn += 1
+        if lc.cur_turn == lc.max_turn - 1:
+            console.print(
+                f"{Prompt.Warning}Max turn {lc.max_turn} will be reached in the next turn, stopping to avoid infinite loop."
+            )
+            _fin = (
+                "[System] Max turn will be reached in the next turn. "
+                "Do NOT call any more tools in the next response: reply with a "
+                "final summary of what has been done so far, what remains, and "
+                "how to continue. Stopping to avoid infinite loop."
+            )
+            lc.print(f"{Prompt.User}{_fin}")
+            _inject_sysnote(
+                self.on_tool, messages, info, {"role": "user", "content": _fin}
+            )
+
+    def _loop_teardown(self, lc):
+        """阶段 6(epilogue): 残留引导通告/预算耗尽标记/汇总返回。"""
+        messages = lc.messages
+        info = lc.info
         # 循环最终退出(终文已续跑过排队插话/预算耗尽/重试耗尽)后仍残留的引导:
         # 不再驱动模型(预算契约), 但必须显式告知前端 —— steerDropped 事件渲染
         # "引导未送达"提示, 不静默吞掉用户插话
@@ -1728,24 +1679,142 @@ class Agent:
 
         # 轮次预算耗尽且模型从未输出正文(长工具链任务被截停): 标记错误为轮次上限语义,
         # 前端据此给出可理解的提示, 而不是误导性的"模型没有返回内容"
-        if not subagent and cur_turn >= max_turn and not info.get("last_response"):
+        if (
+            not lc.subagent
+            and lc.cur_turn >= lc.max_turn
+            and not info.get("last_response")
+        ):
             info["error"] = (
-                f"已达单次回复的轮次上限({max_turn}轮): 长任务在预算内未完成, "
+                f"已达单次回复的轮次上限({lc.max_turn}轮): 长任务在预算内未完成, "
                 "工具轨迹已保留, 可发送『继续』接续执行。"
             )
 
-        if not subagent and self.on_tool is not None and info.get("deliverables"):
+        if not lc.subagent and self.on_tool is not None and info.get("deliverables"):
             # 放在最末尾: 前端块按事件到达顺序排列, 产出文件行要落在最终文本之后
             try:
                 self.on_tool({"kind": "deliverables", "files": info["deliverables"]})
             except Exception:
                 pass
 
-        info["cost_time"] = time.time() - begin_time
-        print(
-            f"{Prompt.Ended}total tokens: {info['cost_tokens']}, time: {info['cost_time']:.2f}s, tools: {len(info['used_tools'])}, skills: {len(info['used_skills'])}, rounds: {cur_turn}"
+        info["cost_time"] = time.time() - lc.begin_time
+        lc.print(
+            f"{Prompt.Ended}total tokens: {info['cost_tokens']}, time: {info['cost_time']:.2f}s, tools: {len(info['used_tools'])}, skills: {len(info['used_skills'])}, rounds: {lc.cur_turn}"
         )
         return info
+
+    def _loop_setup(
+        self,
+        messages,
+        tools,
+        subagent,
+        print_inp,
+        is_print,
+        show_processing,
+        max_turn,
+        on_delta,
+    ):
+        """阶段 0(prologue): 原方法 385-472 行逐字搬移; 共享态一律落 lc。"""
+        lc = LoopContext(
+            messages=messages,
+            subagent=subagent,
+            is_print=is_print,
+            show_processing=show_processing,
+            max_turn=max_turn if max_turn else self.max_turn,
+        )
+        if on_delta is not None:
+            self.on_delta = on_delta
+        # system 恒定字节级稳定, 最大化网关前缀缓存命中; 不再注入任何会变内容
+        # (模型需要当前时间时可自行调用 bash 等工具获取)
+        if not lc.subagent:
+            self.system = self._system_base
+            # goal 评估器随主 Agent 配置: 否则 _client 恒 None, evaluate_after_turn
+            # 每轮走 error 分支且不计入 consecutive_blocks, goal_set 后循环注入
+            # "继续工作" 直到烧完轮次预算(goal 工具的 schema 与提示词一直在暴露)
+            GOAL.configure(self.client, self.model)
+        if self.method == "openai" and messages[0]["role"] != "system":
+            messages.insert(
+                0,
+                {
+                    "role": "system",
+                    "content": self.system if not lc.subagent else self.sub_system,
+                },
+            )
+        elif self.method == "anthropic" and messages[0]["role"] == "system":
+            messages.pop(0)
+
+        info = {
+            "config": self.config,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": self.system if not lc.subagent else self.sub_system,
+                }
+            ]
+            + copy.deepcopy(messages[1:]),
+            "last_response": None,
+            "cost_tokens": 0,
+            "completion_tokens": 0,  # 辅助上屏 tok/s 统计: 与 cost_tokens 分开, 只计补全侧
+            "prompt_tokens": 0,  # 输入侧 token, 多轮工具循环时逐轮累加
+            "cache_read_tokens": 0,  # 缓存读取 token(成本远低于未命中输入), 逐轮累加
+            "cost_time": 0,
+            "used_tools": [],
+            "used_skills": [],
+            "error": None,
+        }
+
+        lc.print = console.print if lc.is_print else lambda *_a, **_k: None
+
+        if print_inp:
+            for lc.msg in info["messages"]:
+                match lc.msg.get("role"):
+                    case "user":
+                        lc.print(f"{Prompt.User}{lc.msg['content']}")
+                    case "assistant":
+                        lc.print(f"{Prompt.Assistant}{lc.msg['content']}")
+                    case "system":
+                        lc.print(f"{Prompt.System}{lc.msg['content']}")
+                    case "tool":
+                        lc.print(f"{Prompt.Tool}{lc.msg['content']}")
+                    case _:
+                        lc.print(f"{Prompt.Unknown}{lc.msg}")
+
+        for m in messages:
+            if m["role"] == "user":
+                m["content"] = self._process_query(m["content"])
+
+        T = self.sub_tools if lc.subagent else self.tools
+        lc.usable_tools = (
+            []
+            if not self.support_tool
+            else (
+                T
+                if tools is None
+                else [
+                    t
+                    for t in T
+                    if t.get("name", t.get("function", {}).get("name")) in tools
+                ]
+            )
+        )
+
+        lc.cur_turn = len([m for m in messages if m["role"] == "assistant"])
+        lc.max_turn = lc.max_turn or self.max_turn
+        lc._nudge_at = (
+            self.nudge_threshold
+            if self.nudge_threshold is not None
+            else _SILENT_TURN_NUDGE_THRESHOLD
+        )
+        lc.begin_time = time.time()
+        lc.manual_compact = False
+        lc.ratio = 0
+        lc.silent_tools = 0
+        lc.nudge_armed = 0
+        lc.max_model_len = (
+            self.max_model_len
+        )  # 构造时已定(litellm 或显式传入), 不随轮重查
+
+        lc.info = info
+        return lc
 
     @__call__.register(str)
     def _(self, query: str, **kw):

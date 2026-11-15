@@ -183,12 +183,18 @@ def run_replay(tmp_path, script, monkeypatch, *, messages=None, steer=None, tool
                 if isinstance(ev, dict) and k in ev
             }
         )
-    return {
-        "transcript": transcript,
-        "tool_events": norm_events,
-        "deltas": [d for d in deltas if d is not None],
-        "used_tools": info.get("used_tools"),
-        "used_skills": info.get("used_skills"),
-        "error": info.get("error"),
-        "llm_calls": fake.calls_log,
-    }
+    return json.loads(
+        json.dumps(
+            {
+                "transcript": transcript,
+                "tool_events": norm_events,
+                "deltas": [d for d in deltas if d is not None],
+                "used_tools": info.get("used_tools"),
+                "used_skills": info.get("used_skills"),
+                "error": info.get("error"),
+                "llm_calls": fake.calls_log,
+            },
+            ensure_ascii=False,
+            default=str,
+        )
+    )
