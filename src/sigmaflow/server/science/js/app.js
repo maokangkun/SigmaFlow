@@ -121,6 +121,11 @@
       CS.ui.route = 'auth';
       location.hash = '#/auth';
     }
+    // 设置页刷新/直达: 恢复上次所在 tab 的数据加载(切换持久化见 settings-tab)
+    if (CS.ui.route === 'settings' && CS.ui.settingsTab && CS.ui.settingsTab !== 'general') {
+      const t = CS.ui.settingsTab;
+      setTimeout(() => { try { actions['settings-tab'](t); } catch (e) { /* 首帧分发尽力而为 */ } }, 0);
+    }
     const page = CS.views[CS.ui.route] || CS.views.home;
     const fullscreen = CS.ui.route === 'settings';
     if (CS.ui.route === 'auth') {
@@ -2972,7 +2977,7 @@ CS.liveBlocks = {
     },
     'connect-project': () => { CS.ui.projectMenu = false; CS.showModal('remote-project'); },
     'submit-remote-project': () => {},
-    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') { CS.loadAgentTools(); CS.loadAgentTokens(); } if (id === 'skills') CS.loadAgentSkills(); if (id === 'mcp') CS.loadAgentMcp(); if (id === 'mods') CS.loadMods(); if (id === 'keys') CS.loadAgentTokens(); if (id === 'privacy') CS.loadToolLimit(); if (id === 'sysprompt') CS.loadSystemPrompt(); if (id === 'context') CS.loadAgentCompaction(); if (id === 'usage') CS.loadUsage(); },
+    'settings-tab': id => { CS.ui.settingsTab = id; try { localStorage.setItem('sf:settingsTab', id); } catch {} CS.render(); if (id === 'tools') { CS.loadAgentTools(); CS.loadAgentTokens(); } if (id === 'skills') CS.loadAgentSkills(); if (id === 'mcp') CS.loadAgentMcp(); if (id === 'mods') CS.loadMods(); if (id === 'keys') CS.loadAgentTokens(); if (id === 'privacy') CS.loadToolLimit(); if (id === 'sysprompt') CS.loadSystemPrompt(); if (id === 'context') CS.loadAgentCompaction(); if (id === 'usage') CS.loadUsage(); },
     'usage-gran': id => { CS.ui.usageGran = id; CS.render(); },
     'reload-usage': () => { CS.ui.usage = null; CS.loadUsage(true); },
     'configure-model': () => { CS.ui.modelMenu = false; CS.ui.settingsTab = 'agent'; CS.navigate('settings'); },
