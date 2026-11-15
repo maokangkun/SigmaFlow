@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..kernel import (
     ModHost,
+    ModRegistry,
     ModStore,
     PatchEntry,
     ServiceRegistry,
@@ -187,6 +188,62 @@ def _invalidate_tool_caches() -> None:
         pass
 
 
+# ---------------------------------------------------------- 流水线贡献服务
+class NodeContribService:
+    """``ctx.services.nodes`` — mod 贡献流水线节点类型(P4, 设计 §6.6)。
+
+    节点基类(sigmaflow.nodes.base.Base)经 ``__init_subclass__`` 自动注册,
+    因此"贡献"= 导入定义了 Node 子类的模块; 卸载=把该模块引入的类从
+    ``Base.registered_nodes`` 摘除并移出 sys.modules。
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._owned: Dict[str, List[Any]] = {}  # mod_id → [node 类]
+
+    def register_module(self, path: Path, owner: str) -> List[str]:
+        """导入一个节点模块; 返回由此新增注册的节点类名列表。"""
+        import importlib.util
+
+        with self._lock:
+            from sigmaflow.nodes.base import Base
+
+            before = set(id(c) for c in Base.registered_nodes)
+            name = f"sfmod_nodes_{owner.replace('-', '_')}_{len(self._owned) + 1}"
+            spec = importlib.util.spec_from_file_location(name, path)
+            module = importlib.util.module_from_spec(spec)
+            import sys as _sys
+
+            _sys.modules[name] = module
+            try:
+                spec.loader.exec_module(module)
+            except Exception:
+                _sys.modules.pop(name, None)
+                raise
+            added = [c for c in Base.registered_nodes if id(c) not in before]
+            self._owned.setdefault(owner, []).extend(added)
+            return [c.__name__ for c in added]
+
+    def dispose_owner(self, owner: str) -> List[str]:
+        with self._lock:
+            gone = self._owned.pop(owner, [])
+            if gone:
+                from sigmaflow.nodes.base import Base
+
+                Base.registered_nodes[:] = [
+                    c
+                    for c in Base.registered_nodes
+                    if id(c) not in {id(g) for g in gone}
+                ]
+            return [c.__name__ for c in gone]
+
+    def describe(self) -> List[dict]:
+        return [
+            {"owner": owner, "nodes": [c.__name__ for c in classes]}
+            for owner, classes in self._owned.items()
+        ]
+
+
 # ------------------------------------------------------------ 子系统单例
 class ModSubsystem:
     _instance: Optional["ModSubsystem"] = None
@@ -209,6 +266,7 @@ class ModSubsystem:
         self.envs = EnvRegistry()
         self.tools = LegacyToolBridge()
         self.loop = LoopService()
+        self.nodes = NodeContribService()
         self._events: deque = deque(maxlen=500)
         self.hooks.error_sink = self._push_event
         self.host = ModHost(
@@ -251,6 +309,8 @@ class ModSubsystem:
             self.services.provide("tools", self.tools, owner="core")
             # loop 扩展面(P2): 阶段覆盖/驱动替换/agent.* 钩子
             self.services.provide("loop", self.loop, owner="core")
+            # 流水线节点贡献(P4)
+            self.services.provide("nodes", self.nodes, owner="core")
             store = ModStore(home or self.home_dir())
             self.host.store = store
             stats = self.host.bootstrap(
@@ -358,6 +418,61 @@ class ModSubsystem:
                 self.reload_mod(mod_id)
             return self.config_view(mod_id)
 
+    # ------------------------------------------------------- 安装/卸载
+    def install(self, source: str, *, origin: str = "local") -> dict:
+        """从本地目录安装: 校验清单 → 拷入 mods 主目录 → 注册并加载。
+
+        git/zip 来源(P5)后续经同一入口落地; 当前只收磁盘目录。
+        """
+        import shutil
+
+        with self._lock:
+            src = Path(source).expanduser().resolve()
+            record = ModRegistry.record_from_dir(src, origin=origin)
+            existing = self.host.registry.get(record.mod_id)
+            if existing is not None and existing.origin == "builtin":
+                # 用户目录同名遮蔽内置: 记录替换(设计 §10)
+                pass
+            dest = self.host.store.mods_dir / record.mod_id if self.host.store else src
+            self.host.store.ensure_layout()
+            if dest != src:
+                if dest.exists():
+                    shutil.rmtree(dest)
+                shutil.copytree(src, dest, ignore=shutil.ignore_patterns("__pycache__"))
+                record = ModRegistry.record_from_dir(dest, origin=origin)
+            self.host.registry.add(record)
+            ok = self.host.load(record)
+            self.host.registry.bump_epoch()
+            if self.host.store is not None:
+                self.host.store.audit(
+                    "mod.installed", mod=record.mod_id, source=str(src)
+                )
+            d = record.to_dict()
+            d["loaded"] = ok
+            return d
+
+    def uninstall(self, mod_id: str) -> dict:
+        """卸载: 仅允许非内置; 停用 → 摘注册 → 删目录 → 清 patch 条目。"""
+        import shutil
+
+        with self._lock:
+            rec = self.host.registry.get(mod_id)
+            if rec is None:
+                raise KeyError(mod_id)
+            if rec.origin == "builtin":
+                raise PermissionError(f"builtin mod {mod_id!r} 不可卸载, 可停用")
+            self.host.unload(mod_id)
+            self.host.registry.remove(mod_id)
+            if self.host.store is not None:
+                entries = [e for e in self.host.store.read_patch() if e.mod != mod_id]
+                self.host.store.write_patch(entries)
+                target = self.host.store.mods_dir / mod_id
+                if target.is_dir():
+                    shutil.rmtree(target)
+                self.host.store.audit("mod.uninstalled", mod=mod_id)
+            self.host.registry.bump_epoch()
+            return {"id": mod_id, "uninstalled": True}
+
     def describe(self) -> dict:
         return {
             "epoch": self.host.registry.epoch,
@@ -434,6 +549,32 @@ def mods_api(subsystem: ModSubsystem = MODS) -> APIRouter:
         except KeyError:
             raise HTTPException(status_code=404, detail=f"unknown mod: {mod_id}")
         return {"mod": rec}
+
+    @router.post("/install")
+    async def install_mod(request: Request):
+        _check_origin(request)
+        body = await request.json()
+        source = str((body or {}).get("source") or "").strip()
+        if not source:
+            raise HTTPException(
+                status_code=400, detail="source 不能为空(本地 mod 目录)"
+            )
+        try:
+            rec = subsystem.install(source)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"安装失败: {exc}")
+        return {"mod": rec}
+
+    @router.delete("/{mod_id}")
+    async def uninstall_mod(mod_id: str):
+        try:
+            return subsystem.uninstall(mod_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"unknown mod: {mod_id}")
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc))
 
     @router.get("/{mod_id}/config")
     async def get_config(mod_id: str):
