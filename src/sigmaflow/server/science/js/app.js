@@ -2201,14 +2201,14 @@ CS.liveBlocks = {
       const item = (name, desc, badge) => `<div class="session-list-item"><div class="row gap-6"><strong>${e(name)}</strong>${badge || ''}</div><span class="small muted">${e(desc)}</span></div>`;
       let list;
       if (isTools) {
-        // 与设置页同规则分组排序: 内置三类固定顺序, MCP 按配置顺序
-        const GROUP_LABELS = { builtin: '内置工具 · 基础', sciverse: '内置工具 · Sciverse', arxiv: '内置工具 · arXiv' };
-        const GROUP_ORDER = { builtin: 0, sciverse: 1, arxiv: 2 };
+        // 与设置页同规则分组排序(CS.toolGroupKey): 基础六件套 builtin_basic, 其余内置 builtin(高级), MCP 按配置顺序
+        const GROUP_LABELS = { builtin_basic: '内置工具 · 基础', builtin: '内置工具 · 高级', sciverse: '内置工具 · Sciverse', arxiv: '内置工具 · arXiv' };
+        const GROUP_ORDER = { builtin_basic: 0, builtin: 1, sciverse: 2, arxiv: 3 };
         const groups = [];
         for (const t of rows) {
-          const origin = t.origin || 'builtin';
-          let g = groups.find(x => x.origin === origin);
-          if (!g) groups.push(g = { origin, label: GROUP_LABELS[origin] || `MCP · ${origin}`, rank: GROUP_ORDER[origin] ?? 3, items: [] });
+          const key = CS.toolGroupKey(t);
+          let g = groups.find(x => x.origin === key);
+          if (!g) groups.push(g = { origin: key, label: GROUP_LABELS[key] || `MCP · ${key}`, rank: GROUP_ORDER[key] ?? 4, items: [] });
           g.items.push(t);
         }
         groups.sort((a, b) => a.rank - b.rank);
