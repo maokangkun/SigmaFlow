@@ -5956,7 +5956,9 @@ def _bind_main_system(
     bound_system += _model_caption(model_name, model_ctx)
     if plan_mode:
         bound_system = bound_system + _PLAN_MODE_PROMPT
-    if _memory_recall_enabled():
+    if _memory_recall_enabled() and MODS.effective_enabled(
+        "core-memory", _current_user()
+    ):
         # s09 记忆注入: 索引常驻 + 与当前请求关键词相关的记录(零模型调用, 纯词法召回);
         # 设置页 memory.json 可整体关闭(recall=false 时不注入 # Memory 段)
         try:

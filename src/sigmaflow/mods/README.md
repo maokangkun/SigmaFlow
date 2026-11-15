@@ -112,3 +112,19 @@ python -m sigmaflow.kernel.modsign verify my-mod
 
 签名对象是 `mod.toml` 的 sha256 —— 清单即身份；信任库在
 `~/.sigmaflow/trusted-mod-keys.txt`（`SIGMAFLOW_MOD_TRUST` 可覆盖）。
+
+## 系统 core mod
+
+agent loop、上下文压缩、记忆、技能、定时协作这些系统内置功能以 **core mod**
+形式出现在 Mod 管理（origin=core，无磁盘目录，实现即系统代码）：
+
+| id | 可停用 | 停用效果 |
+|---|---|---|
+| core-loop | 否（核心） | 可被 loop mod 整体替换 |
+| core-tools | 否（核心） | 逐工具开关见「Agent 工具」面板 |
+| core-compaction | 是 | 自动/手动压缩均短路并显式告知 |
+| core-memory | 是 | memory 工具剔除 + 记忆注入跳过 |
+| core-skills | 是 | load/create_skill 剔除 + 清单段不进 system |
+| core-harness | 是 | cron/goal/teammates 工具剔除 |
+
+多用户下行为类 core mod 按用户隔离（你停用不影响他人）；单用户为全局开关。

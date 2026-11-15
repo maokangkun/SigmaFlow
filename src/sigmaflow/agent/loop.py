@@ -248,6 +248,26 @@ def set_user_gate(fn) -> None:
     _mod_enabled_for = fn
 
 
+# core 功能门控: agent 内部行为(压缩/记忆/技能)按 core-<name> mod 的启停
+# 短路; 注入方为 server(MODS.effective_enabled), 未注入=全放行(CLI/单用户)
+_feature_gate = None
+
+
+def set_feature_gate(fn) -> None:
+    """注入 ``fn(feature, user) -> bool``, feature ∈ compaction/memory/skills。"""
+    global _feature_gate
+    _feature_gate = fn
+
+
+def feature_enabled(feature: str, user: Optional[str] = None) -> bool:
+    if _feature_gate is None:
+        return True
+    try:
+        return bool(_feature_gate(feature, user))
+    except Exception:  # noqa: BLE001 — 门控故障放行
+        return True
+
+
 def _gate(owner: Optional[str], user: Optional[str]) -> bool:
     if _mod_enabled_for is None or owner in (None, "__anonymous__", "core"):
         return True

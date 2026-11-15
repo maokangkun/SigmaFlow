@@ -426,9 +426,24 @@ class Agent:
         # steering 注入点①: 上一回合的工具批已执行完、下一次模型调用
         # 尚未发出 —— 排队插话在此进入上下文, 成为下一段回复的输入
         self._inject_steer(messages, info)
-        messages[:] = self.compactor.auto_compact(
-            messages, force=lc.manual_compact, context_ratio=lc.ratio
-        )
+        from .loop import feature_enabled
+
+        if feature_enabled("compaction", lc.user):
+            messages[:] = self.compactor.auto_compact(
+                messages, force=lc.manual_compact, context_ratio=lc.ratio
+            )
+        elif lc.manual_compact:
+            # core-compaction 停用时手动压缩也不静默: 明确告知走不通
+            _inject_sysnote(
+                self.on_tool,
+                messages,
+                info,
+                {
+                    "role": "user",
+                    "content": "[System] Compaction is disabled by mod core-compaction.",
+                },
+            )
+            lc.manual_compact = False
         # 压缩发生时同步通知前端: 前端丢弃被摘要的轮次并渲染摘要卡(pi CompactionEntry)
         cmeta = getattr(self.compactor, "last_meta", None)
         if cmeta and isinstance(cmeta, dict) and cmeta.get("applied"):

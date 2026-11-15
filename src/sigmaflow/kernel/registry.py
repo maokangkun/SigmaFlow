@@ -20,7 +20,7 @@ MOD_STATES = ("installed", "enabled", "disabled", "blocked", "error", "skipped")
 @dataclass
 class ModRecord:
     manifest: Manifest
-    path: Path  # mod 目录(可能是安装副本或原位引用)
+    path: Optional[Path] = None  # 磁盘目录; None = core 虚拟记录(实现即系统代码)
     origin: str = "local"  # local | builtin | git | zip
     state: str = "installed"
     state_reason: str = ""
@@ -34,7 +34,7 @@ class ModRecord:
         d = self.manifest.to_dict()
         d.update(
             {
-                "path": str(self.path),
+                "path": str(self.path) if self.path else "",
                 "origin": self.origin,
                 "state": self.state,
                 "stateReason": self.state_reason,
@@ -121,6 +121,31 @@ class ModRegistry:
         return plan
 
     # ---------------------------------------------------------------- 工厂
+    @staticmethod
+    def core_record(
+        mod_id: str,
+        name: str,
+        description: str,
+        *,
+        locked: bool = False,
+    ) -> ModRecord:
+        """系统内置功能(core mod)的虚拟记录: 无磁盘目录不参与加载;
+        locked=True 为骨架级功能(loop/基础工具), 面板展示但不可停用。"""
+        manifest = manifest_from_dict(
+            {
+                "mod": {
+                    "id": mod_id,
+                    "name": name,
+                    "version": "1.0.0",
+                    "description": description,
+                    "reload": "instant",
+                    "target": "server" if locked else "all",
+                }
+            },
+            source="<core>",
+        )
+        return ModRecord(manifest=manifest, path=None, origin="core", state="enabled")
+
     @staticmethod
     def record_from_dir(path: Path, *, origin: str = "local") -> ModRecord:
         manifest_path = path / "mod.toml"

@@ -371,6 +371,16 @@ class ModSubsystem:
                 builtin_dirs=builtin_dirs or self.builtin_dirs(),
                 target="server",
             )
+            for cid, spec in CORE_MODS.items():
+                if self.host.registry.get(cid) is None:
+                    self.host.registry.add(
+                        ModRegistry.core_record(
+                            cid,
+                            spec["name"],
+                            spec["description"],
+                            locked=spec["locked"],
+                        )
+                    )
             self._bootstrapped = True
             log.info(
                 "mods bootstrap: %s loaded, %s blocked, %s errored, %s skipped",
@@ -403,6 +413,9 @@ class ModSubsystem:
         rec = self.host.registry.get(mod_id)
         if rec is None:
             return "user"
+        if rec.origin == "core":
+            spec = CORE_MODS.get(mod_id) or {}
+            return "shared" if spec.get("locked") else "user"
         return "shared" if rec.manifest.target == "server" else "user"
 
     def _user_state(self, user: str) -> UserModState:
@@ -458,13 +471,26 @@ class ModSubsystem:
         # 用户自装 mod: 仅属主可见(origin 编码属主: "user:<name>")
         if rec.origin.startswith("user:"):
             return user == rec.origin.split(":", 1)[1] and rec.state == "enabled"
+        if rec.origin == "core":
+            # core 记录不走 load/unload 状态机: 全局启停以 patch 覆盖为准
+            if self.host.store is not None:
+                entry = next(
+                    (e for e in self.host.store.read_patch() if e.mod == mod_id),
+                    None,
+                )
+                if entry is not None and entry.enabled is not None:
+                    return entry.enabled
+            return True
         return rec.state == "enabled"
 
     def excluded_tool_names(self, user: Optional[str]) -> set:
-        """该用户不可用的工具名集合(属主 mod 被停用的), 供工具面过滤。"""
+        """该用户不可用的工具名集合(属主 mod/core 功能被停用的)。"""
         names: set = set()
         for owner, tools in self.tools.owned_tools().items():
             if owner != "core" and not self.effective_enabled(owner, user):
+                names.update(tools)
+        for owner, tools in CORE_OWNER_TOOLS.items():
+            if not self.effective_enabled(owner, user):
                 names.update(tools)
         return names
 
@@ -486,6 +512,10 @@ class ModSubsystem:
             rec = self.host.registry.get(mod_id)
             if rec is None:
                 raise KeyError(mod_id)
+            if rec.origin == "core" and (CORE_MODS.get(mod_id) or {}).get("locked"):
+                raise PermissionError(
+                    f"core mod {mod_id!r} 是系统骨架, 不可停用(可查看/被替换)"
+                )
             store = self.host.store
             assert store is not None
             user_scoped = (
@@ -505,7 +535,9 @@ class ModSubsystem:
                     entries.append(entry)
                 entry.enabled = enabled
                 store.write_patch(entries)
-                if enabled:
+                if rec.origin == "core":
+                    pass  # core 记录无磁盘代码, 全局层不承载启停
+                elif enabled:
                     if not (rec.state == "enabled" and mod_id in self.host.contexts):
                         self.host.load(rec)
                 else:
@@ -694,6 +726,11 @@ class ModSubsystem:
 
     def describe(self, user: Optional[str] = None) -> dict:
         mods = self.host.describe()
+        # core 记录的 locked/scope 标注不依赖多用户(单用户面板同样需要)
+        for row in mods:
+            if row.get("origin") == "core":
+                row["locked"] = bool((CORE_MODS.get(row["id"]) or {}).get("locked"))
+                row["scope"] = self.scope_of(row["id"])
         if user and self._user_data_resolver is not None:
             kept = []
             for row in mods:
@@ -716,6 +753,58 @@ class ModSubsystem:
             "events": list(self._events)[-50:],
         }
 
+
+# ------------------------------------------------------------- core mod
+# 系统内置功能以虚拟 mod 呈现(设计 §2 "一切功能皆 mod"): 无磁盘目录,
+# 实现就是系统代码本身; 行为类可停用(每用户), 骨架类锁定展示。
+CORE_MODS = {
+    "core-loop": {
+        "name": "Agent 主循环",
+        "description": "十阶段 agent loop 管线(steer/压缩/模型调用/工具分发); 可被 loop mod 整体替换",
+        "locked": True,
+    },
+    "core-tools": {
+        "name": "基础工具集",
+        "description": "bash/read/write/edit/grep/present 等基础工具(逐个开关见『Agent 工具』)",
+        "locked": True,
+    },
+    "core-compaction": {
+        "name": "上下文压缩",
+        "description": "接近窗口上限时自动摘要压缩历史(手动压缩同受此开关控制)",
+        "locked": False,
+    },
+    "core-memory": {
+        "name": "记忆系统",
+        "description": "memory_save/read/recall 与请求相关的记忆注入",
+        "locked": False,
+    },
+    "core-skills": {
+        "name": "技能系统",
+        "description": "load_skill/create_skill 与 system prompt 中的技能清单",
+        "locked": False,
+    },
+    "core-harness": {
+        "name": "定时与协作",
+        "description": "cron 定时任务 / goal 条件 / teammates 子代理",
+        "locked": False,
+    },
+}
+
+# core 功能名 -> 其工具面(停用时从会话工具面剔除; 与 mod 工具同管道)
+CORE_OWNER_TOOLS = {
+    "core-memory": ["memory_save", "memory_list", "memory_read", "memory_recall"],
+    "core-skills": ["load_skill", "create_skill"],
+    "core-harness": [
+        "schedule_cron",
+        "list_crons",
+        "cancel_cron",
+        "goal_set",
+        "goal_status",
+        "goal_clear",
+        "spawn_teammate",
+        "list_teammates",
+    ],
+}
 
 MODS = ModSubsystem.instance()
 

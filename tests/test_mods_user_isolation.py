@@ -201,8 +201,12 @@ class TestLoopGate:
 class TestSingleUserCompat:
     def test_no_resolver_keeps_global_behavior(self, tmp_path):
         sub = _subsystem(tmp_path, multi_user=False)
-        d = sub.describe()  # 无 user 字段作用域标注
-        assert all("scope" not in m for m in d["mods"])
+        d = (
+            sub.describe()
+        )  # 单用户: 普通 mod 无作用域标注; core 记录恒带(core 语义与用户层无关)
+        assert all("scope" not in m for m in d["mods"] if m.get("origin") != "core")
+        core_rows = [m for m in d["mods"] if m.get("origin") == "core"]
+        assert core_rows and all("locked" in m and "scope" in m for m in core_rows)
         sub.set_enabled("example-tools", False)  # 全局启停(历史行为)
         assert not sub.effective_enabled("example-tools", None)
         sub.set_enabled("example-tools", True)

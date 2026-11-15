@@ -77,6 +77,12 @@ class PipelineServer:
         from ..agent.loop import set_user_gate as _sf_set_user_gate
 
         _sf_set_user_gate(lambda owner, user: MODS.effective_enabled(owner, user))
+        # core 行为门控: 压缩/记忆/技能按 core-* mod 对该用户的启停短路
+        from ..agent.loop import set_feature_gate as _sf_set_feature_gate
+
+        _sf_set_feature_gate(
+            lambda feat, user: MODS.effective_enabled(f"core-{feat}", user)
+        )
 
         # UI mod 静态资源: /science/m/<mod-id>/... 按注册表现查目录伺服。
         # 与 /science/a/ 同策略: 内容可长缓存, entry 由注册表端点带 epoch 版本号。

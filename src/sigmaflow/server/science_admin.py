@@ -629,7 +629,14 @@ def _default_system_prompts() -> tuple:
     global _SKILL_BLOCK_BASE
     if _SKILL_BLOCK_BASE is None:
         _SKILL_BLOCK_BASE = {"system": "", "sub": ""}
-    listing = _agent_tools_module().skill_loader.get_descriptions()
+    # core-skills 停用(对当前用户)时技能清单段不进 system; 工具面同步剔除
+    from .mods import MODS
+    from .science import _current_user
+
+    if MODS.effective_enabled("core-skills", _current_user()):
+        listing = _agent_tools_module().skill_loader.get_descriptions()
+    else:
+        listing = ""
     system = (
         agent_module.SYSTEM.replace(_SKILL_BLOCK_BASE["system"], listing)
         if _SKILL_BLOCK_BASE["system"]
