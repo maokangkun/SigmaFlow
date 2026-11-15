@@ -426,6 +426,13 @@ def _bound_project_dir():
     return getattr(_SESSION_WORKDIR, "workdir", None)
 
 
+# 项目技能扫描缓存: {project_root: (monotonic_ts, scan_result)}; TTL 内直接命中,
+# create_skill 落盘后主动失效(见 project_skills_scan docstring)
+_PROJECT_SKILLS_TTL = 2.0
+_PROJECT_SKILLS_CACHE: dict[str, tuple[float, dict]] = {}
+_PROJECT_SKILLS_LOCK = threading.Lock()
+
+
 def bound_project_dir():
     """Public alias of _bound_project_dir: raw binding without WORKDIR fallback.
 
@@ -434,29 +441,89 @@ def bound_project_dir():
     return _bound_project_dir()
 
 
-def project_skills_scan(workdir) -> dict:
-    """Live scan of <workdir>/skills/**/SKILL.md -> {name: {meta, body, path}}.
+def project_skills_cache_clear(workdir=None) -> None:
+    """Drop the scan cache for one project (or all); used by tests and ops."""
+    with _PROJECT_SKILLS_LOCK:
+        if workdir is None:
+            _PROJECT_SKILLS_CACHE.clear()
+        else:
+            try:
+                _PROJECT_SKILLS_CACHE.pop(str(Path(workdir).resolve()), None)
+            except OSError:
+                pass
 
-    Called fresh on every use (system-prompt assembly / load_skill) so that
-    edits made to project skills mid-session are picked up immediately.
+
+def project_skills_scan(workdir) -> dict:
+    """Live-ish scan of <workdir>/skills/**/SKILL.md -> {name: {meta, body, path}}.
+
+    Results are cached per project with a short TTL: a several-thousand-skill
+    project must not rglob + re-read every file on every turn of system-prompt
+    assembly. Edits still surface promptly (TTL 2s is far below a typical
+    turn) and create_skill invalidates the entry it wrote immediately.
+    Callers get a shallow copy so cache contents are never mutated.
     """
-    out: dict[str, Any] = {}
     if not workdir:
-        return out
+        return {}
+    try:
+        key = str(Path(workdir).resolve())
+    except OSError:
+        return {}
+    now = time.monotonic()
+    with _PROJECT_SKILLS_LOCK:
+        hit = _PROJECT_SKILLS_CACHE.get(key)
+        if hit and now - hit[0] < _PROJECT_SKILLS_TTL:
+            return dict(hit[1])
+    out: dict[str, Any] = {}
     root = Path(workdir) / "skills"
-    if not root.exists():
-        return out
-    for f in sorted(root.rglob("SKILL.md")):
-        try:
-            text = f.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        meta, body = parse_skill_frontmatter(text)
-        if not isinstance(meta, dict):
-            meta = {}
-        name = str(meta.get("name") or "").strip() or f.parent.name
-        out[name] = {"meta": meta, "body": body, "path": str(f), "project": True}
-    return out
+    if root.exists():
+        for f in sorted(root.rglob("SKILL.md")):
+            try:
+                text = f.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            meta, body = parse_skill_frontmatter(text)
+            if not isinstance(meta, dict):
+                meta = {}
+            name = str(meta.get("name") or "").strip() or f.parent.name
+            out[name] = {"meta": meta, "body": body, "path": str(f), "project": True}
+    with _PROJECT_SKILLS_LOCK:
+        _PROJECT_SKILLS_CACHE[key] = (time.monotonic(), out)
+        # 防膨胀: 项目数超限时淘汰最旧缓存项
+        if len(_PROJECT_SKILLS_CACHE) > 64:
+            oldest = min(
+                _PROJECT_SKILLS_CACHE, key=lambda k: _PROJECT_SKILLS_CACHE[k][0]
+            )
+            _PROJECT_SKILLS_CACHE.pop(oldest, None)
+    return dict(out)
+
+
+# 会话归属登记表(模块级, 按会话 scope 键): create_skill 的全局写入门控需要
+# 用户身份, 而并行工具线程没有 ContextVar/thread-local 绑定 —— 会话 scope
+# 已在全链路重绑(get_session_scope), 据此查这张表即可, 不依赖线程状态。
+# 登记在会话绑定时写入(science 层), 会话结束时清除。
+_SESSION_USERS: dict[str, dict] = {}
+_SESSION_USERS_LOCK = threading.Lock()
+
+
+def set_session_user(scope, name=None, multi=False) -> None:
+    """Record (or with name=None forget) the owning account of a session scope."""
+    key = str(scope) if scope else "default"
+    with _SESSION_USERS_LOCK:
+        if name is None:
+            _SESSION_USERS.pop(key, None)
+        else:
+            _SESSION_USERS[key] = {"name": str(name), "multi": bool(multi)}
+
+
+def _session_user_info() -> dict:
+    with _SESSION_USERS_LOCK:
+        return dict(_SESSION_USERS.get(get_session_scope()) or {})
+
+
+def _global_skill_admins() -> set:
+    """Accounts allowed to write global skills in multi-user deployments."""
+    raw = os.environ.get("SIGMAFLOW_GLOBAL_SKILL_ADMINS", "")
+    return {x.strip() for x in raw.split(",") if x.strip()}
 
 
 def load_skill_resolved(name: str) -> str:
@@ -510,6 +577,16 @@ def create_skill(
         root = Path(wd) / "skills" / name
         scope_label = "project"
     elif scope in ("global", "user"):
+        # 多用户门控: 全局技能描述会进入所有用户的 system prompt, 任一认证
+        # 用户都能写就成了一条跨用户提示注入通道。仅 SIGMAFLOW_GLOBAL_SKILL_ADMINS
+        # 名单内的账户可写, 其余会话回落项目 scope(报错提示, 不静默降级)。
+        info = _session_user_info()
+        if info.get("multi") and info.get("name") not in _global_skill_admins():
+            return (
+                "Error: 多用户模式下禁止创建全局技能（全局技能描述会进入所有用户的系统提示词，"
+                "属于跨用户影响面）。请改用 scope='project' 写入当前项目；"
+                "如需开放全局技能管理，请由服务管理员将账户加入 SIGMAFLOW_GLOBAL_SKILL_ADMINS 环境变量。"
+            )
         root = Path(str(skill_loader.skills_dir)) / name
         scope_label = "global"
     else:
@@ -532,6 +609,14 @@ def create_skill(
         target.write_text(text, encoding="utf-8")
     except OSError as e:
         return f"Error: 写入失败：{e}"
+    if scope_label == "project" and wd:
+        # 落盘后立即失效该项目缓存, 本轮/下次扫描即可见
+        try:
+            key = str(Path(wd).resolve())
+            with _PROJECT_SKILLS_LOCK:
+                _PROJECT_SKILLS_CACHE.pop(key, None)
+        except OSError:
+            pass
     # 全局目录落盘后立刻刷新 loader 视图(项目技能靠实时扫描, 无需刷新);
     # rebuild 是 science 多用户视图, 单机 SkillLoader 回落 _load_all
     if scope_label == "global":

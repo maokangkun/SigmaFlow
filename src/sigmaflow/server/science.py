@@ -5992,6 +5992,14 @@ def _run_agent_chat(
     tools_mod.set_session_workdir(workdir)
     # 会话作用域: task/job/inbox 等有状态工具按 runId 分片, 会话间互不可见
     tools_mod.set_session_scope(conversation_id or None)
+    # 会话归属登记(按 scope 键的模块级表): create_skill 的全局写入门控需要用户
+    # 身份, 而并行工具线程没有 ContextVar/thread-local, 不能靠线程状态传递
+    try:
+        tools_mod.set_session_user(
+            conversation_id or "", _current_user(), _multi_user()
+        )
+    except Exception:
+        pass
 
     def _msg_content(m: dict):
         """user 消息可携带 images(dataUrl 列表, 上传图片附件):
@@ -6216,6 +6224,11 @@ def _run_agent_chat(
         # 作用域复位必须与工作目录同在 finally: 若放外面, 会话中途抛异常时
         # 线程池复用的线程会把本会话的 task/job/inbox 作用域泄漏给下一个会话
         tools_mod.set_session_scope(None)
+        # 归属登记与作用域同生命周期, 一并清除(防表项随会话数无限增长)
+        try:
+            tools_mod.set_session_user(conversation_id or "")
+        except Exception:
+            pass
 
     if not last:
         # 轮次耗尽的截停(agent 侧已写入轮次上限语义的 error): 生成一段可用的进度回复,
