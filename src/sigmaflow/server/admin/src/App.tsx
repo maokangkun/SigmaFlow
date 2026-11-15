@@ -6,6 +6,7 @@ import TracesPage from './components/TracesPage';
 import TraceDetailPage from './components/TraceDetailPage';
 import ApiKeysPage from './components/ApiKeysPage';
 import CostsPage from './components/CostsPage';
+import ModsPage from './components/ModsPage';
 import { ModelPricesPage } from './components/ModelPricesPage';
 import SetupPage from './components/SetupPage';
 import LoginPage from './components/LoginPage';
@@ -83,6 +84,7 @@ function App() {
                               <Route path="/costs" element={<CostsPage />} />
                               <Route path="/model-prices" element={<ModelPricesPage />} />
                               <Route path="/api-keys" element={<ApiKeysPage />} />
+                              <Route path="/mods" element={<ModsPage />} />
                               <Route path="/setup" element={<SetupPage />} />
                             </Routes>
                           </div>

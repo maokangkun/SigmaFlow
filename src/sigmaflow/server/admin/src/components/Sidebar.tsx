@@ -9,6 +9,7 @@ import {
   Settings,
   LogOut,
   DollarSign,
+  Puzzle,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
   const isModelPricesActive = location.pathname === '/model-prices';
   const isApiKeysActive = location.pathname === '/api-keys';
   const isSetupActive = location.pathname === '/setup';
+  const isModsActive = location.pathname === '/mods';
 
   const handleLogout = () => {
     logout();
@@ -114,6 +116,18 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
         >
           <Key className="w-4 h-4 flex-shrink-0" />
           {!collapsed && <span>API Keys</span>}
+        </Button>
+        <Button
+          variant={isModsActive ? 'default' : 'ghost'}
+          onClick={() => navigate('/mods')}
+          className={cn(
+            'w-full justify-start gap-3',
+            collapsed && 'justify-center px-2'
+          )}
+          title={collapsed ? 'Mods' : undefined}
+        >
+          <Puzzle className="w-4 h-4 flex-shrink-0" />
+          {!collapsed && <span>Mods</span>}
         </Button>
         <Button
           variant={isSetupActive ? 'default' : 'ghost'}

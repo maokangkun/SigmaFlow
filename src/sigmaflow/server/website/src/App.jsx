@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge.jsx'
 import { Play, ChevronRight, ChevronDown, Star, Users, Zap, Brain, Workflow, Bot } from 'lucide-react'
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion'
+import { ModSections } from './mods/registry.jsx'
 import './App.css'
 
 // 导入图片素材
@@ -783,6 +784,9 @@ function App() {
           </div>
         </div>
       </section>
+
+      {/* 构建期 mod 槽: 启用中的 mod 各贡献一个区块(P4) */}
+      <ModSections />
 
       {/* 页脚 */}
       <footer className="px-6 py-12 bg-gray-900 text-white">
