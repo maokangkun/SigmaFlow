@@ -176,7 +176,7 @@ class TestExampleLoopMod:
             hooks=loop.hooks,
             store=ModStore(tmp_path / "home"),
         )
-        stats = host.bootstrap(
+        host.bootstrap(
             builtin_dirs=[Path(sigmaflow.__file__).parent / "mods"],
             target="server",
         )
