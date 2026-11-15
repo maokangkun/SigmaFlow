@@ -234,7 +234,7 @@
         ${CS.ui.unassignedCollapsed ? '' : (() => { const loose = CS.ui.conversations.filter(c => !c.projectId).slice(0, 8); return loose.length ? loose.filter(c => !c.archived).map(c => `<button type="button" class="conversation-link ${CS.state.currentRunId === c.id ? 'selected' : ''}" data-action="open-conversation" data-id="${e(c.id)}" title="${e(c.title)}">${i('message')}<span class="conversation-title">${e(c.title)}</span>${streaming.has(c.id) ? '<span class="conv-dot" title="生成中"></span>' : ''}<span class="conversation-actions${c.pinned ? ' has-pinned' : ''}"><span class="icon-btn" role="button" data-action="toggle-pin-conversation" data-id="${e(c.id)}" title="${c.pinned ? '取消置顶' : '置顶'}">${i(c.pinned ? 'x' : 'up','',12)}</span><span class="icon-btn" role="button" data-action="archive-conversation" data-id="${e(c.id)}" title="归档">${i('archive','',12)}</span></span></button>`).join('') : '<div class="conversation-empty small muted">暂无未归属项目的会话</div>'; })()}
       </section>
       <section class="sidebar-section"><div class="sidebar-section-label"><button type="button" class="text-button muted small ${CS.ui.fsCollapsed ? 'collapsed' : ''}" data-action="toggle-fs-section" aria-expanded="${!CS.ui.fsCollapsed}" title="${CS.ui.fsCollapsed ? '展开文件' : '折叠文件'}"><span>文件</span></button><span class="fs-actions">${iconBtn('fs-upload','upload','上传文件到项目根目录')}${iconBtn('fs-term','terminal','打开终端')}${iconBtn('fs-refresh','refresh','刷新文件')}</span></div>${CS.ui.fsCollapsed ? '' : V.fsTree()}<input type="file" id="fs-upload-input" multiple hidden aria-hidden="true"></section></div>
-      <div class="sidebar-bottom"><div class="workspace-chip" data-action="toggle-user-menu"><div class="workspace-monogram">${((CS.state.me?.user?.name) || CS.state.username || 'CS').slice(0,2).toUpperCase()}</div><div class="grow"><div class="name">${e((CS.state.me?.user?.name) || CS.state.username || '未登录用户')}</div><div class="sub">科研工作空间</div></div>${i('chevron','',12)}${CS.ui.userMenu ? `<div class="user-menu"><button class="menu-item" data-nav="settings">${i('settings','',15)}<span>设置</span><kbd>⌘,</kbd></button><button class="menu-item" data-nav="help">${i('help','',15)}<span>帮助与文档</span></button>${CS.state.me?.mode === 'multi' ? `<div class="menu-divider"></div><button class="menu-item danger" data-action="logout">${i('logout','',15)}<span>退出登录</span></button>` : ''}</div>` : ''}</div></div>
+      <div class="sidebar-bottom"><div class="workspace-chip" data-action="toggle-user-menu"><div class="workspace-monogram">${((CS.state.me?.user?.name) || CS.state.username || 'CS').slice(0,2).toUpperCase()}</div><div class="grow"><div class="name">${e((CS.state.me?.user?.name) || CS.state.username || '未登录用户')}</div><div class="sub">科研工作空间</div></div>${i('chevron','',12)}${CS.ui.userMenu ? `<div class="user-menu"><button class="menu-item" data-nav="settings">${i('settings','',15)}<span>设置</span><kbd>⌘,</kbd></button><button class="menu-item" data-nav="logs">${i('file','',15)}<span>日志与反馈</span></button><button class="menu-item" data-nav="help">${i('help','',15)}<span>帮助与文档</span></button>${CS.state.me?.mode === 'multi' ? `<div class="menu-divider"></div><button class="menu-item danger" data-action="logout">${i('logout','',15)}<span>退出登录</span></button>` : ''}</div>` : ''}</div></div>
     </aside>`;
   };
   V.topbar = () => `<div class="topbar"><div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div></div>`;
@@ -1586,5 +1586,35 @@ V.ctxRing = () => {
     };
     return `<section class="page fullscreen-page"><div class="settings-layout"><aside class="panel settings-nav" aria-label="设置导航">${nav.map(([id, icon, label]) => `<button type="button" class="settings-nav-item ${tab === id ? 'active' : ''}" data-action="settings-tab" data-id="${id}" ${tab === id ? 'aria-current="page"' : ''}>${i(icon,'',16)}<span>${label}</span></button>`).join('')}</aside><div class="settings-content">${sections[tab]}</div></div><div class="page-footer">SigmaFlow Science / Interface edition 1.0</div></section>`;
   };
+  V.logs = () => {
+    // 日志与反馈页: 运行日志尾部查看(行数/过滤/自动刷新/下载) + 反馈表单(可附最近日志)
+    const lv = CS.ui.logView || (CS.ui.logView = { tail: 500, q: '', auto: false, data: null });
+    const hl = ln => {
+      const cls = / - ERROR - |Traceback|CRITICAL/.test(ln) ? ' class="log-err"' : / - WARNING - /.test(ln) ? ' class="log-warn"' : '';
+      return `<span${cls}>${e(ln)}</span>`;
+    };
+    const body = lv.data
+      ? (lv.data.lines.length
+        ? `<pre class="logs-pre mono">${lv.data.lines.map(hl).join('\n')}</pre>`
+        : empty('search', '没有匹配的日志行', '调整关键字或清空过滤条件后重试。'))
+      : empty('file', '尚未加载日志', '点击「刷新日志」拉取服务端运行日志尾部。');
+    const meta = lv.data
+      ? (lv.data.hint
+        ? `<span class="tiny muted">${e(lv.data.hint)}</span>`
+        : `<span class="tiny muted mono" title="${e(lv.data.file || '')}">${e(lv.data.file || '')} · 显示最近 ${lv.data.lines.length} / 共 ${lv.data.total} 行</span>`)
+      : '';
+    return `<section class="page fullscreen-page">${header('DIAGNOSTICS','日志与反馈','查看服务端运行日志；遇到问题时提交反馈，可附带最近日志帮助开发者定位。')}
+<div class="panel settings-section"><div class="row-between"><h2>运行日志</h2><span class="row gap-6">${lv.data && !lv.data.hint ? pill('服务端日志', 'green') : ''}${lv.auto ? pill('自动刷新中', 'purple') : ''}</span></div>
+<div class="row wrap gap-6 mb-20"><label class="tiny muted" for="logs-tail">行数</label><select id="logs-tail" class="terminal-theme-select" aria-label="日志尾部行数">${[200, 500, 2000, 5000].map(n => `<option value="${n}" ${lv.tail === n ? 'selected' : ''}>${n} 行</option>`).join('')}</select><input id="logs-q" class="setting-input-inline" style="width:220px;text-align:left" placeholder="关键字过滤（如 ERROR、用户名）" value="${e(lv.q || '')}" spellcheck="false" aria-label="日志关键字过滤">${btn('logs-refresh','刷新日志','refresh','primary')}${btn('logs-download','下载 .txt','download','flat')}<div class="row gap-6"><button type="button" role="switch" aria-checked="${lv.auto}" class="switch" data-action="logs-auto" aria-label="每 15 秒自动刷新"></button><span class="small muted">自动刷新</span></div></div>
+${meta}
+<div class="logs-wrap">${body}</div>
+</div>
+<div class="panel settings-section"><h2>问题反馈</h2><p class="small muted mb-20">描述遇到的问题（做了什么、期望什么、实际发生了什么）；勾选附带日志会把服务端最近 300 行运行日志一并保存给开发者。</p>
+<textarea id="fb-content" class="sysprompt-textarea" rows="5" maxlength="20000" spellcheck="false" placeholder="例如：打开某会话时 Trace 页一直空白，控制台报 …"></textarea>
+<div class="row wrap gap-16 mt-12"><label class="small muted row gap-6" style="cursor:pointer"><input type="checkbox" id="fb-logs">附带最近 300 行运行日志</label>${btn('submit-feedback','提交反馈','check','primary')}</div>
+<p class="tiny muted mt-12">反馈保存在服务端数据目录的 feedback/ 下（markdown 文本），不会自动发送到任何外部服务。</p></div>
+</section>`;
+  };
+
   V.help = () => `<section class="page">${header('GUIDE','从问题，到可追溯的过程','这个工作空间怎么用，哪些是真实功能，哪些是演示。')}<div class="help-grid"><article class="panel"><h3>体验一个完整任务</h3><ol><li>首页点击“单细胞分析”，或输入研究问题。</li><li>查看 Agent 计划，点击“确认并执行”。</li><li>观察每一步的状态，尝试暂停、继续与展开日志。</li><li>完成后查看合成图表，导出 SVG 或分析记录。</li></ol><div class="mt-20">${btn('demo-start','开始示例','play','primary')}</div></article><article class="panel"><h3>快捷键</h3><div class="shortcut-list"><div><span>发送问题</span><kbd>Enter</kbd></div><div><span>在问题中换行</span><kbd>Shift + Enter</kbd></div><div><span>开始新对话</span><kbd>Alt + N</kbd></div><div><span>关闭对话框 / 菜单</span><kbd>Esc</kbd></div></div></article><article class="panel"><h3>这些功能可以真实使用</h3><p>本地文件导入和文本预览；DNA 长度与 GC 比例统计；项目增改和归档；文献收藏与笔记；本地搜索、图表交互和文件导出。</p><p class="mt-12">文件始终由你选择后才读取，且不会由演示任务自动上传。</p></article><article class="panel"><h3>这些内容是明确的演示</h3><p>Agent 对话、分析进度、单细胞数据图表、表达量与分析记录均为预设演示。当前版本没有执行真实模型、Scanpy、差异分析或实验操作。</p><p class="mt-12">生产集成说明与接口协议见源码包 README.md 和 API.md。</p></article></div><div class="mt-28">${notice('本工具不提供临床结论。科研分析必须使用经过验证的数据、方法与真实执行环境，并进行人工复核。')}</div></section>`;
 })();

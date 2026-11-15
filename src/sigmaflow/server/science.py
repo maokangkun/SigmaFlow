@@ -38,6 +38,7 @@ from .science_common import (
     _current_user,
     _multi_user,
     _os_user,
+    _science_data_root,
 )
 
 from .science_auth import (
@@ -1886,6 +1887,111 @@ class ScienceAPI:
         @router.get("/system")
         async def system_stats():
             return await asyncio.to_thread(_system_stats)
+
+        # ---------------------------------------------- 日志与反馈
+
+        def _log_file_candidates() -> list:
+            """运行日志文件候选: 显式环境变量优先, 其次各日志目录最新的 .log。"""
+            out = []
+            env = os.environ.get("SIGMAFLOW_LOG_FILE")
+            if env:
+                out.append(Path(env))
+            seen = set()
+            bases = (
+                os.environ.get("LOGGING_DIR"),
+                os.path.join(os.getcwd(), "logs"),
+                os.path.join(_science_data_root(), "logs"),
+            )
+            for base in bases:
+                if not base:
+                    continue
+                try:
+                    files = sorted(
+                        Path(base).glob("*.log"),
+                        key=lambda p: p.stat().st_mtime,
+                        reverse=True,
+                    )
+                except OSError:
+                    continue
+                for f in files[:1]:
+                    rp = str(f.resolve())
+                    if rp not in seen:
+                        seen.add(rp)
+                        out.append(f)
+            return out
+
+        def _read_log_tail(tail: int, q: str = "") -> dict:
+            """读取最新日志文件尾部; 关键字过滤后再截尾(保留最近的匹配行)。
+
+            日志文件可能很大(systemd 落盘可达数百 MB), 只向后 seek 读取末尾
+            若干 MB, 不整文件载入内存。
+            """
+            tail = max(50, min(int(tail or 500), 5000))
+            for path in _log_file_candidates():
+                try:
+                    with open(path, "rb") as fh:
+                        fh.seek(0, os.SEEK_END)
+                        size = fh.tell()
+                        fh.seek(max(0, size - 8 * 1024 * 1024))
+                        data = fh.read()
+                except OSError:
+                    continue
+                lines = data.decode("utf-8", errors="replace").splitlines()
+                if size > 8 * 1024 * 1024 and lines:
+                    lines = lines[1:]  # 起点落在行中间, 丢弃可能截断的首行
+                ql = str(q or "").strip().lower()
+                if ql:
+                    lines = [ln for ln in lines if ql in ln.lower()]
+                return {
+                    "file": str(path),
+                    "total": len(lines),
+                    "lines": lines[-tail:],
+                }
+            return {
+                "file": "",
+                "total": 0,
+                "lines": [],
+                "hint": "未找到日志文件：SAVE_LOG 未开启且 LOGGING_DIR/SIGMAFLOW_LOG_FILE 未配置。",
+            }
+
+        @router.get("/logs")
+        async def logs_tail(tail: int = 500, q: str = ""):
+            return await asyncio.to_thread(_read_log_tail, tail, q)
+
+        @router.post("/feedback")
+        async def submit_feedback(payload: _FeedbackIn, request: Request):
+            """用户反馈落盘为 markdown(问题描述 + 可选最近日志), 供开发者排查。"""
+            _check_origin(request)
+            user = _current_user()
+            content = _clip(str(payload.content or "").strip(), 20000)
+            if not content:
+                raise HTTPException(status_code=400, detail="反馈内容不能为空")
+            try:
+                root = Path(_science_data_root()) / "feedback"
+                root.mkdir(parents=True, exist_ok=True)
+                safe_user = re.sub(r"[^A-Za-z0-9_-]", "_", user)[:32] or "user"
+                path = root / (time.strftime("%Y%m%d-%H%M%S") + f"_{safe_user}.md")
+                parts = [
+                    f"# 反馈 {time.strftime('%Y-%m-%d %H:%M:%S')}",
+                    f"- 用户: {user}",
+                ]
+                conv = _clip(str(payload.conversationId or "").strip(), 64)
+                if conv:
+                    parts.append(f"- 会话: {conv}")
+                parts += ["", "## 问题描述", content]
+                if payload.includeLogs:
+                    logs = _read_log_tail(300)
+                    parts += [
+                        "",
+                        f"## 运行日志（最近 300 行，来源 {logs.get('file') or '未知'}）",
+                        "```",
+                        "\n".join(logs.get("lines") or []) or "（无）",
+                        "```",
+                    ]
+                path.write_text("\n".join(parts) + "\n", encoding="utf-8")
+            except OSError as e:
+                raise HTTPException(status_code=500, detail=f"反馈保存失败：{e}")
+            return {"ok": True, "saved": str(path)}
 
         @router.post("/runs")
         async def create_run(payload: RunCreate, request: Request):
@@ -4979,6 +5085,12 @@ class _AuthCredentials(BaseModel):
 class _AuthPasswordChange(BaseModel):
     oldPassword: str = ""
     newPassword: str = ""
+
+
+class _FeedbackIn(BaseModel):
+    content: str = ""
+    includeLogs: bool = False
+    conversationId: str = ""
 
 
 class ScienceProjectStore:

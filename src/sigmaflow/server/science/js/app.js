@@ -185,6 +185,11 @@
     } catch { /* 后端不可达时保持现状, 下轮再试 */ }
   };
   setInterval(() => { if (document.getElementById('sys-stats')) updateSysStats(); }, 3000);
+  // 日志页自动刷新: 每 15s 重新拉取尾部(仅页面可见且开关打开时)
+  setInterval(() => {
+    if (document.hidden || CS.ui.route !== 'logs' || !(CS.ui.logView?.auto)) return;
+    CS.actions['logs-refresh']?.();
+  }, 15000);
   // present 富预览懒加载: 图片直显 / csv 表格 / json 摘要。
   // IntersectionObserver 只加载视口附近的卡片; 同一路径结果缓存, 重渲染秒填。
   // present 预览双缓存(payload + 渲染结果): 简易 LRU(各 80 条)防超长
@@ -3155,6 +3160,47 @@ CS.liveBlocks = {
         CS.toast('API Key 已保存，相关工具/服务启用状态已同步。');
       } catch (error) { CS.toast('保存失败：' + CS.api.friendlyError(error), 'error'); }
     },
+    'logs-refresh': async () => {
+      // 日志与反馈页: 拉取服务端运行日志尾部(行数/关键字从页面控件读取)
+      const lv = CS.ui.logView || (CS.ui.logView = { tail: 500, q: '', auto: false, data: null });
+      const tail = Number(document.getElementById('logs-tail')?.value) || 500;
+      const q = String(document.getElementById('logs-q')?.value || '');
+      lv.tail = tail; lv.q = q;
+      try {
+        lv.data = await CS.api.request(`/logs?tail=${tail}&q=${encodeURIComponent(q)}`);
+      } catch (error) { CS.toast('日志加载失败：' + CS.api.friendlyError(error), 'error'); }
+      CS.render();
+    },
+    'logs-auto': () => {
+      const lv = CS.ui.logView || (CS.ui.logView = { tail: 500, q: '', auto: false, data: null });
+      lv.auto = !lv.auto;
+      CS.render();
+      if (lv.auto) CS.actions['logs-refresh']();
+    },
+    'logs-download': () => {
+      const lv = CS.ui.logView;
+      const lines = lv?.data?.lines || [];
+      if (!lines.length) { CS.toast('暂无日志可下载。', 'error'); return; }
+      const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `sigmaflow-log-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    },
+    'submit-feedback': async () => {
+      // 反馈落盘到服务端 feedback/ 目录; 附带日志由服务端自行读取(不信任客户端内容)
+      const content = String(document.getElementById('fb-content')?.value || '').trim();
+      if (!content) { CS.toast('请先描述遇到的问题。', 'error'); return; }
+      const includeLogs = !!document.getElementById('fb-logs')?.checked;
+      try {
+        const d = await CS.api.request('/feedback', { method: 'POST', body: JSON.stringify({ content, includeLogs, conversationId: CS.state.currentRunId || '' }) });
+        const el = document.getElementById('fb-content'); if (el) el.value = '';
+        const cb = document.getElementById('fb-logs'); if (cb) cb.checked = false;
+        CS.render();
+        CS.toast(d?.saved ? `反馈已提交，服务端已保存：${d.saved}` : '反馈已提交，感谢！');
+      } catch (error) { CS.toast('提交失败：' + CS.api.friendlyError(error), 'error'); }
+    },
     'save-password': async () => {
       // 账户与密码: 前端只做基本检查, 服务端为最终裁决(旧密码/长度)
       const val = id => String(document.getElementById(id)?.value || '');
@@ -3640,6 +3686,8 @@ CS.liveBlocks = {
     const fn = actions['open-conversation'];
     if (fn) { try { fn(p.id); } catch (error) { console.error(error); } }
   }, true);
+  // 日志页的懒加载/自动刷新定时器需要从闭包外触发动作, 挂到 CS 上
+  CS.actions = actions;
   document.addEventListener('click', async event => {
     if (CS.ui.userMenu && !event.target.closest('.workspace-chip')) { CS.ui.userMenu = false; CS.render(); }
     if (CS.ui.modelMenu && !event.target.closest('.model-select')) { CS.ui.modelMenu = false; CS.render(); }
@@ -3652,6 +3700,7 @@ CS.liveBlocks = {
     if (nav) {
       event.preventDefault();
       if (nav.dataset.nav==='home') { CS.state.currentRunId=null; CS.ui.composer=''; CS.ui.attachments=[]; CS.save(); }
+      if (nav.dataset.nav==='logs' && !(CS.ui.logView?.data)) setTimeout(() => { try { CS.actions['logs-refresh'](); } catch {} }, 0);
       CS.navigate(nav.dataset.nav); return;
     }
     if (event.target.classList.contains('modal-backdrop')) { CS.closeModal(); return; }
