@@ -68,6 +68,9 @@ class LoopContext:
     # P2 Step B: 阶段级覆盖/钩子宿主(None = 内置空转)
     stage_overrides: Dict[str, Callable] = field(default_factory=dict)
     hooks: Any = None
+    # 多用户隔离(P-用户层): 本次调用的属主用户; 钩子按"属主 mod 对该用户
+    # 是否启用"过滤。None = 无用户概念(CLI/单用户), 全部放行。
+    user: Optional[str] = None
 
 
 def run_agent_loop(agent, lc: LoopContext):
@@ -177,12 +180,28 @@ class LoopService:
 
     # -------------------------------------------------------------- 钩子
     def on(self, event: str, fn: Callable, **kw: Any) -> None:
-        kw.setdefault("owner", _current_owner() or "core")
-        self.hooks.subscribe(event, fn, **kw)
+        owner = _current_owner() or "core"
+        kw.setdefault("owner", owner)
+
+        def _gated(lc_or_arg, *a, **k):
+            if not _gate(owner, _event_user(lc_or_arg)):
+                return None
+            return fn(lc_or_arg, *a, **k)
+
+        _gated.__name__ = getattr(fn, "__name__", "gated")
+        self.hooks.subscribe(event, _gated, **kw)
 
     def around(self, event: str, fn: Callable, **kw: Any) -> None:
-        kw.setdefault("owner", _current_owner() or "core")
-        self.hooks.add_wrapper(event, fn, **kw)
+        owner = _current_owner() or "core"
+        kw.setdefault("owner", owner)
+
+        def _gated(next_fn, *a, **k):
+            if not _gate(owner, _loop_user_ctx.get()):
+                return next_fn(*a, **k)  # 属主 mod 对该用户停用: 直通不拦截
+            return fn(next_fn, *a, **k)
+
+        _gated.__name__ = getattr(fn, "__name__", "gated")
+        self.hooks.add_wrapper(event, _gated, **kw)
 
     # ---------------------------------------------------------- 卸载回收
     def dispose_owner(self, owner: str) -> None:
@@ -217,6 +236,43 @@ def _current_owner() -> Optional[str]:
     from ..kernel.context import current_mod_id
 
     return current_mod_id() or "__anonymous__"
+
+
+# 用户门控谓词: server 侧(ModSubsystem)启动时注入; None=放行一切
+_mod_enabled_for = None
+
+
+def set_user_gate(fn) -> None:
+    """注入 ``fn(owner_mod_id, user) -> bool``(多用户隔离的服务端接线)。"""
+    global _mod_enabled_for
+    _mod_enabled_for = fn
+
+
+def _gate(owner: Optional[str], user: Optional[str]) -> bool:
+    if _mod_enabled_for is None or owner in (None, "__anonymous__", "core"):
+        return True
+    try:
+        return bool(_mod_enabled_for(owner, user))
+    except Exception:  # noqa: BLE001 — 门控故障放行(fail-open, 与钩子隔离一致)
+        return True
+
+
+def _event_user(first_arg: Any) -> Optional[str]:
+    """从钩子首参(LoopContext 或其他)取 user。"""
+    return getattr(first_arg, "user", None)
+
+
+# 工具执行点的用户上下文: agent.tool.exec 包裹器签名固定(next_fn, func, inp),
+# 不能加 kwargs; _tool_exec 闭包持 lc, 执行线程内经 contextvar 传递用户
+import contextvars  # noqa: E402
+
+_loop_user_ctx: contextvars.ContextVar = contextvars.ContextVar(
+    "sf_loop_user", default=None
+)
+
+
+def set_loop_user(user: Optional[str]) -> None:
+    _loop_user_ctx.set(user)
 
 
 def loop_overrides_snapshot() -> Dict[str, Callable]:

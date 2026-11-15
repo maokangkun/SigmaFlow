@@ -6098,6 +6098,18 @@ def _run_agent_chat(
             for t in effective_tools_arg
         ]
 
+    # mod 用户隔离: 属主 mod 对该用户停用时, 其工具不进本次会话工具面
+    try:
+        _sf_excluded = MODS.excluded_tool_names(_current_user())
+        if _sf_excluded:
+            effective_tools_arg = [
+                t
+                for t in (effective_tools_arg or [])
+                if t.get("name") not in _sf_excluded
+            ]
+    except Exception:
+        pass
+
     tools_mod = _agent_tools_module()
     tools_mod.set_session_workdir(workdir)
     # 会话作用域: task/job/inbox 等有状态工具按 runId 分片, 会话间互不可见
@@ -6287,6 +6299,11 @@ def _run_agent_chat(
         steer_poll=steer_poll,
         stop_poll=stop_poll,
     )
+    agent.user = None
+    try:
+        agent.user = _current_user()  # 多用户隔离: loop 钩子门控依据
+    except Exception:
+        pass
     agent.client.timeout = 90
     agent.client.max_retries = 0  # 不用 SDK 内置重试; 统一由 agent 循环重试三次
     _apply_compaction_to(agent)  # 设置面板的压缩参数即时生效

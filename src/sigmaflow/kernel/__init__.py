@@ -32,6 +32,7 @@ from .store import (
     parse_patch,
     parse_profile,
     resolve_config,
+    UserModState,
 )
 from .context import ModContext
 from .host import ModHost
@@ -74,6 +75,7 @@ __all__ = [
     "ToolRegistry",
     "ToolSnapshot",
     "ToolSpec",
+    "UserModState",
     "parse_manifest",
     "parse_patch",
     "parse_profile",

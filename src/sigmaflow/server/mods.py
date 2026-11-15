@@ -28,6 +28,7 @@ from ..kernel import (
     PatchEntry,
     ServiceRegistry,
     ToolSpec,
+    UserModState,
 )
 
 log = logging.getLogger("uvicorn.error.sfmods")
@@ -94,9 +95,13 @@ class LegacyToolBridge:
     实例化, 不应在 import 期被拖起。
     """
 
+    # 类级属主表: conf.TOOL_HANDLERS 是进程级结构, 多个桥实例(测试/多子系统)
+    # 必须共享归属信息, 否则同 owner 重注册会被误判为冲突
+    _OWNED: Dict[str, List[str]] = {}
+    _OWNED_LOCK = threading.RLock()
+
     def __init__(self) -> None:
         self._registry = None  # kernel ToolRegistry(有则双写)
-        self._owned: Dict[str, List[str]] = {}  # owner → 注册的工具名
         self._lock = threading.RLock()
 
     def bind_registry(self, registry) -> None:
@@ -131,14 +136,21 @@ class LegacyToolBridge:
                 t.get("name") == name for t in agent_conf.CHILD_TOOLS
             ):
                 agent_conf.CHILD_TOOLS.append(entry)
-            if name in agent_tools.TOOL_HANDLERS and (
-                not overrides or name not in overrides
+            with LegacyToolBridge._OWNED_LOCK:
+                same_owner_reregister = name in LegacyToolBridge._OWNED.get(owner, [])
+            if (
+                name in agent_tools.TOOL_HANDLERS
+                and not same_owner_reregister
+                and (not overrides or name not in overrides)
             ):
                 raise ValueError(
                     f"tool {name!r} already exists; declare overrides to replace"
                 )
             agent_tools.TOOL_HANDLERS[name] = handler
-            self._owned.setdefault(owner, []).append(name)
+            with LegacyToolBridge._OWNED_LOCK:
+                owned = LegacyToolBridge._OWNED.setdefault(owner, [])
+                if name not in owned:
+                    owned.append(name)
             if self._registry is not None:
                 self._registry.register(
                     ToolSpec(
@@ -155,7 +167,8 @@ class LegacyToolBridge:
 
     def unregister_owner(self, owner: str) -> None:
         with self._lock:
-            names = list(self._owned.pop(owner, []))
+            with LegacyToolBridge._OWNED_LOCK:
+                names = list(LegacyToolBridge._OWNED.pop(owner, []))
             if self._registry is not None:
                 names.extend(self._registry.unregister_owner(owner))
             if not names:
@@ -173,6 +186,11 @@ class LegacyToolBridge:
             for name in gone:
                 agent_tools.TOOL_HANDLERS.pop(name, None)
             _invalidate_tool_caches()
+
+    def owned_tools(self) -> Dict[str, List[str]]:
+        """owner mod -> 其注册的工具名列表(用户隔离的过滤依据)。"""
+        with LegacyToolBridge._OWNED_LOCK:
+            return {k: list(v) for k, v in LegacyToolBridge._OWNED.items()}
 
     # kernel 卸载约定: ModHost.unload 对每个服务调 dispose_owner(mod_id)
     dispose_owner = unregister_owner
@@ -264,6 +282,9 @@ class ModSubsystem:
             if inst is not None:
                 for mod_id in list(inst.host.contexts):
                     inst.host.unload(mod_id)
+            if inst is not None:
+                inst._user_states.clear()
+                inst._user_loaded.clear()
             cls._instance = None
 
     def __init__(self) -> None:
@@ -286,6 +307,9 @@ class ModSubsystem:
         )
         self._bootstrapped = False
         self._broadcaster = None  # WS 广播通道(science 启动时接线)
+        self._user_data_resolver = None  # user -> Path(多用户模式由 science 注入)
+        self._user_states: Dict[str, UserModState] = {}
+        self._user_loaded: set = set()  # 本 epoch 已扫描过 mod 目录的用户
         self._lock = threading.RLock()
 
     def set_broadcaster(self, fn) -> None:
@@ -322,7 +346,10 @@ class ModSubsystem:
         force: bool = False,
         home: Optional[Path] = None,
         builtin_dirs: Optional[List[Path]] = None,
+        user_data_resolver=None,
     ) -> Dict[str, int]:
+        """``user_data_resolver``(user -> Path)启用多用户隔离: 用户级启停/
+        配置/自装 mod 落各自数据目录; 缺省时为单进程共享行为。"""
         """服务进程装配: 内置 mod 目录 + 用户 ~/.sigmaflow; 幂等。
 
         ``home``/``builtin_dirs`` 仅供测试注入; 生产路径走默认目录。
@@ -330,6 +357,8 @@ class ModSubsystem:
         with self._lock:
             if self._bootstrapped and not force:
                 return {"loaded": 0, "blocked": 0, "errored": 0, "skipped": 0}
+            if user_data_resolver is not None:
+                self._user_data_resolver = user_data_resolver
             self.services.provide("envs", self.envs, owner="core")
             self.services.provide("tools", self.tools, owner="core")
             # loop 扩展面(P2): 阶段覆盖/驱动替换/agent.* 钩子
@@ -367,33 +396,133 @@ class ModSubsystem:
         dirs.extend(Path(p) for p in extra.split(":") if p.strip())
         return dirs
 
+    # ------------------------------------------------------- 用户隔离层
+    def scope_of(self, mod_id: str) -> str:
+        """user | shared: server 接线类(env/路由)是进程级设施, 只能全局启停;
+        其余(工具/loop/UI/数据)每用户独立启停与配置(设计 §10 用户层)。"""
+        rec = self.host.registry.get(mod_id)
+        if rec is None:
+            return "user"
+        return "shared" if rec.manifest.target == "server" else "user"
+
+    def _user_state(self, user: str) -> UserModState:
+        with self._lock:
+            st = self._user_states.get(user)
+            if st is None:
+                assert self._user_data_resolver is not None
+                st = UserModState(self._user_data_resolver(user) / "modstate.json")
+                self._user_states[user] = st
+            return st
+
+    def refresh_user_mods(self, user: Optional[str]) -> None:
+        """扫描该用户的自装 mod 目录并加载(幂等; 装后/epoch 变化时重扫)。"""
+        if not user or self._user_data_resolver is None:
+            return
+        with self._lock:
+            if user in self._user_loaded:
+                return
+            mods_dir = self._user_data_resolver(user) / "mods"
+            if not mods_dir.is_dir():
+                self._user_loaded.add(user)
+                return
+            for child in sorted(mods_dir.iterdir()):
+                if not (child / "mod.toml").is_file():
+                    continue
+                try:
+                    rec = ModRegistry.record_from_dir(child, origin=f"user:{user}")
+                except Exception as exc:  # noqa: BLE001
+                    self._push_event(
+                        {"kind": "mod.error", "mod": child.name, "error": str(exc)}
+                    )
+                    continue
+                existing = self.host.registry.get(rec.mod_id)
+                if existing is not None and existing.origin.startswith("user:"):
+                    continue
+                self.host.registry.add(rec)
+                if rec.state in ("installed", "skipped"):
+                    rec.state = "enabled"
+                    self.host.load(rec)
+            self._user_loaded.add(user)
+
+    def effective_enabled(self, mod_id: str, user: Optional[str]) -> bool:
+        """用户视角的启停: 共享 mod 看全局; 用户 mod 先看用户覆盖再看全局态。"""
+        rec = self.host.registry.get(mod_id)
+        if rec is None:
+            return False
+        if self.scope_of(mod_id) == "shared":
+            return rec.state == "enabled"
+        if user and self._user_data_resolver is not None:
+            override = self._user_state(user).get_enabled(mod_id)
+            if override is not None:
+                return override
+        # 用户自装 mod: 仅属主可见(origin 编码属主: "user:<name>")
+        if rec.origin.startswith("user:"):
+            return user == rec.origin.split(":", 1)[1] and rec.state == "enabled"
+        return rec.state == "enabled"
+
+    def excluded_tool_names(self, user: Optional[str]) -> set:
+        """该用户不可用的工具名集合(属主 mod 被停用的), 供工具面过滤。"""
+        names: set = set()
+        for owner, tools in self.tools.owned_tools().items():
+            if owner != "core" and not self.effective_enabled(owner, user):
+                names.update(tools)
+        return names
+
+    def owner_visible_tools(self, user: Optional[str]) -> set:
+        """该用户可用工具名集合(经 mod 归属过滤; 用于 Agent available_tools)。"""
+        names: set = set()
+        for owner, tools in self.tools.owned_tools().items():
+            if owner == "core":
+                continue
+            if self.effective_enabled(owner, user):
+                names.update(tools)
+        return names
+
     # ------------------------------------------------------- 启停/重载
-    def set_enabled(self, mod_id: str, enabled: bool) -> dict:
+    def set_enabled(
+        self, mod_id: str, enabled: bool, user: Optional[str] = None
+    ) -> dict:
         with self._lock:
             rec = self.host.registry.get(mod_id)
             if rec is None:
                 raise KeyError(mod_id)
             store = self.host.store
             assert store is not None
-            entries = store.read_patch()
-            entry = next((e for e in entries if e.mod == mod_id), None)
-            if entry is None:
-                entry = PatchEntry(mod=mod_id)
-                entries.append(entry)
-            entry.enabled = enabled
-            store.write_patch(entries)
-            if enabled:
-                if rec.state == "enabled" and mod_id in self.host.contexts:
-                    pass  # 已在运行, patch 只影响下次
-                else:
-                    self.host.load(rec)
+            user_scoped = (
+                self.scope_of(mod_id) == "user"
+                and user
+                and self._user_data_resolver is not None
+            )
+            if user_scoped:
+                # 用户层启停: 只写该用户的状态文件; 代码/全局态不动,
+                # 生效面(工具/钩子/UI)在装配期按用户过滤
+                self._user_state(user).set_enabled(mod_id, enabled)
             else:
-                self.host.unload(mod_id)
-                rec.state = "disabled"
-                rec.state_reason = "disabled by patch"
-            self.host.registry.bump_epoch()
-            store.audit("mod.enabled" if enabled else "mod.disabled", mod=mod_id)
-            self.broadcast("mod.enabled" if enabled else "mod.disabled", mod=mod_id)
+                entries = store.read_patch()
+                entry = next((e for e in entries if e.mod == mod_id), None)
+                if entry is None:
+                    entry = PatchEntry(mod=mod_id)
+                    entries.append(entry)
+                entry.enabled = enabled
+                store.write_patch(entries)
+                if enabled:
+                    if not (rec.state == "enabled" and mod_id in self.host.contexts):
+                        self.host.load(rec)
+                else:
+                    self.host.unload(mod_id)
+                    rec.state = "disabled"
+                    rec.state_reason = "disabled by patch"
+                self.host.registry.bump_epoch()
+            store.audit(
+                "mod.enabled" if enabled else "mod.disabled",
+                mod=mod_id,
+                user=user or "",
+            )
+            self.broadcast(
+                "mod.enabled" if enabled else "mod.disabled",
+                mod=mod_id,
+                user=user or "",
+            )
             return rec.to_dict()
 
     def reload_mod(self, mod_id: str) -> dict:
@@ -409,7 +538,7 @@ class ModSubsystem:
             self.broadcast("mod.reloaded", mod=mod_id, ok=ok)
             return rec.to_dict()
 
-    def config_view(self, mod_id: str) -> dict:
+    def config_view(self, mod_id: str, user: Optional[str] = None) -> dict:
         """叠加求值后的生效配置 + 每键来源层(设置页"为什么是这个值"视图)。
 
         始终现算而非读 ctx 快照: run-boundary mod 的 ctx.config 在下次重载
@@ -424,9 +553,17 @@ class ModSubsystem:
         if self.host.store is not None:
             layers.append(self.host.store.read_patch())
         rc = resolve_config(rec.manifest.config_defaults, *layers, mod_id=mod_id)
-        return {"config": rc.value, "provenance": rc.provenance}
+        value = dict(rc.value)
+        provenance = dict(rc.provenance)
+        if user and self._user_data_resolver is not None:
+            for key, val in self._user_state(user).get_config(mod_id).items():
+                value[key] = val
+                provenance[key] = "user"
+        return {"config": value, "provenance": provenance}
 
-    def update_config(self, mod_id: str, updates: Dict[str, Any]) -> dict:
+    def update_config(
+        self, mod_id: str, updates: Dict[str, Any], user: Optional[str] = None
+    ) -> dict:
         with self._lock:
             rec = self.host.registry.get(mod_id)
             if rec is None:
@@ -438,17 +575,25 @@ class ModSubsystem:
             if entry is None:
                 entry = PatchEntry(mod=mod_id)
                 entries.append(entry)
-            entry.config.update(updates)
-            store.write_patch(entries)
+            if user and self._user_data_resolver is not None:
+                self._user_state(user).update_config(mod_id, updates)
+            else:
+                entry.config.update(updates)
+                store.write_patch(entries)
             store.audit("mod.config", mod=mod_id, keys=sorted(updates))
             if rec.manifest.reload == "instant" and rec.state == "enabled":
                 self.reload_mod(mod_id)
             self.broadcast("mod.config", mod=mod_id, keys=sorted(updates))
-            return self.config_view(mod_id)
+            return self.config_view(mod_id, user)
 
     # ------------------------------------------------------- 安装/卸载
     def install(
-        self, source: str, *, origin: str = "", allow_unsigned: bool = False
+        self,
+        source: str,
+        *,
+        origin: str = "",
+        allow_unsigned: bool = False,
+        user: Optional[str] = None,
     ) -> dict:
         """安装 mod: 本地目录 / git+<url> / zip(本地路径或 http(s) URL)。
 
@@ -475,8 +620,18 @@ class ModSubsystem:
                 record = ModRegistry.record_from_dir(
                     src, origin=resolved_origin or "local"
                 )
-                assert self.host.store is not None
-                dest = self.host.store.mods_dir / record.mod_id
+                if (
+                    user
+                    and self._user_data_resolver is not None
+                    and self.scope_of(record.mod_id) == "user"
+                ):
+                    # 用户自装: 落自己的 mods 目录, origin=user
+                    dest = self._user_data_resolver(user) / "mods" / record.mod_id
+                    resolved_origin = f"user:{user}"
+                    record = ModRegistry.record_from_dir(src, origin=resolved_origin)
+                else:
+                    assert self.host.store is not None
+                    dest = self.host.store.mods_dir / record.mod_id
                 self.host.store.ensure_layout()
                 if dest != src:
                     if dest.exists():
@@ -488,6 +643,8 @@ class ModSubsystem:
                         dest, origin=resolved_origin or "local"
                     )
                 self.host.registry.add(record)
+                if resolved_origin == "user" and user:
+                    self._user_loaded.add(user)
                 ok = self.host.load(record)
                 self.host.registry.bump_epoch()
                 self.host.store.audit(
@@ -501,7 +658,7 @@ class ModSubsystem:
                 for tmp in staged:
                     shutil.rmtree(tmp, ignore_errors=True)
 
-    def uninstall(self, mod_id: str) -> dict:
+    def uninstall(self, mod_id: str, user: Optional[str] = None) -> dict:
         """卸载: 仅允许非内置; 停用 → 摘注册 → 删目录 → 清 patch 条目。"""
         import shutil
 
@@ -511,8 +668,19 @@ class ModSubsystem:
                 raise KeyError(mod_id)
             if rec.origin == "builtin":
                 raise PermissionError(f"builtin mod {mod_id!r} 不可卸载, 可停用")
+            if rec.origin.startswith("user:"):
+                owner = rec.origin.split(":", 1)[1]
+                if user and user != owner:
+                    raise PermissionError(f"mod {mod_id!r} 属于用户 {owner!r}")
             self.host.unload(mod_id)
             self.host.registry.remove(mod_id)
+            if rec.origin.startswith("user:") and self._user_data_resolver is not None:
+                import shutil as _sh
+
+                owner = rec.origin.split(":", 1)[1]
+                target = self._user_data_resolver(owner) / "mods" / mod_id
+                if target.is_dir():
+                    _sh.rmtree(target)
             if self.host.store is not None:
                 entries = [e for e in self.host.store.read_patch() if e.mod != mod_id]
                 self.host.store.write_patch(entries)
@@ -524,10 +692,27 @@ class ModSubsystem:
             self.broadcast("mod.uninstalled", mod=mod_id)
             return {"id": mod_id, "uninstalled": True}
 
-    def describe(self) -> dict:
+    def describe(self, user: Optional[str] = None) -> dict:
+        mods = self.host.describe()
+        if user and self._user_data_resolver is not None:
+            kept = []
+            for row in mods:
+                # 他人自装的 mod 不可见(代码已加载但不出现在我的清单/生效面)
+                if (
+                    row.get("origin", "").startswith("user:")
+                    and row.get("origin") != f"user:{user}"
+                ):
+                    continue
+                row["scope"] = self.scope_of(row["id"])
+                row["effectiveState"] = (
+                    "enabled" if self.effective_enabled(row["id"], user) else "disabled"
+                )
+                kept.append(row)
+            mods = kept
         return {
             "epoch": self.host.registry.epoch,
-            "mods": self.host.describe(),
+            "user": user or "",
+            "mods": mods,
             "events": list(self._events)[-50:],
         }
 
@@ -607,13 +792,22 @@ def _resolve_source(source: str, staged: List[Path]) -> tuple:
 
 # ---------------------------------------------------------------- REST API
 def mods_api(subsystem: ModSubsystem = MODS) -> APIRouter:
-    from .science import _auth_http, _check_origin
+    from .science import _auth_http, _check_origin, _current_user, _multi_user
 
     router = APIRouter(prefix="/api/mods", dependencies=[Depends(_auth_http)])
 
+    def _user() -> Optional[str]:
+        """多用户模式返回请求者; 单用户返回 None(共享行为, 与历史一致)。"""
+        try:
+            return _current_user() if _multi_user() else None
+        except Exception:  # noqa: BLE001
+            return None
+
     @router.get("")
     async def list_mods():
-        return subsystem.describe()
+        u = _user()
+        subsystem.refresh_user_mods(u)
+        return subsystem.describe(u)
 
     @router.get("/ui/registry")
     async def ui_registry():
@@ -621,9 +815,10 @@ def mods_api(subsystem: ModSubsystem = MODS) -> APIRouter:
 
         UI mod 判据: manifest 声明 ui 能力或有 ui/entry.js; 未启用/无 UI 不出单。
         """
+        u = _user()
         entries = []
         for rec in subsystem.host.registry.all():
-            if rec.state != "enabled":
+            if not subsystem.effective_enabled(rec.mod_id, u):
                 continue
             entry = rec.path / "ui" / "entry.js"
             if not entry.is_file():
@@ -649,16 +844,18 @@ def mods_api(subsystem: ModSubsystem = MODS) -> APIRouter:
 
     @router.post("/{mod_id}/enable")
     async def enable_mod(mod_id: str):
+        u = _user()
         try:
-            rec = subsystem.set_enabled(mod_id, True)
+            rec = subsystem.set_enabled(mod_id, True, user=u)
         except KeyError:
             raise HTTPException(status_code=404, detail=f"unknown mod: {mod_id}")
         return {"mod": rec}
 
     @router.post("/{mod_id}/disable")
     async def disable_mod(mod_id: str):
+        u = _user()
         try:
-            rec = subsystem.set_enabled(mod_id, False)
+            rec = subsystem.set_enabled(mod_id, False, user=u)
         except KeyError:
             raise HTTPException(status_code=404, detail=f"unknown mod: {mod_id}")
         return {"mod": rec}
@@ -681,8 +878,10 @@ def mods_api(subsystem: ModSubsystem = MODS) -> APIRouter:
             raise HTTPException(
                 status_code=400, detail="source 不能为空(本地目录/git+url/zip)"
             )
+        u = _user()
+        subsystem.refresh_user_mods(u)
         try:
-            rec = subsystem.install(source, allow_unsigned=allow_unsigned)
+            rec = subsystem.install(source, allow_unsigned=allow_unsigned, user=u)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
         except PermissionError as exc:
@@ -694,7 +893,7 @@ def mods_api(subsystem: ModSubsystem = MODS) -> APIRouter:
     @router.delete("/{mod_id}")
     async def uninstall_mod(mod_id: str):
         try:
-            return subsystem.uninstall(mod_id)
+            return subsystem.uninstall(mod_id, user=_user())
         except KeyError:
             raise HTTPException(status_code=404, detail=f"unknown mod: {mod_id}")
         except PermissionError as exc:
@@ -703,7 +902,7 @@ def mods_api(subsystem: ModSubsystem = MODS) -> APIRouter:
     @router.get("/{mod_id}/config")
     async def get_config(mod_id: str):
         try:
-            return subsystem.config_view(mod_id)
+            return subsystem.config_view(mod_id, user=_user())
         except KeyError:
             raise HTTPException(status_code=404, detail=f"unknown mod: {mod_id}")
 
@@ -714,7 +913,7 @@ def mods_api(subsystem: ModSubsystem = MODS) -> APIRouter:
         if not isinstance(body, dict):
             raise HTTPException(status_code=400, detail="invalid config payload")
         try:
-            return subsystem.update_config(mod_id, body)
+            return subsystem.update_config(mod_id, body, user=_user())
         except KeyError:
             raise HTTPException(status_code=404, detail=f"unknown mod: {mod_id}")
 

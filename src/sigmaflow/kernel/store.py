@@ -207,3 +207,60 @@ def _toml_kv(key: str, val: Any) -> str:
         return f"{key} = {val}"
     # 字符串/数组/嵌套结构: JSON 子集与 TOML 字面量兼容(字符串/数组尤其如此)
     return f"{key} = {json.dumps(val, ensure_ascii=False)}"
+
+
+# ------------------------------------------------------------- 用户级状态
+class UserModState:
+    """每个用户的 mod 启停/配置覆盖(多用户隔离, 设计 §10 用户层)。
+
+    落盘在用户数据目录(如 ``<science>/users/<name>/modstate.json``), 与
+    全局 patch.toml 正交: 用户层只写"这个用户对哪些 mod 的启停/配置"。
+    """
+
+    def __init__(self, path: Path):
+        self.path = Path(path)
+        self._lock = threading.RLock()
+
+    # ------------------------------------------------------------- 读写
+    def _load(self) -> dict:
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except Exception:  # noqa: BLE001 — 损坏视为空
+            return {}
+
+    def _save(self, data: dict) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+    # ------------------------------------------------------------- 启停
+    def get_enabled(self, mod_id: str) -> Optional[bool]:
+        """该用户对 mod 的启停覆盖; None = 未覆盖(走全局默认)。"""
+        with self._lock:
+            entry = self._load().get("mods", {}).get(mod_id) or {}
+            return entry.get("enabled")
+
+    def set_enabled(self, mod_id: str, enabled: bool) -> None:
+        with self._lock:
+            data = self._load()
+            data.setdefault("mods", {}).setdefault(mod_id, {})["enabled"] = bool(
+                enabled
+            )
+            self._save(data)
+
+    # ------------------------------------------------------------- 配置
+    def get_config(self, mod_id: str) -> Dict[str, Any]:
+        with self._lock:
+            entry = self._load().get("mods", {}).get(mod_id) or {}
+            return dict(entry.get("config") or {})
+
+    def update_config(self, mod_id: str, updates: Dict[str, Any]) -> None:
+        with self._lock:
+            data = self._load()
+            entry = data.setdefault("mods", {}).setdefault(mod_id, {})
+            cfg = dict(entry.get("config") or {})
+            cfg.update(updates)
+            entry["config"] = cfg
+            self._save(data)

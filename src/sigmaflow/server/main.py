@@ -67,7 +67,16 @@ class PipelineServer:
 
         # mod 装配先于一切 API 构造: env mod 的注册表条目要在 ScienceAPI
         # 注册环境路由之前就位(设计 §4.2); CLI 进程另有 agent 侧引导。
-        MODS.bootstrap()
+        from .science_auth import _user_data_dir as _sf_user_data_dir
+
+        MODS.bootstrap(
+            # 多用户隔离(P-用户层): 用户级 mod 状态/自装目录挂到各自数据目录
+            user_data_resolver=(lambda u: Path(_sf_user_data_dir(u)))
+        )
+        # loop 钩子门控: 属主 mod 对请求用户停用时, 其钩子对该用户不生效
+        from ..agent.loop import set_user_gate as _sf_set_user_gate
+
+        _sf_set_user_gate(lambda owner, user: MODS.effective_enabled(owner, user))
 
         # UI mod 静态资源: /science/m/<mod-id>/... 按注册表现查目录伺服。
         # 与 /science/a/ 同策略: 内容可长缓存, entry 由注册表端点带 epoch 版本号。

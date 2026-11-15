@@ -1355,6 +1355,9 @@ class Agent:
                 # agent.tool.exec 包裹点(P2): mod 可拦截/改参/改结果/跳过
                 # (next_fn() 执行真实调用); 无订阅时零开销直通。
                 if lc.hooks is not None:
+                    from .loop import set_loop_user
+
+                    set_loop_user(lc.user)
                     _exec_chain = lc.hooks.resolve(
                         "agent.tool.exec",
                         lambda **_kw: _call_with_timeout(
@@ -1825,10 +1828,12 @@ class Agent:
 
         lc.info = info
         # mod 扩展面(P2): 事件总线 + 当前世代的阶段覆盖快照(设计 §6.1/§8)
+        # 属主用户由调用方挂到 self.user(多用户隔离的钩子门控依据)
         from .loop import loop_hooks, loop_overrides_snapshot
 
         lc.hooks = loop_hooks()
         lc.stage_overrides = loop_overrides_snapshot()
+        lc.user = getattr(self, "user", None)
         return lc
 
     @__call__.register(str)
