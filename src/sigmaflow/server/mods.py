@@ -256,6 +256,16 @@ class ModSubsystem:
                 cls._instance = cls()
             return cls._instance
 
+    @classmethod
+    def reset_singleton(cls) -> None:
+        """卸载全部已加载 mod 并重建单例(测试隔离用; 生产代码勿调)。"""
+        with cls._instance_lock:
+            inst = cls._instance
+            if inst is not None:
+                for mod_id in list(inst.host.contexts):
+                    inst.host.unload(mod_id)
+            cls._instance = None
+
     def __init__(self) -> None:
         from ..agent.loop import LoopService, loop_hooks
 
