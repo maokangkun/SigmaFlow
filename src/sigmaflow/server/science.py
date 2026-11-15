@@ -2333,7 +2333,6 @@ class ScienceAPI:
                         scan = await asyncio.to_thread(
                             _agent_tools_module().project_skills_scan, proj_dir
                         )
-                        gnames = {row["name"] for row in listing}
                         prows = []
                         for name, sk in sorted(scan.items()):
                             prows.append(
@@ -2356,7 +2355,6 @@ class ScienceAPI:
                             for row in listing
                             if row["name"] not in {r["name"] for r in prows}
                         ] + prows
-                        _ = gnames
                 except Exception as _ps_err:
                     logging.getLogger("uvicorn.error").info(
                         "project skills listing skipped: %s", _ps_err

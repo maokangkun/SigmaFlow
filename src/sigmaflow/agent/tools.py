@@ -89,11 +89,6 @@ class _ScopedProxy:
 
 def set_session_workdir(path) -> None:
     """Bind the calling thread's session workdir; None restores the default."""
-    import logging as _lg
-
-    _lg.getLogger("uvicorn.error").info(
-        "set_session_workdir %r thread=%s", str(path), threading.get_ident()
-    )
     _SESSION_WORKDIR.workdir = Path(path).resolve() if path else None
 
 
@@ -468,17 +463,6 @@ def load_skill_resolved(name: str) -> str:
     """load_skill with project precedence: a same-name project skill wins."""
     name = str(name or "").strip()
     wd = _bound_project_dir()
-    try:
-        import logging as _lg
-
-        _lg.getLogger("uvicorn.error").info(
-            "load_skill name=%r bound_workdir=%r thread=%s",
-            name,
-            str(wd),
-            threading.get_ident(),
-        )
-    except Exception:
-        pass
     if wd:
         sk = project_skills_scan(str(wd)).get(name)
         if sk:
