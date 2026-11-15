@@ -1321,6 +1321,8 @@ class ScienceAPI:
         @router.on_event("startup")
         async def startup_event():
             await self.manager.start()
+            # mod 变更 WS 广播接线(P3): 启停/重载/安装/卸载即时推到在线客户端
+            MODS.set_broadcaster(_mods_ws_broadcast)
             # 侧栏固定项目(虚拟患者/虚拟病原体等 env mod)启动即就位,
             # 会话才能落在固定项目里 — 清单来自 envs 注册表
             for spec in MODS.envs.all():
@@ -3735,6 +3737,7 @@ class ScienceAPI:
                 _CURRENT_USER.set(ws_user)
                 _ensure_user_data(ws_user)
             queue: asyncio.Queue = asyncio.Queue()
+            _MOD_WS_QUEUES[queue] = asyncio.get_running_loop()  # mod 广播通道(P3)
             subscribed: Set[str] = set()
             pump: Optional[asyncio.Task] = None
             # 正在进行的 chat.send 流式任务; 生成期间接收循环继续处理
@@ -4979,6 +4982,7 @@ class ScienceAPI:
                     pump.cancel()
                 if pty_pump:
                     pty_pump.cancel()
+                _MOD_WS_QUEUES.pop(queue, None)  # mod 变更广播通道摘除(P3)
                 _pty_detach_all()
                 # 注意: 不 cancel chat_tasks(后台 agent 流)。同步线程无法被 cancel 终止,
                 # 但 cancel 会关掉它正在读的 httpx 流式响应 → GeneratorExit(BaseException)
@@ -4997,6 +5001,22 @@ class ScienceAPI:
                     self.manager.unsubscribe(run_id, queue)
 
 
+# mod 变更 WS 广播(P3): 在线连接的 投递队列 → 所属事件循环 映射。
+# 变更可能来自任意线程(REST 线程池/CLI), 统一经 call_soon_threadsafe
+# 调回队列自己的 loop 投递(asyncio.Queue 非线程安全), 由各连接的
+# pump 循环送出(与 run 事件同一通道, 前端按 event 分发)。
+_MOD_WS_QUEUES: "Dict[asyncio.Queue, asyncio.AbstractEventLoop]" = {}
+
+
+def _mods_ws_broadcast(event: dict) -> None:
+    message = {"event": "mods.changed", "data": event}
+    for q, loop in list(_MOD_WS_QUEUES.items()):
+        try:
+            loop.call_soon_threadsafe(q.put_nowait, message)
+        except Exception:  # noqa: BLE001 — loop 已关: 摘除即可
+            _MOD_WS_QUEUES.pop(q, None)
+
+
 def _push_loop(ws: WebSocket, queue: asyncio.Queue):
     """Fan manager snapshots queued for this connection out onto the socket."""
 
@@ -5006,7 +5026,12 @@ def _push_loop(ws: WebSocket, queue: asyncio.Queue):
                 item = await queue.get()
                 if item is None:
                     break
-                await ws.send_json({"event": "state", "data": item})
+                # 已定形的消息(mods.changed 广播等)原样送出; run 快照按
+                # state 事件包装(原有约定)
+                if isinstance(item, dict) and "event" in item:
+                    await ws.send_json(item)
+                else:
+                    await ws.send_json({"event": "state", "data": item})
         except asyncio.CancelledError:
             pass
 

@@ -275,7 +275,22 @@ class ModSubsystem:
             event_sink=self._push_event,
         )
         self._bootstrapped = False
+        self._broadcaster = None  # WS 广播通道(science 启动时接线)
         self._lock = threading.RLock()
+
+    def set_broadcaster(self, fn) -> None:
+        """注册 WS 广播函数(science 的全局连接队列投递口)。"""
+        self._broadcaster = fn
+
+    def broadcast(self, kind: str, **data: Any) -> None:
+        """mod 变更广播(P3): 记入事件环 + 推送到全部在线 WS 客户端。"""
+        event = {"kind": kind, **data, "epoch": self.host.registry.epoch}
+        self._push_event(event)
+        if self._broadcaster is not None:
+            try:
+                self._broadcaster(event)
+            except Exception as exc:  # noqa: BLE001 — 广播失败不影响主流程
+                log.warning("mods broadcast failed: %s", exc)
 
     # ------------------------------------------------------------- 事件
     def _push_event(self, event: dict) -> None:
@@ -368,6 +383,7 @@ class ModSubsystem:
                 rec.state_reason = "disabled by patch"
             self.host.registry.bump_epoch()
             store.audit("mod.enabled" if enabled else "mod.disabled", mod=mod_id)
+            self.broadcast("mod.enabled" if enabled else "mod.disabled", mod=mod_id)
             return rec.to_dict()
 
     def reload_mod(self, mod_id: str) -> dict:
@@ -380,6 +396,7 @@ class ModSubsystem:
             self.host.registry.bump_epoch()
             if self.host.store is not None:
                 self.host.store.audit("mod.reloaded", mod=mod_id, ok=ok, errors=errors)
+            self.broadcast("mod.reloaded", mod=mod_id, ok=ok)
             return rec.to_dict()
 
     def config_view(self, mod_id: str) -> dict:
@@ -416,6 +433,7 @@ class ModSubsystem:
             store.audit("mod.config", mod=mod_id, keys=sorted(updates))
             if rec.manifest.reload == "instant" and rec.state == "enabled":
                 self.reload_mod(mod_id)
+            self.broadcast("mod.config", mod=mod_id, keys=sorted(updates))
             return self.config_view(mod_id)
 
     # ------------------------------------------------------- 安装/卸载
@@ -467,6 +485,7 @@ class ModSubsystem:
                 )
                 d = record.to_dict()
                 d["loaded"] = ok
+                self.broadcast("mod.installed", mod=record.mod_id, loaded=ok)
                 return d
             finally:
                 for tmp in staged:
@@ -492,6 +511,7 @@ class ModSubsystem:
                     shutil.rmtree(target)
                 self.host.store.audit("mod.uninstalled", mod=mod_id)
             self.host.registry.bump_epoch()
+            self.broadcast("mod.uninstalled", mod=mod_id)
             return {"id": mod_id, "uninstalled": True}
 
     def describe(self) -> dict:

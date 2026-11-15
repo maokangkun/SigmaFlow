@@ -149,6 +149,18 @@
             return;
           }
           if (message.event === 'pty.closed') { CS.agent.pty?.markDead(); if (message.requestId && CS.api.ws.pending.has(message.requestId)) CS.api.ws.pending.get(message.requestId).resolve?.({}); return; }
+          if (message.event === 'mods.changed') {
+            // mod 变更广播(P3): 刷新 mod 面板缓存, SFM 按 epoch 重装 UI mod
+            const info = message.data || {};
+            if (typeof CS.ui !== 'undefined') {
+              CS.ui.modsList = null;
+              if (info.epoch) CS.ui.modsEpoch = info.epoch;
+              if (CS.ui.route === 'settings' && CS.ui.settingsTab === 'mods') CS.loadMods?.();
+            }
+            try { CS.sfm?.bootstrap(); } catch (e) { console.warn('[sfm] reload', e); }
+            if (info.kind && typeof CS.toast === 'function') CS.toast('Mod 变更: ' + info.kind + (info.mod ? ' · ' + info.mod : '') + (info.epoch ? ' (epoch ' + info.epoch + ')' : ''));
+            return;
+          }
           if (message.event === 'state' && message.data?.id) {
             const handler = CS.api.ws.onState.get(message.data.id);
             if (handler) handler(message.data);
