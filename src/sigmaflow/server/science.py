@@ -1634,7 +1634,17 @@ class ScienceAPI:
             if not _multi_user():
                 return {"mode": "single", "user": {"name": _os_user()}}
             user = _cookie_user(request)
-            return {"mode": "multi", "user": {"name": user} if user else None}
+            if not user:
+                return {"mode": "multi", "user": None}
+            record = _load_users().get(user)
+            # 微信扫码注册的账户没有密码; 前端据此提示"首次设置可留空当前密码"
+            has_password = bool(
+                isinstance(record, dict) and record.get("hash") and record.get("salt")
+            )
+            return {
+                "mode": "multi",
+                "user": {"name": user, "hasPassword": has_password},
+            }
 
         @auth_router.post("/register")
         async def auth_register(
@@ -1703,6 +1713,59 @@ class ScienceAPI:
                 samesite="lax",
             )
             return {"mode": "multi", "user": {"name": name}}
+
+        @auth_router.post("/change-password")
+        async def auth_change_password(
+            payload: _AuthPasswordChange, request: Request, response: Response
+        ):
+            """Change the signed-in user's password after verifying the old one.
+
+            WeChat-registered accounts carry no password yet; for them the old
+            password check is skipped so the first change sets the password.
+            """
+            _check_origin(request)
+            if not _multi_user():
+                raise HTTPException(status_code=400, detail="当前为单用户模式")
+            user = _cookie_user(request)
+            if not user:
+                raise HTTPException(status_code=401, detail="未登录")
+            new_password = str(payload.newPassword or "")
+            if len(new_password) < 6:
+                raise HTTPException(status_code=400, detail="新密码至少 6 位")
+            with _USER_REGISTRY_LOCK:
+                users = _load_users()
+                record = users.get(user)
+                if not isinstance(record, dict):
+                    raise HTTPException(status_code=404, detail="用户不存在")
+                stored = str(record.get("hash") or "")
+                try:
+                    salt = bytes.fromhex(str(record.get("salt") or ""))
+                except ValueError:
+                    salt = b""
+                if stored:
+                    ok = hmac.compare_digest(
+                        stored, _hash_password(str(payload.oldPassword or ""), salt)
+                    )
+                    if not ok:
+                        # 401 会触发前端统一的会话丢失处理(弹登录层),
+                        # 旧密码错误属于校验失败, 用 400 区分。
+                        raise HTTPException(status_code=400, detail="当前密码不正确")
+                new_salt = secrets.token_bytes(16)
+                record["salt"] = new_salt.hex()
+                record["hash"] = _hash_password(new_password, new_salt)
+                record["passwordUpdatedAt"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+                users[user] = record
+                _save_users(users)
+            # 会话令牌为无状态 HMAC, 改密只换发当前 cookie(顺带续期);
+            # 其他设备持有的旧令牌在其到期前仍然有效。
+            response.set_cookie(
+                _SESSION_COOKIE,
+                _session_token(user),
+                max_age=_SESSION_TTL,
+                httponly=True,
+                samesite="lax",
+            )
+            return {"ok": True, "user": {"name": user, "hasPassword": True}}
 
         @auth_router.post("/logout")
         async def auth_logout(request: Request, response: Response):
@@ -4911,6 +4974,11 @@ class ChatIn(BaseModel):
 class _AuthCredentials(BaseModel):
     username: str = ""
     password: str = ""
+
+
+class _AuthPasswordChange(BaseModel):
+    oldPassword: str = ""
+    newPassword: str = ""
 
 
 class ScienceProjectStore:

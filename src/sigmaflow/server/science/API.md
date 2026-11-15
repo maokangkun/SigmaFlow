@@ -423,9 +423,10 @@ WebSocket `/api/ws` 还承载终端 actions（与聊天共用连接，前端通�
 
 | 端点 | 说明 |
 |---|---|
-| `GET /api/auth/me` | 当前登录状态；多用户未登录时 `user` 为 `null` |
+| `GET /api/auth/me` | 当前登录状态；多用户未登录时 `user` 为 `null`，已登录时 `user` 含 `name` 与 `hasPassword`（微信扫码账户为 `false`） |
 | `POST /api/auth/register` | `{username, password}` 注册并自动登录；用户名 3-32 位字母数字与 `-_`，密码 ≥6 位 |
 | `POST /api/auth/login` | `{username, password}` 登录 |
+| `POST /api/auth/change-password` | `{oldPassword, newPassword}` 修改当前登录用户的密码；需验证当前密码，微信扫码的无密码账户首次设置可留空 `oldPassword`；成功后换发会话 cookie（其他设备的旧会话在其到期前仍有效） |
 | `POST /api/auth/logout` | 清除会话 cookie |
 | `GET /api/auth/wechat/config` | `{enabled}`：是否可微信扫码登录 |
 | `GET /api/auth/wechat/start` | `{url}`：微信二维码页地址（弹窗打开） |

@@ -3155,6 +3155,22 @@ CS.liveBlocks = {
         CS.toast('API Key 已保存，相关工具/服务启用状态已同步。');
       } catch (error) { CS.toast('保存失败：' + CS.api.friendlyError(error), 'error'); }
     },
+    'save-password': async () => {
+      // 账户与密码: 前端只做基本检查, 服务端为最终裁决(旧密码/长度)
+      const val = id => String(document.getElementById(id)?.value || '');
+      const oldPw = val('pw-old'), newPw = val('pw-new'), newPw2 = val('pw-new2');
+      const hasPw = CS.state.me?.user?.hasPassword !== false;
+      if (hasPw && !oldPw) { CS.toast('请输入当前密码。', 'error'); return; }
+      if (newPw.length < 6) { CS.toast('新密码至少 6 位。', 'error'); return; }
+      if (newPw !== newPw2) { CS.toast('两次输入的新密码不一致。', 'error'); return; }
+      try {
+        const d = await CS.api.request('/auth/change-password', { method: 'POST', body: JSON.stringify({ oldPassword: oldPw, newPassword: newPw }) });
+        if (CS.state.me?.user) CS.state.me.user.hasPassword = true;
+        ['pw-old', 'pw-new', 'pw-new2'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+        CS.render();
+        CS.toast(d?.user?.name ? `密码已修改，账户 ${d.user.name} 的登录保持有效。` : '密码已修改，当前登录保持有效。');
+      } catch (error) { CS.toast('修改失败：' + CS.api.friendlyError(error), 'error'); }
+    },
     'token-clear': async id => {
       try {
         const d = await CS.api.request('/tokens', { method: 'POST', body: JSON.stringify({ tokens: { [id]: '' } }) });
