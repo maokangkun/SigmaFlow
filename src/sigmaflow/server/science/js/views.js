@@ -1444,7 +1444,7 @@ V.ctxRing = () => {
     const s = CS.state.settings;
     const toggle = (id, label, sub) => `<div class="setting-row"><div><h3>${e(label)}</h3><p>${e(sub)}</p></div><button type="button" role="switch" aria-checked="${!!s[id]}" aria-label="${e(label)}" class="switch" data-action="setting-toggle" data-id="${id}"></button></div>`;
     const tab = CS.ui.settingsTab;
-    const nav = [['general','settings','通用'], ...(CS.state.me?.mode === 'multi' ? [['account','lock','账户与密码']] : []), ['appearance','sun','外观与交互'],['usage','chart','Token 用量'],['privacy','shield','数据与隐私'],['agent','bolt','模型配置'],['tools','grid','Agent 工具'],['skills','book','Agent 技能'],['mcp','network','MCP 服务'],['keys','lock','第三方 API Key'],['sysprompt','code','系统提示词'],['context','layers','上下文压缩']];
+    const nav = [['general','settings','通用'], ...(CS.state.me?.mode === 'multi' ? [['account','lock','账户与密码']] : []), ['appearance','sun','外观与交互'],['usage','chart','Token 用量'],['privacy','shield','数据与隐私'],['agent','bolt','模型配置'],['tools','grid','Agent 工具'],['skills','book','Agent 技能'],['mcp','network','MCP 服务'],['mods','grid','Mod 管理'],['keys','lock','第三方 API Key'],['sysprompt','code','系统提示词'],['context','layers','上下文压缩']];
     const edit = CS.ui.edit;
     const editProvider = edit?.type === 'provider' ? (CS.ui.providers.find(x => x.id === edit.id) || null) : null;
     const editModel = edit?.type === 'model' ? (CS.ui.models.find(x => x.id === edit.id) || null) : null;
@@ -1510,6 +1510,23 @@ V.ctxRing = () => {
           return `<div class="tool-setting-row" data-idx="${e(s.id)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">名称</span><input class="skill-name-input" data-skill-id="${e(s.id)}" data-field="name" value="${e(s.name)}" maxlength="64" spellcheck="false" ${ro}></div><div class="tool-field"><span class="tool-field-label">描述</span><input class="skill-desc-input" data-skill-id="${e(s.id)}" data-field="description" value="${e(s.description)}" maxlength="2000" spellcheck="false" ${ro}></div></div><div class="tool-setting-side">${projPill}${custom}${builtin}<button type="button" role="switch" aria-checked="${!!s.enabled}" class="switch" data-action="skill-toggle" data-id="${e(s.id)}" aria-label="启用 ${e(s.id)}"${proj ? ' disabled title="项目技能始终启用"' : ''}></button></div></div>`;
         }).join('');
         return `<div class="panel settings-section"><div class="row-between"><h2>Agent 技能</h2>${pill('服务端存储')}</div><p class="small muted mb-20">设置 Agent 会话可用的技能: 启用开关、名称与描述随下一次会话生效; 技能清单作为系统提示的一部分发给模型, 禁用的技能不占用上下文。技能正文存放在服务端 skills 目录。</p>${rows}<div class="settings-actions row wrap">${btn('save-skills','保存','check','primary')}${btn('reset-skills','恢复默认','refresh','flat')}</div></div>`;
+      })(),
+      mods: (() => {
+        // Mod 管理面板(P1): 已装 mod 的状态/启停/重载; 状态色与语义见 server/mods.py
+        const list = CS.ui.modsList;
+        if (!list) return `<div class="panel settings-section"><h2>Mod 管理</h2><p class="small muted mb-20">正在加载 mod 清单…</p></div>`;
+        if (!list.length) return `<div class="panel settings-section"><h2>Mod 管理</h2><p class="small muted mb-20">当前没有已安装的 mod。将含 mod.toml 的目录放入 ~/.sigmaflow/mods/ 后重启, 或等安装接口上线。</p></div>`;
+        const stateChip = st => {
+          const map = { enabled: ['启用', 'ok'], disabled: ['停用', ''], error: ['错误', 'danger'], blocked: ['依赖受阻', 'danger'], skipped: ['本进程跳过', ''], installed: ['已安装', ''] };
+          const [label, cls] = map[st] || [st, ''];
+          return `<span class="pill ${cls}">${e(label)}</span>`;
+        };
+        const rows = list.map(m => {
+          const caps = m.capabilities || {};
+          const capBits = Object.entries(caps).filter(([k, v]) => Array.isArray(v) ? v.length : v).map(([k, v]) => e(k)).join(' · ');
+          return `<div class="setting-row compact"><div><h3>${e(m.name)} <span class="tiny muted">v${e(m.version)} · ${e(m.id)}</span></h3><p>${e(m.description || '')}</p><p class="tiny muted">${e(m.origin)} · 热更新: ${e(m.reload)}${capBits ? ' · 能力: ' + capBits : ''}${m.stateReason ? ' · ' + e(m.stateReason) : ''}</p></div><span class="row gap-6">${m.state === 'error' || m.state === 'enabled' ? iconBtn('mod-reload','refresh','重载', `data-id="${e(m.id)}"`) : ''}${iconBtn('mod-toggle', m.state === 'enabled' ? 'stop' : 'play', m.state === 'enabled' ? '停用' : '启用', `data-id="${e(m.id)}" data-on="${m.state === 'enabled' ? 1 : 0}"`)}</span></div>`;
+        }).join('');
+        return `<div class="panel settings-section"><div class="row-between"><h2>Mod 管理</h2>${pill('epoch ' + (CS.ui.modsEpoch || '?'))}</div><p class="small muted mb-20">mod 是系统的功能单元: 工具、提示词、技能、虚拟环境、路由乃至 agent loop 都以 mod 形态挂载。停用立即生效于下一次请求; 标注 restart 的 mod(如环境类)启停需重启服务。</p>${rows}<div class="settings-actions row wrap">${btn('mods-refresh','刷新','refresh','flat')}</div></div>`;
       })(),
       mcp: (() => {
         // MCP 服务设置: 草稿存 mcpDraft, 每行 key 稳定 (已有行用 id, 新增行用临时 key)

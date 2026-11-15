@@ -1367,6 +1367,15 @@
       CS.render();
     } catch (error) { CS.toast('MCP 配置加载失败：' + CS.api.friendlyError(error), 'error'); }
   };
+  // Mod 管理: 每次都拉新(启停/重载后服务端 epoch 已变, 缓存无意义)
+  CS.loadMods = async () => {
+    try {
+      const d = await CS.api.request('/mods');
+      CS.ui.modsList = d.mods || [];
+      CS.ui.modsEpoch = d.epoch;
+      CS.render();
+    } catch (error) { CS.toast('Mod 清单加载失败：' + CS.api.friendlyError(error), 'error'); }
+  };
   // 系统提示词设置: 懒加载内置默认与自定义配置; 草稿仅含 prompt/enabled
   CS.loadSystemPrompt = async () => {
     if (!CS.ui.memSettings) {
@@ -2948,7 +2957,7 @@ CS.liveBlocks = {
     },
     'connect-project': () => { CS.ui.projectMenu = false; CS.showModal('remote-project'); },
     'submit-remote-project': () => {},
-    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') { CS.loadAgentTools(); CS.loadAgentTokens(); } if (id === 'skills') CS.loadAgentSkills(); if (id === 'mcp') CS.loadAgentMcp(); if (id === 'keys') CS.loadAgentTokens(); if (id === 'privacy') CS.loadToolLimit(); if (id === 'sysprompt') CS.loadSystemPrompt(); if (id === 'context') CS.loadAgentCompaction(); if (id === 'usage') CS.loadUsage(); },
+    'settings-tab': id => { CS.ui.settingsTab = id; CS.render(); if (id === 'tools') { CS.loadAgentTools(); CS.loadAgentTokens(); } if (id === 'skills') CS.loadAgentSkills(); if (id === 'mcp') CS.loadAgentMcp(); if (id === 'mods') CS.loadMods(); if (id === 'keys') CS.loadAgentTokens(); if (id === 'privacy') CS.loadToolLimit(); if (id === 'sysprompt') CS.loadSystemPrompt(); if (id === 'context') CS.loadAgentCompaction(); if (id === 'usage') CS.loadUsage(); },
     'usage-gran': id => { CS.ui.usageGran = id; CS.render(); },
     'reload-usage': () => { CS.ui.usage = null; CS.loadUsage(true); },
     'configure-model': () => { CS.ui.modelMenu = false; CS.ui.settingsTab = 'agent'; CS.navigate('settings'); },
@@ -3133,6 +3142,26 @@ CS.liveBlocks = {
         CS.render();
         CS.toast('工具设置已保存，下一次请求生效。');
       } catch (error) { CS.toast('保存失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'mods-refresh': () => { CS.loadMods(); },
+    'mod-toggle': async (id, el) => {
+      if (!id) return;
+      const on = el?.dataset.on === '1';
+      try {
+        await CS.api.request(`/mods/${encodeURIComponent(id)}/${on ? 'disable' : 'enable'}`, { method: 'POST' });
+        const m = (CS.ui.modsList || []).find(x => x.id === id);
+        if (m?.reload === 'restart') CS.toast('已记录。该 mod 的启停需要重启服务后完全生效。');
+        else CS.toast(on ? '已停用，下一次请求生效。' : '已启用，下一次请求生效。');
+        CS.loadMods();
+      } catch (error) { CS.toast('操作失败：' + CS.api.friendlyError(error), 'error'); }
+    },
+    'mod-reload': async id => {
+      if (!id) return;
+      try {
+        await CS.api.request(`/mods/${encodeURIComponent(id)}/reload`, { method: 'POST' });
+        CS.toast('已重载，新会话使用新代码。');
+        CS.loadMods();
+      } catch (error) { CS.toast('重载失败：' + CS.api.friendlyError(error), 'error'); }
     },
     'reset-tools': async () => {
       if (!confirm('清除全部工具自定义设置并恢复默认？')) return;
