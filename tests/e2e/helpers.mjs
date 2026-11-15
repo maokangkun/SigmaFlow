@@ -35,20 +35,34 @@ export function skip(msg) {
 
 /** playwright-core 不下载浏览器: 复用本机 ~/.cache/ms-playwright 的 chromium。 */
 export function chromiumPath() {
-  const cache = path.join(os.homedir(), '.cache/ms-playwright');
+  // PLAYWRIGHT_BROWSERS_PATH 可重定向浏览器安装位置(与官方 CLI 同名同义)
+  const cache = process.env.PLAYWRIGHT_BROWSERS_PATH
+    ? process.env.PLAYWRIGHT_BROWSERS_PATH
+    : path.join(os.homedir(), '.cache/ms-playwright');
   // 目录整体不存在(从未装过 playwright)时 readdirSync 会 ENOENT 崩掉整个套件,
   // 走不到 launch() 的 skip —— 读失败一律视为无 chromium, 交给 skip 兜底
   let dirs = [];
   try {
     dirs = fs.readdirSync(cache).filter(d => /^chromium-\d+$/.test(d)).sort();
   } catch {
-    return null;
+    // 缓存目录不存在: 落到下面的环境变量/PATH 兜底, 不再提前返回
   }
   for (const d of dirs.reverse()) {
     for (const sub of ['chrome-linux64/chrome', 'chrome-linux/chrome']) {
       const p = path.join(cache, d, sub);
       if (fs.existsSync(p)) return p;
     }
+  }
+  // 兜底1: 显式指定(SIGMAFLOW_E2E_CHROMIUM=/path/to/chrome)
+  if (process.env.SIGMAFLOW_E2E_CHROMIUM && fs.existsSync(process.env.SIGMAFLOW_E2E_CHROMIUM)) {
+    return process.env.SIGMAFLOW_E2E_CHROMIUM;
+  }
+  // 兜底2: PATH 里的系统/conda chromium(如 conda install -c conda-forge chromium)
+  for (const name of ['chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable']) {
+    try {
+      const which = execSync(`command -v ${name}`, { encoding: 'utf8', stdio: ['ignore','pipe','ignore'] }).trim();
+      if (which) return which;
+    } catch { /* not on PATH */ }
   }
   return null;
 }
@@ -57,10 +71,12 @@ let pw = null;
 export async function launch() {
   if (!pw) pw = await import('playwright-core');
   const exe = chromiumPath();
-  if (!exe) skip('本机无 chromium 二进制(~/.cache/ms-playwright); 先跑任意 playwright 安装');
+  if (!exe) skip('本机无 chromium 二进制(~/.cache/ms-playwright 或 SIGMAFLOW_E2E_CHROMIUM/PATH); 先跑任意 playwright 安装');
   const browser = await pw.chromium.launch({
     executablePath: exe,
-    args: ['--ignore-certificate-errors'],
+    // --no-sandbox: 容器/CI 内无 userns(如 Lambda 版 chromium 必需);
+    // 有系统沙箱的桌面环境同样安全 — 测试负载本就不运行不可信内容
+    args: ['--ignore-certificate-errors', '--no-sandbox', '--disable-setuid-sandbox'],
   });
   return browser;
 }

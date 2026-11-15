@@ -35,6 +35,8 @@
     },
     settingsSections() { return Object.values(state.settings); },
     cards: state.cards,
+    /* views 暴露为只读引用(app.js 渲染钩子按路由查挂载点) */
+    views: state.views,
 
     /* 启动引导: 拉注册表并装载全部 UI mod(幂等, epoch 变化才重装) */
     async bootstrap() {
