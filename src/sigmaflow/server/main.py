@@ -83,7 +83,6 @@ class PipelineServer:
         from fastapi import HTTPException
         from fastapi.responses import FileResponse
 
-        @self.app.get("/science/m/{mod_id}/{file_path:path}", methods=["GET", "HEAD"])
         async def mod_ui_asset(mod_id: str, file_path: str):
             rec = MODS.host.registry.get(mod_id)
             if rec is None or rec.state != "enabled":
@@ -93,6 +92,13 @@ class PipelineServer:
             if not str(target).startswith(str(root) + "/") or not target.is_file():
                 raise HTTPException(status_code=404, detail="not found")
             return FileResponse(target)
+
+        # GET+HEAD: 浏览器动态 import 用 GET, 预取/探测用 HEAD
+        self.app.add_api_route(
+            "/science/m/{mod_id}/{file_path:path}",
+            mod_ui_asset,
+            methods=["GET", "HEAD"],
+        )
 
         api = PipelineAPI(pipeline_manager)
         task = TaskAPI(pipeline_manager)
