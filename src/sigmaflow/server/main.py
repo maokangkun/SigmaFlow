@@ -83,7 +83,7 @@ class PipelineServer:
         from fastapi import HTTPException
         from fastapi.responses import FileResponse
 
-        @self.app.get("/science/m/{mod_id}/{file_path:path}")
+        @self.app.get("/science/m/{mod_id}/{file_path:path}", methods=["GET", "HEAD"])
         async def mod_ui_asset(mod_id: str, file_path: str):
             rec = MODS.host.registry.get(mod_id)
             if rec is None or rec.state != "enabled":
