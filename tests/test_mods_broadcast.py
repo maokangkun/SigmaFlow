@@ -95,4 +95,7 @@ def test_ws_end_to_end_broadcast(tmp_path, monkeypatch):
                 client.post("/api/mods/example-tools/enable")
     finally:
         MODS.set_broadcaster(None)
+        # 全局单例彻底清理: 卸载已加载 mod(否则遗留工具桥注册污染后续测试)
+        for mod_id in list(MODS.host.contexts):
+            MODS.host.unload(mod_id)
         MODS._bootstrapped = False
