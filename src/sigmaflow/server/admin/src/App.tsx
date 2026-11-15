@@ -54,7 +54,9 @@ function App() {
 
   return (
     <ThemeProvider defaultTheme="dark" storageKey="openai-tracing-theme">
-      <BrowserRouter basename="/admin">
+      {/* 前缀部署自适应: 经 /sigmaflow 等前缀代理访问时 URL 是 <prefix>/admin/,
+          basename 运行时从实际路径推导, 根部署(/admin)与前缀部署都命中 */}
+      <BrowserRouter basename={/^.*\/admin(?=\/|$)/.exec(window.location.pathname)?.[0] || '/admin'}>
         <Routes>
           <Route path="/initial-setup" element={<InitialSetupPage />} />
           <Route
