@@ -352,8 +352,8 @@ CHILD_TOOLS = [
             "A skill is a directory with a SKILL.md (YAML frontmatter: name + description, "
             "then markdown instructions). scope='project' writes to the current project's "
             "skills/ directory (takes precedence over global skills of the same name); "
-            "scope='global' writes to the shared skills directory and is restricted to "
-            "curator accounts in multi-user deployments (fall back to scope='project')."
+            "scope='global' writes to the caller's own global skills directory "
+            "(per-user in multi-user deployments, shared in single-user mode)."
         ),
         "input_schema": {
             "type": "object",

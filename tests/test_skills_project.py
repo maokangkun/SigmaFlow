@@ -180,56 +180,70 @@ def test_create_skill_invalidates_scan_cache(tmp_path):
         agent_tools.project_skills_cache_clear(tmp_path)
 
 
-def test_create_skill_global_gated_in_multi_user(tmp_path, monkeypatch):
-    """多用户开放部署下全局技能是跨用户注入面: 非管理员禁止写。"""
+def test_create_skill_global_per_user_in_multi(tmp_path, monkeypatch):
+    """多用户下全局技能按用户隔离: 写入各自 users/<name>/skills, 互不干扰。"""
+    monkeypatch.setenv("SIGMAFLOW_SCIENCE_DIR", str(tmp_path))
+    # 单用户/单机会话: 沿用 loader 的共享目录, 行为不变
     gdir = tmp_path / "global-skills"
     gdir.mkdir()
-    monkeypatch.setattr(agent_tools, "skill_loader", agent_tools.SkillLoader(gdir))
-    agent_tools.set_session_user("conv-g1", "mallory", multi=True)
-    agent_tools.set_session_scope("conv-g1")
+    loader = agent_tools.SkillLoader(gdir)
+    monkeypatch.setattr(agent_tools, "skill_loader", loader)
+    agent_tools.set_session_user("conv-s1", "service", multi=False)
+    agent_tools.set_session_scope("conv-s1")
     try:
         out = agent_tools.create_skill(
-            "evil-skill", "注入描述", "# EVIL", scope="global"
+            "shared-skill", "单用户全局技能", "# S", scope="global"
         )
-        assert out.startswith("Error:")
-        assert "多用户" in out
-        assert not (gdir / "evil-skill").exists()  # 未落盘
-        # 管理员名单内的账户放行
-        monkeypatch.setenv("SIGMAFLOW_GLOBAL_SKILL_ADMINS", "alice, bob")
-        agent_tools.set_session_user("conv-g2", "bob", multi=True)
-        agent_tools.set_session_scope("conv-g2")
-        out2 = agent_tools.create_skill(
-            "curated-skill", "管理员技能", "# OK", scope="global"
-        )
-        assert out2.startswith("Skill created:")
-        assert (gdir / "curated-skill" / "SKILL.md").exists()
-        # 单用户模式(未登记 multi)不受门控 —— 服务进程自己的会话照常
-        agent_tools.set_session_user("conv-g3", "service", multi=False)
-        agent_tools.set_session_scope("conv-g3")
-        out3 = agent_tools.create_skill(
-            "local-skill", "单用户技能", "# L", scope="global"
-        )
-        assert out3.startswith("Skill created:")
-        # 项目 scope 不受限: 多用户下任何人都能写自己的项目
-        project = tmp_path / "proj"
-        project.mkdir()
-        agent_tools.set_session_workdir(str(project))
-        try:
-            out4 = agent_tools.create_skill(
-                "proj-skill", "项目技能", "# P", scope="project"
-            )
-            assert out4.startswith("Skill created:")
-        finally:
-            agent_tools.set_session_workdir(None)
+        assert out.startswith("Skill created:")
+        assert (gdir / "shared-skill" / "SKILL.md").exists()
     finally:
         agent_tools.set_session_scope(None)
-        agent_tools.set_session_user("conv-g1")
-        agent_tools.set_session_user("conv-g2")
-        agent_tools.set_session_user("conv-g3")
+        agent_tools.set_session_user("conv-s1")
+
+    # 多用户 alice: 落盘到 her users/alice/skills, 且 rebuild 按显式用户刷新
+    rebuilds = []
+
+    class FakeView:
+        skills_dir = str(gdir)
+
+        def rebuild(self, user=None):
+            rebuilds.append(user)
+
+    monkeypatch.setattr(agent_tools, "skill_loader", FakeView())
+    agent_tools.set_session_user("conv-a", "alice", multi=True)
+    agent_tools.set_session_scope("conv-a")
+    try:
+        out = agent_tools.create_skill(
+            "alice-skill", "alice 的全局技能", "# A", scope="global"
+        )
+        assert out.startswith("Skill created:"), out
+        assert (
+            tmp_path / "users" / "alice" / "skills" / "alice-skill" / "SKILL.md"
+        ).exists()
+        assert rebuilds == ["alice"]  # 显式用户刷新, 不靠池线程的 ContextVar
+    finally:
+        agent_tools.set_session_scope(None)
+        agent_tools.set_session_user("conv-a")
+
+    # 多用户 bob: 同名技能写入 bob 自己的目录, 不见 alice 的文件
+    agent_tools.set_session_user("conv-b", "bob", multi=True)
+    agent_tools.set_session_scope("conv-b")
+    try:
+        out = agent_tools.create_skill(
+            "alice-skill", "bob 的同名技能", "# B", scope="global"
+        )
+        assert out.startswith("Skill created:")  # 不冲突: 目录不同, 无需 overwrite
+        alice_meta = (
+            tmp_path / "users" / "alice" / "skills" / "alice-skill" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        assert "alice 的全局技能" in alice_meta  # alice 的内容未被 bob 覆盖
+    finally:
+        agent_tools.set_session_scope(None)
+        agent_tools.set_session_user("conv-b")
 
 
 def test_session_user_registry_scoped_and_cleaned():
-    """登记表按会话 scope 隔离, 清除后回到未登记状态(门控 fail-closed 语义)。"""
+    """登记表按会话 scope 隔离, 清除后回到未登记状态(未登记会话按单用户语义处理)。"""
     agent_tools.set_session_user("s-a", "u1", multi=True)
     agent_tools.set_session_user("s-b", "u2", multi=False)
     try:

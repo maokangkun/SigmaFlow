@@ -552,10 +552,17 @@ class _ScienceSkillView:
         self.skills = {}
         self.rebuild()
 
-    def rebuild(self):
-        # 多用户模式下不同用户的技能目录与开关不同, 按 current user 切换缓存
-        self.user = _current_user()
-        self.skills_dir = _user_science_root()
+    def rebuild(self, user: str = None):
+        # 多用户模式下不同用户的技能目录与开关不同, 按 current user 切换缓存;
+        # 显式传 user 时以它为准 —— create_skill 在并行池线程落盘后刷新视图,
+        # 那里没有 ContextVar, 默认的 _current_user() 会回落 OS 用户写坏当前用户视图
+        self.user = user if user else _current_user()
+        if user:
+            from .science_auth import _user_data_dir as _udd
+
+            self.skills_dir = os.path.join(_udd(user), "skills")
+        else:
+            self.skills_dir = _user_science_root() + "/skills"
         overrides = _load_skill_overrides()
         skills = {}
         for skill in _discover_skills():

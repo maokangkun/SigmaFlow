@@ -520,10 +520,16 @@ def _session_user_info() -> dict:
         return dict(_SESSION_USERS.get(get_session_scope()) or {})
 
 
-def _global_skill_admins() -> set:
-    """Accounts allowed to write global skills in multi-user deployments."""
-    raw = os.environ.get("SIGMAFLOW_GLOBAL_SKILL_ADMINS", "")
-    return {x.strip() for x in raw.split(",") if x.strip()}
+def _user_global_skills_dir(name: str) -> Path:
+    """Per-user global skills dir in multi-user science deployments.
+
+    Mirrors science_auth._user_data_dir layout (<science root>/users/<user>/):
+    全局技能按用户隔离 —— 描述只进入该用户自己的 system prompt, 互不干扰。
+    """
+    root = os.environ.get("SIGMAFLOW_SCIENCE_DIR") or os.path.join(
+        os.path.expanduser("~"), ".sigmaflow", "science"
+    )
+    return Path(root) / "users" / str(name)[:64] / "skills"
 
 
 def load_skill_resolved(name: str) -> str:
@@ -577,17 +583,14 @@ def create_skill(
         root = Path(wd) / "skills" / name
         scope_label = "project"
     elif scope in ("global", "user"):
-        # 多用户门控: 全局技能描述会进入所有用户的 system prompt, 任一认证
-        # 用户都能写就成了一条跨用户提示注入通道。仅 SIGMAFLOW_GLOBAL_SKILL_ADMINS
-        # 名单内的账户可写, 其余会话回落项目 scope(报错提示, 不静默降级)。
+        # 全局技能按用户隔离: 多用户会话写入该用户自己的全局目录(读取侧
+        # _ScienceSkillView 本就按用户解析同一目录), 不同用户互不干扰;
+        # 单用户模式沿用共享 skills 目录, 行为不变。
         info = _session_user_info()
-        if info.get("multi") and info.get("name") not in _global_skill_admins():
-            return (
-                "Error: 多用户模式下禁止创建全局技能（全局技能描述会进入所有用户的系统提示词，"
-                "属于跨用户影响面）。请改用 scope='project' 写入当前项目；"
-                "如需开放全局技能管理，请由服务管理员将账户加入 SIGMAFLOW_GLOBAL_SKILL_ADMINS 环境变量。"
-            )
-        root = Path(str(skill_loader.skills_dir)) / name
+        if info.get("multi") and info.get("name"):
+            root = _user_global_skills_dir(info["name"]) / name
+        else:
+            root = Path(str(skill_loader.skills_dir)) / name
         scope_label = "global"
     else:
         return "Error: scope 只支持 'project' 或 'global'。"
@@ -617,11 +620,20 @@ def create_skill(
                 _PROJECT_SKILLS_CACHE.pop(key, None)
         except OSError:
             pass
-    # 全局目录落盘后立刻刷新 loader 视图(项目技能靠实时扫描, 无需刷新);
-    # rebuild 是 science 多用户视图, 单机 SkillLoader 回落 _load_all
+    # 全局目录落盘后立刻刷新 loader 视图: 项目技能靠实时扫描, 无需刷新;
+    # science 多用户视图按用户重建(rebuild(user=...) 显式传用户 —— 并行池线程
+    # 没有 ContextVar, 默认重建会回落 OS 用户写坏当前用户视图); 单机回落 _load_all
     if scope_label == "global":
         try:
-            getattr(skill_loader, "rebuild", skill_loader._load_all)()
+            if info.get("multi") and info.get("name"):
+                skill_loader.rebuild(user=info["name"])
+            else:
+                getattr(skill_loader, "rebuild", skill_loader._load_all)()
+        except TypeError:
+            try:
+                skill_loader.rebuild()
+            except Exception:
+                pass
         except Exception:
             pass
     return f"Skill created: {target}\nscope: {scope_label}\nname: {name}\n" + (
