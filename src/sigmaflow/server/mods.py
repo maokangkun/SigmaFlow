@@ -419,37 +419,58 @@ class ModSubsystem:
             return self.config_view(mod_id)
 
     # ------------------------------------------------------- 安装/卸载
-    def install(self, source: str, *, origin: str = "local") -> dict:
-        """从本地目录安装: 校验清单 → 拷入 mods 主目录 → 注册并加载。
+    def install(
+        self, source: str, *, origin: str = "", allow_unsigned: bool = False
+    ) -> dict:
+        """安装 mod: 本地目录 / git+<url> / zip(本地路径或 http(s) URL)。
 
-        git/zip 来源(P5)后续经同一入口落地; 当前只收磁盘目录。
+        信任策略(设计 §9): 本地目录 = 信任; 远程来源(git+/http/zip 文件)
+        携带 mod.sig 时必须通过信任库校验, 未签名时须显式 allow_unsigned。
         """
         import shutil
 
         with self._lock:
-            src = Path(source).expanduser().resolve()
-            record = ModRegistry.record_from_dir(src, origin=origin)
-            existing = self.host.registry.get(record.mod_id)
-            if existing is not None and existing.origin == "builtin":
-                # 用户目录同名遮蔽内置: 记录替换(设计 §10)
-                pass
-            dest = self.host.store.mods_dir / record.mod_id if self.host.store else src
-            self.host.store.ensure_layout()
-            if dest != src:
-                if dest.exists():
-                    shutil.rmtree(dest)
-                shutil.copytree(src, dest, ignore=shutil.ignore_patterns("__pycache__"))
-                record = ModRegistry.record_from_dir(dest, origin=origin)
-            self.host.registry.add(record)
-            ok = self.host.load(record)
-            self.host.registry.bump_epoch()
-            if self.host.store is not None:
-                self.host.store.audit(
-                    "mod.installed", mod=record.mod_id, source=str(src)
+            staged: List[Path] = []
+            try:
+                src, resolved_origin, remote = _resolve_source(source, staged)
+                if remote:
+                    from ..kernel.modsign import verify_mod
+
+                    verdict = verify_mod(src)
+                    if verdict.signed and not verdict.ok:
+                        raise PermissionError(f"签名校验失败: {verdict.reason}")
+                    if not verdict.signed and not allow_unsigned:
+                        raise PermissionError(
+                            "远程来源未签名: 先用 python -m sigmaflow.kernel.modsign "
+                            "sign 签名并 trust 入库, 或在请求中显式 allowUnsigned=true"
+                        )
+                record = ModRegistry.record_from_dir(
+                    src, origin=resolved_origin or "local"
                 )
-            d = record.to_dict()
-            d["loaded"] = ok
-            return d
+                assert self.host.store is not None
+                dest = self.host.store.mods_dir / record.mod_id
+                self.host.store.ensure_layout()
+                if dest != src:
+                    if dest.exists():
+                        shutil.rmtree(dest)
+                    shutil.copytree(
+                        src, dest, ignore=shutil.ignore_patterns("__pycache__")
+                    )
+                    record = ModRegistry.record_from_dir(
+                        dest, origin=resolved_origin or "local"
+                    )
+                self.host.registry.add(record)
+                ok = self.host.load(record)
+                self.host.registry.bump_epoch()
+                self.host.store.audit(
+                    "mod.installed", mod=record.mod_id, source=str(source)
+                )
+                d = record.to_dict()
+                d["loaded"] = ok
+                return d
+            finally:
+                for tmp in staged:
+                    shutil.rmtree(tmp, ignore_errors=True)
 
     def uninstall(self, mod_id: str) -> dict:
         """卸载: 仅允许非内置; 停用 → 摘注册 → 删目录 → 清 patch 条目。"""
@@ -482,6 +503,76 @@ class ModSubsystem:
 
 
 MODS = ModSubsystem.instance()
+
+
+# ------------------------------------------------------------- 来源解析
+def _resolve_source(source: str, staged: List[Path]) -> tuple:
+    """安装来源 → (mod 目录, origin, remote?)。
+
+    - 磁盘目录 → (目录, "local", False)
+    - ``git+<url>[#ref]`` → clone --depth 1 到临时目录 → (仓库根, "git", True)
+    - ``*.zip`` 本地路径或 http(s) URL → 解压临时目录 → (含 mod.toml 的目录, "zip", True)
+    远程拉取物落在 staged 里, 调用方 finally 统一清理。
+    """
+    import subprocess
+    import tempfile
+    import zipfile
+
+    src = source.strip()
+    if src.startswith("git+"):
+        url = src[4:]
+        ref = None
+        if "#" in url:
+            url, ref = url.split("#", 1)
+        tmp = Path(tempfile.mkdtemp(prefix="sfmod-git-"))
+        staged.append(tmp)
+        cmd = ["git", "clone", "--depth", "1", "--quiet"]
+        if ref:
+            cmd += ["--branch", ref]
+        cmd.append(url)
+        proc = subprocess.run(cmd + [str(tmp / "repo")], capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(f"git clone 失败: {proc.stderr.strip()[:300]}")
+        repo = tmp / "repo"
+        # 仓库根即 mod 根; 支持多 mod 仓库: 根没有 mod.toml 时取唯一子目录
+        if (repo / "mod.toml").is_file():
+            return repo, "git", True
+        cands = sorted(d for d in repo.iterdir() if (d / "mod.toml").is_file())
+        if len(cands) == 1:
+            return cands[0], "git", True
+        raise FileNotFoundError(f"git 仓库未找到 mod.toml(根目录或唯一子目录): {url}")
+
+    if src.lower().endswith(".zip"):
+        tmp = Path(tempfile.mkdtemp(prefix="sfmod-zip-"))
+        staged.append(tmp)
+        zpath = tmp / "src.zip"
+        if src.startswith(("http://", "https://")):
+            import requests
+
+            resp = requests.get(src, timeout=60)
+            resp.raise_for_status()
+            zpath.write_bytes(resp.content)
+        else:
+            zpath.write_bytes(Path(src).expanduser().read_bytes())
+        # zip-slip 防护: 成员路径必须落在解压目录内
+        extract = tmp / "mod"
+        with zipfile.ZipFile(zpath) as zf:
+            for member in zf.namelist():
+                target = (extract / member).resolve()
+                if not str(target).startswith(str(extract.resolve()) + "/"):
+                    raise RuntimeError(f"zip 路径越界(疑似 zip-slip): {member}")
+            zf.extractall(extract)
+        if (extract / "mod.toml").is_file():
+            return extract, "zip", True
+        cands = sorted(d for d in extract.iterdir() if (d / "mod.toml").is_file())
+        if len(cands) == 1:
+            return cands[0], "zip", True
+        raise FileNotFoundError("zip 内未找到 mod.toml(根目录或唯一子目录)")
+
+    path = Path(src).expanduser().resolve()
+    if not (path / "mod.toml").is_file():
+        raise FileNotFoundError(f"{path}: mod.toml not found")
+    return path, "local", False
 
 
 # ---------------------------------------------------------------- REST API
@@ -555,14 +646,17 @@ def mods_api(subsystem: ModSubsystem = MODS) -> APIRouter:
         _check_origin(request)
         body = await request.json()
         source = str((body or {}).get("source") or "").strip()
+        allow_unsigned = bool((body or {}).get("allowUnsigned"))
         if not source:
             raise HTTPException(
-                status_code=400, detail="source 不能为空(本地 mod 目录)"
+                status_code=400, detail="source 不能为空(本地目录/git+url/zip)"
             )
         try:
-            rec = subsystem.install(source)
+            rec = subsystem.install(source, allow_unsigned=allow_unsigned)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc))
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=f"安装失败: {exc}")
         return {"mod": rec}

@@ -43,7 +43,8 @@ Homepage = "https://sigmaflows.github.io/"
 Repository = "https://github.com/maokangkun/SigmaFlow"
 
 [project.optional-dependencies]
-all = ["pymupdf4llm"]
+all = ["pymupdf4llm", "cryptography"]
+mods-sign = ["cryptography"]
 
 [dependency-groups]
 dev = [

@@ -88,3 +88,27 @@ example-ui。
 
 `mod.toml [config.defaults]` → `~/.sigmaflow/patch.toml`（id 定向覆盖）
 → 项目级 patch（规划中）。设置页 Mod 管理可改配置并看每键来源层。
+
+## 远程安装与签名（P5）
+
+`POST /api/mods/install` 的 `source` 支持三种形态：
+
+- 本地目录：`{"source": "/path/to/my-mod"}`（信任）
+- zip：`{"source": "https://…/my-mod.zip"}` 或本地 zip 路径（远程语义）
+- git：`{"source": "git+https://host/owner/repo#branch"}`（浅克隆；仓库根或
+  唯一子目录需含 mod.toml）
+
+远程来源的信任策略：携带 `mod.sig` 时必须通过信任库校验；未签名时请求需
+显式 `"allowUnsigned": true`（UI 会提示能力清单让你确认）。
+
+签名工具链（ed25519，`pip install sigmaflow[mods-sign]`）：
+
+```bash
+python -m sigmaflow.kernel.modsign keygen --out mykey      # 密钥对
+python -m sigmaflow.kernel.modsign sign my-mod --key mykey.key
+python -m sigmaflow.kernel.modsign trust mykey.pub         # 入信任库
+python -m sigmaflow.kernel.modsign verify my-mod
+```
+
+签名对象是 `mod.toml` 的 sha256 —— 清单即身份；信任库在
+`~/.sigmaflow/trusted-mod-keys.txt`（`SIGMAFLOW_MOD_TRUST` 可覆盖）。
