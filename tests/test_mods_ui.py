@@ -2,15 +2,29 @@
 
 from pathlib import Path
 
+import pytest
+
 import sigmaflow
 from sigmaflow.server.mods import ModSubsystem
 
 BUILTIN = Path(sigmaflow.__file__).parent / "mods"
 
+_SUBSYSTEMS = []
+
+
+@pytest.fixture(autouse=True)
+def _teardown_subsystems():
+    yield
+    for sub in _SUBSYSTEMS:
+        for mod_id in list(sub.host.contexts):
+            sub.host.unload(mod_id)
+    _SUBSYSTEMS.clear()
+
 
 def _bootstrapped(tmp_path):
     sub = ModSubsystem.__new__(ModSubsystem)
     ModSubsystem.__init__(sub)
+    _SUBSYSTEMS.append(sub)
     sub.bootstrap(home=tmp_path / "home", builtin_dirs=[BUILTIN])
     return sub
 
