@@ -1,5 +1,5 @@
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import FileResponse
@@ -33,6 +33,41 @@ class SPAStaticFiles(StaticFiles):
         if is_entry and getattr(res, "status_code", 0) == 200:
             res.headers["Cache-Control"] = "no-cache"
         return res
+
+
+class _GuardedWorkspaceStatic(StaticFiles):
+    """多用户模式下 /workspace 静态资源要求 science 会话(与 API 同边界)。"""
+
+    async def get_response(self, path, scope):
+        from .science_common import _multi_user
+
+        if _multi_user():
+            # StaticFiles 无 Request 对象: 从 asgi scope 原始头解析会话 cookie
+            from http.cookies import SimpleCookie
+
+            cookie = next(
+                (
+                    v.decode("latin-1")
+                    for k, v in (scope.get("headers") or [])
+                    if k == b"cookie"
+                ),
+                "",
+            )
+            jar = SimpleCookie()
+            try:
+                jar.load(cookie)
+            except Exception:  # noqa: BLE001 — 畸形 cookie 视为未登录
+                pass
+            from .science_auth import _SESSION_COOKIE, _user_from_token
+
+            raw = jar.get(_SESSION_COOKIE, None)
+            token = raw.value if raw else ""
+            if not (token and _user_from_token(token)):
+                from starlette.exceptions import HTTPException as _HE
+                from starlette.status import HTTP_401_UNAUTHORIZED
+
+                raise _HE(status_code=HTTP_401_UNAUTHORIZED, detail="未登录")
+        return await super().get_response(path, scope)
 
 
 class PipelineServer:
@@ -108,7 +143,28 @@ class PipelineServer:
 
         api = PipelineAPI(pipeline_manager)
         task = TaskAPI(pipeline_manager)
-        workspace = WorkspaceAPI(pipeline_manager)
+        # 认证桥(S3): /workspace 的 API 与静态资源挂 science 鉴权 —
+        # 单用户放行; 多用户要求会话并把用户注入 userdata 上下文。
+        # 必须经构造参数注入: 路由在 WorkspaceAPI.__init__ 内注册,
+        # 事后改 router.dependencies 不追溯(曾因此留下无鉴权洞)。
+        from .science_common import _multi_user as _sf_multi
+        from .workspace import _CURRENT_SF_USER as _SF_USER_CTX
+
+        async def _workspace_guard(request: Request):
+            from .science_common import _multi_user as _sf_multi_user
+
+            if not _sf_multi_user():
+                return
+            from .science_auth import _cookie_user
+
+            user = _cookie_user(request) or ""
+            if not user:
+                raise StarletteHTTPException(status_code=401, detail="未登录")
+            _SF_USER_CTX.set(user)
+
+        workspace = WorkspaceAPI(
+            pipeline_manager, dependencies=[Depends(_workspace_guard)]
+        )
         admin = AdminAPI(pipeline_manager)
         science = ScienceAPI()
 
@@ -140,7 +196,7 @@ class PipelineServer:
         if work_root.exists():
             self.app.mount(
                 "/workspace/",
-                StaticFiles(directory=work_root, html=True),
+                _GuardedWorkspaceStatic(directory=str(work_root), html=True),
                 name="SigmaFlow Workspace",
             )
 

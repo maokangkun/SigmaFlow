@@ -10,6 +10,7 @@ import glob
 from pathlib import Path
 from urllib import parse
 from typing import Any, Optional, TypedDict
+from contextvars import ContextVar
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import FileResponse
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
@@ -26,11 +27,25 @@ class FileInfo(TypedDict):
     modified: int
 
 
-def get_userdata_dir() -> str:
-    """Get the userdata directory path, creating it if necessary."""
-    userdata_dir = os.path.expanduser("~/.sigmaflow/userdata")
+# 当前请求的 science 用户(多用户隔离): 由路由依赖写入, 单用户模式为空
+_CURRENT_SF_USER = ContextVar("_CURRENT_SF_USER", default="")
+
+
+def current_sf_user() -> str:
+    return _CURRENT_SF_USER.get()
+
+
+def userdata_dir_for(user: str) -> str:
+    """指定用户的 userdata 目录(多用户隔离); 空用户 = 共享根目录。"""
+    base = os.path.expanduser("~/.sigmaflow/userdata")
+    userdata_dir = os.path.join(base, "users", user) if user else base
     os.makedirs(userdata_dir, exist_ok=True)
     return userdata_dir
+
+
+def get_userdata_dir() -> str:
+    """当前请求用户(science 会话注入)的 userdata 目录。"""
+    return userdata_dir_for(current_sf_user())
 
 
 def get_file_info(path: str, relative_to: str) -> dict:
@@ -201,8 +216,12 @@ class WorkspaceTaskWorker(TaskWorker):
 
 
 class WorkspaceAPI:
-    def __init__(self, pipeline_manager):
-        self.router = router = APIRouter(prefix="/workspace")
+    def __init__(self, pipeline_manager, dependencies=None):
+        """``dependencies``: 构造期注入的鉴权依赖(路由在 __init__ 内定义,
+        事后改 router.dependencies 不会追溯到已注册路由)。"""
+        self.router = router = APIRouter(
+            prefix="/workspace", dependencies=dependencies or []
+        )
         ws_msges = asyncio.Queue()
         ws_manager = WSConnectionManager()
         task_queue = WorkspaceTaskQueue(ws_msges)
@@ -742,6 +761,17 @@ class WorkspaceAPI:
 
         @router.websocket("/ws")
         async def websocket_endpoint(ws: WebSocket, clientId: Optional[str] = None):
+            # 多用户模式: WS 握手同样要求 science 会话(与 HTTP 同一信任边界)
+            from .science_common import _multi_user
+
+            if _multi_user():
+                from .science_auth import _cookie_user
+
+                user = _cookie_user(ws) or ""
+                if not user:
+                    await ws.close(code=1008)
+                    return
+                _CURRENT_SF_USER.set(user)
             sid = clientId or uuid.uuid4().hex
             await ws_manager.connect(ws, sid)
 

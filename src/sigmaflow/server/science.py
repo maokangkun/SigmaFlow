@@ -2328,9 +2328,9 @@ class ScienceAPI:
             """已保存的流程图列表(userdata/workflows/*.json, Workspace 编辑器产物)。"""
             import glob as _glob
 
-            from .workspace import get_userdata_dir
+            from .workspace import userdata_dir_for
 
-            root = get_userdata_dir()
+            root = userdata_dir_for(_current_user() if _multi_user() else "")
             items = []
             for path in sorted(_glob.glob(str(Path(root) / "workflows" / "*.json"))):
                 st = Path(path).stat()
