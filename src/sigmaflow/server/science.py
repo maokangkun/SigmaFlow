@@ -2323,6 +2323,27 @@ class ScienceAPI:
                 payload.name or "",
             )
 
+        @router.get("/flows")
+        async def list_flows():
+            """已保存的流程图列表(userdata/workflows/*.json, Workspace 编辑器产物)。"""
+            import glob as _glob
+
+            from .workspace import get_userdata_dir
+
+            root = get_userdata_dir()
+            items = []
+            for path in sorted(_glob.glob(str(Path(root) / "workflows" / "*.json"))):
+                st = Path(path).stat()
+                items.append(
+                    {
+                        "id": Path(path).stem,
+                        "name": Path(path).stem,
+                        "modified": int(st.st_mtime * 1000),
+                        "size": st.st_size,
+                    }
+                )
+            return {"flows": items[::-1]}
+
         @router.get("/projects")
         async def list_projects():
             return {"projects": self.project_store.list_projects()}

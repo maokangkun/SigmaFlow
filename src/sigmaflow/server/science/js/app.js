@@ -125,7 +125,8 @@
     // 设置页刷新/直达: 恢复上次所在 tab 的数据加载。只在"进入设置页"的
     // 路由跳变时分发一次 — 挂在每次渲染上会与 tab 加载器的 CS.render()
     // 形成渲染→加载→渲染死循环(每轮一个超时 toast, 实测满屏报错的根因)
-    if (CS.ui._prevRoute !== CS.ui.route) {
+        if (CS.ui._prevRoute !== CS.ui.route) {
+      if (CS.ui.route === 'workflows') CS.loadFlows?.();
       const entering = CS.ui.route === 'settings';
       CS.ui._prevRoute = CS.ui.route;
       if (entering && CS.ui.settingsTab && CS.ui.settingsTab !== 'general') {
@@ -847,8 +848,8 @@
   }, true);
 
   window.addEventListener('hashchange', () => {
-    CS.ui.route = applyRoute(); CS.ui.mobileSidebar = false; CS.closeModal(); CS.render(); window.scrollTo(0, 0);
-    document.title = 'SigmaFlow Science · ' + ({ home: '科研工作空间', chat: 'Agent 对话', trace: '会话 Trace', data: '数据集', projects: '项目', workflows: '工作流', results: '分析结果', literature: '文献', tools: '生物工具', tasks: '任务队列', settings: '设置', help: '帮助', patient: '虚拟患者' }[CS.ui.route] || '工作空间');
+    CS.ui.route = applyRoute(); CS.ui.mobileSidebar = false; CS.closeModal(); if (CS.ui.route === 'workflows') CS.loadFlows?.(); CS.render(); window.scrollTo(0, 0);
+    document.title = 'SigmaFlow Science · ' + ({ home: '科研工作空间', chat: 'Agent 对话', trace: '会话 Trace', data: '数据集', projects: '项目', workflows: '工作流', results: '分析结果', literature: '文献', tools: '生物工具', tasks: '任务队列', settings: '设置', help: '帮助', patient: '虚拟患者', flow: '流程编辑' }[CS.ui.route] || '工作空间');
   });
 
   // WS 断线自动重连成功后: 拉取受影响会话的最新存档(静默换新),
@@ -1395,6 +1396,23 @@
     } catch (error) { CS.toast('MCP 配置加载失败：' + CS.api.friendlyError(error), 'error'); }
   };
   // Mod 管理: 每次都拉新(启停/重载后服务端 epoch 已变, 缓存无意义)
+  CS.loadFlows = async () => {
+    // 就绪退避: 启动直落工作流页时 endpoint 探测可能尚未完成,
+    // 失败按 500ms 退避重试(至多 20 次), 成功即渲染
+    if (CS.ui._flowsInFlight) return;
+    CS.ui._flowsInFlight = true;
+    try {
+      for (let i = 0; i < 20; i++) {
+        try {
+          const d = await CS.api.request('/flows');
+          CS.ui.flows = d.flows || [];
+          CS.render();
+          return;
+        } catch (e) { await new Promise(r => setTimeout(r, 500)); }
+      }
+      CS.ui.flows = [];
+    } finally { CS.ui._flowsInFlight = false; }
+  };
   CS.loadMods = async () => {
     // 在途守卫 + 失败退避: 请求超时(15s)期间的重入与失败后的立即重试
     // 都会形成"渲染→加载→toast→渲染"风暴(服务繁忙时 toast 刷屏的根因)
@@ -3663,6 +3681,7 @@ CS.liveBlocks = {
     'result-tab': id => { CS.ui.resultTab=id; CS.render(); },
     'workflow-category': id => { CS.ui.workflowCategory=id; CS.render(); },
     'select-workflow': id => { CS.ui.workflowId=id; CS.render(); },
+    'edit-flow-file': id => { CS.ui.flowWorkflowId = id; CS.navigate('flow', id || undefined); },
     'edit-workflow': (id, el) => { if (el) el.blur(); CS.ui.flowWorkflowId = id; CS.navigate('flow', id || undefined); },
     'open-flow-editor': () => { const id = CS.ui.workflowId || ''; CS.ui.flowWorkflowId = id === 'workspace-flow' ? '' : id; CS.navigate('flow', CS.ui.flowWorkflowId || undefined); },
     'toggle-advanced': () => { CS.ui.advanced=!CS.ui.advanced; CS.render(); },
@@ -4049,6 +4068,8 @@ CS.liveBlocks = {
     } catch (error) { CS.ui.modelsLoaded = false; }
   };
   CS.ui.route=applyRoute();CS.render();
+  // 启动直落工作流页时预取流程列表(渲染钩子在首帧时 CS.loadFlows 尚未赋值)
+  if (CS.ui.route === 'workflows') setTimeout(() => CS.loadFlows?.(), 0);
   // 服务地址自动探测：依次尝试 当前地址 -> 页面前缀推导地址 -> /api，取第一个健康可达者。
   // 必须等它完成再加载模型列表，否则首次访问（无痕窗口/新设备）会用错误地址拉取。
   CS.api.detectEndpoint = async () => {
