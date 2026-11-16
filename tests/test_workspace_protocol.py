@@ -131,7 +131,7 @@ class TestThemeBridge:
         r = client.get("/workspace/api/userdata/user.css")
         assert r.status_code == 200
         body = r.text
-        assert "--p-primary-color" in body and "#8f8dc6" in body
+        assert "--p-primary-color" in body and "#6c6ab2" in body
 
 
 class TestStaticDist:
