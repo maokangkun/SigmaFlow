@@ -50,21 +50,60 @@ _NICS = [
 ]
 
 
-def test_real_net_nics_filters_virtual():
+@pytest.fixture()
+def bond_topology(monkeypatch):
+    """封闭注入 bond 拓扑: eth1 是 bond0 的从属口(带 /sys master 链接)。
+
+    原实现读宿主 sysfs 判断从属口, eth1 是否被剔除因部署环境而异 ——
+    曾导致本测试在不同机器上时过时挂。此处伪造探测结果, 行为契约
+    (从属口流量已计入主口, 剔除避免重复统计)与原意一致且可复现。
+    """
+    from sigmaflow.server import science
+
+    real_exists = science.os.path.exists
+
+    def exists(path):
+        if path == "/sys/class/net/eth1/master":
+            return True
+        return real_exists(path)
+
+    monkeypatch.setattr(science.os.path, "exists", exists)
+
+
+@pytest.fixture()
+def fake_clock(monkeypatch):
+    """假时钟: _system_stats 只用 time.time(), 注入后 dt 完全可控可复现。
+
+    原测试回拨快照 2 秒 + 真实 sleep, 速率分母含真实耗时抖动, 容差
+    rel=0.3 在负载机器上偶发越界(时序 flake 的根因)。
+    """
+    from sigmaflow.server import science
+
+    state = {"t": 100.0}
+    monkeypatch.setattr(science, "time", types.SimpleNamespace(time=lambda: state["t"]))
+    return state
+
+
+def test_real_net_nics_filters_virtual(bond_topology):
     kept = _real_net_nics(_NICS[0])
-    assert set(kept) == {"bond0", "ens17f0np0"}  # eth1 是否剔除取决于 /sys master 链接
+    assert set(kept) == {"bond0", "ens17f0np0"}  # 从属口 eth1 与虚拟口全剔除
 
 
-def test_net_speed_excludes_virtual_and_doubles(stub_psutil):
+def test_real_net_nics_without_bond_still_filters_virtual():
+    """无 bond 拓扑(eth1 无 master 链接)时: 虚拟口仍剔除, eth1 保留。"""
+    kept = _real_net_nics(_NICS[0])
+    assert "lo" not in kept and "docker0" not in kept
+    assert kept.keys() >= {"bond0", "ens17f0np0"}
+
+
+def test_net_speed_excludes_virtual_and_doubles(stub_psutil, bond_topology, fake_clock):
     from sigmaflow.server.science import _system_stats
 
     first = _system_stats()
     assert first["net"] == {"up_bps": 0.0, "down_bps": 0.0}  # 首次无基准恒为 0
 
-    time.sleep(0.05)
-    # 5 秒真实间隔不可等, 直接推进快照时间制造 dt
-    prev = _sys_state["net"]
-    _sys_state["net"] = (prev[0] - 2.0, prev[1])  # 回拨 2 秒 → dt=2s
+    # 推进假时钟 2 秒(精确 dt, 不再依赖真实 sleep/耗时)
+    fake_clock["t"] += 2.0
     # 第二次采样: 容器 veth 对各涨 3MB(同一份流量), 真实网卡各涨 0.2MB
     _NICS.append(
         {
@@ -81,9 +120,9 @@ def test_net_speed_excludes_virtual_and_doubles(stub_psutil):
     stub_psutil.net_io_counters = lambda pernic=False: _NICS[1]
 
     second = _system_stats()
-    # 期望: 两个真实网卡各涨 0.2MB, 合计 0.4MB / dt(≈2s+少量开销);
+    # 期望: 两个真实网卡各涨 0.2MB, 合计 0.4MB / dt=2s(假时钟精确);
     # 若把 veth 对加总会上探到 ~3MB/s, 回环再加一份
     expect = 4 * 10**5 / 2.0
-    assert second["net"]["up_bps"] == pytest.approx(expect, rel=0.3)
-    assert second["net"]["down_bps"] == pytest.approx(expect, rel=0.3)
+    assert second["net"]["up_bps"] == pytest.approx(expect, rel=1e-6)
+    assert second["net"]["down_bps"] == pytest.approx(expect, rel=1e-6)
     assert second["net"]["up_bps"] < 5 * 10**5  # 远低于虚拟接口加总的 ~3MB/s
