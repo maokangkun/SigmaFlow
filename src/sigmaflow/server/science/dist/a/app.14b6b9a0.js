@@ -133,10 +133,15 @@
         //  - iframe 12s 仍无应用挂载(守卫 401/网络失败/产物损坏)→ 提示面板,
         //    不再呈现无解释的深底(实测"一片黑"的来源)
         setTimeout(() => {
-          CS.api.request('/workspace/api/system_stats').then(() => {}).catch(err => {
-            if (CS.ui.route !== 'flow') return;
-            const msg = String(err && err.message || '');
-            if (/登录|401/i.test(msg)) return;  // 登录浮层已接管
+          // 预检必须直连 workspace API: 它挂在应用根(/workspace)而非 /api 根,
+          // 走 CS.api.url 会被拼成 <endpoint>/workspace/... 恒 404 → 非 401 错误
+          // → denied 面板常驻(实测"重试无效"的根因)。前缀推导与 views.js 的
+          // iframe src 同一正则, 保证两者落在同一部署前缀下。
+          const pm = location.pathname.match(/^(.*)\/science\//);
+          fetch((pm ? pm[1] : '') + '/workspace/api/system_stats', { credentials: 'include' }).then(r => {
+            if (r.status === 401 && typeof CS.handleAuthLoss === 'function') setTimeout(() => { try { CS.handleAuthLoss(); } catch {} }, 0);
+          }).catch(() => {
+            if (CS.ui.route !== 'flow' || CS.ui.flowDenied) return;
             CS.ui.flowDenied = 'error';
             CS.render();
           });
@@ -4330,6 +4335,11 @@ CS.liveBlocks = {
     CS.emit('render');
     const me = CS.state.me;
     if (me && me.mode === 'multi' && !(me.user && me.user.name)) { CS.ui.route = 'auth'; CS.showAuthGate(); return; }
+    // 多用户已登录(或单用户): 刷新直落的非 auth 路由在此恢复正常视图
+    // (boot 门禁在 me 未就绪时可能把当前路由误判为 auth, 见下)
+    if (CS.ui.route === 'auth' && location.hash !== '#/auth' && location.hash !== '#/login') {
+      CS.ui.route = applyRoute(); CS.render();
+    }
     CS.agent.loadModels();
     CS.agent.loadProjects().then(() => CS.agent.loadConversations());
   });

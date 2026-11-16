@@ -1405,7 +1405,12 @@ V.ctxRing = () => {
 
   V.flow = () => {
     const wid = CS.ui.flowWorkflowId || '';
-    const src = '/workspace/' + (wid ? `?embed=1&workflow=${encodeURIComponent(wid)}` : '?embed=1');
+    // 部署前缀自适应: science 挂在 <prefix>/science/ 下时, /workspace/ 是
+    // <prefix>/workspace/ — 根绝对路径会绕过前缀代理命中空响应(黑屏根因),
+    // 从当前路径提取前缀拼入(<prefix>/workspace/); 根部署时前缀为空
+    const m = location.pathname.match(/^(.*)\/science\//);
+    const deployPrefix = m ? m[1] : '';
+    const src = deployPrefix + '/workspace/' + (wid ? `?embed=1&workflow=${encodeURIComponent(wid)}` : '?embed=1');
     const denied = CS.ui.flowDenied;
     const body = denied
       ? `<div class="flow-denied"><div class="panel"><h3>无法打开流程编辑器</h3><p class="muted">${e(denied === 'auth' ? '登录会话已过期或未登录。' : '编辑器加载失败, 请确认 Workspace 服务正常后重试。')}</p><div class="row gap-6 mt-20">${denied === 'auth' ? btn('flow-relogin','去登录','arrow','primary') : btn('flow-retry','重试','refresh','primary')}${btn('flow-back','返回工作流','back','flat')}</div></div></div>`

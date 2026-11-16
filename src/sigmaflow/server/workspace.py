@@ -35,6 +35,22 @@ def current_sf_user() -> str:
     return _CURRENT_SF_USER.get()
 
 
+async def science_session_guard(request_or_ws) -> None:
+    """认证守卫(HTTP 依赖 / WS 端点内自调双用): 校验 science 会话并注入
+    workspace 用户上下文。401 → StarletteHTTPException(WS 调用方转 close)。
+    """
+    from .science_common import _multi_user
+    from .science_auth import _cookie_user
+    from fastapi import HTTPException
+
+    if not _multi_user():
+        return
+    user = _cookie_user(request_or_ws) or ""
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录")
+    _CURRENT_SF_USER.set(user)
+
+
 def userdata_dir_for(user: str) -> str:
     """指定用户的 userdata 目录(多用户隔离); 空用户 = 共享根目录。"""
     base = os.path.expanduser("~/.sigmaflow/userdata")
@@ -770,19 +786,14 @@ class WorkspaceAPI:
 
         @router.websocket("/ws")
         async def websocket_endpoint(ws: WebSocket, clientId: Optional[str] = None):
-            # 多用户模式: WS 握手同样要求 science 会话(与 HTTP 同一信任边界)。
-            # 注: 不走 router.dependencies — HTTP 守卫的 Request 注解在 WS 上
-            # 会被 FastAPI 当查询参数(422), WS 在端点内自行校验
-            from .science_common import _multi_user
-
-            if _multi_user():
-                from .science_auth import _cookie_user
-
-                user = _cookie_user(ws) or ""
-                if not user:
-                    await ws.close(code=1008)
-                    return
-                _CURRENT_SF_USER.set(user)
+            # 多用户模式: WS 握手同样要求 science 会话。不走 router 级依赖 —
+            # 守卫的 Request 语义在 WS 上不成立, 端点内自调共享守卫
+            # (拒绝形态为 close(1008) 而非 401)
+            try:
+                await science_session_guard(ws)
+            except HTTPException:
+                await ws.close(code=1008)
+                return
             sid = clientId or uuid.uuid4().hex
             await ws_manager.connect(ws, sid)
 
