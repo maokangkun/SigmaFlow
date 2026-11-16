@@ -1417,12 +1417,134 @@ V.ctxRing = () => {
       : `<iframe class="flow-frame" src="${e(src)}" title="流程编辑器" allow="clipboard-read; clipboard-write"></iframe>`;
     return `<section class="page flow-shell"><div class="flow-topbar"><button type="button" class="text-button" data-nav="workflows">${i('arrowleft','',14)}<span>返回工作流</span></button><span class="flow-title">${e(wid ? `编辑: ${wid}` : '节点画布')}</span></div>${body}</section>`;
   };
+  // ---- 执行追踪(移植自 admin traces 页; API: /admin/api/traces) ----
+  const TRACE_TYPE_COLOR = { agent: '#6c9bd2', llm: '#8f96b8', LLM: '#8f96b8', generation: '#8f96b8', function: '#63b3a4', tool: '#63b3a4', handoff: '#d9a05e', loop: '#7d9fd6', Loop: '#7d9fd6', config: '#97a0b5', Config: '#97a0b5' };
+  const traceTypeColor = t => TRACE_TYPE_COLOR[t] || '#8f8dc6';
+  const fmtDur = sec => { const s = Number(sec) || 0; return s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${s >= 10 ? Math.round(s) : s.toFixed(2)}s`; };
+  const fmtWhen = iso => { try { return new Date(iso).toLocaleString(); } catch { return iso || '—'; } };
+  const jsonBlock = (title, val, wrap) => {
+    if (val === undefined || val === null || val === '') return '';
+    let text;
+    try { text = typeof val === 'string' ? (JSON.parse(val) !== undefined ? JSON.stringify(JSON.parse(val), null, 2) : val) : JSON.stringify(val, null, 2); }
+    catch { text = String(val); }
+    return `<div class="trace-json"><div class="trace-json-h">${e(title)}</div><pre class="${wrap ? 'wrap' : ''}">${e(text)}</pre></div>`;
+  };
+  V.tracing = () => {
+    // 详情模式: #/tracing/<id>
+    if (CS.ui.tracingId) {
+      const st = CS.state.tracingDetail || {};
+      const t = st.data;
+      if (st.loading) return `<section class="page">${header('TRACING', '执行追踪', '加载追踪详情…')}</section>`;
+      if (st.error) return `<section class="page">${header('TRACING', '执行追踪', '')}${empty('alert', '无法加载 Trace', st.error)}</section>`;
+      if (!t) return `<section class="page">${header('TRACING', '执行追踪', '')}${empty('clock', '没有数据', 'Trace 不存在或已被删除。', btn('tracing-back', '返回列表', 'back'))}</section>`;
+      const spans = t.spans || [];
+      // span 树 + 时间线: 兄弟按开始时间排序, 条形按 (start-t0)/(t1-t0) 定位
+      const byId = new Map(spans.map(s => [s.id, { s, children: [] }]));
+      const roots = [];
+      byId.forEach(n => { const p = n.s.parent_id && byId.get(n.s.parent_id); (p ? p.children : roots).push(n); });
+      [roots, ...[...byId.values()].map(n => n.children)].forEach(list => list.sort((a, b) => String(a.s.started_at || '').localeCompare(String(b.s.started_at || ''))));
+      const times = spans.flatMap(s => [s.started_at, s.ended_at].filter(Boolean)).map(x => Date.parse(x)).filter(x => !Number.isNaN(x));
+      const t0 = times.length ? Math.min(...times) : 0, t1 = times.length ? Math.max(...times) : 1, span = Math.max(t1 - t0, 1);
+      const exp = CS.ui.tracingExpanded || {};
+      const sel = CS.ui.tracingSel;
+      const barStyle = n => {
+        const st = Date.parse(n.s.started_at || '') , en = Date.parse(n.s.ended_at || '');
+        const l = Number.isNaN(st) ? 0 : ((st - t0) / span) * 100;
+        const w = (Number.isNaN(st) || Number.isNaN(en)) ? 0.8 : Math.max(((en - st) / span) * 100, 0.8);
+        return `left:${l}%;width:${w}%`;
+      };
+      const label = n => { const d = n.s.span_data || {}; if (d.type === 'handoff') return `${d.from_agent || '?'} → ${d.to_agent || '?'}`; return d.name || d.to_agent || d.type || 'span'; };
+      const dur = n => { const a = Date.parse(n.s.started_at || ''), b = Date.parse(n.s.ended_at || ''); return (!Number.isNaN(a) && !Number.isNaN(b)) ? fmtDur((b - a) / 1000) : null; };
+      const row = (n, depth) => {
+        const kids = n.children.length ? `<div class="span-kids" style="display:${exp[n.s.id] === false ? 'none' : 'block'}">${n.children.map(c => row(c, depth + 1)).join('')}</div>` : '';
+        const has = n.children.length > 0;
+        return `<div class="span-row ${sel === n.s.id ? 'sel' : ''} ${n.s.error ? 'err' : ''}" data-action="tracing-span" data-id="${e(n.s.id)}">
+          <div class="span-label" style="padding-left:${depth * 18}px">
+            <button type="button" class="span-caret ${has ? '' : 'leaf'} ${exp[n.s.id] !== false ? 'open' : ''}" data-action="tracing-toggle" data-id="${e(n.s.id)}" aria-label="展开/折叠">${i('chevron', '', 12)}</button>
+            <span class="span-dot" style="background:${traceTypeColor(n.s.span_data?.type)}"></span>
+            <span class="span-name">${e(label(n))}</span>
+            <span class="span-type">${e(n.s.span_data?.type || 'span')}</span>
+            ${n.s.error ? '<span class="span-badge">错误</span>' : ''}
+          </div>
+          <div class="span-timeline"><span class="span-bar" style="${barStyle(n)};background:${traceTypeColor(n.s.span_data?.type)}">${dur(n) || ''}</span></div>
+        </div>${kids}`;
+      };
+      const selNode = sel ? byId.get(sel) : null;
+      const sd = selNode?.s?.span_data || {};
+      const selInfo = !selNode ? '' : `<div class="panel trace-detail-panel">
+        <div class="row-between"><h3>${e(sd.name || sd.type || 'Span')}</h3>${pill(sd.type || 'span')}</div>
+        ${sd.from_agent || sd.to_agent ? `<div class="kv"><span>Agent</span><b>${e(sd.from_agent || '—')} → ${e(sd.to_agent || '—')}</b></div>` : ''}
+        <div class="kv"><span>开始</span><b>${e(fmtWhen(selNode.s.started_at))}</b></div>
+        <div class="kv"><span>结束</span><b>${e(fmtWhen(selNode.s.ended_at))}</b></div>
+        <div class="kv"><span>耗时</span><b>${dur(selNode) || '—'}</b></div>
+        ${selNode.s.error ? `<div class="trace-error">${i('alert', '', 13)}<span>${e(selNode.s.error.message || '执行出错')}</span></div>` : ''}
+        ${jsonBlock('输入', sd.input, CS.ui.tracingWrap !== false)}${jsonBlock('输出', sd.output, CS.ui.tracingWrap !== false)}${jsonBlock('元数据', sd.metadata, CS.ui.tracingWrap !== false)}
+      </div>`;
+      return `<section class="page trace-page">
+        ${header('TRACING', e(t.workflowName || '执行追踪'), `Trace ${t.id} · ${fmtWhen(t.createdAt)} · ${spans.length} spans`, `${btn('tracing-wrap', CS.ui.tracingWrap !== false ? '不换行' : '换行', 'code')}${btn('tracing-copy', '复制 ID', 'copy')}${btn('tracing-del', '删除', 'trash', 'danger')}`)}
+        <div class="trace-body">
+          <div class="panel trace-tree-panel">${spans.length ? roots.map(n => row(n, 0)).join('') : empty('clock', '无 Span', '该 Trace 没有记录任何 span。')}
+            <button type="button" class="text-button mt-12" data-action="tracing-back">${i('arrowleft', '', 14)}<span>返回追踪列表</span></button>
+          </div>
+          <div class="trace-side">
+            <div class="panel trace-detail-panel">
+              <h3>Trace 信息</h3>
+              <div class="kv"><span>Workflow</span><b>${e(t.workflowName || '—')}</b></div>
+              ${t.groupId ? `<div class="kv"><span>Group</span><b>${e(t.groupId)}</b></div>` : ''}
+              <div class="kv"><span>创建</span><b>${e(fmtWhen(t.createdAt))}</b></div>
+              <div class="kv"><span>更新</span><b>${e(fmtWhen(t.updatedAt))}</b></div>
+              <div class="kv"><span>Span 数</span><b>${spans.length}</b></div>
+              ${t.executionTime ? `<div class="kv"><span>总耗时</span><b>${fmtDur(t.executionTime)}</b></div>` : ''}
+              ${jsonBlock('元数据', t.metadata, CS.ui.tracingWrap !== false)}
+            </div>
+            ${selInfo}
+          </div>
+        </div></section>`;
+    }
+    // 列表模式
+    const st = CS.state.traces || {};
+    const f = CS.ui.tracingFilters || {};
+    const pg = st.pagination || {};
+    const metaRows = (f.meta || []).map((m, idx) => `<div class="row gap-6 trace-meta" data-idx="${idx}">
+      <input id="tracing-meta-k-${idx}" class="trace-input sm" placeholder="metadata 键" value="${e(m.k || '')}">
+      <input id="tracing-meta-v-${idx}" class="trace-input sm" placeholder="值" value="${e(m.v || '')}">
+      <button type="button" class="icon-btn" data-action="tracing-meta-del" data-id="${idx}" aria-label="删除该行">${i('trash', '', 13)}</button>
+    </div>`).join('');
+    const rows = (st.data || []).map(t => `<tr class="tracing-tr" data-action="tracing-open" data-id="${e(t.id)}">
+      <td class="mono">${e(String(t.id).slice(0, 14))}…</td>
+      <td><b>${e(t.workflowName || '—')}</b></td>
+      <td class="muted">${e((t.flow || []).slice(0, 3).join(' → ') || t.groupId || '—')}</td>
+      <td class="muted">${e(fmtWhen(t.createdAt))}</td>
+      <td class="center">${t.toolsCount ?? 0}</td>
+      <td class="center">${t.handsoffsCount ?? 0}</td>
+      <td class="right">${t.executionTime ? fmtDur(t.executionTime) : '—'}</td>
+      <td class="right"><button type="button" class="icon-btn" data-action="tracing-del" data-id="${e(t.id)}" aria-label="删除" title="删除">${i('trash', '', 13)}</button></td>
+    </tr>`).join('');
+    return `<section class="page">
+      ${header('TRACING', '执行追踪', 'Workspace 流水线与 Agent 的 Trace 记录', `${btn('tracing-refresh', '刷新', 'refresh')}${btn('tracing-query', '查询', 'search', 'primary')}`)}
+      <div class="panel trace-filters">
+        <input id="tracing-wf" class="trace-input" placeholder="Workflow 名称" value="${e(f.workflow || '')}">
+        <input id="tracing-group" class="trace-input" placeholder="Group ID" value="${e(f.group || '')}">
+        <input id="tracing-id" class="trace-input" placeholder="Trace ID 精确查询" value="${e(f.id || '')}">
+        <input id="tracing-start" class="trace-input" type="datetime-local" value="${e(f.start || '')}" title="开始时间">
+        <input id="tracing-end" class="trace-input" type="datetime-local" value="${e(f.end || '')}" title="结束时间">
+        ${metaRows}
+        <div class="row gap-6">${(f.meta || []).length ? '' : `<button type="button" class="text-button" data-action="tracing-meta-add">${i('plus', '', 13)}<span>metadata 条件</span></button>`}<button type="button" class="text-button" data-action="tracing-clear">${i('x', '', 13)}<span>清空</span></button></div>
+      </div>
+      ${st.error ? `<div class="notice">${i('alert', '', 14)}<span>${e(st.error)}</span></div>` : ''}
+      <div class="panel">${st.loading ? `<p class="muted">加载中…</p>` : rows ? `<table class="tracing-table"><thead><tr><th>Trace</th><th>Workflow</th><th>Flow / Group</th><th>创建时间</th><th class="center">工具</th><th class="center">交接</th><th class="right">耗时</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : empty('clock', '没有 Trace', '尚无执行追踪记录。运行 Workspace 流水线后这里会出现记录。')}
+        <div class="row-between trace-pager">
+          <span class="tiny muted">共 ${pg.total ?? 0} 条 · 第 ${pg.page ?? 1}/${Math.max(pg.totalPages ?? 1, 1)} 页</span>
+          <div class="row gap-6">${pg.hasPrev ? btn('tracing-prev', '上一页', 'arrowleft') : ''}${pg.hasNext ? btn('tracing-next', '下一页', 'arrow') : ''}</div>
+        </div>
+      </div></section>`;
+  };
   V.workflows = () => {
     const current = CS.workflow(CS.ui.workflowId);
     const list = CS.data.workflows.filter(w => CS.ui.workflowCategory === 'all' || w.category === CS.ui.workflowCategory);
     const myFlows = (CS.ui.flows || []).map(f => `<button class="workflow-option" data-action="edit-flow-file" data-id="${e(f.id)}">${tile('workflow')}<div><h3>${e(f.name)}</h3><p>已保存的节点流程图 · Workspace 产物</p><div class="sub">${new Date(f.modified).toLocaleString()}</div></div><span class="icon-btn" role="button" data-action="edit-workflow" data-id="${e(f.id)}" title="在节点画布中编辑">${i('edit','',14)}</span></button>`).join('');
     const flowsBlock = myFlows ? `<div class="sidebar-section-label" style="padding:10px 2px 4px"><span class="small muted">我的流程(Workspace)</span></div>${myFlows}` : '';
-    return `<section class="page">${header('WORKFLOWS','研究目标，变成清晰的步骤','先选择流程与输入，再由你确认执行。')}<div class="workflow-layout"><div><div class="tabs">${['all','单细胞','转录组','文献','通用'].map(id => tab('workflow-category',id,id === 'all' ? '全部' : id,CS.ui.workflowCategory === id)).join('')}</div><div class="workflow-list">${flowsBlock}${list.map(w => `<button class="workflow-option ${w.id === current.id ? 'selected' : ''}" data-action="select-workflow" data-id="${w.id}">${tile(w.icon)}<div><h3>${e(w.title)}</h3><p>${e(w.sub)}</p><div class="sub">${w.steps.length} 个步骤 <span class="faint"> / </span> ${e(w.time)}</div></div><span class="icon-btn" role="button" data-action="edit-workflow" data-id="${e(w.id)}" title="在节点画布中编辑" aria-label="编辑 ${e(w.title)}">${i('edit','',14)}</span><span class="radio"></span></button>`).join('')}</div><div class="flow-summary"><span>选择输入</span>${i('chevron')}<span>确认计划</span>${i('chevron')}<span>执行与检查</span>${i('chevron')}<span>结果与记录</span></div></div>
+    return `<section class="page">${header('WORKFLOWS','研究目标，变成清晰的步骤','先选择流程与输入，再由你确认执行。', btn('open-tracing','Tracing','gauge'))}<div class="workflow-layout"><div><div class="tabs">${['all','单细胞','转录组','文献','通用'].map(id => tab('workflow-category',id,id === 'all' ? '全部' : id,CS.ui.workflowCategory === id)).join('')}</div><div class="workflow-list">${flowsBlock}${list.map(w => `<button class="workflow-option ${w.id === current.id ? 'selected' : ''}" data-action="select-workflow" data-id="${w.id}">${tile(w.icon)}<div><h3>${e(w.title)}</h3><p>${e(w.sub)}</p><div class="sub">${w.steps.length} 个步骤 <span class="faint"> / </span> ${e(w.time)}</div></div><span class="icon-btn" role="button" data-action="edit-workflow" data-id="${e(w.id)}" title="在节点画布中编辑" aria-label="编辑 ${e(w.title)}">${i('edit','',14)}</span><span class="radio"></span></button>`).join('')}</div><div class="flow-summary"><span>选择输入</span>${i('chevron')}<span>确认计划</span>${i('chevron')}<span>执行与检查</span>${i('chevron')}<span>结果与记录</span></div></div>
       <aside class="panel workflow-config"><h3>配置这次分析</h3><div class="config-inputs"><div class="field"><label for="workflow-dataset">输入数据</label><select id="workflow-dataset">${CS.state.datasets.map(d => `<option value="${e(d.id)}" ${CS.ui.datasetId === d.id ? 'selected' : ''}>${e(d.name)}${d.source === 'demo' ? ' · 演示' : ''}</option>`).join('')}</select><span class="hint">原始文件不会随演示任务上传。</span></div><div class="field"><label for="workflow-organism">物种上下文</label><select id="workflow-organism">${['Homo sapiens','Mus musculus','Arabidopsis thaliana','未指定'].map(s => `<option ${s === CS.ui.organism ? 'selected' : ''}>${s}</option>`).join('')}</select></div><div class="field full-span"><label>运行方式</label><div class="notice">${i('shield','',14)}<span>${CS.state.settings.mode === 'local' ? '浏览器本地演示' : 'WebSocket 优先 · HTTP/SSE 兼容'} · 人工确认后执行</span></div></div><div class="full-span"><button class="text-button" data-action="toggle-advanced">${i('chevron',CS.ui.advanced ? 'rotate' : '',13)}高级参数 ${pill('仅记录')}</button>${CS.ui.advanced ? `<div class="field-row mt-20"><div class="field"><label for="min-genes">min_genes</label><input id="min-genes" type="number" min="1" max="10000" value="${CS.ui.minGenes}"></div><div class="field"><label for="max-mito">max_mito (%)</label><input id="max-mito" type="number" min="0" max="100" value="${CS.ui.maxMito}"></div></div><p class="tiny muted">这些是可编辑的配置示例，不构成实验或分析参数建议。</p>` : ''}</div></div><div class="config-footer"><div class="row-between small muted mb-20"><span>${e(current.title)}</span><span>${current.steps.length} 步</span></div>${btn('start-workflow','生成分析计划','arrow','primary full')}</div></aside></div></section>`;
   };
 

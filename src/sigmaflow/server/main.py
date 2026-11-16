@@ -175,18 +175,12 @@ class PipelineServer:
 
         web_root = Path(f"{__file__[: __file__.rindex('/')]}/website/dist/")
         work_root = Path(f"{__file__[: __file__.rindex('/')]}/comfyui/dist")
-        admin_root = Path(f"{__file__[: __file__.rindex('/')]}/admin/dist")
         sci_root = Path(f"{__file__[: __file__.rindex('/')]}/science/dist")
 
-        # Mount static files in order of specificity
-        # Admin panel static files
-        if admin_root.exists():
-            self.app.mount(
-                "/admin",
-                SPAStaticFiles(directory=admin_root, html=True),
-                name="SigmaFlow Admin",
-            )
+        # Admin 面板已下线: traces 视图移植进 science(#/tracing, 经工作流页
+        # Tracing 按钮进入); /admin/api 路由保留作为追踪后端(上报与查询)。
 
+        # Mount static files in order of specificity
         # ComfyUI workspace
         if work_root.exists():
             self.app.mount(

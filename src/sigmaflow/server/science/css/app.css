@@ -1024,3 +1024,42 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .flow-frame { flex: 1; width: 100%; border: 0; background: var(--background, #101017); }
 .flow-denied { flex: 1; display: flex; align-items: center; justify-content: center; background: var(--bg); }
 .flow-denied .panel { max-width: 420px; padding: 28px; }
+
+/* ---- 执行追踪(移植自 admin traces) ---- */
+.trace-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 16px 20px; }
+.trace-input { min-width: 150px; max-width: 230px; padding: 7px 10px; font-size: 12px; border-radius: 8px; }
+.trace-input.sm { min-width: 110px; }
+.trace-meta { flex-wrap: nowrap; }
+.tracing-table { width: 100%; }
+.tracing-table tbody tr { cursor: pointer; transition: background .12s; }
+.tracing-table tbody tr:hover { background: var(--inset); }
+.tracing-table td.mono { font-size: 11px; color: var(--muted); }
+.trace-pager { padding: 12px 18px; border-top: 1px solid var(--line-soft); }
+.trace-body { display: flex; gap: 16px; align-items: stretch; margin-top: 16px; }
+.trace-tree-panel { flex: 1.6; min-width: 0; padding: 14px 16px; }
+.trace-side { flex: 1; min-width: 320px; max-width: 460px; display: flex; flex-direction: column; gap: 16px; }
+.trace-detail-panel { padding: 18px 20px; }
+.trace-detail-panel .kv { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px dashed var(--line-soft); font-size: 12px; }
+.trace-detail-panel .kv:last-of-type { border-bottom: 0; }
+.trace-detail-panel .kv span { color: var(--muted); }
+.trace-detail-panel .kv b { font-weight: 500; word-break: break-all; text-align: right; }
+.span-row { display: grid; grid-template-columns: minmax(230px, 34%) 1fr; gap: 12px; align-items: center; padding: 4px 6px; border-radius: 8px; cursor: pointer; }
+.span-row:hover { background: var(--inset); }
+.span-row.sel { background: var(--accent-bg); }
+.span-label { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; }
+.span-caret { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; color: var(--faint); border-radius: 4px; flex-shrink: 0; }
+.span-caret:not(.leaf) { color: var(--muted); }
+.span-caret.leaf { visibility: hidden; }
+.span-caret.open .icon { transform: rotate(90deg); }
+.span-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.span-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.span-type { color: var(--faint); font-size: 10px; flex-shrink: 0; }
+.span-badge { background: var(--red-bg); color: var(--red); border-radius: 4px; padding: 1px 5px; font-size: 10px; flex-shrink: 0; }
+.span-timeline { position: relative; height: 18px; background: var(--inset); border-radius: 6px; overflow: hidden; }
+.span-bar { position: absolute; top: 3px; height: 12px; border-radius: 4px; min-width: 4px; opacity: .85; font-size: 9px; color: #fff; line-height: 12px; padding: 0 5px; overflow: hidden; white-space: nowrap; }
+.span-kids { margin: 0 0 0 10px; border-left: 1px solid var(--line-soft); padding-left: 4px; }
+.trace-json { margin-top: 12px; }
+.trace-json-h { font-size: 10px; letter-spacing: .8px; text-transform: uppercase; color: var(--faint); margin-bottom: 4px; }
+.trace-json pre { background: var(--inset); border: 1px solid var(--line-soft); border-radius: 8px; padding: 10px 12px; max-height: 320px; overflow: auto; margin: 0; }
+.trace-json pre.wrap { white-space: pre-wrap; }
+.trace-error { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; padding: 10px 12px; background: var(--red-bg); color: var(--red); border-radius: 8px; font-size: 12px; word-break: break-all; }

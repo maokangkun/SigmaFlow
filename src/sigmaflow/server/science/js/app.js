@@ -11,6 +11,7 @@
     const [seg, id] = value.split('/');
     if (seg === 'chat' && id) return { route: 'chat', id };
     if (seg === 'flow') return { route: 'flow', id: id || null };
+    if (seg === 'tracing') return { route: 'tracing', id: id || null };
     if (seg === 'trace') return { route: 'trace', id: id || null };
     return { route: allowedRoutes.includes(value) ? value : 'home', id: null };
   };
@@ -19,6 +20,7 @@
   const refreshedRuns = new Set();
   const applyRoute = () => {
     const { route, id } = parseHash();
+    if (route === 'tracing') CS.ui.tracingId = id || null;
     if ((route === 'chat' || route === 'trace') && id) {
       const run = CS.state.runs.find(r => r.id === id);
       // 服务端存档是权威, 本地只是缓存(刷新/断线/中断都会让本地落后):
@@ -48,6 +50,57 @@
     const hash = '#/' + route + (id ? '/' + id : '');
     if (location.hash === hash) CS.render();
     else location.hash = hash;
+  };
+  // 执行追踪(移植自 admin traces 页): API 在应用根命名空间 /admin/api(与
+  // workspace 同因), 不能走 CS.api.url(会被拼进 /api 根); 401 交登录浮层
+  CS.tracing = {
+    base() { const m = location.pathname.match(/^(.*)\/science\//); return (m ? m[1] : '') + '/admin/api'; },
+    async _fetch(path, opts = {}) {
+      const r = await fetch(this.base() + path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } });
+      if (r.status === 401) { if (typeof CS.handleAuthLoss === 'function') setTimeout(() => { try { CS.handleAuthLoss(); } catch {} }, 0); throw new Error('未登录'); }
+      if (!r.ok) { let d = `HTTP ${r.status}`; try { const b = await r.json(); if (b?.detail) d = String(b.detail); } catch {} throw new Error(d); }
+      return r.json();
+    },
+    _query() {
+      const f = CS.ui.tracingFilters || {};
+      const p = new URLSearchParams();
+      if (f.workflow) p.set('workflow_name', f.workflow);
+      if (f.group) p.set('group_id', f.group);
+      if (f.id) p.set('trace_id', f.id);
+      if (f.start) p.set('start_date', new Date(f.start).toISOString());
+      if (f.end) p.set('end_date', new Date(f.end).toISOString());
+      (f.meta || []).forEach(m => { if (m.k && m.v) p.set(`metadata.${m.k}`, m.v); });
+      return p.toString();
+    },
+    async load(page = 1) {
+      // 不能在首个 await 前同步 CS.render(): 路由钩子分发本函数时尚未落
+      // _prevRoute, 同步渲染会再次分发 load() —— 同步递归栈溢出、渲染进程
+      // 崩溃(实测)。loading 态在当前这次渲染里自然可见, 无需补渲染。
+      CS.state.traces = { ...(CS.state.traces || {}), data: [], loading: true, error: null };
+      try {
+        const q = this._query();
+        const r = await this._fetch(`/traces?page=${page}&limit=20${q ? '&' + q : ''}`);
+        CS.state.traces = { data: r.data || [], pagination: r.pagination, loading: false, error: null };
+      } catch (err) { CS.state.traces = { ...(CS.state.traces || {}), loading: false, error: err.message }; }
+      CS.render();
+    },
+    async loadDetail(id) {
+      // 同 load(): 首个 await 前不渲染, 防路由钩子内的同步递归
+      CS.state.tracingDetail = { loading: true };
+      CS.ui.tracingSel = null; CS.ui.tracingExpanded = {};
+      try {
+        const r = await this._fetch('/traces/' + encodeURIComponent(id));
+        CS.state.tracingDetail = { data: r.data, loading: false };
+      } catch (err) { CS.state.tracingDetail = { loading: false, error: err.message }; }
+      CS.render();
+    },
+    async del(id) {
+      if (!confirm('删除该 Trace？此操作不可恢复。')) return;
+      try { await this._fetch('/traces/' + encodeURIComponent(id), { method: 'DELETE' }); CS.toast('已删除'); }
+      catch (err) { CS.toast(`删除失败: ${err.message}`, 'error'); return; }
+      if (CS.ui.tracingId === id) { CS.ui.tracingId = null; if (parseHash().route === 'tracing') location.hash = '#/tracing'; this.load(); }
+      else this.load((CS.state.traces?.pagination?.page) || 1);
+    }
   };
   // 生成中状态: 标签页 icon 旋转提示。
   // Chrome 会把 SVG favicon 静态栅格化、不执行其中的 CSS 动画,
@@ -127,6 +180,7 @@
     // 形成渲染→加载→渲染死循环(每轮一个超时 toast, 实测满屏报错的根因)
         if (CS.ui._prevRoute !== CS.ui.route) {
       if (CS.ui.route === 'workflows') CS.loadFlows?.();
+      if (CS.ui.route === 'tracing') { CS.ui.tracingId ? CS.tracing?.loadDetail(CS.ui.tracingId) : CS.tracing?.load(); }
       if (CS.ui.route === 'flow' && !CS.ui.flowDenied) {
         // 会话预检 + iframe 挂载监督(双层, 详见 docs/workspace-integration-plan.md):
         //  - 预检 401 → 交由 CS.api.request 内建 handleAuthLoss 弹登录浮层
@@ -883,7 +937,7 @@
 
   window.addEventListener('hashchange', () => {
     CS.ui.route = applyRoute(); CS.ui.mobileSidebar = false; CS.closeModal(); if (CS.ui.route === 'workflows') CS.loadFlows?.(); CS.render(); window.scrollTo(0, 0);
-    document.title = 'SigmaFlow Science · ' + ({ home: '科研工作空间', chat: 'Agent 对话', trace: '会话 Trace', data: '数据集', projects: '项目', workflows: '工作流', results: '分析结果', literature: '文献', tools: '生物工具', tasks: '任务队列', settings: '设置', help: '帮助', patient: '虚拟患者', flow: '流程编辑' }[CS.ui.route] || '工作空间');
+    document.title = 'SigmaFlow Science · ' + ({ home: '科研工作空间', chat: 'Agent 对话', trace: '会话 Trace', tracing: '执行追踪', data: '数据集', projects: '项目', workflows: '工作流', results: '分析结果', literature: '文献', tools: '生物工具', tasks: '任务队列', settings: '设置', help: '帮助', patient: '虚拟患者', flow: '流程编辑' }[CS.ui.route] || '工作空间');
   });
 
   // WS 断线自动重连成功后: 拉取受影响会话的最新存档(静默换新),
@@ -3719,6 +3773,21 @@ CS.liveBlocks = {
     'flow-relogin': () => { CS.ui.flowDenied = null; CS.navigate('auth'); },
     'flow-retry': () => { CS.ui.flowDenied = null; CS.render(); },
     'flow-back': () => { CS.ui.flowDenied = null; CS.navigate('workflows'); },
+    'open-tracing': () => { CS.ui.tracingId = null; CS.navigate('tracing'); },
+    'tracing-query': () => CS.tracing.load(1),
+    'tracing-clear': () => { CS.ui.tracingFilters = { workflow: '', group: '', id: '', start: '', end: '', meta: [{ k: '', v: '' }] }; CS.tracing.load(1); },
+    'tracing-refresh': () => CS.tracing.load((CS.state.traces?.pagination?.page) || 1),
+    'tracing-prev': () => CS.tracing.load(Math.max(1, (CS.state.traces?.pagination?.page) || 1) - 1),
+    'tracing-next': () => CS.tracing.load(((CS.state.traces?.pagination?.page) || 1) + 1),
+    'tracing-open': id => { location.hash = '#/tracing/' + encodeURIComponent(id); CS.tracing.loadDetail(id); },
+    'tracing-back': () => { CS.ui.tracingId = null; location.hash = '#/tracing'; CS.tracing.load((CS.state.traces?.pagination?.page) || 1); },
+    'tracing-copy': () => { const id = CS.ui.tracingId || ''; (navigator.clipboard?.writeText(id) || Promise.reject()).then(() => CS.toast('已复制 Trace ID')).catch(() => {}); },
+    'tracing-del': id => CS.tracing.del(id),
+    'tracing-span': id => { CS.ui.tracingSel = id; CS.render(); },
+    'tracing-toggle': id => { CS.ui.tracingExpanded = CS.ui.tracingExpanded || {}; CS.ui.tracingExpanded[id] = CS.ui.tracingExpanded[id] === false ? true : false; CS.render(); },
+    'tracing-wrap': () => { CS.ui.tracingWrap = CS.ui.tracingWrap === false; CS.render(); },
+    'tracing-meta-add': () => { const f = CS.ui.tracingFilters || (CS.ui.tracingFilters = { workflow: '', group: '', id: '', start: '', end: '', meta: [] }); (f.meta = f.meta || []).push({ k: '', v: '' }); CS.render(); },
+    'tracing-meta-del': idx => { (CS.ui.tracingFilters?.meta || []).splice(Number(idx) || 0, 1); CS.render(); },
     'edit-workflow': (id, el) => { if (el) el.blur(); CS.ui.flowWorkflowId = id; CS.navigate('flow', id || undefined); },
     'toggle-advanced': () => { CS.ui.advanced=!CS.ui.advanced; CS.render(); },
     'start-workflow': () => {
@@ -4027,6 +4096,14 @@ CS.liveBlocks = {
     else if(searchBindings[id]) {CS.ui.filters[searchBindings[id]]=target.value;CS.render();}
     else if(id==='marker-search') {CS.ui.markerSearch=target.value;CS.render();}
     else if(id==='sequence-input') CS.ui.sequence=target.value;
+    else if(id.startsWith('tracing-')){ const f=CS.ui.tracingFilters||(CS.ui.tracingFilters={workflow:'',group:'',id:'',start:'',end:'',meta:[{k:'',v:''}]});
+      if(id==='tracing-wf')f.workflow=target.value;
+      else if(id==='tracing-group')f.group=target.value;
+      else if(id==='tracing-id')f.id=target.value;
+      else if(id==='tracing-start')f.start=target.value;
+      else if(id==='tracing-end')f.end=target.value;
+      else if(id.startsWith('tracing-meta-k-'))f.meta[+id.slice(15)].k=target.value;
+      else if(id.startsWith('tracing-meta-v-'))f.meta[+id.slice(15)].v=target.value; }
     else if(id==='model-name') { CS.ui.draftModelName=target.value; CS.fetchModelMetaSoon(); }
     else if(id==='pubmed-query') CS.ui.pubmedQuery=target.value;
     else if(id==='min-genes') CS.ui.minGenes=target.value;
