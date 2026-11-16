@@ -1016,3 +1016,9 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .webview-block .wv-chev { color: var(--muted, #8a93a6); display: inline-flex; transform: rotate(90deg); transition: transform .15s ease; }
 .webview-block .wv-chev.folded { transform: rotate(0deg); }
 .webview-block.wv-folded .present-sub::after { content: ''; }
+
+/* ---- 流程编辑壳(#/flow): science 顶条 + 全幅编辑器 iframe ---- */
+.flow-shell { display: flex; flex-direction: column; height: 100vh; padding: 0; }
+.flow-topbar { display: flex; align-items: center; gap: 16px; height: 44px; padding: 0 16px; border-bottom: 1px solid var(--border, #2a2a35); background: var(--surface, #17171f); flex: none; }
+.flow-title { font-weight: 600; }
+.flow-frame { flex: 1; width: 100%; border: 0; background: var(--background, #101017); }

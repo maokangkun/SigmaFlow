@@ -10,6 +10,7 @@
     const value = location.hash.replace(/^#\/?/, '').split('?')[0];
     const [seg, id] = value.split('/');
     if (seg === 'chat' && id) return { route: 'chat', id };
+    if (seg === 'flow') return { route: 'flow', id: id || null };
     if (seg === 'trace') return { route: 'trace', id: id || null };
     return { route: allowedRoutes.includes(value) ? value : 'home', id: null };
   };
@@ -133,7 +134,7 @@
       }
     }
     const page = CS.views[CS.ui.route] || CS.views.home;
-    const fullscreen = CS.ui.route === 'settings';
+    const fullscreen = CS.ui.route === 'settings' || CS.ui.route === 'flow';
     if (CS.ui.route === 'auth') {
       // 登录/注册是独立的全屏页面, 不带侧栏与主布局
       document.getElementById('app').innerHTML = page();
@@ -3662,6 +3663,8 @@ CS.liveBlocks = {
     'result-tab': id => { CS.ui.resultTab=id; CS.render(); },
     'workflow-category': id => { CS.ui.workflowCategory=id; CS.render(); },
     'select-workflow': id => { CS.ui.workflowId=id; CS.render(); },
+    'edit-workflow': (id, el) => { if (el) el.blur(); CS.ui.flowWorkflowId = id; CS.navigate('flow', id || undefined); },
+    'open-flow-editor': () => { const id = CS.ui.workflowId || ''; CS.ui.flowWorkflowId = id === 'workspace-flow' ? '' : id; CS.navigate('flow', CS.ui.flowWorkflowId || undefined); },
     'toggle-advanced': () => { CS.ui.advanced=!CS.ui.advanced; CS.render(); },
     'start-workflow': () => {
       if (!CS.state.datasets.some(d=>d.id===CS.ui.datasetId)) { CS.toast('请先选择有效的数据记录。','error'); return; }

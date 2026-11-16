@@ -185,3 +185,4 @@ src/sigmaflow/server/science/dist/standalone.html
 .scratch/
 .pw-tmp/
 .local-e2e/
+src/sigmaflow/server/comfyui/dist.vendor-backup/
