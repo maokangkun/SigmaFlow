@@ -770,7 +770,9 @@ class WorkspaceAPI:
 
         @router.websocket("/ws")
         async def websocket_endpoint(ws: WebSocket, clientId: Optional[str] = None):
-            # 多用户模式: WS 握手同样要求 science 会话(与 HTTP 同一信任边界)
+            # 多用户模式: WS 握手同样要求 science 会话(与 HTTP 同一信任边界)。
+            # 注: 不走 router.dependencies — HTTP 守卫的 Request 注解在 WS 上
+            # 会被 FastAPI 当查询参数(422), WS 在端点内自行校验
             from .science_common import _multi_user
 
             if _multi_user():

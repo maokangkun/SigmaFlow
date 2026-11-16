@@ -150,14 +150,17 @@ class PipelineServer:
         from .science_common import _multi_user as _sf_multi
         from .workspace import _CURRENT_SF_USER as _SF_USER_CTX
 
-        async def _workspace_guard(request: Request):
+        async def _workspace_guard(request_or_ws):
+            """router 级依赖对 HTTP 与 WebSocket 路由同时生效: FastAPI 对
+            WS 依赖传 raw scope(dict), 对 HTTP 传 Request — 统一归一化取
+            会话 cookie 并注入 workspace 用户上下文(认证桥, 设计 §6.4)。"""
             from .science_common import _multi_user as _sf_multi_user
 
             if not _sf_multi_user():
                 return
             from .science_auth import _cookie_user
 
-            user = _cookie_user(request) or ""
+            user = _cookie_user(request_or_ws) or ""
             if not user:
                 raise StarletteHTTPException(status_code=401, detail="未登录")
             _SF_USER_CTX.set(user)

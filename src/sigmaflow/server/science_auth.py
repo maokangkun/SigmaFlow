@@ -99,10 +99,29 @@ def _user_from_token(token: str) -> str:
 
 
 def _cookie_user(request: Any) -> str:
+    """从 Request 或 raw ASGI scope 解析会话用户(两者 cookie 形态不同)。"""
     try:
         raw = request.cookies.get(_SESSION_COOKIE)
     except Exception:
         raw = ""
+    if raw:
+        return _user_from_token(raw)
+    # WS scope / raw dict: 从原始头解析
+    scope = getattr(request, "scope", None) or (
+        request if isinstance(request, dict) else None
+    )
+    if scope:
+        from http.cookies import SimpleCookie
+
+        jar = SimpleCookie()
+        for k, v in scope.get("headers") or []:
+            if k == b"cookie":
+                try:
+                    jar.load(v.decode("latin-1"))
+                except Exception:  # noqa: BLE001
+                    pass
+        m = jar.get(_SESSION_COOKIE, None)
+        raw = m.value if m else ""
     return _user_from_token(raw) if raw else ""
 
 
