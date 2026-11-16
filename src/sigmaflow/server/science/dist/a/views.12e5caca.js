@@ -1447,11 +1447,12 @@ V.ctxRing = () => {
       const t0 = times.length ? Math.min(...times) : 0, t1 = times.length ? Math.max(...times) : 1, span = Math.max(t1 - t0, 1);
       const exp = CS.ui.tracingExpanded || {};
       const sel = CS.ui.tracingSel;
-      const barStyle = n => {
+      const barInfo = n => {
         const st = Date.parse(n.s.started_at || '') , en = Date.parse(n.s.ended_at || '');
         const l = Number.isNaN(st) ? 0 : ((st - t0) / span) * 100;
         const w = (Number.isNaN(st) || Number.isNaN(en)) ? 0.8 : Math.max(((en - st) / span) * 100, 0.8);
-        return `left:${l}%;width:${w}%`;
+        // 条形过窄时标签放不下(溢出), 只在 ≥7% 宽度时标注耗时
+        return { style: `left:${l}%;width:${w}%`, label: w >= 7 ? (dur(n) || '') : '' };
       };
       const label = n => { const d = n.s.span_data || {}; if (d.type === 'handoff') return `${d.from_agent || '?'} → ${d.to_agent || '?'}`; return d.name || d.to_agent || d.type || 'span'; };
       const dur = n => { const a = Date.parse(n.s.started_at || ''), b = Date.parse(n.s.ended_at || ''); return (!Number.isNaN(a) && !Number.isNaN(b)) ? fmtDur((b - a) / 1000) : null; };
@@ -1466,11 +1467,14 @@ V.ctxRing = () => {
             <span class="span-type">${e(n.s.span_data?.type || 'span')}</span>
             ${n.s.error ? '<span class="span-badge">错误</span>' : ''}
           </div>
-          <div class="span-timeline"><span class="span-bar" style="${barStyle(n)};background:${traceTypeColor(n.s.span_data?.type)}">${dur(n) || ''}</span></div>
+          <div class="span-timeline"><span class="span-bar" style="${barInfo(n).style};background:${traceTypeColor(n.s.span_data?.type)}">${barInfo(n).label}</span></div>
         </div>${kids}`;
       };
       const selNode = sel ? byId.get(sel) : null;
       const sd = selNode?.s?.span_data || {};
+      // mermaid 流程图数据源与展示用元数据(剔除 mermaid 键, 与旧 admin 页一致)
+      const mermaidSrc = t.metadata && typeof t.metadata.mermaid === 'string' && t.metadata.mermaid.trim() ? t.metadata.mermaid : '';
+      const metaNoM = (() => { const m = { ...(t.metadata || {}) }; delete m.mermaid; return Object.keys(m).length ? m : null; })();
       const selInfo = !selNode ? '' : `<div class="panel trace-detail-panel">
         <div class="row-between"><h3>${e(sd.name || sd.type || 'Span')}</h3>${pill(sd.type || 'span')}</div>
         ${sd.from_agent || sd.to_agent ? `<div class="kv"><span>Agent</span><b>${e(sd.from_agent || '—')} → ${e(sd.to_agent || '—')}</b></div>` : ''}
@@ -1482,6 +1486,7 @@ V.ctxRing = () => {
       </div>`;
       return `<section class="page trace-page">
         ${header('TRACING', e(t.workflowName || '执行追踪'), `Trace ${t.id} · ${fmtWhen(t.createdAt)} · ${spans.length} spans`, `${btn('tracing-wrap', CS.ui.tracingWrap !== false ? '不换行' : '换行', 'code')}${btn('tracing-copy', '复制 ID', 'copy')}${btn('tracing-del', '删除', 'trash', 'danger')}`)}
+        ${mermaidSrc ? `<div class="panel trace-mermaid-panel"><div class="trace-json-h">流程图 · Mermaid</div><div id="trace-mermaid-box" class="trace-mermaid-box" data-src="${e(mermaidSrc)}"></div></div>` : ''}
         <div class="trace-body">
           <div class="panel trace-tree-panel">${spans.length ? roots.map(n => row(n, 0)).join('') : empty('clock', '无 Span', '该 Trace 没有记录任何 span。')}
             <button type="button" class="text-button mt-12" data-action="tracing-back">${i('arrowleft', '', 14)}<span>返回追踪列表</span></button>
@@ -1495,7 +1500,7 @@ V.ctxRing = () => {
               <div class="kv"><span>更新</span><b>${e(fmtWhen(t.updatedAt))}</b></div>
               <div class="kv"><span>Span 数</span><b>${spans.length}</b></div>
               ${t.executionTime ? `<div class="kv"><span>总耗时</span><b>${fmtDur(t.executionTime)}</b></div>` : ''}
-              ${jsonBlock('元数据', t.metadata, CS.ui.tracingWrap !== false)}
+              ${jsonBlock('元数据', metaNoM, CS.ui.tracingWrap !== false)}
             </div>
             ${selInfo}
           </div>
@@ -1532,7 +1537,7 @@ V.ctxRing = () => {
         <div class="row gap-6">${(f.meta || []).length ? '' : `<button type="button" class="text-button" data-action="tracing-meta-add">${i('plus', '', 13)}<span>metadata 条件</span></button>`}<button type="button" class="text-button" data-action="tracing-clear">${i('x', '', 13)}<span>清空</span></button></div>
       </div>
       ${st.error ? `<div class="notice">${i('alert', '', 14)}<span>${e(st.error)}</span></div>` : ''}
-      <div class="panel">${st.loading ? `<p class="muted">加载中…</p>` : rows ? `<table class="tracing-table"><thead><tr><th>Trace</th><th>Workflow</th><th>Flow / Group</th><th>创建时间</th><th class="center">工具</th><th class="center">交接</th><th class="right">耗时</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : empty('clock', '没有 Trace', '尚无执行追踪记录。运行 Workspace 流水线后这里会出现记录。')}
+      <div class="panel">${st.loading ? `<p class="muted">加载中…</p>` : rows ? `<div class="table-scroll"><table class="tracing-table"><thead><tr><th>Trace</th><th>Workflow</th><th>Flow / Group</th><th>创建时间</th><th class="center">工具</th><th class="center">交接</th><th class="right">耗时</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : empty('clock', '没有 Trace', '尚无执行追踪记录。运行 Workspace 流水线后这里会出现记录。')}
         <div class="row-between trace-pager">
           <span class="tiny muted">共 ${pg.total ?? 0} 条 · 第 ${pg.page ?? 1}/${Math.max(pg.totalPages ?? 1, 1)} 页</span>
           <div class="row gap-6">${pg.hasPrev ? btn('tracing-prev', '上一页', 'arrowleft') : ''}${pg.hasNext ? btn('tracing-next', '下一页', 'arrow') : ''}</div>

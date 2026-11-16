@@ -93,6 +93,7 @@
         CS.state.tracingDetail = { data: r.data, loading: false };
       } catch (err) { CS.state.tracingDetail = { loading: false, error: err.message }; }
       CS.render();
+      this.renderMermaid();
     },
     async del(id) {
       if (!confirm('删除该 Trace？此操作不可恢复。')) return;
@@ -100,6 +101,28 @@
       catch (err) { CS.toast(`删除失败: ${err.message}`, 'error'); return; }
       if (CS.ui.tracingId === id) { CS.ui.tracingId = null; if (parseHash().route === 'tracing') location.hash = '#/tracing'; this.load(); }
       else this.load((CS.state.traces?.pagination?.page) || 1);
+    },
+    // mermaid 流程图(移植自旧 admin TraceDetailPage): 数据源 metadata.mermaid,
+    // 懒加载 vendor 库后渲染进详情页容器。mermaid v9 不支持 frontmatter ---
+    // 块(数据由 v11 生成, 头部 config 含 layout: elk), 先剥掉再渲染 —
+    // elk 布局降级为 dagre, 视觉等效。
+    async renderMermaid() {
+      const box = document.getElementById('trace-mermaid-box');
+      const src = box?.dataset.src;
+      if (!box || !src) return;
+      try {
+        if (!await CS.ensureLazy('mermaid.min') || !window.mermaid) throw new Error('mermaid 库加载失败');
+        const body = String(src).replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, '').trim();
+        if (!body) throw new Error('图为空');
+        if (!window.mermaid._sfInit) { window.mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'strict' }); window.mermaid._sfInit = true; }
+        // v9 render 直接返回 svg 字符串; v10+ 返回 { svg } — 两种形态兼容
+        const out = await window.mermaid.render('sfm-' + Math.random().toString(36).slice(2), body);
+        const svg = typeof out === 'string' ? out : out && out.svg;
+        if (!svg) throw new Error('渲染结果为空');
+        box.innerHTML = svg;
+        // 清理 mermaid 渲染时落在 body 上的临时/错误节点(旧页同款清扫)
+        document.querySelectorAll('[id^="dmermaid-"], [id^="mermaid-"]').forEach(el => { if (!box.contains(el) && el.closest('.trace-mermaid-box') !== box) el.remove(); });
+      } catch (err) { box.innerHTML = `<span class="tiny muted">流程图渲染失败: ${e(String(err && err.message || err))}</span>`; }
     }
   };
   // 生成中状态: 标签页 icon 旋转提示。
@@ -180,7 +203,7 @@
     // 形成渲染→加载→渲染死循环(每轮一个超时 toast, 实测满屏报错的根因)
         if (CS.ui._prevRoute !== CS.ui.route) {
       if (CS.ui.route === 'workflows') CS.loadFlows?.();
-      if (CS.ui.route === 'tracing') { CS.ui.tracingId ? CS.tracing?.loadDetail(CS.ui.tracingId) : CS.tracing?.load(); }
+      if (CS.ui.route === 'tracing') { CS.ui.tracingId ? CS.tracing?.loadDetail(CS.ui.tracingId) : CS.tracing?.load(); CS.tracing?.renderMermaid(); }
       if (CS.ui.route === 'flow' && !CS.ui.flowDenied) {
         // 会话预检 + iframe 挂载监督(双层, 详见 docs/workspace-integration-plan.md):
         //  - 预检 401 → 交由 CS.api.request 内建 handleAuthLoss 弹登录浮层
@@ -3783,9 +3806,9 @@ CS.liveBlocks = {
     'tracing-back': () => { CS.ui.tracingId = null; location.hash = '#/tracing'; CS.tracing.load((CS.state.traces?.pagination?.page) || 1); },
     'tracing-copy': () => { const id = CS.ui.tracingId || ''; (navigator.clipboard?.writeText(id) || Promise.reject()).then(() => CS.toast('已复制 Trace ID')).catch(() => {}); },
     'tracing-del': id => CS.tracing.del(id),
-    'tracing-span': id => { CS.ui.tracingSel = id; CS.render(); },
-    'tracing-toggle': id => { CS.ui.tracingExpanded = CS.ui.tracingExpanded || {}; CS.ui.tracingExpanded[id] = CS.ui.tracingExpanded[id] === false ? true : false; CS.render(); },
-    'tracing-wrap': () => { CS.ui.tracingWrap = CS.ui.tracingWrap === false; CS.render(); },
+    'tracing-span': id => { CS.ui.tracingSel = id; CS.render(); CS.tracing.renderMermaid(); },
+    'tracing-toggle': id => { CS.ui.tracingExpanded = CS.ui.tracingExpanded || {}; CS.ui.tracingExpanded[id] = CS.ui.tracingExpanded[id] === false ? true : false; CS.render(); CS.tracing.renderMermaid(); },
+    'tracing-wrap': () => { CS.ui.tracingWrap = CS.ui.tracingWrap === false; CS.render(); CS.tracing.renderMermaid(); },
     'tracing-meta-add': () => { const f = CS.ui.tracingFilters || (CS.ui.tracingFilters = { workflow: '', group: '', id: '', start: '', end: '', meta: [] }); (f.meta = f.meta || []).push({ k: '', v: '' }); CS.render(); },
     'tracing-meta-del': idx => { (CS.ui.tracingFilters?.meta || []).splice(Number(idx) || 0, 1); CS.render(); },
     'edit-workflow': (id, el) => { if (el) el.blur(); CS.ui.flowWorkflowId = id; CS.navigate('flow', id || undefined); },

@@ -1063,3 +1063,11 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .trace-json pre { background: var(--inset); border: 1px solid var(--line-soft); border-radius: 8px; padding: 10px 12px; max-height: 320px; overflow: auto; margin: 0; }
 .trace-json pre.wrap { white-space: pre-wrap; }
 .trace-error { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; padding: 10px 12px; background: var(--red-bg); color: var(--red); border-radius: 8px; font-size: 12px; word-break: break-all; }
+
+/* tracing 补充: 列表横向滚动(窄屏不裁列) / mermaid 流程图 */
+.table-scroll { overflow-x: auto; }
+.tracing-table { min-width: 720px; }
+.tracing-table th, .tracing-table td { padding: 10px 14px; }
+.trace-mermaid-panel { margin-top: 16px; padding: 14px 16px; }
+.trace-mermaid-box { overflow: auto; max-height: 480px; margin-top: 8px; padding: 10px; background: var(--surface); border: 1px solid var(--line-soft); border-radius: 10px; }
+.trace-mermaid-box svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
