@@ -3804,6 +3804,7 @@ CS.liveBlocks = {
     'tracing-next': () => CS.tracing.load(((CS.state.traces?.pagination?.page) || 1) + 1),
     'tracing-open': id => { location.hash = '#/tracing/' + encodeURIComponent(id); CS.tracing.loadDetail(id); },
     'tracing-back': () => { CS.ui.tracingId = null; location.hash = '#/tracing'; CS.tracing.load((CS.state.traces?.pagination?.page) || 1); },
+    'tracing-exit': () => CS.navigate('workflows'),
     'tracing-copy': () => { const id = CS.ui.tracingId || ''; (navigator.clipboard?.writeText(id) || Promise.reject()).then(() => CS.toast('已复制 Trace ID')).catch(() => {}); },
     'tracing-del': id => CS.tracing.del(id),
     'tracing-span': id => { CS.ui.tracingSel = id; CS.render(); CS.tracing.renderMermaid(); },

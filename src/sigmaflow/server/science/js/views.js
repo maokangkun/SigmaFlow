@@ -1485,11 +1485,11 @@ V.ctxRing = () => {
         ${jsonBlock('输入', sd.input, CS.ui.tracingWrap !== false)}${jsonBlock('输出', sd.output, CS.ui.tracingWrap !== false)}${jsonBlock('元数据', sd.metadata, CS.ui.tracingWrap !== false)}
       </div>`;
       return `<section class="page trace-page">
+        <div class="trace-backbar"><button type="button" class="text-button" data-action="tracing-back">${i('arrowleft', '', 14)}<span>返回追踪列表</span></button></div>
         ${header('TRACING', e(t.workflowName || '执行追踪'), `Trace ${t.id} · ${fmtWhen(t.createdAt)} · ${spans.length} spans`, `${btn('tracing-wrap', CS.ui.tracingWrap !== false ? '不换行' : '换行', 'code')}${btn('tracing-copy', '复制 ID', 'copy')}${btn('tracing-del', '删除', 'trash', 'danger')}`)}
         ${mermaidSrc ? `<div class="panel trace-mermaid-panel"><div class="trace-json-h">流程图 · Mermaid</div><div id="trace-mermaid-box" class="trace-mermaid-box" data-src="${e(mermaidSrc)}"></div></div>` : ''}
         <div class="trace-body">
           <div class="panel trace-tree-panel">${spans.length ? roots.map(n => row(n, 0)).join('') : empty('clock', '无 Span', '该 Trace 没有记录任何 span。')}
-            <button type="button" class="text-button mt-12" data-action="tracing-back">${i('arrowleft', '', 14)}<span>返回追踪列表</span></button>
           </div>
           <div class="trace-side">
             <div class="panel trace-detail-panel">
@@ -1524,6 +1524,7 @@ V.ctxRing = () => {
       <td class="right"><button type="button" class="icon-btn" data-action="tracing-del" data-id="${e(t.id)}" aria-label="删除" title="删除">${i('trash', '', 13)}</button></td>
     </tr>`; }).join('');
     return `<section class="page">
+      <div class="trace-backbar"><button type="button" class="text-button" data-action="tracing-exit">${i('arrowleft', '', 14)}<span>返回工作流</span></button></div>
       ${header('TRACING', '执行追踪', 'Workspace 流水线与 Agent 的 Trace 记录', `${btn('tracing-refresh', '刷新', 'refresh')}${btn('tracing-query', '查询', 'search', 'primary')}`)}
       <div class="panel trace-filters">
         <input id="tracing-wf" class="trace-input" placeholder="Workflow 名称" value="${e(f.workflow || '')}">

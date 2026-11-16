@@ -1073,3 +1073,4 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .trace-mermaid-box svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
 .trace-filters { border-radius: 0; }
 .tracing-table { min-width: 560px; }
+.trace-backbar { margin-bottom: 12px; }
