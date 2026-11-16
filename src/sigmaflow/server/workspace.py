@@ -520,6 +520,15 @@ class WorkspaceAPI:
                 if file_path == "comfy.templates.json":
                     return FileResponse(Path(__file__).parent / "templates.json")
 
+                # 主题桥(S4): user.css 未保存过时下发 SigmaFlow 主题模板
+                # (官方加载钩子 api/userdata/user.css; 用户自存文件优先)
+                if file_path == "user.css":
+                    abs_user_css = validate_userdata_path(file_path)
+                    if not os.path.exists(abs_user_css):
+                        bridge = Path(__file__).parent / "comfyui" / "theme-bridge.css"
+                        if bridge.is_file():
+                            return FileResponse(bridge, media_type="text/css")
+
                 abs_path = validate_userdata_path(file_path)
 
                 if not os.path.exists(abs_path):

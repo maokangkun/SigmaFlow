@@ -1,0 +1,37 @@
+/**
+ * SigmaFlow 主题桥(经官方 user.css 钩子下发, 零构建/上游同步免疫)。
+ *
+ * 原则: 编辑器保持专业深色画布, 色相/圆角/字体与 science 设计系统同族 —
+ * 紫灰主色(#7775b6 系)、science 字体栈、10px 圆角。
+ * 改样式改本文件; 用户在编辑器里保存自己的 user.css 后以用户文件优先。
+ * 变量一律 !important: litegraph 集会被前端运行时注入的同名规则压过。
+ */
+html:root,
+html:root.dark-theme,
+html:root.light-theme {
+  /* 画布与 chrome(litegraph 遗留变量集) */
+  --bg-color: #101017 !important;
+  --fg-color: #e8e9f0 !important;
+  --content-bg: #22222c !important;
+  --content-fg: #e8e9f0 !important;
+  --content-hover-bg: #2a2a38 !important;
+  --content-hover-fg: #f3f4f8 !important;
+  --border-color: #33333f !important;
+  --accent-primary: #8f8dc6 !important;
+  --comfy-input-bg: #1d1d27 !important;
+  --comfy-menu-bg: #1c1c26 !important;
+  --comfy-menu-secondary-bg: #23232e !important;
+  /* PrimeVue 运行时生成: 高影响面两枚 + !important 兜底 */
+  --p-primary-color: #8f8dc6 !important;
+  --p-primary-contrast-color: #17171f !important;
+  --p-text-muted-color: #a0a4b8 !important;
+  --p-content-border-radius: 10px !important;
+}
+
+html:root,
+html:root.dark-theme,
+html:root.light-theme,
+html:root body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", "Noto Sans CJK SC", sans-serif !important;
+}
