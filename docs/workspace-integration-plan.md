@@ -1,4 +1,9 @@
-# Science 工作流页 × ComfyUI Workspace 整合方案（v2，供审阅）
+# Science 工作流页 × ComfyUI Workspace 整合方案（v2，已全部落地）
+
+> 实施完成记录：S0-S5 全部落地并上线（2026-11-16）。
+> S0 fork 规范化(sigmaflow/main)/S1 编辑按钮+flow 壳/S2 真实图目录/S3 认证桥
+> (多用户隔离)/S4 主题桥(user.css 官方钩子)/S5 契约测试(12 项)+一键同步脚本
+> (scripts/sync-workspace.sh)。主题经 userdata 官方钩子下发, 升级无需重建。
 
 > v2 修订：发现并核验了 `/data/mkk/github/ComfyUI_frontend` 源码 fork（v1 基于纯
 > 预构建产物评估，已过时）。前置改动（已上线）：工作流页演示口径文案已移除。
