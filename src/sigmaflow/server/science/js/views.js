@@ -1406,7 +1406,11 @@ V.ctxRing = () => {
   V.flow = () => {
     const wid = CS.ui.flowWorkflowId || '';
     const src = '/workspace/' + (wid ? `?embed=1&workflow=${encodeURIComponent(wid)}` : '?embed=1');
-    return `<section class="page flow-shell"><div class="flow-topbar"><button type="button" class="text-button" data-nav="workflows">${i('arrowleft','',14)}<span>返回工作流</span></button><span class="flow-title">${e(wid ? `编辑: ${wid}` : '节点画布')}</span><span class="tiny muted">Workspace 引擎</span></div><iframe class="flow-frame" src="${e(src)}" title="流程编辑器" allow="clipboard-read; clipboard-write"></iframe></section>`;
+    const denied = CS.ui.flowDenied;
+    const body = denied
+      ? `<div class="flow-denied"><div class="panel"><h3>无法打开流程编辑器</h3><p class="muted">${e(denied === 'auth' ? '登录会话已过期或未登录。' : '编辑器加载失败, 请确认 Workspace 服务正常后重试。')}</p><div class="row gap-6 mt-20">${denied === 'auth' ? btn('flow-relogin','去登录','arrow','primary') : btn('flow-retry','重试','refresh','primary')}${btn('flow-back','返回工作流','back','flat')}</div></div></div>`
+      : `<iframe class="flow-frame" src="${e(src)}" title="流程编辑器" allow="clipboard-read; clipboard-write"></iframe>`;
+    return `<section class="page flow-shell"><div class="flow-topbar"><button type="button" class="text-button" data-nav="workflows">${i('arrowleft','',14)}<span>返回工作流</span></button><span class="flow-title">${e(wid ? `编辑: ${wid}` : '节点画布')}</span><span class="tiny muted">Workspace 引擎</span></div>${body}</section>`;
   };
   V.workflows = () => {
     const current = CS.workflow(CS.ui.workflowId);

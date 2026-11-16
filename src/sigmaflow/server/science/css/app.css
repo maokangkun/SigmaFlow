@@ -1022,3 +1022,5 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .flow-topbar { display: flex; align-items: center; gap: 16px; height: 44px; padding: 0 16px; border-bottom: 1px solid var(--border, #2a2a35); background: var(--surface, #17171f); flex: none; }
 .flow-title { font-weight: 600; }
 .flow-frame { flex: 1; width: 100%; border: 0; background: var(--background, #101017); }
+.flow-denied { flex: 1; display: flex; align-items: center; justify-content: center; background: var(--bg); }
+.flow-denied .panel { max-width: 420px; padding: 28px; }

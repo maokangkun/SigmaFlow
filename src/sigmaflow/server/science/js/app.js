@@ -127,6 +127,35 @@
     // 形成渲染→加载→渲染死循环(每轮一个超时 toast, 实测满屏报错的根因)
         if (CS.ui._prevRoute !== CS.ui.route) {
       if (CS.ui.route === 'workflows') CS.loadFlows?.();
+      if (CS.ui.route === 'flow' && !CS.ui.flowDenied) {
+        // 会话预检 + iframe 挂载监督(双层, 详见 docs/workspace-integration-plan.md):
+        //  - 预检 401 → 交由 CS.api.request 内建 handleAuthLoss 弹登录浮层
+        //  - iframe 12s 仍无应用挂载(守卫 401/网络失败/产物损坏)→ 提示面板,
+        //    不再呈现无解释的深底(实测"一片黑"的来源)
+        setTimeout(() => {
+          CS.api.request('/workspace/api/system_stats').then(() => {}).catch(err => {
+            if (CS.ui.route !== 'flow') return;
+            const msg = String(err && err.message || '');
+            if (/登录|401/i.test(msg)) return;  // 登录浮层已接管
+            CS.ui.flowDenied = 'error';
+            CS.render();
+          });
+          const deadline = Date.now() + 12000;
+          const watch = setInterval(() => {
+            if (CS.ui.route !== 'flow') { clearInterval(watch); return; }
+            const f = document.querySelector('.flow-frame');
+            if (!f) { clearInterval(watch); return; }
+            let mounted = false;
+            try { mounted = !!f.contentDocument && f.contentDocument.querySelector('#vue-app') && f.contentDocument.querySelector('#vue-app').childElementCount > 0; } catch (e) { mounted = true; }
+            if (mounted) { clearInterval(watch); return; }
+            if (Date.now() > deadline) {
+              clearInterval(watch);
+              CS.ui.flowDenied = CS.ui.flowDenied || 'load';
+              CS.render();
+            }
+          }, 1000);
+        }, 0);
+      }
       const entering = CS.ui.route === 'settings';
       CS.ui._prevRoute = CS.ui.route;
       if (entering && CS.ui.settingsTab && CS.ui.settingsTab !== 'general') {
@@ -3682,6 +3711,9 @@ CS.liveBlocks = {
     'workflow-category': id => { CS.ui.workflowCategory=id; CS.render(); },
     'select-workflow': id => { CS.ui.workflowId=id; CS.render(); },
     'edit-flow-file': id => { CS.ui.flowWorkflowId = id; CS.navigate('flow', id || undefined); },
+    'flow-relogin': () => { CS.ui.flowDenied = null; CS.navigate('auth'); },
+    'flow-retry': () => { CS.ui.flowDenied = null; CS.render(); },
+    'flow-back': () => { CS.ui.flowDenied = null; CS.navigate('workflows'); },
     'edit-workflow': (id, el) => { if (el) el.blur(); CS.ui.flowWorkflowId = id; CS.navigate('flow', id || undefined); },
     'open-flow-editor': () => { const id = CS.ui.workflowId || ''; CS.ui.flowWorkflowId = id === 'workspace-flow' ? '' : id; CS.navigate('flow', CS.ui.flowWorkflowId || undefined); },
     'toggle-advanced': () => { CS.ui.advanced=!CS.ui.advanced; CS.render(); },
