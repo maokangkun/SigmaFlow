@@ -178,7 +178,7 @@
       syncFavicon();
       return;
     }
-    document.getElementById('app').innerHTML = `<div class="app-shell">${fullscreen ? '' : CS.views.sidebar()}<main id="main" class="main-shell ${fullscreen ? 'main-fullscreen' : ''}" tabindex="-1"><header class="topbar ${fullscreen ? 'topbar-fullscreen' : 'topbar-menu'}"${fullscreen ? ' style="height:auto;align-items:flex-start"' : ''}>${fullscreen ? `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:12px;"><button type="button" class="text-button" data-nav="home">${i('arrowleft','',14)}<span>返回工作空间</span></button></div><div class="topbar-status"></div>` : `<div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div>`}</header><div class="main-cols">${page()}${typeof CS.views.terminalDrawer === 'function' ? CS.views.terminalDrawer() : ''}</div></main></div>`;
+    document.getElementById('app').innerHTML = `<div class="app-shell">${fullscreen ? '' : CS.views.sidebar()}<main id="main" class="main-shell ${fullscreen ? 'main-fullscreen' : ''}" tabindex="-1"><header class="topbar ${fullscreen ? 'topbar-fullscreen' : 'topbar-menu'}"${fullscreen ? ' style="height:auto;align-items:flex-start"' : ''}>${fullscreen ? `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:12px;">${CS.ui.route === 'flow' ? '' : `<button type="button" class="text-button" data-nav="home">${i('arrowleft','',14)}<span>返回工作空间</span></button>`}</div><div class="topbar-status"></div>` : `<div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div>`}</header><div class="main-cols">${page()}${typeof CS.views.terminalDrawer === 'function' ? CS.views.terminalDrawer() : ''}</div></main></div>`;
     const sidebar = document.querySelector('.sidebar-scroll'); if (sidebar) sidebar.scrollTop = sidebarScroll;
     const conversation = document.querySelector('.conversation');
     if (conversation) conversation.scrollTop = CS._convSbDrag && Number.isFinite(CS._convSbTop) ? CS._convSbTop : conversationScroll;
@@ -3720,7 +3720,6 @@ CS.liveBlocks = {
     'flow-retry': () => { CS.ui.flowDenied = null; CS.render(); },
     'flow-back': () => { CS.ui.flowDenied = null; CS.navigate('workflows'); },
     'edit-workflow': (id, el) => { if (el) el.blur(); CS.ui.flowWorkflowId = id; CS.navigate('flow', id || undefined); },
-    'open-flow-editor': () => { const id = CS.ui.workflowId || ''; CS.ui.flowWorkflowId = id === 'workspace-flow' ? '' : id; CS.navigate('flow', CS.ui.flowWorkflowId || undefined); },
     'toggle-advanced': () => { CS.ui.advanced=!CS.ui.advanced; CS.render(); },
     'start-workflow': () => {
       if (!CS.state.datasets.some(d=>d.id===CS.ui.datasetId)) { CS.toast('请先选择有效的数据记录。','error'); return; }

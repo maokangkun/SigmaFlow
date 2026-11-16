@@ -12,11 +12,6 @@ CS.data = {
     { id: 'ds-dna', name: 'synthetic_example.fasta', format: 'FASTA', size: 88, source: 'demo', description: '人工构造短序列，仅用于格式与 GC 统计演示', projectId: 'pr-notes', added: '2026-09-18' }
   ],
   workflows: [
-    { id: 'workspace-flow', title: 'Workspace 流程编辑', sub: '节点画布: LLM/数据/分支自由编排', icon: 'workflow', category: '通用', time: '实时执行', steps: [
-      ['打开节点画布', '进入 ComfyUI 风格的流程编辑器', 'editor.open', '示例图: LLM 节点模板'],
-      ['编排节点', '拖拽连接 LLM/数据/循环/分支节点', 'graph.edit', '节点增删输入输出/运行高亮/耗时徽章'],
-      ['运行与保存', '图即管线, 保存后可反复执行', 'graph.run', '产物经 Workspace 引擎执行']
-    ]},
     { id: 'singlecell', title: '单细胞 RNA-seq 分析', sub: '从数据检查到细胞图谱', icon: 'cells', category: '单细胞', time: '约 15 秒演示', steps: [
       ['数据与元信息检查', '检查演示文件结构、样本字段与输入记录', 'input.inspect', '示例对象：2,680 cells × 13,714 genes'],
       ['质量控制概览', '展示合成数据的质控指标与过滤摘要', 'qc.summary', '演示质控摘要已准备；未处理本地文件'],
