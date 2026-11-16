@@ -71,10 +71,9 @@ web-dist-check:
 			|| npm install --no-audit --no-fund >/dev/null 2>&1; } && \
 		npm run build >/dev/null 2>&1 \
 		|| { echo "FAIL: admin 构建失败"; exit 1; }; \
-	cd ../../.. && \
-	if [ -n "$$(git status --porcelain -- src/sigmaflow/server/website/dist src/sigmaflow/server/admin/dist)" ]; then \
+	if [ -n "$$(git -C $(CURDIR) status --porcelain -- src/sigmaflow/server/website/dist src/sigmaflow/server/admin/dist)" ]; then \
 		echo "website/admin dist 有未提交的重建差异(源码改了没提交 dist, 或 dist 改了源码没跟上):"; \
-		git status --porcelain -- src/sigmaflow/server/website/dist src/sigmaflow/server/admin/dist; exit 1; \
+		git -C $(CURDIR) status --porcelain -- src/sigmaflow/server/website/dist src/sigmaflow/server/admin/dist; exit 1; \
 	fi; echo "PASS: website/admin dist 与源码一致"
 
 # 浏览器端到端(需本机起服务与 chromium; 无服务自动 SKIP 不阻塞):
