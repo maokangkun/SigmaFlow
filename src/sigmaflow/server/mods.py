@@ -931,7 +931,8 @@ def mods_api(subsystem: ModSubsystem = MODS) -> APIRouter:
         return {"events": subsystem.events(limit)}
 
     @router.post("/{mod_id}/enable")
-    async def enable_mod(mod_id: str):
+    async def enable_mod(mod_id: str, request: Request):
+        _check_origin(request)
         u = _user()
         try:
             rec = subsystem.set_enabled(mod_id, True, user=u)
@@ -940,7 +941,8 @@ def mods_api(subsystem: ModSubsystem = MODS) -> APIRouter:
         return {"mod": rec}
 
     @router.post("/{mod_id}/disable")
-    async def disable_mod(mod_id: str):
+    async def disable_mod(mod_id: str, request: Request):
+        _check_origin(request)
         u = _user()
         try:
             rec = subsystem.set_enabled(mod_id, False, user=u)
@@ -949,7 +951,8 @@ def mods_api(subsystem: ModSubsystem = MODS) -> APIRouter:
         return {"mod": rec}
 
     @router.post("/{mod_id}/reload")
-    async def reload_mod(mod_id: str):
+    async def reload_mod(mod_id: str, request: Request):
+        _check_origin(request)
         try:
             rec = subsystem.reload_mod(mod_id)
         except KeyError:
@@ -979,7 +982,8 @@ def mods_api(subsystem: ModSubsystem = MODS) -> APIRouter:
         return {"mod": rec}
 
     @router.delete("/{mod_id}")
-    async def uninstall_mod(mod_id: str):
+    async def uninstall_mod(mod_id: str, request: Request):
+        _check_origin(request)
         try:
             return subsystem.uninstall(mod_id, user=_user())
         except KeyError:
