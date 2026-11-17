@@ -1118,3 +1118,9 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .trace-topbar { gap: 8px; }
 .trace-topbar [data-action="tracing-back"] { width: 26px; margin-right: -6px; }
 .trace-crumb, .trace-crumb b { font-weight: 400; }
+
+/* 追踪详情: 展开分区箭头朝下(原生右箭头旋转90°), 行首去缩进列, ID 完整显示 */
+.trace-sec-head .icon.rotate { transform: rotate(90deg); }
+.span-row { grid-template-columns: 20px 26px minmax(96px, 1fr) 78px minmax(120px, 28%); }
+.trace-id { max-width: none; }
+.trace-detail-panel .kv b.full-id { max-width: 100%; white-space: normal; word-break: break-all; }

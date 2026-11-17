@@ -1469,8 +1469,7 @@ V.ctxRing = () => {
         const has = n.children.length > 0;
         const [ik, ic] = traceIconCls(n.s.span_data?.type);
         return `<div class="span-row ${sel === n.s.id ? 'sel' : ''} ${n.s.error ? 'err' : ''}" data-action="tracing-span" data-id="${e(n.s.id)}">
-          <span class="span-indent" style="width:min(${depth * 16}px, 48px)"></span>
-          <button type="button" class="span-caret ${has ? '' : 'leaf'} ${exp[n.s.id] !== false ? 'open' : ''}" data-action="tracing-toggle" data-id="${e(n.s.id)}" aria-label="展开/折叠">${i('chevron', '', 13)}</button>
+                    <button type="button" class="span-caret ${has ? '' : 'leaf'} ${exp[n.s.id] !== false ? 'open' : ''}" data-action="tracing-toggle" data-id="${e(n.s.id)}" aria-label="展开/折叠">${i('chevron', '', 13)}</button>
           <span class="span-badge-icon ${ic}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TRACE_ICON_PATH[ik]}</svg></span>
           <span class="span-name">${e(label(n))}</span>
           <span class="span-dur">${fmtMs(durMs(n))}</span>
@@ -1502,7 +1501,7 @@ V.ctxRing = () => {
           <button type="button" class="icon-btn" data-action="tracing-back" aria-label="返回追踪列表" title="返回追踪列表">${i('arrowleft', '', 16)}</button>
           <h2 class="trace-crumb">Traces<span class="crumb-sep">/</span><b>${e(t.workflowName || '执行追踪')}</b></h2>
           <button type="button" class="icon-btn" data-action="tracing-copy" aria-label="复制 Trace ID" title="复制 Trace ID">${i('copy', '', 15)}</button>
-          <span class="trace-id mono" title="${e(tid)}">${e(tid.length > 26 ? tid.slice(0, 26) + '…' : tid)}</span>
+          <span class="trace-id mono" title="${e(tid)}">${e(tid)}</span>
           <span class="grow"></span>
           ${btn('tracing-reload', '刷新', 'refresh')}
           <button type="button" class="icon-btn" data-action="tracing-del" aria-label="删除" title="删除">${i('trash', '', 15)}</button>
@@ -1514,7 +1513,7 @@ V.ctxRing = () => {
             <div class="panel trace-detail-panel">
               ${secHead('props', 'Properties')}
               ${sec.props !== false ? `<div class="trace-sec-body">
-                <div class="kv"><span>ID</span><b class="mono" title="${e(tid)}">${e(tid.length > 22 ? tid.slice(0, 22) + '…' : tid)}</b></div>
+                <div class="kv"><span>ID</span><b class="mono full-id" title="${e(tid)}">${e(tid)}</b></div>
                 ${kvRow('Workflow name', t.workflowName || 'N/A')}
                 ${kvRow('Group ID', t.groupId || 'N/A')}
                 ${kvRow('创建时间', fmtWhen(t.createdAt))}
