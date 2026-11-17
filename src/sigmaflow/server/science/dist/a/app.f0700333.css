@@ -1101,3 +1101,8 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .span-row { grid-template-columns: 20px 30px minmax(130px, 1fr) 84px minmax(150px, 30%); }
 /* 缩进只位移徽标+名称(轨道列固定, 不随层级右移溢出面板) */
 .span-badge-icon { margin-left: var(--ind, 0px); }
+/* 窄视窗收缩: 压缩列下限(20+30+96+80+120+40=386), 树面板不足时轨道仍不外溢 */
+.span-row { grid-template-columns: 20px 30px minmax(96px, 1fr) 80px minmax(120px, 28%); }
+.span-dur { font-size: 11px; }
+/* 标题头向左贴近侧栏(抵消页面横向内边距的大部分) */
+.trace-topbar { margin-left: -36px; }
