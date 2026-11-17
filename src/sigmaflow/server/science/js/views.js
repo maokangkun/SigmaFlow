@@ -1418,7 +1418,15 @@ V.ctxRing = () => {
     return `<section class="page flow-shell"><div class="flow-topbar"><button type="button" class="text-button" data-nav="workflows">${i('arrowleft','',14)}<span>返回工作流</span></button><span class="flow-title">${e(wid ? `编辑: ${wid}` : '节点画布')}</span></div>${body}</section>`;
   };
   // ---- 执行追踪(移植自 admin traces 页; API: /admin/api/traces) ----
-  const TRACE_TYPE_COLOR = { agent: '#6c9bd2', llm: '#8f96b8', LLM: '#8f96b8', generation: '#8f96b8', function: '#63b3a4', tool: '#63b3a4', handoff: '#d9a05e', loop: '#7d9fd6', Loop: '#7d9fd6', config: '#97a0b5', Config: '#97a0b5' };
+  const TRACE_TYPE_COLOR = { agent: '#3b82f6', llm: '#3b82f6', LLM: '#3b82f6', generation: '#94a3b8', function: '#22d3ee', tool: '#22d3ee', code: '#22d3ee', Code: '#22d3ee', branch: '#f59e0b', Branch: '#f59e0b', handoff: '#fb923c', loop: '#3b82f6', Loop: '#3b82f6', config: '#64748b', Config: '#64748b' };
+  // 原版 admin 详情页的 span 徽标: 类型 → [图标 path 组, 色调]
+  const TRACE_ICON_PATH = {
+    braces: '<path d="M8 3H7a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2 2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-4a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/>',
+    bot: '<path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+    bubble: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+    split: '<path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.828L3 3"/><path d="m15 9 6-6"/>'
+  };
+  const traceIconCls = t => (t === 'code' || t === 'Code' || t === 'function' || t === 'tool') ? ['braces', 'teal'] : (t === 'branch' || t === 'Branch' || t === 'handoff') ? ['split', 'amber'] : t === 'generation' ? ['bubble', 'slate'] : ['bot', 'blue'];
   const traceTypeColor = t => TRACE_TYPE_COLOR[t] || '#8f8dc6';
   const fmtDur = sec => { const s = Number(sec) || 0; return s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${s >= 10 ? Math.round(s) : s.toFixed(2)}s`; };
   const fmtWhen = iso => { try { return new Date(iso).toLocaleString(); } catch { return iso || '—'; } };
@@ -1447,27 +1455,25 @@ V.ctxRing = () => {
       const t0 = times.length ? Math.min(...times) : 0, t1 = times.length ? Math.max(...times) : 1, span = Math.max(t1 - t0, 1);
       const exp = CS.ui.tracingExpanded || {};
       const sel = CS.ui.tracingSel;
+      const durMs = n => { const a = Date.parse(n.s.started_at || ''), b = Date.parse(n.s.ended_at || ''); return (!Number.isNaN(a) && !Number.isNaN(b)) ? Math.round(b - a) : null; };
+      const fmtMs = ms => ms === null ? '—' : ms.toLocaleString('en-US') + ' ms';
       const barInfo = n => {
         const st = Date.parse(n.s.started_at || '') , en = Date.parse(n.s.ended_at || '');
-        const l = Number.isNaN(st) ? 0 : ((st - t0) / span) * 100;
-        const w = (Number.isNaN(st) || Number.isNaN(en)) ? 0.8 : Math.max(((en - st) / span) * 100, 0.8);
-        // 条形过窄时标签放不下(溢出), 只在 ≥7% 宽度时标注耗时
-        return { style: `left:${l}%;width:${w}%`, label: w >= 7 ? (dur(n) || '') : '' };
+        const l = Number.isNaN(st) ? 0 : Math.min(((st - t0) / span) * 100, 99.4);
+        const w = (Number.isNaN(st) || Number.isNaN(en)) ? 0.6 : Math.min(Math.max(((en - st) / span) * 100, 0.6), 100 - l);
+        return `left:${l}%;width:${w}%`;
       };
       const label = n => { const d = n.s.span_data || {}; if (d.type === 'handoff') return `${d.from_agent || '?'} → ${d.to_agent || '?'}`; return d.name || d.to_agent || d.type || 'span'; };
-      const dur = n => { const a = Date.parse(n.s.started_at || ''), b = Date.parse(n.s.ended_at || ''); return (!Number.isNaN(a) && !Number.isNaN(b)) ? fmtDur((b - a) / 1000) : null; };
       const row = (n, depth) => {
         const kids = n.children.length ? `<div class="span-kids" style="display:${exp[n.s.id] === false ? 'none' : 'block'}">${n.children.map(c => row(c, depth + 1)).join('')}</div>` : '';
         const has = n.children.length > 0;
-        return `<div class="span-row ${sel === n.s.id ? 'sel' : ''} ${n.s.error ? 'err' : ''}" data-action="tracing-span" data-id="${e(n.s.id)}">
-          <div class="span-label" style="padding-left:${depth * 18}px">
-            <button type="button" class="span-caret ${has ? '' : 'leaf'} ${exp[n.s.id] !== false ? 'open' : ''}" data-action="tracing-toggle" data-id="${e(n.s.id)}" aria-label="展开/折叠">${i('chevron', '', 12)}</button>
-            <span class="span-dot" style="background:${traceTypeColor(n.s.span_data?.type)}"></span>
-            <span class="span-name">${e(label(n))}</span>
-            <span class="span-type">${e(n.s.span_data?.type || 'span')}</span>
-            ${n.s.error ? '<span class="span-badge">错误</span>' : ''}
-          </div>
-          <div class="span-timeline"><span class="span-bar" style="${barInfo(n).style};background:${traceTypeColor(n.s.span_data?.type)}">${barInfo(n).label}</span></div>
+        const [ik, ic] = traceIconCls(n.s.span_data?.type);
+        return `<div class="span-row ${sel === n.s.id ? 'sel' : ''} ${n.s.error ? 'err' : ''}" style="--ind:${depth * 16}px" data-action="tracing-span" data-id="${e(n.s.id)}">
+          <button type="button" class="span-caret ${has ? '' : 'leaf'} ${exp[n.s.id] !== false ? 'open' : ''}" data-action="tracing-toggle" data-id="${e(n.s.id)}" aria-label="展开/折叠">${i('chevron', '', 13)}</button>
+          <span class="span-badge-icon ${ic}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TRACE_ICON_PATH[ik]}</svg></span>
+          <span class="span-name">${e(label(n))}</span>
+          <span class="span-dur">${fmtMs(durMs(n))}</span>
+          <div class="span-track"><span class="span-fill" style="${barInfo(n)};background:${traceTypeColor(n.s.span_data?.type)}"></span></div>
         </div>${kids}`;
       };
       const selNode = sel ? byId.get(sel) : null;
@@ -1476,31 +1482,46 @@ V.ctxRing = () => {
       const mermaidSrc = t.metadata && typeof t.metadata.mermaid === 'string' && t.metadata.mermaid.trim() ? t.metadata.mermaid : '';
       const metaNoM = (() => { const m = { ...(t.metadata || {}) }; delete m.mermaid; return Object.keys(m).length ? m : null; })();
       const selInfo = !selNode ? '' : `<div class="panel trace-detail-panel">
-        <div class="row-between"><h3>${e(sd.name || sd.type || 'Span')}</h3>${pill(sd.type || 'span')}</div>
+        <div class="row-between"><h3>${e(sd.name || sd.type || 'Span')}</h3><span class="row gap-6">${pill(sd.type || 'span')}<button type="button" class="text-button" data-action="tracing-wrap">${e(CS.ui.tracingWrap !== false ? '不换行' : '换行')}</button></span></div>
         ${sd.from_agent || sd.to_agent ? `<div class="kv"><span>Agent</span><b>${e(sd.from_agent || '—')} → ${e(sd.to_agent || '—')}</b></div>` : ''}
         <div class="kv"><span>开始</span><b>${e(fmtWhen(selNode.s.started_at))}</b></div>
         <div class="kv"><span>结束</span><b>${e(fmtWhen(selNode.s.ended_at))}</b></div>
-        <div class="kv"><span>耗时</span><b>${dur(selNode) || '—'}</b></div>
+        <div class="kv"><span>耗时</span><b>${fmtMs(durMs(selNode))}</b></div>
         ${selNode.s.error ? `<div class="trace-error">${i('alert', '', 13)}<span>${e(selNode.s.error.message || '执行出错')}</span></div>` : ''}
         ${jsonBlock('输入', sd.input, CS.ui.tracingWrap !== false)}${jsonBlock('输出', sd.output, CS.ui.tracingWrap !== false)}${jsonBlock('元数据', sd.metadata, CS.ui.tracingWrap !== false)}
       </div>`;
+      // 折叠分区(原版 Properties/Metadata 样式)
+      const sec = CS.ui.tracingSec || {};
+      const secHead = (key, title) => `<div class="trace-sec-head" data-action="tracing-sec" data-id="${key}"><h3>${e(title)}</h3>${i('chevron', sec[key] === false ? '' : 'rotate', 15)}</div>`;
+      const kvRow = (k, v, title) => `<div class="kv"><span>${e(k)}</span><b ${title ? `title="${e(title)}"` : ''}>${e(v)}</b></div>`;
+      const metaRows = metaNoM ? Object.entries(metaNoM).map(([k, v]) => { const s = typeof v === 'string' ? v : JSON.stringify(v); return kvRow(k, s.length > 44 ? s.slice(0, 44) + '…' : s, s); }).join('') : '';
+      const tid = String(t.id);
       return `<section class="page trace-page">
-        <div class="trace-backbar"><button type="button" class="text-button" data-action="tracing-back">${i('arrowleft', '', 14)}<span>返回追踪列表</span></button></div>
-        ${header('TRACING', e(t.workflowName || '执行追踪'), `Trace ${t.id} · ${fmtWhen(t.createdAt)} · ${spans.length} spans`, `${btn('tracing-wrap', CS.ui.tracingWrap !== false ? '不换行' : '换行', 'code')}${btn('tracing-copy', '复制 ID', 'copy')}${btn('tracing-del', '删除', 'trash', 'danger')}`)}
-        ${mermaidSrc ? `<div class="panel trace-mermaid-panel"><div class="trace-json-h">流程图 · Mermaid</div><div id="trace-mermaid-box" class="trace-mermaid-box" data-src="${e(mermaidSrc)}"></div></div>` : ''}
+        <div class="trace-topbar">
+          <button type="button" class="icon-btn" data-action="tracing-back" aria-label="返回追踪列表" title="返回追踪列表">${i('arrowleft', '', 16)}</button>
+          <h2 class="trace-crumb">Traces<span class="crumb-sep">/</span><b>${e(t.workflowName || '执行追踪')}</b></h2>
+          <button type="button" class="icon-btn" data-action="tracing-copy" aria-label="复制 Trace ID" title="复制 Trace ID">${i('copy', '', 15)}</button>
+          <span class="trace-id mono" title="${e(tid)}">${e(tid.length > 26 ? tid.slice(0, 26) + '…' : tid)}</span>
+          <span class="grow"></span>
+          ${btn('tracing-reload', '刷新', 'refresh')}
+          <button type="button" class="icon-btn" data-action="tracing-del" aria-label="删除" title="删除">${i('trash', '', 15)}</button>
+        </div>
         <div class="trace-body">
           <div class="panel trace-tree-panel">${spans.length ? roots.map(n => row(n, 0)).join('') : empty('clock', '无 Span', '该 Trace 没有记录任何 span。')}
           </div>
           <div class="trace-side">
             <div class="panel trace-detail-panel">
-              <h3>Trace 信息</h3>
-              <div class="kv"><span>Workflow</span><b>${e(t.workflowName || '—')}</b></div>
-              ${t.groupId ? `<div class="kv"><span>Group</span><b>${e(t.groupId)}</b></div>` : ''}
-              <div class="kv"><span>创建</span><b>${e(fmtWhen(t.createdAt))}</b></div>
-              <div class="kv"><span>更新</span><b>${e(fmtWhen(t.updatedAt))}</b></div>
-              <div class="kv"><span>Span 数</span><b>${spans.length}</b></div>
-              ${t.executionTime ? `<div class="kv"><span>总耗时</span><b>${fmtDur(t.executionTime)}</b></div>` : ''}
-              ${jsonBlock('元数据', metaNoM, CS.ui.tracingWrap !== false)}
+              ${secHead('props', 'Properties')}
+              ${sec.props !== false ? `<div class="trace-sec-body">
+                <div class="kv"><span>ID</span><b class="mono" title="${e(tid)}">${e(tid.length > 22 ? tid.slice(0, 22) + '…' : tid)}</b></div>
+                ${kvRow('Workflow name', t.workflowName || 'N/A')}
+                ${kvRow('Group ID', t.groupId || 'N/A')}
+                ${kvRow('创建时间', fmtWhen(t.createdAt))}
+                ${kvRow('Span 数', String(spans.length))}
+              </div>` : ''}
+              <div class="trace-sec-divider"></div>
+              ${secHead('meta', 'Metadata')}
+              ${sec.meta !== false ? `<div class="trace-sec-body">${metaRows || '<p class="tiny muted">无元数据。</p>'}${mermaidSrc ? `<div id="trace-mermaid-box" class="trace-mermaid-box" data-src="${e(mermaidSrc)}"></div>` : ''}</div>` : ''}
             </div>
             ${selInfo}
           </div>

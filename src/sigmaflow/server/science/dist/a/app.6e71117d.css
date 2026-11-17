@@ -1074,3 +1074,28 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .trace-filters { border-radius: 0; }
 .tracing-table { min-width: 560px; }
 .trace-backbar { margin-bottom: 12px; }
+
+/* tracing 详情: 原版 admin 布局(面包屑顶栏/徽标图标/毫秒时长/深色轨道) */
+.trace-topbar { display: flex; align-items: center; gap: 12px; padding: 4px 0 14px; border-bottom: 1px solid var(--line-soft); margin-bottom: 16px; }
+.trace-crumb { margin: 0; font-size: 21px; font-weight: 700; letter-spacing: -.3px; color: var(--ink-strong); display: flex; align-items: center; gap: 10px; }
+.trace-crumb .crumb-sep { color: var(--faint); font-weight: 400; }
+.trace-id { color: var(--muted); font-size: 12px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trace-sec-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 0 10px; cursor: pointer; }
+.trace-sec-head h3 { font-size: 14px; margin: 0; }
+.trace-sec-head .icon.rotate { transform: rotate(180deg); }
+.trace-sec-body { padding-bottom: 12px; }
+.trace-sec-divider { border-top: 1px solid var(--line-soft); margin: 4px 0 12px; }
+.trace-detail-panel .kv b { max-width: 62%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.trace-detail-panel .kv b.mono { font-size: 11px; }
+.span-row { display: grid; grid-template-columns: var(--ind, 0px) 20px 30px minmax(110px, 1fr) 88px minmax(170px, 32%); gap: 10px; align-items: center; padding: 9px 10px; border-bottom: 1px solid var(--line-soft); }
+.span-row:last-child { border-bottom: 0; }
+.span-badge-icon { height: 30px; width: 30px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.span-badge-icon svg { width: 16px; height: 16px; }
+.span-badge-icon.teal { background: #e2f7f3; color: #0e9384; }
+.span-badge-icon.amber { background: #fdf1d2; color: #b45309; }
+.span-badge-icon.blue { background: #e2ecff; color: #2563eb; }
+.span-badge-icon.slate { background: #edf1f7; color: #5b6779; }
+.span-dur { text-align: right; font-size: 12px; color: var(--ink-strong); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.span-track { position: relative; height: 14px; border-radius: 999px; background: #1f2937; overflow: hidden; }
+.span-fill { position: absolute; top: 0; height: 100%; border-radius: 999px; min-width: 5px; }
+.span-row { grid-template-columns: calc(var(--ind, 0px) + 20px) 30px minmax(130px, 1fr) 84px minmax(150px, 30%); }
