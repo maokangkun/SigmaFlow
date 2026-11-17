@@ -173,7 +173,17 @@ class PipelineServer:
 
         web_root = Path(f"{__file__[: __file__.rindex('/')]}/website/dist/")
         work_root = Path(f"{__file__[: __file__.rindex('/')]}/comfyui/dist")
+        plague_root = Path(f"{__file__[: __file__.rindex('/')]}/plague_web")
         sci_root = Path(f"{__file__[: __file__.rindex('/')]}/science/dist")
+
+        # 虚拟疫情(瘟疫公司网页移植): 静态子应用, science #/plague 经 iframe 嵌入。
+        # 存档在浏览器 localStorage, 无服务端用户数据, 不挂会话守卫(同 science dist)。
+        if plague_root.exists():
+            self.app.mount(
+                "/plague/",
+                StaticFiles(directory=str(plague_root), html=True),
+                name="SigmaFlow Plague",
+            )
 
         # Admin 面板已下线: traces 视图移植进 science(#/tracing, 经工作流页
         # Tracing 按钮进入); /admin/api 路由保留作为追踪后端(上报与查询)。

@@ -233,7 +233,7 @@
 
   V.sidebar = () => {
     const active = CS.ui.route;
-    const nav = [ ['home','message','新对话'], ['literature','book','文献'], ['data','database','数据集'], ['workflows','workflow','工作流'], ['results','chart','分析结果'], ['tools','grid','生物工具'], ['tasks','queue','任务队列'], ['cell','cells','虚拟细胞'], ['patient','patient','虚拟患者'], ['pathogen','virus','虚拟病原体'], ['fly','network','虚拟果蝇'] ];
+    const nav = [ ['home','message','新对话'], ['literature','book','文献'], ['data','database','数据集'], ['workflows','workflow','工作流'], ['results','chart','分析结果'], ['tools','grid','生物工具'], ['tasks','queue','任务队列'], ['cell','cells','虚拟细胞'], ['patient','patient','虚拟患者'], ['pathogen','virus','虚拟病原体'], ['plague','globe','虚拟疫情'], ['fly','network','虚拟果蝇'] ];
     // SFM(P3): UI mod 注册的动态视图并入主导航(排在核心视图之后)
     const modNav = (CS.sfm ? CS.sfm.navItems() : []).map(v => [v.id, v.icon, v.title]);
     const running = CS.state.runs.filter(r => ['running','paused','awaiting','connecting'].includes(r.status)).length;
@@ -1567,6 +1567,15 @@ V.ctxRing = () => {
           <div class="row gap-6">${pg.hasPrev ? btn('tracing-prev', '上一页', 'arrowleft') : ''}${pg.hasNext ? btn('tracing-next', '下一页', 'arrow') : ''}</div>
         </div>
       </div></section>`;
+  };
+  // 虚拟疫情(瘟疫公司网页移植): #plague-root 由 app.js 挂 iframe(/plague/),
+  // 游戏态 DOM 与患者页同款保活(patKeep 机制), 存档在浏览器 localStorage
+  V.plague = () => {
+    const denied = CS.ui.plagueDenied;
+    const body = denied
+      ? `<div class="plague-denied"><div class="panel"><h3>无法打开虚拟疫情</h3><p class="muted">${e(denied === 'load' ? '模拟器加载失败，请确认服务正常后重试。' : '加载失败。')}</p><div class="row gap-6 mt-20">${btn('plague-retry', '重试', 'refresh', 'primary')}${btn('plague-back', '返回', 'back', 'flat')}</div></div></div>`
+      : '';
+    return `<section class="page plague-page"><div id="plague-root">${body}</div></section>`;
   };
   V.workflows = () => {
     const current = CS.workflow(CS.ui.workflowId);

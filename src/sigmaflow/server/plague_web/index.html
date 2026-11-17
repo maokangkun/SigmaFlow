@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>瘟疫公司 · 网页版 (阶段2)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="loading">正在加载游戏数据……</div>
+
+<div id="start-screen" class="overlay">
+  <div class="start-card">
+    <h1>瘟疫公司 <span class="sub">网页移植 · 阶段2</span></h1>
+
+    <label>模式</label>
+    <div id="scen-pick" class="card-row"></div>
+
+    <label id="plague-label">瘟疫类型</label>
+    <div id="plague-pick" class="card-row"></div>
+
+    <label>难度</label>
+    <div id="diff-pick" class="chip-row"></div>
+
+    <label>开局基因 (5 槽 · 数据 genes.json 95 基因)</label>
+    <div id="gene-pick"></div>
+
+    <label>选择起始国家(患者零号)</label>
+    <div class="p0-row">
+      <select id="p0-pick"></select>
+      <span id="p0-label"></span>
+    </div>
+    <p id="scen-note" class="hint"></p>
+    <button id="p0-start" class="primary">释放病原体</button>
+    <button id="p0-load">读取存档</button>
+    <p class="hint">机制: SI 传播动力学 · 航线/海路/陆路跨国传播 · DNA 进化 · 政府反应 · 解药竞赛<br>
+    7 种标准瘟疫差异化 · 基因系统 · 3 难度 · 3 官方场景 · 数据来自 Plague Inc APK 提取表</p>
+  </div>
+</div>
+
+<div id="app">
+  <header id="topbar">
+    <div class="brand">☣ 瘟疫公司</div>
+    <div class="hud-item" id="hud-plague">细菌</div>
+    <div class="hud-item">天数 <b id="hud-day">0</b></div>
+    <div class="hud-item dna">🧬 <b id="hud-dna">0</b> DNA</div>
+    <div class="hud-item">健康 <b id="stat-healthy" class="c-ok">-</b></div>
+    <div class="hud-item">感染 <b id="stat-infected" class="c-inf">-</b></div>
+    <div class="hud-item">死亡 <b id="stat-dead" class="c-dead">-</b></div>
+    <div class="grow"></div>
+    <div class="cure-box"><span>解药研发</span><div class="cure-track"><i id="cure-bar"></i></div><b id="cure-pct">0%</b></div>
+    <div id="speed-ctl"></div>
+    <button id="btn-save" class="ghost">保存</button>
+    <button id="btn-restart" class="ghost">重开</button>
+  </header>
+
+  <main>
+    <section id="map-host">
+      <div id="hover-tip"></div>
+      <div id="map-legend">
+        <span><i style="background:#46554b"></i>健康</span>
+        <span><i style="background:#c62828"></i>感染</span>
+        <span><i style="background:#0c0c0c"></i>死亡</span>
+        <span><i style="background:#ffd166"></i>空路</span>
+        <span><i style="background:#6ec6ff"></i>海路</span>
+        <span><i style="background:#b0b0b0"></i>陆路</span>
+      </div>
+    </section>
+    <aside id="side">
+      <div class="panel" id="traits-panel">
+        <h3>病原体性状</h3>
+        <div class="trait"><span>传染性</span><div class="bar big"><i id="bar-inf"></i></div><b id="val-inf">0</b></div>
+        <div class="trait"><span>严重度</span><div class="bar big"><i id="bar-sev"></i></div><b id="val-sev">0</b></div>
+        <div class="trait"><span>致命性</span><div class="bar big"><i id="bar-let"></i></div><b id="val-let">0</b></div>
+        <div id="special-actions"></div>
+      </div>
+      <div class="panel" id="news-panel">
+        <h3>世界新闻</h3>
+        <div id="news-list"></div>
+      </div>
+    </aside>
+  </main>
+
+  <section id="bottom">
+    <div class="panel" id="tree-panel">
+      <div class="tree-head">
+        <h3>进化 (点击购买 · Shift+点击退化)</h3>
+        <span class="hint">DNA 由感染增长与时间累积获得</span>
+      </div>
+      <div id="tree-host"></div>
+    </div>
+    <div id="country-panel" class="panel"></div>
+  </section>
+</div>
+
+<div id="end-screen" class="overlay">
+  <div class="end-card">
+    <div id="end-title"></div>
+    <div id="end-sub"></div>
+    <button onclick="location.reload()">再来一局</button>
+  </div>
+</div>
+
+<div id="flash"></div>
+
+<script src="js/engine/rng.js"></script>
+<script src="js/engine/model.js"></script>
+<script src="js/engine/genes.js"></script>
+<script src="js/engine/engine.js"></script>
+<script src="js/engine/loader.js"></script>
+<script src="js/ui/l10n.js"></script>
+<script src="js/ui/map.js"></script>
+<script src="js/ui/tree.js"></script>
+<script src="js/ui/sfx.js"></script>
+<script src="js/ui/main.js"></script>
+</body>
+</html>

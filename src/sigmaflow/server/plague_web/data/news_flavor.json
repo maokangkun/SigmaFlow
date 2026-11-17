@@ -1,0 +1,177 @@
+[
+ {
+  "event": "bird_migration",
+  "en": "Very high levels of bird migration expected",
+  "zh": "预计会出现大规模候鸟迁徙"
+ },
+ {
+  "event": "olympics_story_1",
+  "en": "Olympics committee rejects new logo design from Nephelus",
+  "zh": "奥运委员会拒绝 Nephelus 设计的新标志"
+ },
+ {
+  "event": "trade_shutdown",
+  "en": "Global trade slowing",
+  "zh": "全球贸易成长减缓"
+ },
+ {
+  "event": "contaminated_blood",
+  "en": "Contaminated blood in %s",
+  "zh": "受感染的血液传播到%s"
+ },
+ {
+  "event": "cure25",
+  "en": "Cure 25%% complete",
+  "zh": "解药已经完成了25%%！"
+ },
+ {
+  "event": "cure50",
+  "en": "Cure 50%% complete",
+  "zh": "解药已经完成了50%%！"
+ },
+ {
+  "event": "cure75",
+  "en": "Cure 75%% complete",
+  "zh": "解药已经完成了75%%！"
+ },
+ {
+  "event": "good_spot_s",
+  "en": "New minor disease spotted in %s",
+  "zh": "在%s发现某新轻微疾病"
+ },
+ {
+  "event": "bad_spot_m",
+  "en": "New worrying disease spotted in %s",
+  "zh": "%s发现令人担忧的新疾病"
+ },
+ {
+  "event": "paranoia_1",
+  "en": "Paranoia in %s",
+  "zh": "%s深陷偏执的心态"
+ },
+ {
+  "event": "mutation",
+  "en": "%s has mutated and developed the %s symptom without using DNA points",
+  "zh": "%s在未使用DNA点数下变异出%s的病症！"
+ },
+ {
+  "event": "olympics_story_2",
+  "en": "%s Olympics mystery",
+  "zh": "%s奥运会之谜"
+ },
+ {
+  "event": "olympics_story_3a",
+  "en": "%s Olympics a success!",
+  "zh": "%s大获成功！"
+ },
+ {
+  "event": "olympics_story_3b",
+  "en": "%s Olympics a success!",
+  "zh": "%s大获成功！"
+ },
+ {
+  "event": "president_story_1",
+  "en": "US President arrested",
+  "zh": "美国总统被逮捕"
+ },
+ {
+  "event": "president_story_2a",
+  "en": "USA President taken ill",
+  "zh": "美国总统患病"
+ },
+ {
+  "event": "icure_story_1",
+  "en": "iCure coming soon",
+  "zh": "iCure 即将发售"
+ },
+ {
+  "event": "icure_story_2",
+  "en": "iCure a failure!",
+  "zh": "iCure失败了！"
+ },
+ {
+  "event": "icure_story_3a",
+  "en": "iCure a success!",
+  "zh": "iCure成功了！"
+ },
+ {
+  "event": "space_story_1",
+  "en": "Plague in Space",
+  "zh": "瘟疫散布到外太空去了！"
+ },
+ {
+  "event": "news_first_death",
+  "en": "First death in %s",
+  "zh": "%s发生第一宗死亡案例"
+ },
+ {
+  "event": "news_world_cup",
+  "en": "World Cup cancelled",
+  "zh": "世界杯被取消了！"
+ },
+ {
+  "event": "kissing_day",
+  "en": "%s celebrates the Festival of Love. Fans praise the replacement for International Kissing Day. Critics question hygiene standards",
+  "zh": "%s迎来爱之节。粉丝们庆祝其成功代替了国际亲吻日。评论家质疑其卫生标准。"
+ },
+ {
+  "event": "economic_crisis",
+  "en": "Economic crisis in %s",
+  "zh": "%s发生金融危机"
+ },
+ {
+  "event": "news_first_research",
+  "en": "%s is first to instruct doctors to begin research into a cure for %s. Without greater funding, it is expected to take a long time",
+  "zh": "%s成为首个指示医生开始研究%s解药的国家。若没有更多的资金投入这项研究，它将比预期来得慢 。"
+ },
+ {
+  "event": "start_news_headlines_1",
+  "en": "As one emergency issue dominates the headlines, a teenage girl reminds the world that Global Warming is still an issue. Politicians make non-committal noises",
+  "zh": "在特定突发事件占据各路媒体头条之际，一位少女提醒称全球暖化仍是现实威胁。政客对此不置可否。"
+ },
+ {
+  "event": "charity_notice",
+  "en": "The UN announced a new aid initiative for poor countries - making them less vulnerable to disease",
+  "zh": "联合国宣布将给予低收入国家新一轮的医疗救助，以恢复其健康和维持其基本生存能力。"
+ },
+ {
+  "event": "rms_watchlist",
+  "en": "World health experts announced that a global Pandemic only has a 2.5%% chance of wiping out humanity",
+  "zh": "世界卫生组织专家宣称，全球流行性传染病仅有2.5%%的机率歼灭人类。"
+ },
+ {
+  "event": "info_compare_tb",
+  "en": "More infectious than TB",
+  "zh": "传染能力超越肺结核"
+ },
+ {
+  "event": "info_compare_hiv",
+  "en": "More infectious than HIV",
+  "zh": "传染能力超越艾滋病"
+ },
+ {
+  "event": "info_compare_cold",
+  "en": "More infectious than the Common Cold",
+  "zh": "传染能力超越感冒"
+ },
+ {
+  "event": "random_bomb_infected",
+  "en": "%s bombs infected cities",
+  "zh": "%s炸毁了受感染的城市"
+ },
+ {
+  "event": "community_story_1",
+  "en": "Community Care",
+  "zh": "社区护理"
+ },
+ {
+  "event": "worm_research1",
+  "en": "Scientists increase understanding of %s",
+  "zh": "科学家对%s的认识也逐渐加深"
+ },
+ {
+  "event": "paranoia_1",
+  "en": "Riots in %s over 'Mystery Plague'",
+  "zh": "%s发生由“神秘的瘟疫”引起的暴动"
+ }
+]

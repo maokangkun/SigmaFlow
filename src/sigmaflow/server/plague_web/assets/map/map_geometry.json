@@ -1,0 +1,347 @@
+{
+ "svg_canvas": [
+  960,
+  632
+ ],
+ "svg_layer_translate_y": -420.36218,
+ "country_center_space": "svg_canvas (validated: 56/58 strictly inside own polygon; norway/south_africa within 5px of coast)",
+ "country_fill_map": {
+  "file": "country_fill_indexed.png",
+  "scale": 2,
+  "palette_index_0": "none/ocean",
+  "country_to_index": {
+   "usa": 1,
+   "canada": 2,
+   "greenland": 3,
+   "mexico": 4,
+   "brazil": 5,
+   "argentina": 6,
+   "caribbean": 7,
+   "central_america_upper": 8,
+   "south_america_upper": 9,
+   "bolivia": 10,
+   "peru": 11,
+   "iceland": 12,
+   "spain": 13,
+   "united_kingdom": 14,
+   "france": 15,
+   "germany": 16,
+   "italy": 17,
+   "poland": 18,
+   "ukraine": 19,
+   "norway": 20,
+   "sweden": 21,
+   "finland": 22,
+   "russia": 23,
+   "turkey": 24,
+   "balcan_states": 25,
+   "baltic_states": 26,
+   "madagascar": 27,
+   "egypt": 28,
+   "east_africa": 29,
+   "western_africa": 30,
+   "central_africa": 31,
+   "morroco": 32,
+   "libya": 33,
+   "sudan": 34,
+   "south_africa": 35,
+   "indonesia": 36,
+   "new_zealand": 37,
+   "philipines": 38,
+   "south_east_asia": 39,
+   "australia": 40,
+   "china": 41,
+   "india": 42,
+   "japan": 43,
+   "koreas": 44,
+   "central_asia": 45,
+   "middle_east": 46,
+   "pakistan": 47,
+   "afghanistan": 48,
+   "iran": 49,
+   "papua": 50,
+   "central_european_states": 51,
+   "soudi_arabia": 52,
+   "kazakhstan": 53,
+   "iraq": 54,
+   "botswana": 55,
+   "zimbabwe": 56,
+   "angola": 57,
+   "algeria": 58
+  }
+ },
+ "country_svg_paths": {
+  "usa": [
+   "usa"
+  ],
+  "canada": [
+   "canada",
+   "canada2"
+  ],
+  "greenland": [
+   "greenland"
+  ],
+  "mexico": [
+   "mexico"
+  ],
+  "brazil": [
+   "brazil"
+  ],
+  "argentina": [
+   "argentina"
+  ],
+  "caribbean": [
+   "caribbean1",
+   "caribbean2"
+  ],
+  "central_america_upper": [
+   "central_america_upper"
+  ],
+  "south_america_upper": [
+   "south_america_upper"
+  ],
+  "bolivia": [
+   "bolivia"
+  ],
+  "peru": [
+   "peru"
+  ],
+  "iceland": [
+   "iceland"
+  ],
+  "spain": [
+   "spain"
+  ],
+  "united_kingdom": [
+   "united_kingdom1",
+   "united_kingdom2"
+  ],
+  "france": [
+   "france2",
+   "france1"
+  ],
+  "germany": [
+   "germany"
+  ],
+  "italy": [
+   "italy1",
+   "italy2",
+   "italy3"
+  ],
+  "poland": [
+   "poland"
+  ],
+  "ukraine": [
+   "ukraine"
+  ],
+  "norway": [
+   "norway"
+  ],
+  "sweden": [
+   "sweden"
+  ],
+  "finland": [
+   "finland"
+  ],
+  "russia": [
+   "russia"
+  ],
+  "turkey": [
+   "turkey1",
+   "turkey2"
+  ],
+  "balcan_states": [
+   "balcan_states"
+  ],
+  "baltic_states": [
+   "baltic_states"
+  ],
+  "madagascar": [
+   "madagascar"
+  ],
+  "egypt": [
+   "egypt"
+  ],
+  "east_africa": [
+   "east_africa"
+  ],
+  "western_africa": [
+   "western_africa"
+  ],
+  "central_africa": [
+   "central_africa"
+  ],
+  "morroco": [
+   "morroco"
+  ],
+  "libya": [
+   "libya"
+  ],
+  "sudan": [
+   "sudan"
+  ],
+  "south_africa": [
+   "south_africa"
+  ],
+  "indonesia": [
+   "indonesia4",
+   "indonesia6",
+   "indonesia7",
+   "indonesia1",
+   "indonesia2"
+  ],
+  "new_zealand": [
+   "new_zealand1",
+   "new_zealand2"
+  ],
+  "philipines": [
+   "philipines"
+  ],
+  "south_east_asia": [
+   "south_east_asia"
+  ],
+  "australia": [
+   "australia1",
+   "australia2"
+  ],
+  "china": [
+   "china"
+  ],
+  "india": [
+   "india1",
+   "india2"
+  ],
+  "japan": [
+   "japan1",
+   "japan2"
+  ],
+  "koreas": [
+   "koreas"
+  ],
+  "central_asia": [
+   "central_asia"
+  ],
+  "middle_east": [
+   "middle_east"
+  ],
+  "pakistan": [
+   "pakistan"
+  ],
+  "afghanistan": [
+   "afghanistan"
+  ],
+  "iran": [
+   "iran"
+  ],
+  "papua": [
+   "papua"
+  ],
+  "central_european_states": [
+   "central_european_states"
+  ],
+  "soudi_arabia": [
+   "soudi_arabia"
+  ],
+  "kazakhstan": [
+   "kazakhstan"
+  ],
+  "iraq": [
+   "iraq"
+  ],
+  "botswana": [
+   "botswana"
+  ],
+  "zimbabwe": [
+   "zimbabwe"
+  ],
+  "angola": [
+   "angola"
+  ],
+  "algeria": [
+   "algeria"
+  ]
+ },
+ "backdrop_png": {
+  "file": "realmap_web.png",
+  "orig": [
+   4096,
+   4096
+  ],
+  "crop_y": [
+   0,
+   4095
+  ],
+  "web_size": [
+   2048,
+   2048
+  ],
+  "png8_colors": 255,
+  "note": "relief backdrop incl. Antarctica band; NOT country-encoded (palette is terrain shading)",
+  "svg_to_png_affine_approx": {
+   "scale": 4.34,
+   "xoff": -26.0,
+   "yoff": 431.0,
+   "blue_agreement": 0.8166598677635193
+  }
+ },
+ "country_centers_svg_xy": {
+  "usa": "211.182,277.740",
+  "canada": "150.396,180.519",
+  "greenland": "369.525,152.547",
+  "mexico": "175.231,328.334",
+  "brazil": "301.943,426.946",
+  "argentina": "276.864,513.642",
+  "caribbean": "263.886,343.757",
+  "central_america_upper": "226.219,364.113",
+  "south_america_upper": "268.295,385.647",
+  "bolivia": "280.154,443.305",
+  "peru": "253.940,417.284",
+  "iceland": "427.252,189.313",
+  "spain": "433.782,309.096",
+  "united_kingdom": "435.366,251.053",
+  "france": "450.171,281.931",
+  "germany": "469.037,260.921",
+  "italy": "479.142,298.527",
+  "poland": "495.300,262.597",
+  "ukraine": "531.775,277.194",
+  "norway": "492.972,179.278",
+  "sweden": "490.305,206.160",
+  "finland": "514.323,187.663",
+  "russia": "709.670,207.709",
+  "turkey": "537.988,315.586",
+  "balcan_states": "503.901,303.940",
+  "baltic_states": "517.496,246.475",
+  "madagascar": "573.156,479.808",
+  "egypt": "530.554,351.625",
+  "east_africa": "540.757,443.899",
+  "western_africa": "441.838,392.551",
+  "central_africa": "501.000,424.592",
+  "morroco": "421.539,345.657",
+  "libya": "492.154,347.891",
+  "sudan": "527.650,396.708",
+  "south_africa": "502.724,506.433",
+  "indonesia": "776.797,436.166",
+  "new_zealand": "863.598,506.276",
+  "philipines": "780.724,395.658",
+  "south_east_asia": "718.900,383.953",
+  "australia": "773.780,513.963",
+  "china": "731.226,318.612",
+  "india": "664.083,358.286",
+  "japan": "819.441,323.030",
+  "koreas": "792.796,315.303",
+  "central_asia": "625.427,310.958",
+  "middle_east": "548.618,329.735",
+  "pakistan": "635.766,342.894",
+  "afghanistan": "628.439,328.936",
+  "iran": "588.703,331.953",
+  "papua": "830.796,447.077",
+  "central_european_states": "493.377,282.776",
+  "soudi_arabia": "573.961,363.173",
+  "kazakhstan": "621.370,272.862",
+  "iraq": "566.532,333.307",
+  "botswana": "509.565,494.717",
+  "zimbabwe": "526.390,482.996",
+  "angola": "491.850,463.763",
+  "algeria": "454.919,339.839"
+ }
+}

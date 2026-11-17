@@ -572,6 +572,12 @@
   // 全量重渲染会重建 .conversation 容器导致滚动位置丢失(如展开思考/工具块时页面跳走)。
   // 渲染前记录 scrollTop, 渲染后恢复; 显式的 scrollToLatest() 在渲染返回后仍会覆盖为新位置。
   CS.render = function() {
+    // 虚拟疫情局内短路: iframe 对 DOM 重挂载敏感(移回即整页重载, 游戏态
+    // 丢失 — 患者页的搬回保活对 canvas 有效、对 iframe 无效)。页面内容
+    // 自包含不依赖应用状态, 局中渲染一律跳过; 离开/进入路由走正常渲染。
+    if (CS.ui.route === 'plague' && document.getElementById('plague-root')?.querySelector('iframe')) {
+      return;
+    }
     // 界面缩放: 每次渲染幂等同步 body zoom, 启动加载设置后无需额外初始化
     const _zs = Number(CS.state.settings.uiScale);
     document.body.style.zoom = (Number.isFinite(_zs) && _zs >= 85 && _zs <= 125 && _zs !== 100) ? String(_zs / 100) : '';
@@ -582,6 +588,7 @@
     // 与其每次渲染重建再逐个回填, 不如把整个 #patient-root 节点原样搬回新壳
     const patKeep = CS.ui.route === 'patient' ? document.getElementById('patient-root') : null;
     const p2Keep = CS.ui.route === 'pathogen' ? document.getElementById('pathogen-root') : null;
+    const plKeep = CS.ui.route === 'plague' ? document.getElementById('plague-root') : null;
     const flyKeep = CS.ui.route === 'fly' ? document.getElementById('fly-root') : null;
     // webview iframe 保活: 流式期间整页重建会重新 src 加载(验证页进度丢失),
     // 渲染前收集已加载的 frame, 渲染后原样搬回新位置
@@ -608,6 +615,13 @@
           if (CS.ui.route === 'pathogen' && window.mountPathogenPage) window.mountPathogenPage();
         });
       }
+    }
+    // 虚拟疫情页: 保活 #plague-root(iframe 游戏态 — 局中重渲染不重载模拟器;
+    // 离开页面后重进会重载 iframe, 游戏自身 localStorage 存档续局), 首次进入挂载
+    if (CS.ui.route === 'plague') {
+      const fresh = document.getElementById('plague-root');
+      if (plKeep && fresh && fresh !== plKeep) fresh.replaceWith(plKeep);
+      else if (!plKeep && !CS.ui.plagueDenied) CS.mountPlaguePage();
     }
     // 虚拟果蝇页: 保活 #fly-root(3D canvas), fly.js 懒加载后挂载
     if (CS.ui.route === 'fly') {
@@ -975,7 +989,7 @@
 
   window.addEventListener('hashchange', () => {
     CS.ui.route = applyRoute(); CS.ui.mobileSidebar = false; CS.closeModal(); if (CS.ui.route === 'workflows') CS.loadFlows?.(); CS.render(); window.scrollTo(0, 0);
-    document.title = 'SigmaFlow Science · ' + ({ home: '科研工作空间', chat: 'Agent 对话', trace: '会话 Trace', tracing: '执行追踪', data: '数据集', projects: '项目', workflows: '工作流', results: '分析结果', literature: '文献', tools: '生物工具', tasks: '任务队列', settings: '设置', help: '帮助', patient: '虚拟患者', flow: '流程编辑' }[CS.ui.route] || '工作空间');
+    document.title = 'SigmaFlow Science · ' + ({ home: '科研工作空间', chat: 'Agent 对话', trace: '会话 Trace', tracing: '执行追踪', data: '数据集', projects: '项目', workflows: '工作流', results: '分析结果', literature: '文献', tools: '生物工具', tasks: '任务队列', settings: '设置', help: '帮助', patient: '虚拟患者', plague: '虚拟疫情', flow: '流程编辑' }[CS.ui.route] || '工作空间');
   });
 
   // WS 断线自动重连成功后: 拉取受影响会话的最新存档(静默换新),
@@ -1211,6 +1225,35 @@
     CS.navigate('chat', run.id);
     sendChatMessage(run, prompt, run.datasetIds);
   };
+  // ===== 虚拟疫情(瘟疫公司网页移植)页面生命周期 =====
+  // iframe 嵌入 /plague/ 静态子应用(引擎/数据/地图全套自带); 布局与保活
+  // 参照患者页(patKeep): 局中任何重渲染都不重载模拟器。存档在子应用
+  // localStorage(plague_web_save), 离开重进后由游戏「继续」按钮续局。
+  CS.mountPlaguePage = () => {
+    const root = document.getElementById('plague-root');
+    if (!root || root.querySelector('iframe')) return;  // 幂等
+    const m = location.pathname.match(/^(.*)\/science\//);
+    const f = document.createElement('iframe');
+    f.className = 'plague-frame';
+    f.title = '虚拟疫情模拟器';
+    f.allow = 'autoplay';
+    root.innerHTML = '';
+    root.appendChild(f);
+    f.src = (m ? m[1] : '') + '/plague/';
+    // 挂载监督: 12s 内未见游戏根节点(网络失败/产物损坏) → 提示面板不黑屏
+    const deadline = Date.now() + 12000;
+    const watch = setInterval(() => {
+      if (CS.ui.route !== 'plague') { clearInterval(watch); return; }
+      let mounted = false;
+      try {
+        const d = f.contentDocument;
+        mounted = !!(d && (d.getElementById('start-screen') || d.getElementById('hud-day')));
+      } catch (e) { mounted = false; }
+      if (mounted) { clearInterval(watch); return; }
+      if (Date.now() > deadline) { clearInterval(watch); CS.ui.plagueDenied = 'load'; CS.render(); }
+    }, 1000);
+  };
+
   // ===== 虚拟患者(生理模拟引擎)页面生命周期 =====
   // 引擎本体在 js/patient.js(移植层 window.PatientSim/PatientViewer); 这里只做
   // 壳层编排: mount = 引擎 init + 3D 挂载, unmount = 停定时器 + 释放 WebGL。
@@ -3828,6 +3871,8 @@ CS.liveBlocks = {
     'tracing-wrap': () => { CS.ui.tracingWrap = CS.ui.tracingWrap === false; CS.render(); CS.tracing.renderMermaid(); },
     'tracing-meta-add': () => { const f = CS.ui.tracingFilters || (CS.ui.tracingFilters = { workflow: '', group: '', id: '', start: '', end: '', meta: [] }); (f.meta = f.meta || []).push({ k: '', v: '' }); CS.render(); },
     'tracing-meta-del': idx => { (CS.ui.tracingFilters?.meta || []).splice(Number(idx) || 0, 1); CS.render(); },
+    'plague-retry': () => { CS.ui.plagueDenied = null; CS.render(); },
+    'plague-back': () => { CS.ui.plagueDenied = null; CS.navigate('home'); },
     'edit-workflow': (id, el) => { if (el) el.blur(); CS.ui.flowWorkflowId = id; CS.navigate('flow', id || undefined); },
     'toggle-advanced': () => { CS.ui.advanced=!CS.ui.advanced; CS.render(); },
     'start-workflow': () => {

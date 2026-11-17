@@ -1,0 +1,272 @@
+{
+ "_source": "derived from country_fill_indexed.png (phase-0 authoritative country raster): two countries adjacent when their index regions touch (4-neighbour scan)",
+ "_pairs": 85,
+ "adjacency": {
+  "afghanistan": [
+   "central_asia",
+   "china",
+   "iran",
+   "pakistan"
+  ],
+  "algeria": [
+   "libya",
+   "morroco",
+   "western_africa"
+  ],
+  "angola": [
+   "central_africa",
+   "east_africa",
+   "south_africa"
+  ],
+  "argentina": [
+   "bolivia",
+   "brazil",
+   "peru"
+  ],
+  "balcan_states": [
+   "central_european_states",
+   "turkey"
+  ],
+  "baltic_states": [
+   "poland",
+   "russia",
+   "ukraine"
+  ],
+  "bolivia": [
+   "argentina",
+   "brazil",
+   "peru"
+  ],
+  "botswana": [
+   "east_africa",
+   "south_africa",
+   "zimbabwe"
+  ],
+  "brazil": [
+   "argentina",
+   "bolivia",
+   "peru",
+   "south_america_upper"
+  ],
+  "canada": [
+   "usa"
+  ],
+  "central_africa": [
+   "angola",
+   "east_africa",
+   "libya",
+   "sudan",
+   "western_africa"
+  ],
+  "central_america_upper": [
+   "mexico",
+   "south_america_upper"
+  ],
+  "central_asia": [
+   "afghanistan",
+   "china",
+   "iran",
+   "kazakhstan"
+  ],
+  "central_european_states": [
+   "balcan_states",
+   "france",
+   "germany",
+   "italy",
+   "poland",
+   "ukraine"
+  ],
+  "china": [
+   "afghanistan",
+   "central_asia",
+   "india",
+   "kazakhstan",
+   "koreas",
+   "pakistan",
+   "russia",
+   "south_east_asia"
+  ],
+  "east_africa": [
+   "angola",
+   "botswana",
+   "central_africa",
+   "south_africa",
+   "sudan",
+   "zimbabwe"
+  ],
+  "egypt": [
+   "libya",
+   "middle_east",
+   "soudi_arabia",
+   "sudan"
+  ],
+  "finland": [
+   "norway",
+   "russia",
+   "sweden"
+  ],
+  "france": [
+   "central_european_states",
+   "germany",
+   "italy",
+   "spain"
+  ],
+  "germany": [
+   "central_european_states",
+   "france",
+   "poland"
+  ],
+  "india": [
+   "china",
+   "pakistan",
+   "south_east_asia"
+  ],
+  "indonesia": [
+   "south_east_asia"
+  ],
+  "iran": [
+   "afghanistan",
+   "central_asia",
+   "iraq",
+   "pakistan",
+   "russia",
+   "turkey"
+  ],
+  "iraq": [
+   "iran",
+   "middle_east",
+   "soudi_arabia",
+   "turkey"
+  ],
+  "italy": [
+   "central_european_states",
+   "france"
+  ],
+  "kazakhstan": [
+   "central_asia",
+   "china",
+   "russia"
+  ],
+  "koreas": [
+   "china",
+   "russia"
+  ],
+  "libya": [
+   "algeria",
+   "central_africa",
+   "egypt",
+   "sudan",
+   "western_africa"
+  ],
+  "mexico": [
+   "central_america_upper",
+   "usa"
+  ],
+  "middle_east": [
+   "egypt",
+   "iraq",
+   "soudi_arabia",
+   "turkey"
+  ],
+  "morroco": [
+   "algeria",
+   "western_africa"
+  ],
+  "norway": [
+   "finland",
+   "russia",
+   "sweden"
+  ],
+  "pakistan": [
+   "afghanistan",
+   "china",
+   "india",
+   "iran"
+  ],
+  "peru": [
+   "argentina",
+   "bolivia",
+   "brazil",
+   "south_america_upper"
+  ],
+  "poland": [
+   "baltic_states",
+   "central_european_states",
+   "germany",
+   "ukraine"
+  ],
+  "russia": [
+   "baltic_states",
+   "china",
+   "finland",
+   "iran",
+   "kazakhstan",
+   "koreas",
+   "norway",
+   "turkey",
+   "ukraine"
+  ],
+  "soudi_arabia": [
+   "egypt",
+   "iraq",
+   "middle_east"
+  ],
+  "south_africa": [
+   "angola",
+   "botswana",
+   "east_africa",
+   "zimbabwe"
+  ],
+  "south_america_upper": [
+   "brazil",
+   "central_america_upper",
+   "peru"
+  ],
+  "south_east_asia": [
+   "china",
+   "india",
+   "indonesia"
+  ],
+  "spain": [
+   "france"
+  ],
+  "sudan": [
+   "central_africa",
+   "east_africa",
+   "egypt",
+   "libya"
+  ],
+  "sweden": [
+   "finland",
+   "norway"
+  ],
+  "turkey": [
+   "balcan_states",
+   "iran",
+   "iraq",
+   "middle_east",
+   "russia"
+  ],
+  "ukraine": [
+   "baltic_states",
+   "central_european_states",
+   "poland",
+   "russia"
+  ],
+  "usa": [
+   "canada",
+   "mexico"
+  ],
+  "western_africa": [
+   "algeria",
+   "central_africa",
+   "libya",
+   "morroco"
+  ],
+  "zimbabwe": [
+   "botswana",
+   "east_africa",
+   "south_africa"
+  ]
+ }
+}

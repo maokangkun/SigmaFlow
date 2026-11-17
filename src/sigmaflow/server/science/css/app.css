@@ -1143,3 +1143,10 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 /* 追踪列表标题: 返回 icon 绝对定位到文字左侧(不挤占 eyebrow 对齐线), 间隔 4px */
 .trace-title-row { position: relative; }
 .trace-title-row .icon-btn { position: absolute; left: -30px; top: 50%; transform: translateY(-50%); }
+
+/* ---- 虚拟疫情(iframe 嵌入 /plague/): 全幅页面, 布局与保活参照患者页 ---- */
+.page.plague-page { max-width: none; margin: 0; padding: 0; display: flex; flex-direction: column; min-height: 0; }
+#plague-root { flex: 1; min-height: 560px; display: flex; flex-direction: column; }
+.plague-frame { flex: 1; width: 100%; border: 0; background: #14161c; }
+.plague-denied { flex: 1; display: flex; align-items: center; justify-content: center; }
+.plague-denied .panel { max-width: 420px; padding: 28px; }
