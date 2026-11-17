@@ -50,31 +50,27 @@ science-regression:
 			git status --porcelain -- src/sigmaflow/server/science/dist/ && exit 1)
 	$(MAKE) web-dist-check
 
-# website/admin dist 一致性(与 science dist 同策略): 重建后必须与提交一致。
+# website dist 一致性(与 science dist 同策略): 重建后必须与提交一致。
+# (admin 前端已随 c1d2f1c 下线, 不再有可校验的构建。)
 # - website 依赖已钉在 package-lock.json(peer 冲突时代用 --legacy-peer-deps,
-#   与锁文件生成时一致); admin 同理有锁。
+#   与锁文件生成时一致)。
 # - vite 在全新安装依赖后的第一次构建不稳定(构建间产物哈希会漂移一次,
 #   之后逐字节稳定), 因此连建两次、以第二次为准。
 # - 无 npm 的环境整体 SKIP(打印提示), 不挂红 —— 与 E2E 的环境哲学一致。
 .PHONY: web-dist-check
 web-dist-check:
 	@if ! command -v npm >/dev/null 2>&1; then \
-		echo "SKIP web-dist-check: 本机无 npm(website/admin dist 一致性未验证)"; exit 0; \
+		echo "SKIP web-dist-check: 本机无 npm(website dist 一致性未验证)"; exit 0; \
 	fi; \
 	cd src/sigmaflow/server/website && { \
 		[ -d node_modules ] || npm ci --legacy-peer-deps --no-audit --no-fund >/dev/null 2>&1 \
 			|| npm install --legacy-peer-deps --no-audit --no-fund >/dev/null 2>&1; } && \
 		npm run build >/dev/null 2>&1 && npm run build >/dev/null 2>&1 \
 		|| { echo "FAIL: website 构建失败"; exit 1; }; \
-	cd ../admin && { \
-		[ -d node_modules ] || npm ci --no-audit --no-fund >/dev/null 2>&1 \
-			|| npm install --no-audit --no-fund >/dev/null 2>&1; } && \
-		npm run build >/dev/null 2>&1 \
-		|| { echo "FAIL: admin 构建失败"; exit 1; }; \
-	if [ -n "$$(git -C $(CURDIR) status --porcelain -- src/sigmaflow/server/website/dist src/sigmaflow/server/admin/dist)" ]; then \
-		echo "website/admin dist 有未提交的重建差异(源码改了没提交 dist, 或 dist 改了源码没跟上):"; \
-		git -C $(CURDIR) status --porcelain -- src/sigmaflow/server/website/dist src/sigmaflow/server/admin/dist; exit 1; \
-	fi; echo "PASS: website/admin dist 与源码一致"
+	if [ -n "$$(git -C $(CURDIR) status --porcelain -- src/sigmaflow/server/website/dist)" ]; then \
+		echo "website dist 有未提交的重建差异(源码改了没提交 dist, 或 dist 改了源码没跟上):"; \
+		git -C $(CURDIR) status --porcelain -- src/sigmaflow/server/website/dist; exit 1; \
+	fi; echo "PASS: website dist 与源码一致"
 
 # 浏览器端到端(需本机起服务与 chromium; 无服务自动 SKIP 不阻塞):
 #   make e2e          全套(patho3d / 会话切换 / steering), 对常驻服务
