@@ -1568,15 +1568,9 @@ V.ctxRing = () => {
         </div>
       </div></section>`;
   };
-  // 虚拟疫情(瘟疫公司网页移植): #plague-root 由 app.js 挂 iframe(/plague/),
-  // 游戏态 DOM 与患者页同款保活(patKeep 机制), 存档在浏览器 localStorage
-  V.plague = () => {
-    const denied = CS.ui.plagueDenied;
-    const body = denied
-      ? `<div class="plague-denied"><div class="panel"><h3>无法打开虚拟疫情</h3><p class="muted">${e(denied === 'load' ? '模拟器加载失败，请确认服务正常后重试。' : '加载失败。')}</p><div class="row gap-6 mt-20">${btn('plague-retry', '重试', 'refresh', 'primary')}${btn('plague-back', '返回', 'back', 'flat')}</div></div></div>`
-      : '';
-    return `<section class="page plague-page"><div id="plague-root">${body}</div></section>`;
-  };
+  // 虚拟疫情(瘟疫公司网页移植): 原生 UI(引擎/数据来自 /plague/ 子应用,
+  // 表现层 js/plague.js 重写为 science 风格); DOM 与患者页同款保活
+  V.plague = () => `<section class="page plague-page"><div id="plague-root"></div></section>`;
   V.workflows = () => {
     const current = CS.workflow(CS.ui.workflowId);
     const list = CS.data.workflows.filter(w => CS.ui.workflowCategory === 'all' || w.category === CS.ui.workflowCategory);

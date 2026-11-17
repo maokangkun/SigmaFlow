@@ -572,12 +572,6 @@
   // 全量重渲染会重建 .conversation 容器导致滚动位置丢失(如展开思考/工具块时页面跳走)。
   // 渲染前记录 scrollTop, 渲染后恢复; 显式的 scrollToLatest() 在渲染返回后仍会覆盖为新位置。
   CS.render = function() {
-    // 虚拟疫情局内短路: iframe 对 DOM 重挂载敏感(移回即整页重载, 游戏态
-    // 丢失 — 患者页的搬回保活对 canvas 有效、对 iframe 无效)。页面内容
-    // 自包含不依赖应用状态, 局中渲染一律跳过; 离开/进入路由走正常渲染。
-    if (CS.ui.route === 'plague' && document.getElementById('plague-root')?.querySelector('iframe')) {
-      return;
-    }
     // 界面缩放: 每次渲染幂等同步 body zoom, 启动加载设置后无需额外初始化
     const _zs = Number(CS.state.settings.uiScale);
     document.body.style.zoom = (Number.isFinite(_zs) && _zs >= 85 && _zs <= 125 && _zs !== 100) ? String(_zs / 100) : '';
@@ -621,7 +615,7 @@
     if (CS.ui.route === 'plague') {
       const fresh = document.getElementById('plague-root');
       if (plKeep && fresh && fresh !== plKeep) fresh.replaceWith(plKeep);
-      else if (!plKeep && !CS.ui.plagueDenied) CS.mountPlaguePage();
+      else if (!plKeep) CS.mountPlaguePage();
     }
     // 虚拟果蝇页: 保活 #fly-root(3D canvas), fly.js 懒加载后挂载
     if (CS.ui.route === 'fly') {
@@ -1226,32 +1220,15 @@
     sendChatMessage(run, prompt, run.datasetIds);
   };
   // ===== 虚拟疫情(瘟疫公司网页移植)页面生命周期 =====
-  // iframe 嵌入 /plague/ 静态子应用(引擎/数据/地图全套自带); 布局与保活
-  // 参照患者页(patKeep): 局中任何重渲染都不重载模拟器。存档在子应用
-  // localStorage(plague_web_save), 离开重进后由游戏「继续」按钮续局。
+  // 原生 UI(js/plague.js 懒加载): 引擎/数据来自 /plague/ 静态子应用, 表现层
+  // science 风格。引擎态存 JS 模块内(路由切换不丢, 循环自动暂停), 存档
+  // localStorage(sf_plague_save)。DOM 与患者页同款保活(plKeep)。
   CS.mountPlaguePage = () => {
     const root = document.getElementById('plague-root');
-    if (!root || root.querySelector('iframe')) return;  // 幂等
-    const m = location.pathname.match(/^(.*)\/science\//);
-    const f = document.createElement('iframe');
-    f.className = 'plague-frame';
-    f.title = '虚拟疫情模拟器';
-    f.allow = 'autoplay';
-    root.innerHTML = '';
-    root.appendChild(f);
-    f.src = (m ? m[1] : '') + '/plague/';
-    // 挂载监督: 12s 内未见游戏根节点(网络失败/产物损坏) → 提示面板不黑屏
-    const deadline = Date.now() + 12000;
-    const watch = setInterval(() => {
-      if (CS.ui.route !== 'plague') { clearInterval(watch); return; }
-      let mounted = false;
-      try {
-        const d = f.contentDocument;
-        mounted = !!(d && (d.getElementById('start-screen') || d.getElementById('hud-day')));
-      } catch (e) { mounted = false; }
-      if (mounted) { clearInterval(watch); return; }
-      if (Date.now() > deadline) { clearInterval(watch); CS.ui.plagueDenied = 'load'; CS.render(); }
-    }, 1000);
+    if (!root) return;
+    CS.ensureLazy('plague').then(() => {
+      if (CS.ui.route === 'plague' && window.PlagueUI) window.PlagueUI.mount(root);
+    });
   };
 
   // ===== 虚拟患者(生理模拟引擎)页面生命周期 =====

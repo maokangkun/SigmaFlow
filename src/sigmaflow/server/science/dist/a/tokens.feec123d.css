@@ -1,0 +1,49 @@
+/* Design tokens: flat surfaces; no background gradients or glossy effects. */
+:root {
+  --bg: #f3f4f6;
+  --sidebar: #eef0f3;
+  --surface: #f7f8fa;
+  --surface-hover: #f9fafb;
+  --inset: #eef0f4;
+  --line: #e1e4eb;
+  --line-soft: #e9ebf0;
+  --ink: #292d3c;
+  --ink-strong: #1e2231;
+  --muted: #747b8d;
+  --faint: #9298a8;
+  --accent: #7775b6;
+  --accent-dark: #625f9e;
+  --accent-bg: #eae9f3;
+  --green: #548678;
+  --green-bg: #e7eeeb;
+  --amber: #977951;
+  --amber-bg: #f2ede5;
+  --red: #ac6674;
+  --red-bg: #f2e7ea;
+  --blue: #6e8db1;
+  --shadow: 5px 5px 15px #dfe2e980, -5px -5px 15px #ffffffc9;
+  --shadow-small: 3px 3px 7px #dce0e982, -3px -3px 7px #ffffffd9;
+  --shadow-inset: inset 2px 2px 5px #dce0e98a, inset -2px -2px 5px #ffffffeb;
+  --radius: 16px;
+  --radius-sm: 10px;
+  --sidebar-width: 226px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+  /* Unified minimal-neumorphic scrollbar */
+  --scrollbar-size: 10px;
+  --scrollbar-size-thin: 8px;
+  --scrollbar-track: #eef1f5;
+  --scrollbar-thumb: #bcc3ce;
+  --scrollbar-thumb-hover: #aab3c0;
+  --scrollbar-thumb-active: #98a2b1;
+  --scrollbar-border: #f5f7fa;
+}
+:root[data-contrast="high"] {
+  --muted: #535d71;
+  --faint: #636d80;
+  --line: #c4cad6;
+  --accent: #65609e;
+  --shadow: 0 0 0 1px var(--line);
+  --shadow-small: 0 0 0 1px var(--line);
+}
