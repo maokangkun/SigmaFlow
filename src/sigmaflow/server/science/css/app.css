@@ -1124,3 +1124,6 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .span-row { grid-template-columns: 20px 26px minmax(96px, 1fr) 78px minmax(120px, 28%); }
 .trace-id { max-width: none; }
 .trace-detail-panel .kv b.full-id { max-width: 100%; white-space: normal; word-break: break-all; }
+
+/* tracing JSON 不换行态: 单行 + 横向滚动(全局 pre 是 pre-wrap, 需显式覆盖) */
+.trace-json pre.nowrap { white-space: pre; overflow-wrap: normal; overflow-x: auto; }

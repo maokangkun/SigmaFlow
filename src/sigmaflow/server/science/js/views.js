@@ -1433,9 +1433,12 @@ V.ctxRing = () => {
   const jsonBlock = (title, val, wrap) => {
     if (val === undefined || val === null || val === '') return '';
     let text;
-    try { text = typeof val === 'string' ? (JSON.parse(val) !== undefined ? JSON.stringify(JSON.parse(val), null, 2) : val) : JSON.stringify(val, null, 2); }
-    catch { text = String(val); }
-    return `<div class="trace-json"><div class="trace-json-h">${e(title)}</div><pre class="${wrap ? 'wrap' : ''}">${e(text)}</pre></div>`;
+    try {
+      const obj = typeof val === 'string' ? JSON.parse(val) : val;
+      // 不换行 = 紧凑单行(去缩进) + 横向滚动; 换行 = 缩进 2 的 pretty-print + 软换行
+      text = wrap ? JSON.stringify(obj, null, 2) : JSON.stringify(obj);
+    } catch { text = String(val); }
+    return `<div class="trace-json"><div class="trace-json-h">${e(title)}</div><pre class="${wrap ? 'wrap' : 'nowrap'}">${e(text)}</pre></div>`;
   };
   V.tracing = () => {
     // 详情模式: #/tracing/<id>
