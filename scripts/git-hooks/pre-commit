@@ -6,3 +6,20 @@ make format-check >/dev/null 2>&1 || {
     echo "[pre-commit] 未过 ruff format —— 运行 'make format' 后重新暂存提交" >&2
     exit 1
 }
+
+# science dist 准入: 暂存区动了 science 前端(js/css/dist/index.html)时,
+# 跑 science 回归(测试+check+单测+重建), 再核对重建出的 dist 与暂存产物
+# 一致 —— 拦"改了源码忘 build 就提交旧 dist"。
+if git diff --cached --name-only -- src/sigmaflow/server/science | grep -q .; then
+    echo "[pre-commit] science 前端有暂存改动: science-regression + dist 一致性"
+    make science-regression >/dev/null 2>&1 || {
+        echo "[pre-commit] science-regression 未过 —— 单独跑 'make science-regression' 看详情" >&2
+        exit 1
+    }
+    if ! git diff --quiet -- src/sigmaflow/server/science/dist; then
+        echo "[pre-commit] 重建后的 dist 与暂存产物不一致(改了源码忘 build?)" >&2
+        echo "[pre-commit] 先 'make science-regression' 再 git add src/sigmaflow/server/science/dist 重提" >&2
+        git diff --stat -- src/sigmaflow/server/science/dist | tail -5 >&2
+        exit 1
+    fi
+fi
