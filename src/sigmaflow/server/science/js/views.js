@@ -1548,7 +1548,7 @@ V.ctxRing = () => {
       <td class="right"><button type="button" class="icon-btn" data-action="tracing-del" data-id="${e(t.id)}" aria-label="删除" title="删除">${i('trash', '', 13)}</button></td>
     </tr>`; }).join('');
     return `<section class="page">
-      <header class="page-header"><div><div class="eyebrow">${e('TRACING')}</div><div class="trace-title-row"><button type="button" class="icon-btn" data-action="tracing-exit" aria-label="返回工作流" title="返回工作流">${i('arrowleft', '', 16)}</button><h1>${e('执行追踪')}</h1></div><p>${e('Workspace 流水线与 Agent 的 Trace 记录')}</p></div><div class="row">${btn('tracing-refresh', '刷新', 'refresh')}${btn('tracing-query', '查询', 'search', 'primary')}</div></header>
+      <header class="page-header"><div><div class="eyebrow">${e('TRACING')}</div><div class="trace-title-row"><button type="button" class="icon-btn" data-action="tracing-exit" aria-label="返回工作流" title="返回工作流">${i('arrowleft', '', 16)}</button><h1>${e('执行追踪')}</h1></div><p>${e('Workspace 流水线与 Agent 的 Trace 记录')}</p></div><div class="row">${btn('tracing-refresh', '刷新', 'refresh')}</div></header>
       <div class="panel trace-filters">
         <div class="trace-filters-main">
           <input id="tracing-wf" class="trace-input" placeholder="Workflow 名称" value="${e(f.workflow || '')}">

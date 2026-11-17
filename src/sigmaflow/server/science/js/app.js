@@ -3812,7 +3812,6 @@ CS.liveBlocks = {
     'flow-retry': () => { CS.ui.flowDenied = null; CS.render(); },
     'flow-back': () => { CS.ui.flowDenied = null; CS.navigate('workflows'); },
     'open-tracing': () => { CS.ui.tracingId = null; CS.navigate('tracing'); },
-    'tracing-query': () => CS.tracing.load(1),
     'tracing-clear': () => { CS.ui.tracingFilters = { workflow: '', group: '', id: '', start: '', end: '', meta: [{ k: '', v: '' }] }; CS.tracing.load(1); },
     'tracing-refresh': () => CS.tracing.load((CS.state.traces?.pagination?.page) || 1),
     'tracing-prev': () => CS.tracing.load(Math.max(1, (CS.state.traces?.pagination?.page) || 1) - 1),

@@ -1139,3 +1139,7 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .trace-filters-main .trace-input { flex: 1 1 150px; min-width: 84px; width: auto; max-width: none; }
 .trace-filters-main .text-button { white-space: nowrap; flex-shrink: 0; }
 .trace-meta { flex-shrink: 0; }
+
+/* 追踪列表标题: 返回 icon 绝对定位到文字左侧(不挤占 eyebrow 对齐线), 间隔 4px */
+.trace-title-row { position: relative; }
+.trace-title-row .icon-btn { position: absolute; left: -30px; top: 50%; transform: translateY(-50%); }
