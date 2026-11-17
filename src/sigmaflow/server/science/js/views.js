@@ -1435,8 +1435,8 @@ V.ctxRing = () => {
     let text;
     try {
       const obj = typeof val === 'string' ? JSON.parse(val) : val;
-      // 不换行 = 紧凑单行(去缩进) + 横向滚动; 换行 = 缩进 2 的 pretty-print + 软换行
-      text = wrap ? JSON.stringify(obj, null, 2) : JSON.stringify(obj);
+      // 结构始终 pretty-print(缩进 2); 换行开关只控制长字段值的软换行
+      text = JSON.stringify(obj, null, 2);
     } catch { text = String(val); }
     return `<div class="trace-json"><div class="trace-json-h">${e(title)}</div><pre class="${wrap ? 'wrap' : 'nowrap'}">${e(text)}</pre></div>`;
   };

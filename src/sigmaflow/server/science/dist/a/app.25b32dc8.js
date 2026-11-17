@@ -109,7 +109,8 @@
     async renderMermaid() {
       const box = document.getElementById('trace-mermaid-box');
       const src = box?.dataset.src;
-      if (!box || !src) return;
+      if (!box || !src || box.dataset.mmDone) return;
+      box.dataset.mmDone = '1';
       try {
         if (!await CS.ensureLazy('mermaid.min') || !window.mermaid) throw new Error('mermaid 库加载失败');
         if (!window.mermaid._sfInit) { window.mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'strict' }); window.mermaid._sfInit = true; }
@@ -967,6 +968,11 @@
     clearTimeout(_scrollbarTimer);
     _scrollbarTimer = setTimeout(() => el.classList.remove('is-scrolling'), 900);
   }, true);
+
+  // 每次渲染后补挂 mermaid(刷新场景: boot 的后续渲染会重建空容器,
+  // 而 renderMermaid 只在 loadDetail 末尾跑一次 — 实测刷新后图消失的根因)
+  const _sfRenderWithMermaid = CS.render;
+  CS.render = function() { _sfRenderWithMermaid(); if (CS.ui.route === 'tracing' && CS.tracing) CS.tracing.renderMermaid(); };
 
   window.addEventListener('hashchange', () => {
     CS.ui.route = applyRoute(); CS.ui.mobileSidebar = false; CS.closeModal(); if (CS.ui.route === 'workflows') CS.loadFlows?.(); CS.render(); window.scrollTo(0, 0);

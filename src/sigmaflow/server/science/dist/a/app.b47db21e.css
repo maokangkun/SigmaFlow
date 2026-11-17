@@ -1127,3 +1127,5 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 
 /* tracing JSON 不换行态: 单行 + 横向滚动(全局 pre 是 pre-wrap, 需显式覆盖) */
 .trace-json pre.nowrap { white-space: pre; overflow-wrap: normal; overflow-x: auto; }
+.trace-json pre.wrap { white-space: pre-wrap; }
+.trace-json pre.nowrap { white-space: pre; overflow-wrap: normal; overflow-x: auto; }
