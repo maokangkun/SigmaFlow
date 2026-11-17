@@ -1,0 +1,1821 @@
+/* UI composition. All user-controlled strings pass through CS.escape. */
+(() => {
+  const e = CS.escape, i = CS.icon;
+  // 轻量 UI 片段(app.js 的 H 没有跨模块共享, 这里给空态分支各补一份)
+  const H = { notice: t => `<div class="notice">${e(t)}</div>` };
+  // 超长用户消息折叠展示: 头尾保留、中段省略为一条可点击折叠条; 键=会话id|消息序号
+  // (与压缩摘要卡同套路, 展开状态存 CS.ui.userExpandedSet, 追加式列表里序号稳定)
+  const USER_FOLD_LIMIT = 800, USER_FOLD_HEAD = 400, USER_FOLD_TAIL = 200;
+  const userTextHTML = (content, key) => {
+    const vis = String(content || '').replace(/\u200B@\[\[[^\]]*\]\]/g, '').replace(/\u200B@\S+/g, '').trim();
+    if (!vis) return '';
+    if (vis.length <= USER_FOLD_LIMIT) return e(vis);
+    const set = CS.ui.userExpandedSet || (CS.ui.userExpandedSet = new Set());
+    if (set.has(key)) return `${e(vis)}<button type="button" class="user-fold-bar" data-action="toggle-user-fold" data-id="${e(key)}" title="收起全文">⋯ 收起全文（共 ${vis.length} 字）</button>`;
+    const head = vis.slice(0, USER_FOLD_HEAD), tail = vis.slice(vis.length - USER_FOLD_TAIL);
+    const hidden = vis.length - head.length - tail.length;
+    return `${e(head)}<button type="button" class="user-fold-bar" data-action="toggle-user-fold" data-id="${e(key)}" title="展开全部 ${vis.length} 字">⋯ 已折叠中段 ${hidden} 字 · 展开全部（共 ${vis.length} 字）</button>${e(tail)}`;
+  };
+  const btn = (action, label, icon = '', kind = '', extra = '') => `<button type="button" class="btn ${kind}" data-action="${action}" ${extra}>${icon ? i(icon, '', 15) : ''}${label ? `<span>${e(label)}</span>` : ''}</button>`;
+  const iconBtn = (action, icon, label, extra = '') => `<button type="button" class="icon-btn" data-action="${action}" title="${e(label)}" aria-label="${e(label)}" ${extra}>${i(icon)}</button>`;
+  const pill = (label, type = '') => `<span class="pill ${type}">${e(label)}</span>`;
+  const status = s => pill(CS.statusLabel(s), ['running','connecting','awaiting'].includes(s) ? 'purple' : s === 'complete' ? 'green' : s === 'error' ? 'red' : '');
+  const empty = (icon, title, description = '') => `<div class="empty">${i(icon)}<h3>${e(title)}</h3><p>${e(description)}</p></div>`;
+  const header = (eyebrow, title, sub = '', actions = '') => `<header class="page-header"><div><div class="eyebrow">${e(eyebrow)}</div><h1>${e(title)}</h1>${sub ? `<p>${e(sub)}</p>` : ''}</div>${actions ? `<div class="row">${actions}</div>` : ''}</header>`;
+  const search = (id, placeholder, value) => `<div class="search-input">${i('search')}<input id="${id}" type="search" aria-label="${e(placeholder)}" placeholder="${e(placeholder)}" value="${e(value)}" autocomplete="off"></div>`;
+  const tab = (action, id, title, selected, count) => `<button type="button" class="tab ${selected ? 'active' : ''}" data-action="${action}" data-id="${id}" aria-pressed="${!!selected}">${e(title)}${count !== undefined ? `<span class="count">${count}</span>` : ''}</button>`;
+  const tile = (name, color = '') => `<span class="icon-tile ${color}">${i(name, '', 19)}</span>`;
+  // Token 用量卡辅助: 会话时长与 SVG 活动图(统计 SigmaFlow 自身会话)
+  const usageDur = ms => {
+    if (!ms) return '—';
+    const min = Math.floor(ms / 60000);
+    const d = Math.floor(min / 1440), h = Math.floor((min % 1440) / 60);
+    return d ? `${d} 天 ${h} 小时` : h ? `${h} 小时 ${Math.floor(min % 60)} 分钟` : `${min} 分钟`;
+  };
+  // GitHub 贡献热力图风格: 列=周, 行=星期, 色阶=当日 token 量; 数据跨度不足 18 周时补空列撑起网格
+  const usageHeatmap = days => {
+    if (!days?.length) return H.notice('暂无每日用量记录。');
+    const byDay = new Map(days.map(d => [d.date, d]));
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    // 右对齐展示最近 N 周(最多一年 53 列): 列数由容器宽度自适应(CS.fitUsageHeatmap),
+    // 放不下就减少周数但格子保持尺寸, 恰好撑满矩形无滚动条; 数据不足左侧补空格
+    const weeks = Math.max(1, Math.min(53, CS.ui.usageHeatCols || 53));
+    const startAt = new Date(today); startAt.setDate(startAt.getDate() - (weeks - 1) * 7);
+    startAt.setDate(startAt.getDate() - ((startAt.getDay() + 6) % 7));  // 对齐周一
+    const endAligned = new Date(today); endAligned.setDate(endAligned.getDate() + (6 - ((endAligned.getDay() + 6) % 7)));  // 对齐周日
+    const maxTotal = Math.max(...days.map(d => d.totalTokens || 0), 1);
+    const levelOf = d => { if (!d) return 0; const t = d.totalTokens || 0; if (!t) return 0; return Math.min(4, 1 + Math.floor((t / maxTotal) * 3.999)); };
+    const cells = [];
+    const monthLabels = [];  // 每列一个标签(或空)
+    let lastMonth = -1;
+    for (let w = 0; w < weeks; w++) {
+      const colStart = new Date(startAt); colStart.setDate(colStart.getDate() + w * 7);
+      if (colStart.getMonth() !== lastMonth) { monthLabels.push(`<span style="grid-column:${w + 1}">${colStart.getMonth() + 1}月</span>`); lastMonth = colStart.getMonth(); }
+      for (let dow = 0; dow < 7; dow++) {
+        const d = new Date(colStart); d.setDate(d.getDate() + dow);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const data = byDay.get(key);
+        const level = levelOf(data);
+        cells.push(`<span class="heatmap-cell" data-level="${level}" title="${key}${data ? ` · ${CS.usageNum(data.totalTokens)} tokens${data.sessions ? ` · ${data.sessions} 个会话` : ''}` : ''}"></span>`);
+      }
+    }
+    const dayLabels = ['一', '', '三', '', '五', '', '日'].map(x => `<span>${x}</span>`).join('');
+    const g = CS.ui.usageHeatGap || 2;  // 间隙与列数配合填满容器
+    return `<div class="usage-heatmap" role="img" aria-label="Token 每日活动热力图"><div class="heatmap-wrap"><div class="heatmap-months" style="grid-auto-columns:${12 + g}px;margin-left:${16 + g}px">${monthLabels.join('')}</div><div class="heatmap-main"><div class="heatmap-day-labels" style="row-gap:${g}px">${dayLabels}</div><div class="heatmap-cells" style="gap:${g}px">${cells.join('')}</div></div><div class="heatmap-legend tiny muted"><span>少</span><span class="heatmap-cell" data-level="0"></span><span class="heatmap-cell" data-level="1"></span><span class="heatmap-cell" data-level="2"></span><span class="heatmap-cell" data-level="3"></span><span class="heatmap-cell" data-level="4"></span><span>多</span><span class="heatmap-legend-total">峰值日 ${e((days.reduce((a, b) => (b.totalTokens > a.totalTokens ? b : a), days[0])).date)}</span></div></div></div>`;
+  };
+  const usageChart = (days, gran) => {
+    if (!days?.length) return H.notice('暂无每日用量记录。');
+    // daily: GitHub 风格热力图(usageHeatmap); weekly: 按自然周(周一起)聚合为柱; total: 按日累计折线
+    const W = 720, Hh = 150, pad = 8;
+    let items;
+    if (gran === 'weekly') {
+      items = [];
+      let acc = null;
+      for (const day of days) {
+        const dow = (new Date(day.date + 'T00:00:00').getDay() + 6) % 7;  // 0=周一
+        if (dow === 0 || !acc) acc = { date: day.date, total: 0, sessions: 0, cost: 0 };
+        acc.total += day.totalTokens || 0; acc.sessions += day.sessions || 0; acc.cost += day.costUsd || 0;
+        if (dow === 6) { items.push(acc); acc = null; }
+      }
+      if (acc) items.push(acc);  // 收尾不完整的一周
+    } else if (gran === 'total') {
+      let run = 0; items = days.map(day => ({ date: day.date, total: (run += day.totalTokens || 0), sessions: day.sessions || 0, cost: day.costUsd || 0 }));
+    } else if (gran === 'daily') return usageHeatmap(days);
+    else items = days.map(day => ({ date: day.date, total: day.totalTokens || 0, sessions: day.sessions || 0, cost: day.costUsd || 0 }));
+    const fmtTitle = it => `${it.date} · ${CS.usageNum(it.total)} tokens${it.cost ? ` · $${it.cost.toFixed(2)}` : ''}`;
+    if (gran === 'total') {
+      const max = Math.max(...items.map(x => x.total), 1);
+      const pts = items.map((x, idx) => `${(pad + idx * (W - pad * 2) / Math.max(1, items.length - 1)).toFixed(1)},${(Hh - pad - (x.total / max) * (Hh - pad * 2)).toFixed(1)}`).join(' ');
+      return `<div class="usage-chart" role="img" aria-label="Token 累计曲线"><svg viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2"/><line x1="${pad}" y1="${Hh - pad}" x2="${W - pad}" y2="${Hh - pad}" stroke="var(--line)" stroke-width="1"/></svg><div class="usage-chart-note tiny muted">${e(items[0]?.date || '')} → ${e(items[items.length - 1]?.date || '')} · 累计 ${CS.usageNum(items[items.length - 1]?.total || 0)} tokens</div></div>`;
+    }
+    const max = Math.max(...items.map(x => x.total), 1);
+    const gap = items.length > 90 ? 1 : 2.5;
+    const bw = Math.max(2.5, Math.floor((W - pad * 2 - gap * (items.length - 1)) / items.length));
+    const bars = items.map((x, idx) => {
+      const bh = Math.max(1.5, (x.total / max) * (Hh - pad * 2));
+      const bx = pad + idx * (bw + gap);
+      return `<rect x="${bx.toFixed(1)}" y="${(Hh - pad - bh).toFixed(1)}" width="${bw}" height="${bh.toFixed(1)}" rx="1.5" fill="var(--accent)" opacity="${items.length > 90 ? 0.75 : 0.9}"><title>${e(fmtTitle(x))}</title></rect>`;
+    }).join('');
+    return `<div class="usage-chart" role="img" aria-label="Token ${gran === 'weekly' ? '每周' : '每日'}活动"><svg viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none">${bars}<line x1="${pad}" y1="${Hh - pad}" x2="${W - pad}" y2="${Hh - pad}" stroke="var(--line)" stroke-width="1"/></svg><div class="usage-chart-note tiny muted">${e(fmtTitle(items.reduce((a, b) => (b.total > a.total ? b : a), items[0])))} · 共 ${items.length} ${gran === 'weekly' ? '周' : '天'}</div></div>`;
+  };
+  const notice = text => `<div class="notice">${i('info', '', 15)}<span>${e(text)}</span></div>`;
+  const renderTable = (columns, rows) => `<div class="table-wrap"><table><thead><tr>${columns.map(c => `<th>${e(c)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  CS.viewHelpers = { btn, iconBtn, pill, status, empty, header, search, tab, tile, notice, renderTable };
+
+  CS.views = {};
+  const V = CS.views;
+  // 参数 schema: 格式化展示 + 轻量 JSON 高亮(键/字符串/数字/布尔与 null), 未匹配字符保持原样保证逐字对齐;
+  // 仅转义 &<>(保留引号字面量供正则匹配), 结果只用于 pre 文本与无属性 span
+  V.prettyJSON = text => { try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text || ''; } };
+  V.hlJSON = text => text.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])).replace(/("(?:\\.|[^"\\])*")(\s*:)|("(?:\\.|[^"\\])*")|\b(true|false|null)\b|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g, (m, key, colon, str, kw, num) => key ? `<span class="j-key">${key}</span>${colon}` : str ? `<span class="j-str">${str}</span>` : kw ? `<span class="j-kw">${kw}</span>` : num ? `<span class="j-num">${num}</span>` : m);
+  // unified diff → GitHub 风格双行号 HTML; 仅在结果长得像 diff 时由工具卡调用
+  V.isUnifiedDiff = text => /^--- .+$/m.test(text) && /^\+\+\+ .+$/m.test(text) && /@@ -\d+/.test(text);
+  // 工具调用是否报错: 以服务端 isError 标记为准; 老存档无标记时才退回文本启发式,
+  // 且启发式要求 Error: 紧跟大写词(如 Error: ValueError) —— 纯文本恰好以 Error: 开头(grep 摘录)不误报
+  V.toolIsErr = res => {
+    if (res && typeof res === 'object') return !!res.isError;
+    const s2 = String(res ?? '').trim();
+    if (/^Traceback|^\{"error"|^\{"status"\s*:\s*"error"/.test(s2)) return true;
+    return /^Error:\s*[A-Z]/.test(s2);
+  };
+  const TE_THEMES = [['monokai', 'Monokai Dark'], ['dracula', 'Dracula'], ['solarized-dark', 'Solarized Dark'], ['one-dark', 'One Dark'], ['nord', 'Nord'], ['github-dark', 'GitHub Dark']];
+  const bashCmd = args => String((args && typeof args === 'object' ? (args.command ?? args.cmd ?? '') : (args ?? '')) || '').trim();
+  const BASH_CMDS = new Set(['cd','ls','cp','mv','rm','mkdir','rmdir','cat','echo','printf','grep','sed','awk','git','pip','pip3','npm','npx','yarn','curl','wget','python','python3','conda','tar','find','chmod','chown','du','df','head','tail','sort','uniq','wc','ln','touch','bash','sh','source','export','env','which','ps','top','kill','docker','rsync','ssh','scp','apt','apt-get','brew','make','cmake','jq','xargs','tee','history','clear','uname','ip','ping','date','sleep','test','sudo','md5sum','sha256sum','base64','openssl']);
+  // bash 语法高亮: 原词分扫描分段, 每段独立转义后包 span, 不会再进任何 markdown/终端转义
+  V.bashHighlight = cmd => {
+    const parts = [];
+    let last = 0;
+    let expectCmd = true;
+    const push = (text, cls) => { if (text) parts.push(cls ? `<span class="${cls}">${e(text)}</span>` : e(text)); };
+    const flushWords = text => {
+      // 普通词: 空白分隔; 操作符后首词视作命令(词表内用同款命令色, 词表外也按命令重点突出)
+      for (const w of text.split(/(\s+)/)) {
+        if (!w) continue;
+        if (/^\s+$/.test(w)) { push(w); continue; }
+        if (expectCmd) { push(w, 'tk-cmd'); expectCmd = false; }
+        else push(w);
+      }
+    };
+    // 捕获组: 1字符串(含单双引号) 2变量(含 $(…)) 3注释(含前导空白与行首) 4flag 5操作符 6数字/孤立$
+    const re = /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')|(\$\{[^}\n]*\}|\$\([^)\n]*\)|\$[A-Za-z_][A-Za-z0-9_]*|\$[?!0-9@#*])|((?:^|\n|\s)#[^\n]*)|(--?[A-Za-z][A-Za-z0-9_-]*)|(&&|\|\||[|;&<>()[\]`{])|(\$|\b\d+(?:\.\d+)?\b)/g;
+    cmd.replace(re, (m, str, v, cm, flag, op, num, offset) => {
+      if (offset > last) flushWords(cmd.slice(last, offset));
+      if (str) { push(m, 'tk-str'); expectCmd = false; }
+      else if (v) push(m, 'tk-var');
+      else if (cm) {
+        // 注释(不确定是行内还是行首): 前导空白原样输出, 注释体用注释色; 若跨行则下一行首重置命令期待
+        const lead = m.match(/^\s*/)[0];
+        push(lead);
+        push(m.slice(lead.length), 'tk-cmt');
+        expectCmd = cm.includes('\n');
+      }
+      else if (flag) push(m, 'tk-flag');
+      else if (op) { push(m, 'tk-op'); expectCmd = true; }
+      else if (num) push(m, 'tk-num');
+      last = offset + m.length;
+      return m;
+    });
+    if (last < cmd.length) flushWords(cmd.slice(last));
+    return parts.join('');
+  };
+  // bash 工具消息的终端仿卡: 主题随设置(默认 Monokai), 命令完整显示并加 “> ” 前缀(带语法高亮), 输出等宽白字
+  V.toolTerminal = (name, args, result, live) => {
+    const theme = String(CS.state.settings.terminalTheme || 'monokai').replace(/[^a-z0-9-]/gi, '').toLowerCase() || 'monokai';
+    const cmd = bashCmd(args);
+    const out = result != null ? String(result) : '';
+    const screen = `${out ? `<pre class="term-out">${e(out.slice(0, 20000))}${out.length > 20000 ? '\n…(输出过长已截断)' : ''}</pre>` : ''}${live && !out ? '<div class="term-runmsg">执行中…</div>' : ''}`;
+    return `<div class="term-view term-${e(theme)}"><div class="term-titlebar"><span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span><span class="term-name">${e(name)}</span>${live ? '<span class="term-live">运行中</span>' : ''}</div><div class="term-screen">${cmd ? `<div class="term-cmdline"><span class="term-prompt">&gt; </span><span class="term-cmd">${V.bashHighlight(cmd)}</span></div>` : ''}${screen}</div></div>`;
+  };
+  V.renderUnifiedDiff = text => {
+    const esc = CS.escape;
+    const lines = text.split('\n');
+    const rows = [];
+    let oldNo = 0, newNo = 0, inHunk = false;
+    let oldFile = '', newFile = '';
+    for (const raw of lines) {
+      const line = raw.replace(/\r$/, '');
+      const hm = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (hm) {
+        inHunk = true; oldNo = Number(hm[1]); newNo = Number(hm[2]);
+        rows.push({ kind: 'hunk', code: line });
+      } else if (!inHunk && /^--- /.test(line)) {
+        oldFile = line.slice(4);
+      } else if (!inHunk && /^\+\+\+ /.test(line)) {
+        newFile = line.slice(4);
+      } else if (inHunk) {
+        const sign = (line[0] === ' ' || line === '') ? ' ' : line[0];
+        if (sign === '-') { rows.push({ kind: 'del', o: oldNo++, code: line.slice(1) }); }
+        else if (sign === '+') { rows.push({ kind: 'add', n: newNo++, code: line.slice(1) }); }
+        else if (line === '\\ No newline at end of file') { rows.push({ kind: 'meta', code: '「此文件末尾没有换行符」' }); }
+        else { rows.push({ kind: 'ctx', o: oldNo++, n: newNo++, code: line[0] === ' ' ? line.slice(1) : line }); }
+      }
+    }
+    // 单列行号: - 行取旧号, + 行取新号, 上下文两者相同任取其一
+    const row = r => `<div class="diff-row ${r.kind === 'hunk' ? 'hunk' : r.kind}"><span class="diff-ln">${r.o != null ? r.o : (r.n != null ? r.n : '')}</span><span class="diff-code">${esc(r.code)}</span></div>`;
+    const baseOld = oldFile.replace(/^old: /, '');
+    const baseNew = newFile.replace(/^new: /, '');
+    const file = baseOld && baseNew && baseOld === baseNew ? baseNew : `${oldFile} → ${newFile}`;
+    return '<div class="diff-view">' + (file.trim() ? `<div class="diff-file">${esc(file)}</div>` : '') + `<div class="diff-body">${rows.map(row).join('')}</div></div>`;
+  };
+  const schemaDirty = (a, b) => {
+    if (a === b) return false;
+    try { return JSON.stringify(JSON.parse(a)) !== JSON.stringify(JSON.parse(b)); } catch { return a !== b; }
+  };
+  // 登录/注册页: 多用户模式未登录时展示完整页面(非浮层)
+  // 登录/注册页: 多用户模式未登录时展示的完整页面(极简单卡设计)
+  V.auth = () => {
+    const tab = CS.ui.authTab === 'register' ? 'register' : 'login';
+    const draft = CS.ui.authDraft || {};
+    return `<div class="auth-page">
+      <div class="auth-glow" aria-hidden="true"></div>
+      <section class="auth-wrap">
+        <div class="auth-brandmark">${i('dna')}</div>
+        <h1 class="auth-title">${tab === 'register' ? '创建你的工作空间' : '欢迎回来'}</h1>
+        <p class="auth-sub">${tab === 'register' ? '注册一个账号即可开始，会话与配置按账号隔离保存。' : '登录以访问本机上的科研工作空间。'}</p>
+        <div class="auth-tabs" role="tablist">
+          <button type="button" class="auth-tab${tab === 'login' ? ' active' : ''}" data-action="auth-tab" data-tab="login" role="tab" aria-selected="${tab === 'login'}">登录</button>
+          <button type="button" class="auth-tab${tab === 'register' ? ' active' : ''}" data-action="auth-tab" data-tab="register" role="tab" aria-selected="${tab === 'register'}">注册</button>
+        </div>
+        <form id="auth-form" data-form="auth" autocomplete="on">
+          <div class="field"><label for="auth-username">用户名</label>
+            <input id="auth-username" name="username" maxlength="32" required autofocus autocomplete="username" autocapitalize="off" spellcheck="false" value="${e(draft.username || '')}" placeholder="3-32 位字母、数字、- 或 _"></div>
+          <div class="field"><label for="auth-password">密码</label>
+            <input id="auth-password" name="password" type="password" minlength="6" maxlength="128" required autocomplete="${tab === 'register' ? 'new-password' : 'current-password'}" value="${e(draft.password || '')}" placeholder="至少 6 位"></div>
+          ${tab === 'register' ? `<div class="field"><label for="auth-confirm">确认密码</label><input id="auth-confirm" name="confirm" type="password" minlength="6" maxlength="128" required autocomplete="new-password" placeholder="再输入一次"></div>` : ''}
+          <button class="auth-submit" type="submit" form="auth-form">${tab === 'register' ? '创建账号并进入' : '登录'}${i('arrowright', '', 15)}</button>
+        </form>
+        ${CS.state.wechatLogin ? `<div class="auth-or">或</div><button type="button" class="auth-wechat" data-action="wechat-login">${i('wechat', '', 17)}微信扫码登录</button>` : ''}
+        <p class="auth-note tiny muted">${tab === 'register' ? '登录凭据以 PBKDF2 存储，不可逆向还原。' : '登录会话在本机保留 7 天。'}</p>
+      </section>
+      <p class="auth-foot tiny muted">SigmaFlow Science · 多用户模式</p>
+    </div>`;
+  };
+
+  V.sidebar = () => {
+    const active = CS.ui.route;
+    const nav = [ ['home','message','新对话'], ['literature','book','文献'], ['data','database','数据集'], ['workflows','workflow','工作流'], ['results','chart','分析结果'], ['tools','grid','生物工具'], ['tasks','queue','任务队列'], ['cell','cells','虚拟细胞'], ['patient','patient','虚拟患者'], ['pathogen','virus','虚拟病原体'], ['fly','network','虚拟果蝇'] ];
+    // SFM(P3): UI mod 注册的动态视图并入主导航(排在核心视图之后)
+    const modNav = (CS.sfm ? CS.sfm.navItems() : []).map(v => [v.id, v.icon, v.title]);
+    const running = CS.state.runs.filter(r => ['running','paused','awaiting','connecting'].includes(r.status)).length;
+    const streaming = new Set(CS.state.runs.filter(r => (r.messages || []).some(m => m.streaming)).map(r => r.id));
+    return `${CS.ui.mobileSidebar ? '<button class="sidebar-scrim" aria-label="关闭菜单" data-action="toggle-sidebar"></button>' : ''}<aside class="sidebar ${CS.ui.mobileSidebar ? 'open' : ''} ${CS.ui.sidebarFolded ? 'folded' : ''}" aria-label="主导航">
+      <div class="brand"><button type="button" class="brand-logo${CS.ui.sidebarFolded ? ' is-folded' : ''}" data-action="toggle-sidebar-fold" aria-label="${CS.ui.sidebarFolded ? '展开侧边栏' : '收起侧边栏'}" title="${CS.ui.sidebarFolded ? '展开侧边栏' : '收起侧边栏，只显示图标'}">${i('dna')}</button><a class="brand-title" href="#/home" aria-label="SigmaFlow Science 首页"><span>SigmaFlow Science</span></a></div>
+      <div class="sidebar-scroll"><nav class="nav-list">${nav.map(([route, icon, title]) => `<button type="button" data-nav="${route}" class="nav-item ${active === route || (route === 'home' && (active === 'chat' || active === 'trace')) ? 'active' : ''}" ${active === route ? 'aria-current="page"' : ''} title="${title}">${i(icon)}<span>${title}</span>${route === 'tasks' && running ? `<span class="nav-count">${running}</span>` : ''}</button>`).join('')}${modNav.length ? `${modNav.map(([route, icon, title]) => `<button type="button" data-nav="${route}" class="nav-item ${active === route ? 'active' : ''}" ${active === route ? 'aria-current="page"' : ''} title="${title}">${i(icon)}<span>${title}</span></button>`).join('')}` : ''}</nav>
+      <section class="sidebar-section"><div class="sidebar-section-label"><button type="button" class="text-button muted small ${CS.ui.projectsCollapsed ? 'collapsed' : ''}" data-action="toggle-projects-section" aria-expanded="${!CS.ui.projectsCollapsed}" title="${CS.ui.projectsCollapsed ? '展开项目列表' : '折叠项目列表'}"><span>项目</span></button>${iconBtn('new-project','plus','新建项目')}</div>
+        ${CS.ui.projectsCollapsed ? '' : CS.state.projects.filter(p => !p.archived).map(p => { const convs = CS.ui.conversations.filter(c => c.projectId === p.id && !c.archived); return `<div class="project-row"><button type="button" class="project-link ${CS.ui.expandedProjects.has(p.id) ? 'expanded' : ''}" data-action="toggle-project" data-id="${e(p.id)}" title="${e(p.name)}">${i(CS.ui.expandedProjects.has(p.id) ? 'chevron' : 'folder')}<span class="project-name">${e(p.name)}</span><span class="project-actions"><span class="icon-btn" role="button" data-action="edit-project" data-id="${e(p.id)}" title="编辑项目">${i('edit','',14)}</span><span class="icon-btn" role="button" data-action="toggle-project-settings" data-id="${e(p.id)}" title="项目设置">${i('settings','',14)}</span></span>${convs.length ? `<span class="nav-count">${convs.length}</span>` : ''}</button>${CS.ui.projectSettingsMenu === p.id ? `<div class="model-menu project-settings-menu"><button type="button" class="model-menu-item" data-action="edit-project" data-id="${e(p.id)}"><span>编辑项目</span></button><button type="button" class="model-menu-item" data-action="archive-project" data-id="${e(p.id)}"><span>归档项目</span></button><div class="menu-divider"></div><button type="button" class="model-menu-item danger" data-action="delete-project" data-id="${e(p.id)}"><span>删除项目</span></button></div>` : ''}</div>${CS.ui.expandedProjects.has(p.id) ? `<div class="conversation-list">${convs.length ? convs.map(c => `<button type="button" class="conversation-link ${CS.state.currentRunId === c.id ? 'selected' : ''}" data-action="open-conversation" data-id="${e(c.id)}" title="${e(c.title)}">${i('message')}<span class="conversation-title">${e(c.title)}</span>${streaming.has(c.id) ? '<span class="conv-dot" title="生成中"></span>' : ''}<span class="conversation-actions${c.pinned ? ' has-pinned' : ''}"><span class="icon-btn" role="button" data-action="toggle-pin-conversation" data-id="${e(c.id)}" title="${c.pinned ? '取消置顶' : '置顶'}">${i(c.pinned ? 'x' : 'up','',12)}</span><span class="icon-btn" role="button" data-action="archive-conversation" data-id="${e(c.id)}" title="归档">${i('archive','',12)}</span></span></button>`).join('') : '<div class="conversation-empty small muted">暂无会话</div>'}</div>` : ''}`; }).join('')}
+        ${CS.ui.projectsCollapsed ? '' : `<button type="button" class="project-link" data-nav="projects">${i('more')}<span>查看全部项目</span></button>`}
+      </section>
+      <section class="sidebar-section"><div class="sidebar-section-label"><button type="button" class="text-button muted small ${CS.ui.unassignedCollapsed ? 'collapsed' : ''}" data-action="toggle-unassigned" aria-expanded="${!CS.ui.unassignedCollapsed}" title="${CS.ui.unassignedCollapsed ? '展开会话列表' : '折叠会话列表'}"><span>会话</span></button></div>
+        ${CS.ui.unassignedCollapsed ? '' : (() => { const loose = CS.ui.conversations.filter(c => !c.projectId).slice(0, 8); return loose.length ? loose.filter(c => !c.archived).map(c => `<button type="button" class="conversation-link ${CS.state.currentRunId === c.id ? 'selected' : ''}" data-action="open-conversation" data-id="${e(c.id)}" title="${e(c.title)}">${i('message')}<span class="conversation-title">${e(c.title)}</span>${streaming.has(c.id) ? '<span class="conv-dot" title="生成中"></span>' : ''}<span class="conversation-actions${c.pinned ? ' has-pinned' : ''}"><span class="icon-btn" role="button" data-action="toggle-pin-conversation" data-id="${e(c.id)}" title="${c.pinned ? '取消置顶' : '置顶'}">${i(c.pinned ? 'x' : 'up','',12)}</span><span class="icon-btn" role="button" data-action="archive-conversation" data-id="${e(c.id)}" title="归档">${i('archive','',12)}</span></span></button>`).join('') : '<div class="conversation-empty small muted">暂无未归属项目的会话</div>'; })()}
+      </section>
+      <section class="sidebar-section"><div class="sidebar-section-label"><button type="button" class="text-button muted small ${CS.ui.fsCollapsed ? 'collapsed' : ''}" data-action="toggle-fs-section" aria-expanded="${!CS.ui.fsCollapsed}" title="${CS.ui.fsCollapsed ? '展开文件' : '折叠文件'}"><span>文件</span></button><span class="fs-actions">${iconBtn('fs-upload','upload','上传文件到项目根目录')}${iconBtn('fs-term','terminal','打开终端')}${iconBtn('fs-refresh','refresh','刷新文件')}</span></div>${CS.ui.fsCollapsed ? '' : V.fsTree()}<input type="file" id="fs-upload-input" multiple hidden aria-hidden="true"></section></div>
+      <div class="sidebar-bottom"><div class="workspace-chip" data-action="toggle-user-menu"><div class="workspace-monogram">${((CS.state.me?.user?.name) || CS.state.username || 'CS').slice(0,2).toUpperCase()}</div><div class="grow"><div class="name">${e((CS.state.me?.user?.name) || CS.state.username || '未登录用户')}</div><div class="sub">科研工作空间</div></div>${i('chevron','',12)}${CS.ui.userMenu ? `<div class="user-menu"><button class="menu-item" data-nav="settings">${i('settings','',15)}<span>设置</span><kbd>⌘,</kbd></button><button class="menu-item" data-nav="logs">${i('file','',15)}<span>日志与反馈</span></button><button class="menu-item" data-nav="help">${i('help','',15)}<span>帮助与文档</span></button>${CS.state.me?.mode === 'multi' ? `<div class="menu-divider"></div><button class="menu-item danger" data-action="logout">${i('logout','',15)}<span>退出登录</span></button>` : ''}</div>` : ''}</div></div>
+    </aside>`;
+  };
+  V.topbar = () => `<div class="topbar"><div class="row"><button class="icon-btn mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${i('menu')}</button></div></div>`;
+  // 上下文用量圆环 + 详情浮层(位于模型选择按钮左侧, 点击圆环展开)
+    // 标题栏右侧 usage 行: 图标+数值(开始时间/耗时/消息/工具调用 + 输入↓/输出↑/缓存②/上下文表盘), 右对齐贴水平线
+  // 标题栏右侧消息轨迹热力图: 4行方格子, 按聊天气泡可见块一一对应(思考/每个工具/回复各一格),
+  // 列内自上而下 / 列间从左往右递增, 整体贴最右生长, 超出 usage 行左侧的旧列因 overflow 被裁剪
+  // 虚拟细胞: 4 个模型(动物→植物→神经元→病毒, 默认动物), GLB/JPG 资产在
+  // 本站 assets/cell(build 拷入 dist/cell), 3D 内核与 Draco 解码器都在 js/vendor/
+  CS.CELL_MODELS = [
+    { key: 'animal', name: '动物细胞', en: 'Animal Cell', icon: 'spark',
+      img: CS.assetUrl('cell/images/animal-cell.jpg'), glb: CS.assetUrl('cell/models/animal-cell.glb'),
+      tags: ['细胞核', '线粒体', '内质网', '高尔基体', '溶酶体', '核糖体'],
+      facts: [['直径', '10–100 μm'], ['营养方式', '异养（摄取有机物）'], ['代表组织', '上皮 · 肌肉 · 神经'], ['能量来源', '线粒体氧化磷酸化']],
+      quick: ['动物细胞与植物细胞有哪些关键区别？', '线粒体如何通过氧化磷酸化供能？', '内膜系统的细胞器之间如何协作？'] },
+    { key: 'plant', name: '植物细胞', en: 'Plant Cell', icon: 'leaf',
+      img: CS.assetUrl('cell/images/plant-cell.jpg'), glb: CS.assetUrl('cell/models/plant-cell.glb'),
+      tags: ['细胞壁', '叶绿体', '中央液泡', '细胞核', '内质网'],
+      facts: [['直径', '20–100 μm'], ['营养方式', '自养（光合作用）'], ['代表部位', '叶片 · 根 · 茎'], ['特有结构', '细胞壁 · 叶绿体 · 液泡']],
+      quick: ['叶绿体的光合作用分为哪两个阶段？', '液泡对植物细胞有什么作用？', '细胞壁的纤维素如何维持细胞形态？'] },
+    { key: 'neuron', name: '神经元', en: 'Neuron', icon: 'network',
+      img: CS.assetUrl('cell/images/neuron.jpg'), glb: CS.assetUrl('cell/models/neuron.glb'),
+      tags: ['胞体', '树突', '轴突', '髓鞘', '突触末梢'],
+      facts: [['胞体直径', '4–120 μm'], ['轴突长度', '最长 >1 m'], ['传导速度', '0.5–120 m/s'], ['关键机制', '动作电位 · 突触传递']],
+      quick: ['动作电位的离子机制是什么？', '髓鞘如何让信号传导更快？', '神经元之间如何通过突触传递信息？'] },
+    { key: 'virus', name: '病毒颗粒', en: 'Virus Particle', icon: 'alert',
+      img: CS.assetUrl('cell/images/virus.jpg'), glb: CS.assetUrl('cell/models/virus-particle.glb'),
+      tags: ['衣壳', '刺突蛋白', '核酸基因组', '包膜'],
+      facts: [['直径', '20–300 nm'], ['基因组', 'DNA 或 RNA'], ['繁殖方式', '依赖宿主细胞'], ['对抗手段', '疫苗 · 抗病毒药物']],
+      quick: ['病毒为什么不被视为完整生命？', '刺突蛋白在病毒入侵中起什么作用？', '抗生素为什么对病毒无效？'] }
+  ];
+  V.cell = () => {
+    const models = CS.CELL_MODELS;
+    const cur = models.find(m => m.key === CS.ui.cellModel) || models[0];
+    // 标题并入左列列首: 右侧详情卡与 VIRTUAL CELL 那一行同在 grid 首行, 上边缘对齐
+    return `<section class="page cell-page">
+    <div class="cell-layout">
+      <div class="cell-col-left">
+        ${header('VIRTUAL CELL', '虚拟细胞', '在可交互的三维模型中观察微观生命结构，右侧随时向 Agent 深入提问。')}
+        <div class="panel cell-left">
+        <div class="cell-switcher">${models.map(m => `<button type="button" class="cell-switch-card ${m.key === cur.key ? 'selected' : ''}" data-action="cell-pick" data-id="${m.key}" title="切换到${e(m.name)}"><span class="cell-switch-img"><img src="${m.img}" alt="${e(m.name)}预览" loading="lazy"></span><span class="cell-switch-name">${i(m.icon, '', 13)}${e(m.name)}</span></button>`).join('')}</div>
+        <div class="cell-stage" id="cell-stage">
+          <div class="cell-stage-tools">
+            <button type="button" class="icon-btn ${CS.ui.cellAutoRotate ? 'cell-tool-on' : ''}" data-action="cell-rotate" title="${CS.ui.cellAutoRotate ? '关闭自动旋转' : '开启自动旋转'}" aria-pressed="${CS.ui.cellAutoRotate ? 'true' : 'false'}">${i('refresh', '', 14)}</button>
+            <button type="button" class="icon-btn" data-action="cell-reset-view" title="重置视角">${i('eye', '', 14)}</button>
+          </div>
+          <div class="cell-stage-hint">拖拽旋转 · 滚轮缩放</div>
+          <div class="cell-load" id="cell-load"><span class="cell-load-dot"></span><span id="cell-load-text">正在加载 ${e(cur.name)} 模型…</span></div>
+        </div>
+      </div>
+      </div>
+      <div class="cell-right">
+        <div class="panel cell-detail">
+          <div class="cell-detail-head"><span class="cell-icon-tile">${i('cells', '', 17)}</span><div><h2>${e(cur.name)}</h2><p class="small muted">${e(cur.en)}</p></div></div>
+          <div class="cell-tags">${cur.tags.map(t => `<span class="cell-chip">${e(t)}</span>`).join('')}</div>
+          <dl class="cell-stats" id="cell-stats">${cur.facts.map(([k, v]) => `<div><dt>${e(k)}</dt><dd>${e(v)}</dd></div>`).join('')}</dl>
+        </div>
+        <div class="panel cell-ask-panel">
+          <h3>对话操作</h3>
+          <p class="small muted">关于「${e(cur.name)}」的问题将带着结构要点进入新会话，由 Agent 给出可追溯的解释。</p>
+          <div class="cell-quick">${cur.quick.map(q => `<button type="button" class="cell-chip cell-quick-chip" data-action="cell-quick" data-id="${e(q)}">${e(q)}</button>`).join('')}</div>
+          <textarea id="cell-ask-text" rows="3" maxlength="6000" placeholder="例如：${e(cur.quick[0])}"></textarea>
+          <div class="row-between mt-12"><span class="tiny muted">发送后进入新对话页面</span>${btn('cell-ask', '向 Agent 提问', 'up', 'primary small-btn')}</div>
+        </div>
+      </div>
+    </div></section>`;
+  };
+  // ===== 虚拟病原体 =====
+  // 静态壳 + mountPathogenPage() 挂载(目录/宿主内控制台/四联图/诊断/日志);
+  // 虚拟果蝇页壳: #fly-root 与病原体页同条款(重渲染原样搬回, 保 3D canvas)。
+  V.fly = () => `<section class="page fly-page"><div id="fly-root">
+    <div class="fly-topbar">
+      <div class="fly-title">🪰 虚拟果蝇<span class="fly-dot" id="flyDot" title="引擎连接状态"></span></div>
+      <div class="fly-motto">全脑 LIF 仿真 × Qwen2.5-1.5B(LoRA) · 每 token 驱动 16 万神经元</div>
+      <div class="fly-actions"><button type="button" class="btn small-btn" id="flyWireBtn" onclick="FlyUI.toggleWire()" title="全脑神经元线框(按需分块加载)">线框</button><button type="button" class="btn small-btn" id="flyResetBtn" onclick="FlyUI.reset()">重置对话</button></div>
+    </div>
+    <div class="fly-body">
+      <div class="fly-viz" id="flyViz"><canvas id="flyCanvas"></canvas>
+        <div class="fly-hud"><span id="flyHudN">— 神经元</span><span id="flyHudAct">活动 —</span><span id="flyHudFps">— fps</span></div>
+      </div>
+      <div class="fly-chat" id="flyChat"><div class="fly-msgs" id="flyMsgs"></div>
+        <form class="fly-form" id="flyForm"><input id="flyInput" maxlength="2000" placeholder="和果蝇大脑说点什么…（每 token 增量仿真, 回复需数秒）" autocomplete="off"><button type="submit" class="btn small-btn primary" id="flySend">发送</button></form>
+        <div class="fly-foot small" id="flyFoot">引擎检测中…</div>
+      </div>
+    </div>
+  </div></section>`;
+  // #pathogen-root 与患者页同条款: 重渲染时原样搬回(保 canvas)。
+  V.pathogen = () => `<section class="page pathogen-page"><div id="pathogen-root">
+    <div class="p2-topbar">
+      <div class="p2-title">🦠 虚拟病原体<span class="p2-dot" id="p2BridgeDot" title="环境桥: 智能体工具直接驱动本页引擎"></span></div>
+      <div class="p2-scales">
+        <button type="button" class="p2-scale" data-s="molecular" onclick="PathoUI.setScale('molecular')">分子/基因</button>
+        <button type="button" class="p2-scale on" data-s="host" onclick="PathoUI.setScale('host')">宿主内</button>
+        <button type="button" class="p2-scale" data-s="diag" onclick="PathoUI.setScale('diag')">诊断读数</button>
+        <button type="button" class="p2-scale" data-s="pop" onclick="PathoUI.setScale('pop')">群体动态</button>
+        <button type="button" class="p2-scale" data-s="trial" onclick="PathoUI.setScale('trial')">试验台</button>
+        <button type="button" class="p2-scale" onclick="PathoUI.open3D()" id="btnPath3D" title="示意形态 3D 视图(软件渲染, 非真实结构)">🦠 3D</button>
+        <button type="button" class="p2-scale" onclick="openPathAI()" id="btnPathAI" title="让智能体接管: 观测/实验/诊断/试验台, 操作实时同步到本页">🤖 AI</button>
+      </div>
+    </div>
+    <div class="p2-main">
+      <aside class="p2-browser">
+        <input class="p2-search" type="search" placeholder="搜索病原体: 名称 / 基因组类型…" value="" oninput="PathoUI.search(this.value)">
+        <div class="p2-chips" id="p2Kinds"></div>
+        <div class="p2-list" id="p2List"></div>
+      </aside>
+      <div class="p2-right">
+        <div class="p2-card" id="p2Info"></div>
+        <div class="p2-work">
+          <section class="p2-pane" data-pane="molecular" hidden>
+            <div class="p2-pane-head">分子 / 基因组层 · 测序读数 ⇒ 推断</div>
+            <div class="p2-controls">
+              <label>样本 <input id="p2SeqLabel" type="text" value="" placeholder="自动 S1,S2…" style="width:70px"></label>
+              <label>深度 <select id="p2SeqDepth">
+                <option value="100">100× (便宜/易漏低频)</option>
+                <option value="1000" selected>1000×</option>
+                <option value="20000">20000× (能看到 ~0.01%)</option>
+              </select></label>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('sequence', {label: document.getElementById('p2SeqLabel').value || undefined, depth: Number(document.getElementById('p2SeqDepth').value)})">🧬 测序</button>
+              <span class="p2-sep"></span>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('variants', {})">变异谱</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('resistance', {})">耐药注释</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('drug_match', {})">药物匹配</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('escape', {})">抗原逃逸</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('forecast', {days: 60, drug_pressure: 0.5, vaccine_coverage: 0.3})">演化预测</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('vaccine_design', {platform: 'mrna', doses: 2, strategy: 'cocktail'})">疫苗设计</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('phylo', {})">系统发生</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('trace', {})">溯源</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('identify', {method: 'mngs'})">病原识别</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.molRun('genome', {})">基因组图式</button>
+            </div>
+            <div class="p2-controls" id="p2MolSamples" style="border-style:solid;background:#fff"></div>
+            <pre class="p2-out" id="p2MolOut">测序会产生带噪声的读数: 深度决定能看到的等位基因频率(本环境铁律: AF×深度 &lt; 2.5 的亚群被"藏"在读数下)。
+推断链路: 测序 → 变异谱 → 耐药注释/药物匹配 → 必要时高深度复测 → 给区间与 tier。</pre>
+          </section>
+          <section class="p2-pane" data-pane="host">
+            <div class="p2-pane-head">宿主内动力学</div>
+            <div class="p2-controls">
+              <label>接种 10^<input id="p2Dose" type="number" value="3" min="-1" max="12" step="0.5" style="width:52px"></label>
+              <button type="button" class="p2-btn" onclick="PathoUI.inoculate()">🦠 接种</button>
+              <span class="p2-sep"></span>
+              <label>药物 <select id="p2Rx"></select></label>
+              <label><input id="p2Mg" type="number" value="500" style="width:62px">mg</label>
+              <label>q<input id="p2Iv" type="number" value="12" style="width:46px">h</label>
+              <label>×<input id="p2Days" type="number" value="7" style="width:46px">d</label>
+              <button type="button" class="p2-btn" onclick="PathoUI.dose()">💊 给药</button>
+              <span class="p2-sep"></span>
+              <label>推进 <input id="p2Adv" type="number" value="1" style="width:48px" step="0.5"> 天</label>
+              <button type="button" class="p2-btn" onclick="PathoUI.advance()">⏩ 推进</button>
+              <button type="button" class="p2-btn" id="p2Play" onclick="PathoUI.play()">▶ 播放</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.reset()">↺ 复位</button>
+              <span class="p2-sep"></span>
+              <button type="button" class="p2-btn" onclick="PathoUI.vaccinateUI()" title="疫苗设计(分子层)结果在此落地: ~10 天起效, ~240 天衰减, 逃逸位点逐个折扣">💉 疫苗</button>
+            </div>
+            <div class="p2-strip" id="p2Strip"></div>
+            <div class="p2-charts" id="p2Charts"></div>
+          </section>
+          <section class="p2-pane" data-pane="diag" hidden>
+            <div class="p2-pane-head">诊断读数（所有观测都有检出限与假阴）</div>
+            <div class="p2-controls">
+              <button type="button" class="p2-btn" onclick="PathoUI.diag('pcr')">🧬 qPCR (Ct)</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.diag('antigen')">🧻 抗原</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.diag('culture')">🧫 培养</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.diag('mic_panel')">💊 MIC 面板</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.diag('panel')">▣ 全套</button>
+            </div>
+            <pre class="p2-out" id="p2DiagOut">尚未采样 —— 先在「宿主内」接种并推进时间, 再回来检测。
+注意: 检测读数是唯一合法的观测来源; 智能体看不到引擎内部状态。</pre>
+          </section>
+          <section class="p2-pane" data-pane="pop" hidden>
+            <div class="p2-pane-head">群体动态 · 元种群 SEIR + 干预 + 监测 + 溢出</div>
+            <div class="p2-controls">
+              <button type="button" class="p2-btn" onclick="PathoUI.popRun('init', {population: 1000000, regions: 3, initial_cases: 100})">🌍 初始化(100 万 · 3 区)</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.popRun('intervene', {kind: 'lockdown', strength: 0.6, coverage: 0.8, start_day: 30, end_day: 120})">🏛 封控(t=30)</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.popRun('vaccinate', {coverage: 0.6, efficacy: 0.85, start_day: 45})">💉 疫苗 60%</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.popRun('surveillance', {seq_fraction: 0.01})">📡 监测(1% 测序)</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.popRun('spillover', {interface: 0.5})">🦠 溢出预警</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.popRun('spillover', {interface: 0.9, what_if: true})">what-if 界面 0.9</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.popRun('observe', {})">👁 群体观测</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.popRun('observe', {series: true})">👁 +序列</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.popRun('serology', {sample_per_region: 2000})">🩸 血清调查(2000/区)</button>
+            </div>
+            <div id="p2PopChart" style="padding:4px 0"></div>
+            <pre class="p2-out" id="p2PopOut">初始化后, 用「宿主内」页签的 推进/播放 按钮同步推进两层; 这里的同时可以排程干预与疫苗。
+监测(1% 测序)给出的是"有噪读数" —— 与 解析观测 对照是本层的核心练习。</pre>
+          </section>
+          <section class="p2-pane" data-pane="trial" hidden>
+            <div class="p2-pane-head">试验台 · 协议 → 多臂重复 → A/B → 真值评分 → 导出</div>
+            <div class="p2-controls">
+              <button type="button" class="p2-btn" onclick="PathoUI.trialRun('run')">🧪 运行</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.trialRun('reveal')">🧪 运行(揭示真值)</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.trialCompare()">⚖ A/B(首末臂)</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.trialExport('csv')">📤 CSV</button>
+              <button type="button" class="p2-btn" onclick="PathoUI.trialExport('json')">📤 JSON</button>
+            </div>
+            <textarea id="p2TrialProto" class="p2-textarea" spellcheck="false"></textarea>
+            <pre class="p2-out" id="p2TrialOut">协议在上方 JSON 里改: arms[].interventions 的时间表事件支持
+{t, drug, mg, interval_h, days} 给药 · {t, log10_dose} 接种 · {t, kind, strength, coverage, end_day} 群体干预
+{t, coverage, efficacy} 疫苗 · {t, assay} 采样 · {t, immunity} 免疫背景。每条重复都是"新个体"(种子抖动)。</pre>
+          </section>
+        </div>
+        <div class="p2-logpanel" id="p2Log"></div>
+      </div>
+    </div>
+  </div></section>`;
+
+  // ===== 虚拟患者 =====
+  // 引擎(patient.js 移植层)按 ID 直驱下列 DOM: id 不作改动; inline onclick 直调引擎
+  // 全局函数(生产服务无 CSP 限制)。渲染产物整体包在 #patient-root —— app.js 的渲染
+  // 钩子会在重渲染时把活的 DOM 节点原样搬回(保 canvas/WebGL 上下文与表单状态)。
+  V.patient = () => `<section class="page patient-page"><div id="patient-root">
+    <div class="pat-topbar">
+      <div class="pat-id"><div id="patName">模拟患者</div><div id="patTag">SIM-PATIENT · 成人 · 70kg</div></div>
+      <div class="alarmBanner" id="alarmBanner">监护中</div>
+      <div id="clock">00:00</div>
+      <div class="pat-topbtns">
+        <button type="button" onclick="openCaseSelect()">📋 病例</button>
+        <button type="button" onclick="toggleSound()" id="sndBtn">🔊 音效开</button>
+        <button type="button" onclick="togglePause()" id="pauseBtn">⏸ 暂停</button>
+        <button type="button" onclick="resetSim()">↺ 复苏重置</button>
+        <button type="button" onclick="showEngineDoc()">⚙ 引擎</button>
+        <button type="button" onclick="openPatAI()" id="btnPatAI" title="让智能体接管: 观测/处置/推进时间, 操作实时同步到本页">🤖 AI</button>
+        <button type="button" onclick="openPathoSandbox()" id="btnPat2Patho" title="把当前主导病原带进虚拟病原体沙盒: 做机制/用药/疫苗实验(独立教学环境, 不回写本病人)">🧭 病原沙盒</button>
+      </div>
+    </div>
+    <div class="pat-main">
+      <div class="pat-mid">
+        <section id="waves">
+          <div class="pat-bezel"><div class="pat-screen">
+          <div class="pat-waves">
+          <div class="lane"><canvas id="ecgCv"></canvas><div class="laneNum l0" id="n-hr"><div class="lab">HR 心率</div><div class="val">--</div><div class="unit">bpm</div></div></div>
+          <div class="lane"><canvas id="plethCv"></canvas><div class="laneNum l1" id="n-spo2"><div class="lab">SpO₂ 脉搏血氧</div><div class="val">--</div><div class="unit">%</div></div></div>
+          <div class="lane"><canvas id="co2Cv"></canvas><div class="laneNum l2" id="n-rr"><div class="lab">RESP 呼吸</div><div class="val">--</div><div class="unit">bpm</div></div></div>
+          </div>
+          <div id="numCols">
+            <div class="numTile" id="t-map"><div class="lab">ART MAP</div><div class="val">--</div><div class="unit">mmHg</div></div>
+            <div class="numTile" id="t-temp"><div class="lab">TEMP 体温</div><div class="val">--</div><div class="unit">°C</div></div>
+            <div class="numTile" id="t-glu"><div class="lab">GLU 血糖</div><div class="val">--</div><div class="unit">mmol/L</div></div>
+            <div class="numTile" id="t-paco2"><div class="lab">PaCO₂</div><div class="val">--</div><div class="unit">mmHg</div></div>
+            <div class="numTile" id="t-ph"><div class="lab">pH 酸碱</div><div class="val">--</div><div class="unit">​</div></div>
+            <div class="numTile" id="t-k"><div class="lab">K⁺ 血钾</div><div class="val">--</div><div class="unit">mmol/L</div></div>
+            <div class="numTile" id="t-etco2"><div class="lab">etCO₂</div><div class="val" id="etco2v">--</div><div class="unit">mmHg</div></div>
+            <div class="numTile" id="t-gcs"><div class="lab">GCS 意识</div><div class="val">--</div><div class="unit">/15</div></div>
+            <div class="numTile" id="t-rhy"><div class="lab">心律</div><div class="val">窦性</div><div class="unit">​</div></div>
+          </div>
+          </div>
+          <div class="pat-under">
+            <div class="pat-col"><div class="pat-side-lab">生殖周期</div><div id="frsInfo"></div></div>
+            <div class="pat-col"><div class="pat-side-lab">病理监测</div><div id="pathList"></div></div>
+            <div class="pat-col"><div class="pat-side-lab">血药/介质</div><div id="drugBox"><div id="drugList">无</div></div></div>
+          </div><div class="pat-bezel-brand" aria-hidden="true"></div></div>
+        </section>
+        <section id="body3d">
+          <div class="bhead"><button type="button" id="btnSpread" onclick="toggleSpread()">⇔ 分离</button><button type="button" onclick="toggleBig3d()">⛶ 大图</button><button type="button" class="btnDiag" onclick="showDiagnosis()">🩺 诊断</button></div>
+          <div id="heartBox"><canvas id="h3d"></canvas><div id="organStrip"></div></div>
+        </section>
+      </div>
+      <div class="pat-aside">
+        <div class="pat-logpanel">
+          <h3>事件记录</h3>
+          <div id="logBox"></div>
+        </div>
+        <div id="treatZone">
+        <div class="pat-console">
+          <h3>输注工作站</h3>
+          <div id="rxZone">
+            <select id="chemSel" onmousedown="event.preventDefault()" onclick="openChemPicker()" title="点击打开药典选择"></select>
+            <select id="routeSel"></select>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input id="doseIn" type="number" value="1" min="0.1" max="50" step="0.5" style="flex:1" title="剂量">
+              <span style="font-size:11px;color:#7d8db0">单位剂量</span>
+            </div>
+            <div id="rxRow"><button type="button" class="act" onclick="administer()">输液/给药</button><button type="button" class="clear" onclick="clearDrug()">代谢清除</button></div>
+          </div>
+          <div id="pumpGrid">
+            <button type="button" onclick="doDefib()"><img src="${CS.assetUrl('patient/Electric.png')}" alt="除颤">除颤</button>
+            <button type="button" onclick="doPace(this)" id="btnPace">起搏</button>
+            <button type="button" onclick="doVent(this)" id="btnVent">机械通气</button>
+            <button type="button" onclick="doO2(this)" id="btnO2">吸氧</button>
+            <button type="button" onclick="doCPR(this)" id="btnCPR">CPR</button>
+            <button type="button" onclick="doFluid()">补液500ml</button>
+            <button type="button" onclick="doTransfuse()">输血400ml</button>
+            <button type="button" onclick="doBleed()">放血500ml</button>
+            <button type="button" onclick="toggleAdm()" id="btnAdm">拟交感支持</button>
+            <button type="button" onclick="doPericardial()" id="btnPeri">🩹 心包穿刺</button>
+            <button type="button" onclick="doCooling(this)" id="btnCool">❄ 物理降温</button>
+            <button type="button" onclick="drawBlood()" id="btnLab"><img src="${CS.assetUrl('patient/Blood.png')}" alt="采血化验">采血化验</button>
+            <button type="button" onclick="doXray()">📷 胸部X光</button>
+            <button type="button" onclick="doEcho()">🩻 心脏超声</button>
+            <button type="button" onclick="doChestCT()">🖥 胸部CT</button>
+          </div>
+          <h3>饮食摄入（LIFood · 24 种）</h3>
+          <div id="foodZone">
+            <div class="frow selrow">
+              <select id="foodSel" onchange="foodHint()"></select>
+              <select id="foodPortion" onchange="foodHint()">
+                <option value="0.5">半份</option>
+                <option value="1" selected>1 份</option>
+                <option value="2">2 份</option>
+                <option value="3">3 份</option>
+              </select>
+            </div>
+            <div class="frow"><button type="button" onclick="eatFood()">🍽 摄入（经口）</button></div>
+            <div id="foodInfo">选择食物查看营养构成——经口入 S.gut 肠腔房室吸收（LMFood→LMSmallIntestine AbsorptionRate）。</div>
+          </div>
+        </div>
+        <div class="pat-console">
+          <h3>急救台</h3>
+          <div id="emZone">
+            <div class="emRow"><span class="emLab">⚡ 能量</span>
+              <div class="enBtns">
+                <button type="button" class="enBtn" onclick="setEnergy(this,120)">120J</button>
+                <button type="button" class="enBtn sel" onclick="setEnergy(this,200)">200J</button>
+                <button type="button" class="enBtn" onclick="setEnergy(this,300)">300J</button>
+                <button type="button" class="enBtn" onclick="setEnergy(this,360)">360J</button>
+              </div>
+            </div>
+            <button type="button" class="shockBtn" onclick="doShock()">⚡ 除颤电击（<span id="enNow">200</span>J）</button>
+            <label class="swLab"><input type="checkbox" id="paceOn" onchange="paceToggle(this)">🩺 起搏</label>
+            <div class="emRow"><span class="emLab">频率</span><input type="range" id="paceRate" min="60" max="180" value="80" oninput="paceSet(this)"><span class="emVal" id="paceRateV">80</span><span class="emUnit">bpm</span></div>
+            <button type="button" class="emAct" id="cprBtn" onclick="doCPR(this)">🫀 胸外按压 CPR</button>
+            <div class="cprBarWrap"><div class="cprBar" id="cprBar"></div></div>
+            <div class="emSub" id="cprPerf">冠脉灌注线 —</div>
+            <button type="button" class="emAct" id="btnWithdraw" style="display:none" onclick="withdrawLifeAsk()">🚫 撤除生命维持 · 宣告临床死亡</button>
+          </div>
+          <h3>呼吸机</h3>
+          <div id="ventZone">
+            <label class="swLab"><input type="checkbox" id="ventOn" onchange="ventToggle(this)">💨 机械通气 A/C</label>
+            <div class="emRow"><span class="emLab">RR</span><input type="range" id="ventRR" min="6" max="40" value="12" oninput="ventSet()"><span class="emVal" id="ventRRv">12</span><span class="emUnit">/min</span></div>
+            <div class="emRow"><span class="emLab">Vt 潮气量</span><input type="range" id="ventVt" min="200" max="800" step="10" value="500" oninput="ventSet()"><span class="emVal" id="ventVtv">500</span><span class="emUnit">ml</span></div>
+            <div class="emRow"><span class="emLab">PEEP</span><input type="range" id="ventPeep" min="0" max="15" value="5" oninput="ventSet()"><span class="emVal" id="ventPeepv">5</span><span class="emUnit">cmH₂O</span></div>
+            <div class="emRow"><span class="emLab">FiO₂</span><input type="range" id="ventFi" min="21" max="100" value="60" oninput="ventSet()"><span class="emVal" id="ventFiv">60</span><span class="emUnit">%</span></div>
+            <div class="emSub" id="ventInfo">待机</div>
+          </div>
+        </div>
+        </div>
+      </div>
+    </div>
+    <div id="big3d">
+      <div class="bhead"><h3>3D 全身器官视图</h3><button type="button" onclick="toggleBig3d()">✕ 关闭</button></div>
+      <div id="glSlot"><div id="organStripBig"></div></div>
+    </div>
+    <div id="modal" onclick="if(event.target===this)closeModal()"><div id="modalCard"><button type="button" id="modalClose" onclick="closeModal()">✕</button><h4 id="modalTitle"></h4><div id="searchRow"><input id="encSearch" placeholder="搜索词条…" oninput="renderEncList()"></div><div id="modalBody"></div></div><div id="tipCard"></div></div>
+    <div id="confirmBox" style="position:fixed;inset:0;background:rgba(30,42,58,.45);display:none;align-items:center;justify-content:center;z-index:80"><div id="confirmCard"><div class="cmsg" id="confirmMsg"></div><div class="cbtns"><button type="button" onclick="cancelConfirm()">取消</button><button type="button" class="ok" onclick="okConfirm()">确认电击</button></div></div></div>
+    <div id="labBox" onclick="if(event.target===this)closeLab()"><div id="labCard"></div></div>
+    <div id="shockFlash"></div>
+    <div id="diagBox" onclick="if(event.target===this)closeDiag()"><div id="diagCard"></div></div>
+    <div id="death"><h2>死 亡</h2><div class="dsub" id="deathSub">LIDeath · 宣布死亡（CallDeath）</div><div class="cause" id="deathCause" style="display:none"></div><div id="deathCard"></div><div class="dbtns"><button type="button" id="btnRestart" onclick="resetSim()">🔄 重新来过（Restart）</button><button type="button" id="btnWithdrawD" onclick="withdrawLifeAsk()">🚫 撤除生命维持 · 宣告临床死亡</button></div></div>
+    <div id="caseHUD"><h5 id="caseHudName">病例</h5><div class="caseTime" id="caseHudTime">⏱ 00:00 / 00:00</div><div id="caseHudGoals"></div><div class="hintCase" id="caseHudHint"></div><button type="button" style="margin-top:6px;width:100%" onclick="caseQuit()">退出病例</button></div>
+    <div id="caseBox" onclick="if(event.target===this)closeCaseSelect()"><div id="caseCard"><h4>📋 病例挑战</h4><div class="sub">22 个 scripted 病例关卡（16 基础 + 6 感染挑战）——初始化病理状态、限时达目标、自动判定与评级。治疗手段即日常界面（给药/除颤/通气/补液…）。胜利解锁下一病例，进度存 localStorage。</div><div id="caseGrid"></div></div></div>
+    <div id="caseEndBox"><div id="caseEndCard"></div></div>
+  </div></section>`;
+  // present 富预览: 按扩展名分派展示形态
+  //   图片(png/jpg/webp/gif/svg) → 页面内直显, legend(备注)作为图注在下方
+  //   csv/tsv → 表格(表头 + 首 8 行 + 末 4 行, 中间省略)
+  //   json/jsonl → 缩进摘要(截断保护)
+  // 其余类型维持原卡片。数据由 app.js 的 IO 懒加载器填充(.present-preview)。
+  // RFC 4180 行解析: 引号字段可含分隔符/换行/转义引号("")。
+  // 返回二维数组(不含首行表头由调用方切分)。
+  CS.csvSplitRows = (text, sep) => {
+    const rows = [];
+    let row = [], field = '', inQ = false;
+    const n = text.length;
+    for (let i = 0; i < n; i++) {
+      const ch = text[i];
+      if (inQ) {
+        if (ch === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false; }
+        else field += ch;
+      } else if (ch === '"') inQ = true;
+      else if (ch === sep) { row.push(field); field = ''; }
+      else if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && text[i + 1] === '\n') i++;
+        row.push(field); field = ''; rows.push(row); row = [];
+      } else field += ch;
+    }
+    if (field !== '' || row.length) { row.push(field); rows.push(row); }
+    return rows;
+  };
+  CS.csvPreviewTable = (text, name) => {
+    const tsv = /\.tsv$/i.test(name || '');
+    const raw = String(text || '');
+    if (!raw.trim()) return '<div class="present-preview-note small muted">空文件。</div>';
+    // 分隔符探测: 统计首行引号外出现的次数(tab 与逗号竞争, 真实 CSV 首行极少同时含两者)
+    const sepCount = (line, ch) => { let n = 0, q = false; for (const chx of line) { if (chx === '"') q = !q; else if (chx === ch && !q) n++; } return n; };
+    const firstLine = raw.slice(0, raw.indexOf('\n') + 1 || raw.length);
+    const sep = tsv ? '\t' : (sepCount(firstLine, '\t') > sepCount(firstLine, ',') ? '\t' : ',');
+    const all = CS.csvSplitRows(raw, sep).filter(r => r.some(cell => String(cell).trim() !== ''));
+    if (!all.length) return '<div class="present-preview-note small muted">空文件。</div>';
+    const head = all[0] || [];
+    const body = all.slice(1);
+    const FIRST = 8, LAST = 4;
+    const cell = v => `<td>${e(String(v == null ? '' : v).slice(0, 80))}</td>`;
+    let rowsHtml = body.slice(0, FIRST).map(r => '<tr>' + head.map((_, i) => cell(r[i])).join('') + '</tr>').join('');
+    if (body.length > FIRST + LAST) {
+      rowsHtml += `<tr class="present-table-gap"><td colspan="${head.length || 1}">… 共 ${CS.num(body.length)} 行数据 · 中间行省略 …</td></tr>`;
+      rowsHtml += body.slice(-LAST).map(r => '<tr>' + head.map((_, i) => cell(r[i])).join('') + '</tr>').join('');
+    } else {
+      rowsHtml = body.map(r => '<tr>' + head.map((_, i) => cell(r[i])).join('') + '</tr>').join('');
+    }
+    const thead = `<thead><tr>${head.map(h2 => `<th>${e(String(h2).slice(0, 60))}</th>`).join('')}</tr></thead>`;
+    return `<div class="present-table-wrap"><table class="present-table">${thead}<tbody>${rowsHtml}</tbody></table></div><div class="present-preview-note small muted">${tsv ? 'TSV' : 'CSV'} 预览 · 共 ${CS.num(body.length)} 行 · 点击"查看"查看全文</div>`;
+  };
+  CS.jsonPreviewBlock = (text, name, isJsonl) => {
+    let pretty = '';
+    try {
+      if (isJsonl) {
+        const lines = String(text || '').split(/\r?\n/).filter(l => l.trim());
+        const shown = lines.slice(0, 6).map(l => { try { return JSON.stringify(JSON.parse(l)); } catch { return l; } });
+        pretty = shown.join('\n') + (lines.length > 6 ? `\n… 共 ${lines.length} 行` : '');
+      } else {
+        pretty = JSON.stringify(JSON.parse(String(text || '')), null, 2);
+      }
+    } catch { pretty = String(text || ''); }
+    const cap = 2600;
+    const cut = pretty.length > cap;
+    const shown = pretty.slice(0, cap) + (cut ? '\n…' : '');
+    return `<pre class="code-view present-json">${CS.fsHighlight ? CS.fsHighlight(shown, 'json') : e(shown)}</pre><div class="present-preview-note small muted">${isJsonl ? 'JSONL' : 'JSON'} 预览${cut ? '（已截断）' : ''} · 点击"查看"查看完整内容</div>`;
+  };
+  // 网页展示台(webview 工具): 远程页经 /api/wv/{sid}?u= 代理(可交互, Cookie 落
+  // 服务端罐); 本地 HTML 走 /api/wv/file/ 直出(相对资源自然解析)。iframe 懒加载
+  // (data-src + IO), 避免长会话里历史卡片反复打外站。
+  V.webviewBlock = (b, bi) => {
+    const h = Math.max(240, Math.min(900, parseInt(b.height, 10) || 420));
+    const pid = b.pid || CS.state.projectId || '';
+    // 折叠态: 点头部收起/展开(按 sid/url 记忆, 会话内保持); 折叠时不再渲染
+    // iframe/live 视图, 需要时点开重新挂(帧缓存即时回填, 无黑屏)
+    const foldKey = 'wv:' + (b.sid || b.url || b.path || bi);
+    if (!CS.ui.wvFold) CS.ui.wvFold = new Set();
+    const folded = CS.ui.wvFold.has(foldKey);
+    const foldAttr = ` data-action="wv-toggle" data-fold-key="${e(foldKey)}" role="button" tabindex="0" title="${folded ? '展开网页' : '收起网页'}"`;
+    const chev = `<span class="wv-chev${folded ? ' folded' : ''}">${i('chevron', '', 13)}</span>`;
+    const rp = String(b.path || '').startsWith('/') ? '~abs~' + String(b.path || '') : String(b.path || '');
+    const src = b.mode === 'local'
+      ? CS.api.url('/wv/file/' + rp.split('/').map(encodeURIComponent).join('/') + '?projectId=' + encodeURIComponent(pid))
+      : CS.api.url('/wv/' + encodeURIComponent(b.sid || '') + '?u=' + encodeURIComponent(b.url || ''));
+    const name = b.title || (b.mode === 'local' ? b.path : b.url) || '网页';
+    if (b.live) {
+      // browser-use 式真浏览器: 服务端 Chrome 帧流 + 输入转发, 直接在卡片里操作
+      const sub = b.note || '服务端真实浏览器 · 在此直接操作';
+      const body = folded ? '' : `<div class="wv-live-view" tabindex="0" role="img" aria-label="服务端浏览器画面, 可直接点击操作" style="height:${h}px"><img class="wv-live-img" alt=""><div class="wv-live-conn small muted">正在连接服务端浏览器…</div></div><div class="wv-live-urlbar small mono text-clip"></div>`;
+      return `<div class="present-block webview-block wv-live${folded ? ' wv-folded' : ''}" data-bi="${bi}" data-sid="${e(b.sid || '')}"><div class="present-head"${foldAttr}><div class="present-ic">${i('globe', '', 17)}</div><div class="present-body"><div class="present-name">${e(name)}</div><div class="present-sub small muted">${e(sub)}${folded ? ' · 已收起' : ''}</div></div>${chev}<button type="button" class="wv-btn small" data-action="wv-live-reload" data-sid="${e(b.sid || '')}" title="刷新页面">刷新</button><button type="button" class="wv-btn small" data-action="wv-open" data-real="${e(b.url || '')}" title="在浏览器打开真实地址">新窗口</button><button type="button" class="wv-btn small" data-action="wv-live-end" data-sid="${e(b.sid || '')}" title="关闭服务端浏览器会话">结束</button></div>${body}</div>`;
+    }
+    const sub = b.note || (b.mode === 'local' ? '本地页面预览 · 可交互' : '需要人工操作');
+    const hint = b.mode === 'local' || folded ? '' : '<div class="wv-hint small muted">Cloudflare 等强质询无法在嵌入页完成：点「新窗口」在浏览器打开并完成验证，再点「Cookie」粘贴凭据交给助手</div>';
+    // sandbox 不带 allow-same-origin: 被代理页经 /api/wv 同源直出, 若允许同源,
+    // 远程页的 JS 将以本站 origin 运行, 可携带用户 Cookie 调用任意 /api 端点
+    // (含 fs/exec)——等效 XSS。opaque origin 下脚本/表单/弹窗仍可用(质询页能跑),
+    // 但父窗口 DOM、本站 Cookie、localStorage 一律不可见。
+    const frame = folded ? '' : `<iframe class="wv-frame" data-state="idle" data-src="${e(src)}" style="height:${h}px" referrerpolicy="no-referrer" sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox" title="${e(name)}"></iframe>`;
+    return `<div class="present-block webview-block${folded ? ' wv-folded' : ''}" data-bi="${bi}"><div class="present-head"${foldAttr}><div class="present-ic">${i('globe', '', 17)}</div><div class="present-body"><div class="present-name">${e(name)}</div><div class="present-sub small muted">${e(sub)}${folded ? ' · 已收起' : ''}</div></div>${chev}<button type="button" class="wv-btn small" data-action="wv-open" data-real="${e(b.mode === 'remote' ? (b.url || '') : src)}" title="在新标签页打开（远程页为真实地址, 可完成 Cloudflare 等强质询）">新窗口</button>${b.mode === 'remote' ? `<button type="button" class="wv-btn small" data-action="wv-cookie" data-sid="${e(b.sid || '')}" title="把浏览器里复制的验证 Cookie 交给服务端会话">Cookie</button>` : ''}<button type="button" class="wv-btn small" data-action="wv-reload" title="重新加载">刷新</button></div>${frame}${hint}</div>`;
+  };
+  V.presentBlock = (b, bi) => {
+    const name = String(b.name || b.path || '');
+    const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+    const isImg = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext);
+    const isCsv = ['csv', 'tsv'].includes(ext);
+    const isJson = ['json'].includes(ext);
+    const isJsonl = ['jsonl', 'ndjson'].includes(ext);
+    const kind = isImg ? 'image' : isCsv ? 'table' : (isJson || isJsonl) ? 'json' : '';
+    const kb = b.klass && b.klass !== 'other' ? e(b.klass) : (ext ? e(ext.toUpperCase()) : '');
+    // 图片的 legend(备注)移到图片下方作图注, 不再挤在标题行
+    const sub = `${kb}${b.size ? ' · ' + CS.formatBytes(b.size) : ''}${(!isImg && b.note) ? ' · ' + e(b.note) : ''}`;
+    const preview = kind ? `<div class="present-preview" data-state="idle" data-kind="${kind}" data-path="${e(b.path || '')}" data-pid="${e(b.pid || '')}" data-name="${e(name)}"><div class="present-preview-loading small muted">正在加载预览…</div></div>` : '';
+    const caption = isImg && b.note ? `<div class="present-caption small muted">${e(b.note)}</div>` : '';
+    return `<div class="present-block" data-bi="${bi}" data-action="open-present" data-path="${e(b.path)}" data-klass="${e(b.klass || 'other')}" data-name="${e(name)}" data-title="${e(b.title || '')}" data-size="${e(String(b.size || 0))}" data-note="${e(b.note || '')}" data-bpid="${e(b.pid || '')}" role="button" tabindex="0" title="点击查看完整内容"><div class="present-head"><div class="present-ic">${i('present', '', 17)}</div><div class="present-body"><div class="present-name">${e(b.title || b.name || b.path)}</div><div class="present-sub small muted">${sub}</div></div><span class="present-open small muted">查看</span></div>${preview}${caption}</div>`;
+  };
+  // 用户消息里的 @路径 引用渲染为附件芯片: 图片懒加载缩略图(/fs/file),
+  // 其它类型显示图标; 点击打开完整预览。刷新后从文本重新解析, 不依赖内存态。
+  // 用户消息引用解析: 去重后的引用路径列表(括号标记 + 手动 @ 双格式)
+  V.refTokens = content => {
+    const str = String(content || '');
+    const bracket = (str.match(/\u200B@\[\[[^\]]*\]\]/g) || []).map(t => t.slice(4, -2));
+    const plain = (str.match(/@[/~]?[\w][\w./-]*/g) || []).map(t => t.slice(1));
+    return [...new Set([...bracket, ...plain])];
+  };
+  // 图片引用: 气泡外直接显示图片(无文件名), 点击打开完整预览
+  V.refImages = (content, pid) => {
+    const tokens = V.refTokens(content).filter(t => ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes((t.split('.').pop() || '').toLowerCase()));
+    if (!tokens.length) return '';
+    return `<div class="ref-imgs">${tokens.slice(0, 6).map(t => `<button type="button" class="ref-img-btn" data-action="open-present" data-path="${e(t)}" data-bpid="${e(pid || '')}" data-klass="image" data-name="${e(t.split('/').pop())}" title="查看图片"><img class="ref-thumb" data-state="idle" data-path="${e(t)}" data-pid="${e(pid || '')}" alt=""></button>`).join('')}</div>`;
+  };
+  V.refChips = (content, pid) => {
+    const tokens = V.refTokens(content).filter(t => !['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes((t.split('.').pop() || '').toLowerCase()));
+    if (!tokens.length) return '';
+    const chips = tokens.slice(0, 12).map(path => {
+      const name = path.split('/').pop();
+      const ext = (name.split('.').pop() || '').toLowerCase();
+      const isImg = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext);
+      const klass = isImg ? 'image' : ['csv', 'tsv'].includes(ext) ? 'table' : 'data';
+      return `<button type="button" class="ref-chip" data-action="open-present" data-path="${e(path)}" data-bpid="${e(pid || '')}" data-klass="${klass}" data-name="${e(name)}" title="查看 ${e(path)}">${isImg ? `<img class="ref-thumb" data-state="idle" data-path="${e(path)}" data-pid="${e(pid || '')}" alt="">` : i(['csv', 'tsv', 'json', 'jsonl'].includes(ext) ? 'chart' : 'file', '', 13)}<span>${e(name)}</span></button>`;
+    }).join('');
+    return `<div class="ref-chip-list">${chips}</div>`;
+  };
+  V.runTrack = () => {
+    const run = CS.currentRun();
+    const all = run?.messages || [];
+    // 消息 → 可见块展开: 优先用交错的 blocks 时间线(多段思考/工具/文本一一对应),
+    // 旧存档无 blocks 时退回 reasoning/tools 合并展开
+    const blocks = [];
+    all.forEach((m, mi) => {
+      const live = !!m.streaming;
+      if (m.role === 'user') { blocks.push({ k: 'user', txt: m.content, live, mi }); return; }
+      if (/^\[Conversation compressed/.test(m.content || '')) { blocks.push({ k: 'system', txt: '压缩摘要', live, mi }); return; }
+      if (m.role !== 'assistant') { blocks.push({ k: 'system', txt: m.content, live, mi }); return; }
+      // 出错的消息: 中断前已执行的思考/工具块是有效历史, 有块轨迹时照常展开,
+      // 末尾补一格红色标错; 无块轨迹才压缩成单格红色
+      const errMsg = typeof m.error === 'string' ? m.error : ((m.error && m.error.message) || '出错了');
+      const hasTimeline = Array.isArray(m.blocks) && m.blocks.length > 0;
+      if (m.error && !hasTimeline) { blocks.push({ k: 'error', txt: errMsg, live, mi }); return; }
+      const n0 = blocks.length;
+      // 活跃块 = 流式消息里最后一个仍在生长的块: 文本流式 / think 在尾部 / 工具未出结果 / ask 未答。
+      // 只有它会呼吸, 已完成段(如思考完毕进入工具执行)不再闪烁
+      let liveIdx = -1;
+      if (live) {
+        const arr = Array.isArray(m.blocks) && m.blocks.length ? m.blocks : null;
+        if (arr) {
+          const last = arr[arr.length - 1];
+          if (last && typeof last === 'object') {
+            const active = last.type === 'text' || last.type === 'think' ||
+              (last.type === 'tool' && last.result == null) || (last.type === 'ask' && !last.answered);
+            if (active) liveIdx = arr.length - 1;
+          }
+        } else {
+          // 旧格式合并展开时的活跃段: 有 reasoning 合并时思考在最前, 但文本才是流式生长尾部 → 标 reply 格
+          // 先置 -1 作为兑底, 下方按 think/tools/asks/text 顺序重算
+          liveIdx = -1;
+          const tl = (m.tools || []).length;
+          const tk = (m.reasoning || '').trim() ? 1 : 0;
+          const as = (m.asks || []).length;
+          const hasReply = (m.content || '').trim() ? 1 : 0;
+          // 顺序 think/tools/asks/text: 最后一个未完成的工具或尚在文本
+          if (hasReply) liveIdx = n0 + tk + tl + as;           // 文本生长中
+          else if (as) liveIdx = n0 + tk + tl;                  // ask 等待
+          else if (tl) liveIdx = n0 + tk + tl - 1;              // 最后一个工具(合并视图无 result 细分)
+        }
+      }
+      if (Array.isArray(m.blocks) && m.blocks.length) {
+        m.blocks.forEach((b, bi) => {
+          if (!b || typeof b !== 'object') return;
+          const on = live && bi === liveIdx;
+          if (b.type === 'think' && (b.text || '').trim()) blocks.push({ k: 'think', txt: b.text, live: on, mi, bi });
+          // 报错判定与消息流卡片同源: 显式 isError 标记为真直接红, 否则按文本
+          // 启发式(Error:/Traceback/{"error")判定 —— 老存档块缺标记也要标红
+          else if (b.type === 'tool') blocks.push({ k: 'tool', err: b.isError === true || V.toolIsErr(b.result || ''), txt: (b.name || '工具') + ' ' + (typeof b.result === 'string' ? b.result : ''), live: on, mi, bi });
+          else if (b.type === 'present') blocks.push({ k: 'present', txt: '展示 ' + (b.name || b.path || ''), live: on, mi, bi });
+          else if (b.type === 'sysnote' && !/Conversation history was just compacted/.test(b.text || '')) blocks.push({ k: 'system', txt: '系统注入', live: on, mi, bi });
+          else if (b.type === 'compact') blocks.push({ k: 'compact', txt: String(b.text || '').trim() ? '上下文已压缩' : '正在压缩会话', live: on, mi, bi });
+          else if (b.type === 'ask') blocks.push({ k: 'tool', txt: 'ask 提问', live: on, mi, bi });
+          else if (b.type === 'steer') blocks.push({ k: 'steer', txt: b.text || '引导', live: false, mi, bi });
+          else if (b.type === 'text' && (b.text || '').trim()) blocks.push({ k: 'reply', txt: b.text, live: on, mi, bi });
+        });
+      } else {
+        if ((m.reasoning || '').trim()) blocks.push({ k: 'think', txt: m.reasoning, live: false, mi });
+        (m.tools || []).forEach((t, ti) => blocks.push({ k: 'tool', err: t.isError === true || V.toolIsErr(t.result || ''), txt: (t.name || '工具') + ' ' + (typeof t.result === 'string' ? t.result : ''), live: live && n0 + ((m.reasoning || '').trim() ? 1 : 0) + ti === liveIdx, mi }));
+        (m.asks || []).forEach(() => blocks.push({ k: 'tool', txt: 'ask 提问', live: false, mi }));
+        if ((m.content || '').trim()) blocks.push({ k: 'reply', txt: m.content, live: live && liveIdx === n0 + ((m.reasoning || '').trim() ? 1 : 0) + (m.tools || []).length + (m.asks || []).length, mi });
+      }
+      if (m.error) blocks.push({ k: 'error', txt: errMsg, live, mi });  // 有块轨迹的错误消息: 块之后标一格红
+      if (blocks.length === n0 && live) blocks.push({ k: 'think', txt: '生成中…', live: true, mi });
+    });
+    if (!blocks.length) return '';
+    // 上限只作为超长会话的 DOM 兜底(千级块防渲染爆炸): 常规超长(几百块)
+    // 全部渲染, 由视觉层在目录徽章左缘处渐隐截断, 不再程序性丢块
+    const MAX_COLS = 300;
+    const start = Math.max(0, blocks.length - MAX_COLS * 4);
+    const shown = blocks.slice(start);
+    // 列内自上而下 4 格一列; 每轮用户消息强制新起一列(回合从列首开始)
+    // 格子包在 tr-strip 内: 容器是横向滚动容器, auto-margin 把 strip 贴右,
+    // 溢出落在可滚动方向(左), 而 justify-flex-end 的左溢出不可滚动(经典陷阱)
+    const cols = [];
+    let cur = [];
+    shown.forEach(b => {
+      if ((b.k === 'user' || b.k === 'steer') && cur.length) { cols.push(cur); cur = []; }
+      else if (cur.length >= 4) { cols.push(cur); cur = []; }
+      cur.push(b);
+    });
+    if (cur.length) cols.push(cur);
+    const name = { user: '用户', steer: '引导', think: '思考', tool: '工具', reply: '回复', system: '系统', error: '错误', compact: '压缩', present: '展示' };
+    const cell = (b, gi) => `<span role="button" class="tr-cell tr-${b.k}${b.err ? ' tr-err' : ''}${b.live ? ' tr-live' : ''}" data-action="track-jump" data-id="${b.bi == null ? b.mi : b.mi + ':' + b.bi}" title="#${start + gi + 1} ${name[b.k]}${b.err ? ' · 出错' : ''}${b.live ? ' · 生成中' : ''} · ${e(String(b.txt || '').replace(/\s+/g, ' ').slice(0, 80))} · 点击跳转到该消息"></span>`;
+    // 超长会话被截掉头部时加渐隐类, 在左缘用 mask 提示“还有更早的”
+    return `<div class="run-track${start ? ' tr-trunc' : ''}" aria-hidden="true"${start ? ` title="还有更早的 ${start} 条消息未展示"` : ''} data-blocks="${blocks.length}"><span class="tr-strip">${cols.map(c => `<span class="tr-col">${c.map(cell).join('')}</span>`).join('')}</span></div>`;
+  };
+
+  V.runUsage = () => {
+    const u = CS.chatUsage();
+    const meta = CS.chatMeta();
+    const item = (ic, val, tip, raw, cls = '') => `<span class="ru-item${cls ? ' ' + cls : ''}" title="${e(tip)}">${i(ic, '', 13)}<b>${raw ? val : CS.knum(val)}</b></span>`;
+    const startTxt = meta.start !== null ? new Date(meta.start).toLocaleString('zh-CN', { hour12: false }) : '—';
+    const proj = CS.currentRun() ? CS.state.projects.find(p => p.id === CS.currentRun().projectId) : null;
+    const pdir = proj?.dir || '';
+    // 消息项可点击: 打开会话 Trace 弹窗(逐条消息的耗时 / 调用 / token 明细), 设计参考 admin 后台 trace 页
+    const row = `${pdir ? item('folder', CS.tpath(pdir), '项目目录: ' + pdir, true, 'dir-clamp') : ''}${item('calendar', CS.fmtDT(meta.start), '会话开始: ' + startTxt, true)}${item('clock', CS.fmtDur(meta.elapsed), '累计生成耗时 (每轮回复耗时之和, 不含轮间空闲)', true)}${`<span class="ru-item clickable" role="button" data-action="open-trace" title="消息总数 (含用户与助手) · 点击查看会话 Trace">${i('message', '', 13)}<b>${meta.msgs}</b></span>`}${item('wrench', meta.tools, '工具调用次数 (含 ask)')}${item('up', u.tin, '累计输入 token')}${item('arrowdown', u.tout, '累计输出 token')}${item('database', u.tinCache, '累计缓存读取(模型/网关不支持缓存时为 0, glm-5.3-flash 无缓存上报)')}${`<span class="ru-item" title="上下文占用 / 模型窗口">${i('gauge', '', 13)}<b>${u.pct}% / ${CS.knum(u.win)}</b></span>`}`;
+    return `<div class="run-usage-stack">${V.runTrack()}<div class="run-usage mono">${row}</div></div>`;
+  };
+
+  // 会话 Trace 弹窗(参考后台 trace 页的时间线 + 行展开详情): 每条消息一行, 相对会话时间轴画耗时条, 行点击展开属性与块序列
+  // 弹窗体在 app.js 的 renderModal 里调用, 经 CS.traceBody 桥接(V 是本模块私有命名空间)
+  // 会话 Trace 页(route=trace, 主区视图, 保留侧栏; 设计参考 admin 后台 trace 页): 点击 usage 行的消息数进入
+  // 共享上下文: 角色归一 / 时间轴原点与跨度 / 逐条消息的行渲染, 供统计条与列表共同使用
+  const _traceCtx = () => {
+    const run = CS.currentRun();
+    // #0 系统条: 会话实发 system 提示词(存档属性 systemPrompt, 在线时由
+    // chat.system 事件写入), 合成在最前不进 run.messages, 主对话流不受影响
+    // 内嵌引导块把所在回复拆成两段轨迹: 引导前段(#14) → 引导行(#15, 专属
+    // 引导 tag) → 引导后段(#16) —— 与会话页"引导分割一轮回复"的语义一致。
+    // 多次引导切多段; 轮级统计(tokens/tools/elapsed)挂首段, 尾段清零防重复
+    const splitSteers = mm => {
+      const blocks = Array.isArray(mm.blocks) ? mm.blocks : [];
+      if (mm.role !== 'assistant' || !blocks.some(b => b && b.type === 'steer')) return [mm];
+      const rows = [];
+      let cur = [];
+      const previewOf = seg => {
+        // 段首预览: 第一个回复正文块的开头
+        const first = seg.find(b => b && b.type === 'text' && String(b.text || '').trim());
+        return String(first ? first.text : '').replace(/\s+/g, ' ').trim().slice(0, 160);
+      };
+      const emitRow = tail => {
+        if (!rows.length && !tail) {
+          rows.push({ ...mm, blocks: cur, _preview: previewOf(cur) });
+        } else {
+          rows.push({ ...mm, blocks: cur, _preview: previewOf(cur), tokens: 0, promptTokens: 0, cacheTokens: 0, elapsed: 0, tools: [], asks: [], ...(tail ? { _steerTail: true } : {}) });
+        }
+        cur = [];
+      };
+      blocks.forEach(b => {
+        if (b && b.type === 'steer') {
+          emitRow(false);
+          rows.push({ role: 'user', steering: true, ...(b.steerId ? { steerId: b.steerId } : {}), content: b.text || '', at: b.at || mm.at });
+          return;
+        }
+        cur.push(b);
+      });
+      emitRow(true);
+      return rows;
+    };
+    const msgs = (run?.systemPrompt
+      ? [{ role: 'system', content: run.systemPrompt, at: (run?.messages?.[0]?.at) || '' }]
+      : []).concat((run?.messages || []).filter(mm => !mm.hidden).flatMap(splitSteers));
+    const kindOf = m => m.steering ? 'steer' : m.role === 'user' ? 'user' : m.error ? 'error' : /^\[Conversation compressed/.test(m.content || '') ? 'compact' : (m.role !== 'assistant' && m.role !== 'user') ? 'system' : 'reply';
+    const prev = (s, n = 70) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return e(t.slice(0, n)) + (t.length > n ? '…' : ''); };
+    let tools = 0, tin = 0, tout = 0, tcache = 0;
+    msgs.forEach(m => {
+      if (m.role === 'assistant' && !m._steerTail) { tin += m.promptTokens || 0; tout += m.tokens || 0; tcache += m.cacheTokens || 0; tools += (m.tools?.length || 0) + (m.asks?.length || 0); }
+    });
+    return { run, msgs, kindOf, prev, tools, tin, tout, tcache };
+  };
+  V.traceStats = () => {
+    const { msgs, tools, tin, tout, tcache } = _traceCtx();
+    return `<div class="trace-stats mono"><span><b>${msgs.length}</b> 条消息</span><span><b>${tools}</b> 次工具调用</span><span>输入 <b>${CS.num(tin)}</b></span><span>输出 <b>${CS.num(tout)}</b></span><span>缓存 <b>${CS.num(tcache)}</b></span><span class="tiny faint">点击任意一行展开该条消息的耗时与调用细节</span></div>`;
+  };
+  V.traceRows = () => {
+    const { msgs, kindOf, prev } = _traceCtx();
+    if (!msgs.length) return '';
+    const KIND = { user: '用户', steer: '引导', reply: '回复', think: '思考', tool: '工具', system: '系统', error: '错误', sysnote: '注入', compact: '压缩', present: '展示', webview: '网页' };
+    // 运行耗时占比时间轴: 分母 = 各条消息运行耗时之和(流式实时计入), 消息间空闲时段不占条, 段连续堆叠
+    // 行内再分段: 优先块边界时间戳(相邻差), 缺省按文本量等比; 段色随块类型(思考/工具/回复)
+    // 带时长块集与 blocks 数组分开过滤(sysnote/compact 无时长), 行内块行按 timedKind 依序对位取 ms
+    const timedKind = b => b && (b.type === 'think' || b.type === 'tool' || b.type === 'ask' || (b.type === 'text' && (b.text || '').trim()));
+    const barSegs = mm => {
+      const bs = (Array.isArray(mm.blocks) ? mm.blocks : []).filter(timedKind);
+      if (!bs.length) return null;
+      const ds = bs.map((b, i) => {
+        const nx = bs[i + 1];
+        if (typeof b.at === 'number' && typeof nx?.at === 'number' && nx.at > b.at) return nx.at - b.at;
+        if (typeof b.at === 'number' && typeof b.end === 'number' && b.end > b.at) return b.end - b.at;
+        const chars = b.type === 'tool' || b.type === 'ask' ? String(b.result || '').length : (b.text || '').length;
+        return Math.max(1, chars || 1);
+      });
+      const dTotal = ds.reduce((s, x) => s + x, 0) || 1;
+      return { bs, ds, segList: bs.length < 2 ? null : bs.map((b, i) => ({ k: b.type === 'ask' ? 'tool' : b.type === 'text' ? 'reply' : b.type, share: (ds[i] / dTotal) * 100, ms: ds[i] })) };
+    };
+    const times = msgs.map(m => { const t = Date.parse(m.at || ''); return isNaN(t) ? null : t; });
+    const rows = msgs.map((m, idx) => {
+      const t = times[idx];
+      const dur = m.role === 'assistant' ? (m.streaming ? Math.max(0, Date.now() - (t || Date.now())) : (m.elapsed > 0 ? m.elapsed : 0)) : 0;
+      return { m, idx, t, dur };
+    });
+    const totalRun = Math.max(1, rows.reduce((s, r) => s + r.dur, 0));
+    let cum = 0;
+    const open = CS.ui.traceOpen instanceof Set ? CS.ui.traceOpen : new Set();
+    return rows.map(({ m, idx, t, dur }) => {
+      const kind = kindOf(m);
+      const streaming = !!m.streaming;
+      // 占比: 起点 = 前面各行运行时长累计 / 总运行时长; 每条至少 1.2% 可见; 用户消息是瞬时点不占运行时长
+      const off = Math.min(99, Math.round((cum / totalRun) * 1000) / 10);
+      const segW = dur > 0 ? Math.max(1.2, Math.round((dur / totalRun) * 1000) / 10) : 1;
+      const bt = barSegs(m);
+      const segs = bt ? bt.segList : null;
+      const barHtml = segs ? (() => { let picum = 0; return segs.map(s => { const l = Math.round((off + (picum / 100) * segW) * 10) / 10; const w = Math.max(0.9, Math.round((s.share / 100) * segW * 10) / 10); picum += s.share; return `<span class="trace-seg seg-${s.k}" style="left:${l}%;width:${w}%"></span>`; }).join(''); })() : `<span class="trace-seg seg-${kind}" style="left:${off}%;width:${segW}%"></span>`;
+      cum += dur;
+      const tok = m.tokens ? `${CS.num(m.promptTokens || 0)}→${CS.num(m.tokens)}` : '';
+      const nTools = kind === 'reply' ? (m.tools?.length || 0) + (m.asks?.length || 0)
+        : kind === 'error' && Array.isArray(m.blocks) ? m.blocks.filter(b => b && (b.type === 'tool' || b.type === 'ask')).length : 0;
+      let blocks = [];
+      const errText = typeof m.error === 'object' ? (m.error.message || '出错了') : String(m.error || '出错了');
+      // 出错消息带块轨迹时不能只列一行错误: 先展开已执行的思考/工具块, 末尾补错误条目
+      const errHasTimeline = kind === 'error' && Array.isArray(m.blocks) && m.blocks.length > 0;
+      if (kind === 'steer') blocks = [{ k: 'steer', t: m.content }];
+      else if (kind === 'user') blocks = [{ k: 'user', t: m.content }];
+      else if (kind === 'error' && !errHasTimeline) blocks = [{ k: 'error', t: errText }];
+      else if (kind === 'system') blocks = [{ k: 'system', t: m.content }];
+      else if (kind === 'compact') blocks = [{ k: 'compact', t: m.content }];
+      else {
+        if (Array.isArray(m.blocks) && m.blocks.length) {
+          // 带时长块按 walk 序对位取 ms; sysnote/compact 无时长不占耗时序号
+          // raw 随行携带原始块对象, 展开原文不再靠下标回查
+          let tIdx = 0;
+          m.blocks.forEach(b => {
+            if (!b || typeof b !== 'object') return;
+            const ms = bt && timedKind(b) ? (bt.ds[tIdx++] || 0) : 0;
+            if (b.type === 'think' && (b.text || '').trim()) blocks.push({ k: 'think', t: b.text, ms, raw: b });
+            else if (b.type === 'tool') blocks.push({ k: 'tool', t: (b.name || '工具') + (typeof b.result === 'string' && b.result ? ' → ' + b.result : ' (执行中)'), ms, raw: b });
+            else if (b.type === 'ask') blocks.push({ k: 'tool', t: 'ask 提问', ms, raw: b });
+            else if (b.type === 'present') blocks.push({ k: 'present', t: '展示 ' + (b.name || b.path || ''), ms, raw: b });
+            else if (b.type === 'webview') blocks.push({ k: 'webview', t: '网页 ' + (b.title || b.url || b.path || ''), ms, raw: b });
+            else if (b.type === 'text' && (b.text || '').trim()) blocks.push({ k: 'reply', t: b.text, ms, raw: b });
+            else if (b.type === 'sysnote') blocks.push({ k: 'sysnote', t: b.text || '', ms: 0, raw: b });
+            else if (b.type === 'compact') blocks.push({ k: 'compact', t: String(b.text || '').trim() ? '上下文已压缩' : '正在压缩会话', ms: 0, raw: b });
+          });
+        }
+        else {
+          if ((m.reasoning || '').trim()) blocks.push({ k: 'think', t: m.reasoning });
+          (m.tools || []).forEach(x => blocks.push({ k: 'tool', t: (x.name || '工具') + (typeof x.result === 'string' && x.result ? ' → ' + x.result : '') }));
+          if ((m.asks || []).length) blocks.push({ k: 'tool', t: `ask 提问 ×${m.asks.length}` });
+          if ((m.content || '').trim()) blocks.push({ k: 'reply', t: m.content });
+        }
+      }
+      if (errHasTimeline) blocks.push({ k: 'error', t: errText });  // 有块轨迹的错误消息在块之后补错误条目
+      const props = [
+        ['时间', CS.datetime(m.at)],
+        ...(m.model ? [['模型', m.model]] : []),
+        ...(kind === 'reply' || kind === 'error' ? [
+          ['耗时', streaming ? '生成中' : m.elapsed > 0 ? CS.elapsedMs(m.elapsed) : '—'],
+          ['输入 token', CS.num(m.promptTokens || 0)],
+          ...(m.cacheTokens != null ? [['缓存读取', CS.num(m.cacheTokens)]] : []),
+          ['输出 token', CS.num(m.tokens || 0)],
+          ...(m.contextTokens != null ? [['上下文占用', CS.kfmt(m.contextTokens)]] : []),
+        ] : []),
+      ];
+    const isOpen = open.has(idx);
+    // 块行完整原文: 新管线直接用原始块对象(含工具入参/出参), 旧数据从展示文本兕底
+    const blockOpen = CS.ui.traceBlockOpen instanceof Set ? CS.ui.traceBlockOpen : new Set();
+    const bFull = b => {
+      if (!b) return '';
+      if (b.type === 'tool') {
+        let args = '';
+        try { args = typeof b.args === 'string' ? b.args : JSON.stringify(b.args ?? {}, null, 2); } catch { args = String(b.args ?? ''); }
+        const input = args && args !== '{}' ? `输入：\n${args}` : '';
+        const out = b.result == null ? '(执行中)' : String(b.result);
+        return [input, out ? `输出：\n${out}` : ''].filter(Boolean).join('\n\n');
+      }
+      if (b.type === 'ask') {
+        const q = (b.questions || []).join('\n');
+        const a = b.result || (Array.isArray(b.answers) ? b.answers.join('\n') : '') || (b.answered ? '(已答复)' : '未答复');
+        return `问题：\n${q}\n\n答复：\n${a}`;
+      }
+      if (b.type === 'present') {
+        return ['路径：\n' + (b.path || ''), b.note ? '备注：\n' + b.note : ''].filter(Boolean).join('\n\n');
+      }
+      if (b.type === 'webview') {
+        const loc = b.mode === 'local' ? '路径：\n' + (b.path || '') : '地址：\n' + (b.url || '');
+        return [loc, b.note ? '说明：\n' + b.note : '', b.sid ? `会话：\n${b.sid}` : ''].filter(Boolean).join('\n\n');
+      }
+      return b.text || '';
+    };
+      const detail = isOpen ? `<div class="trace-detail"><div class="trace-props">${props.map(([k, v]) => `<span class="tpair"><span class="tk">${e(k)}</span><span class="tv mono">${e(v)}</span></span>`).join('')}</div>${blocks.length ? `<div class="trace-blocks">${blocks.map((b, ri) => { const ms = b.ms || 0; const raw = b.raw || (b.t ? { type: 'text', text: b.t } : null); const bkey = idx + ':' + ri; const bOpen = blockOpen.has(bkey); return `<span class="tb-item clickable${bOpen ? ' open' : ''}" role="button" data-action="toggle-trace-block" data-id="${bkey}" aria-expanded="${bOpen}" title="点击展开完整输入/输出"><span class="tk-${b.k}">${KIND[b.k]}</span><span class="tb-txt" title="${prev(b.t, 140)}">${prev(b.t, 70)}</span>${ms > 0 ? `<span class="tb-dur mono">${CS.elapsedMs(ms)}</span>` : ''}</span>${bOpen ? `<span class="tb-body"><pre>${e(bFull(raw))}</pre></span>` : ''}`; }).join('')}</div>` : ''}</div>` : '';
+      return `<div class="trace-row${isOpen ? ' open' : ''}"><button type="button" class="trace-main" data-action="toggle-trace-row" data-id="${idx}" aria-expanded="${isOpen}"><span class="trace-idx mono">#${idx}</span><span class="trace-kind tk-${kind}">${KIND[kind]}${kind === 'reply' && streaming ? ' · 生成中' : ''}</span><span class="trace-preview" title="${prev(kind === 'error' && !(m.content || '').trim() ? errText : (m._preview || m.content), 140)}">${prev(kind === 'error' && !(m.content || '').trim() ? (m._preview || m.content) : (m._preview || m.content))}</span><span class="trace-tools mono">${nTools || ''}</span><span class="trace-tok mono">${tok}</span><span class="trace-dur mono">${dur > 0 ? CS.elapsedMs(dur) : ''}</span><span class="trace-bar">${barHtml}</span></button>${detail}</div>`;
+    }).join('');
+  };
+  // trace 页面: 主区视图替换聊天视图, 侧栏保留; 返回按钮与标题同一行(页内流), 无会话时给出空态并引导返回
+  V.trace = () => {
+    const { run, msgs } = _traceCtx();
+    const back = `<button type="button" class="icon-btn trace-back" data-action="back-to-chat" aria-label="返回会话" title="返回会话（返回原聊天页）">${i('arrowleft', '', 15)}</button>`;
+    if (!run || !msgs.length) return `<section class="page trace-page"><div class="trace-head"><div class="trace-head-row">${back}<h1>会话 Trace</h1></div></div>${H.notice(run ? '当前会话还没有消息。' : '没有打开的会话，请先回到聊天页选择会话。')}</section>`;
+    return `<section class="page trace-page"><div class="trace-head"><div class="trace-head-row">${back}<h1>会话 Trace</h1></div><p class="small muted trace-sub text-clip" title="${e(run.title || '')}">${e(run.title || '未命名会话')} <span class="faint">·</span> <span class="mono">${e(run.id || '')}</span></p></div>${V.traceStats()}<div class="trace-list" role="table">${V.traceRows()}</div></section>`;
+  };
+
+V.ctxRing = () => {
+    if (!CS.ui.modelsLoaded || !CS.ui.models.length) return '';
+    const u = CS.contextUsage();
+    const level = u.pct >= 90 ? 'danger' : u.pct >= 60 ? 'warn' : 'ok';
+    const R = 9, C = 2 * Math.PI * R;
+    const on = C * Math.max(u.pct, 2) / 100;  // 至少露出 2% 以便看清环弧
+    return `<div class="ctx-use"><button type="button" class="ctx-ring-btn${CS.ui.terminal?.open ? ' compact' : ' '}" data-action="toggle-context-menu" data-level="${level}" aria-label="上下文用量" aria-expanded="${!!CS.ui.contextMenu}" title="上下文已用 ~${u.pct}% · 点击查看详情"><svg class="ctx-ring-svg" viewBox="0 0 22 22" width="18" height="18" aria-hidden="true"><circle class="ctx-track" cx="11" cy="11" r="${R}"/><circle class="ctx-fill" cx="11" cy="11" r="${R}" stroke-dasharray="${C.toFixed(2)}" stroke-dashoffset="${(C - on).toFixed(2)}" transform="rotate(-90 11 11)"/></svg><span class="ctx-pct">${u.pct}%</span></button>${CS.ui.contextMenu ? (() => {
+      const win = u.window;
+      const seg = t => t > 0 ? `width:${Math.max(0, Math.min(100, t / win * 100)).toFixed(2)}%;min-width:5px` : 'width:0%;min-width:0';
+      return `<div class="ctx-pop" role="dialog" aria-label="上下文用量详情"><div class="ctx-head"><span>上下文已用 <b data-ctx="pct">${u.pct}%</b></span><span class="ctx-head-cap" data-ctx="cap">${CS.kfmt(u.total)} / ${CS.kfmt(win).slice(1)}</span></div><div class="ctx-bar"><span class="ctx-seg sys" data-ctx="w-sys" style="${seg(u.sysT)}"></span><span class="ctx-seg tools" data-ctx="w-tools" style="${seg(u.toolT)}"></span><span class="ctx-seg msgs" data-ctx="w-msgs" style="${seg(u.msgsT)}"></span></div><div class="ctx-rows"><div class="ctx-row"><span class="ctx-dot sys"></span><span class="ctx-label">系统提示词</span><span class="ctx-val" data-ctx="v-sys">${CS.kfmt(u.sysT)}</span></div><div class="ctx-row"><span class="ctx-dot tools"></span><span class="ctx-label">工具定义</span><span class="ctx-val" data-ctx="v-tools">${CS.kfmt(u.toolT)}</span></div><div class="ctx-row"><span class="ctx-dot msgs"></span><span class="ctx-label">对话消息</span><span class="ctx-val" data-ctx="v-msgs">${CS.kfmt(u.msgsT)}</span></div></div><div class="ctx-foot"><button type="button" class="ctx-compact-btn" data-action="ctx-compact" title="把较早的对话压缩成摘要, 保留最近消息原文">${i('minimize2', '', 13)}<span>压缩</span></button></div></div>`;
+    })() : ''}</div>`;
+  };
+  V.fsTree = () => {
+    const st = CS.ui.fs;
+    const project = CS.state.projects.find(p => p.id === CS.state.projectId);
+    if (!project) return '<div class="fs-empty small muted">未关联项目，先在输入框选择项目即可浏览其目录。</div>';
+    if (!st || st.projectId !== project.id || (st.loading && !Array.isArray(st.root))) {
+      CS.ui.fs = { projectId: project.id, expanded: st?.expanded && st.projectId === project.id ? st.expanded : new Set(), children: {}, git: {}, root: null, loading: true };
+      CS.agent?.loadFsDir?.('');
+      return '<div class="fs-empty small muted">正在加载目录…</div>';
+    }
+    const git = st.git || {};
+    const row = (entry, depth) => {
+      const isDir = entry.type === 'dir';
+      const open = isDir && st.expanded.has(entry.path);
+      const stx = git[entry.path] || '';
+      const badge = stx ? `<span class="fs-st s-${stx}">${stx}</span>` : '';
+      const kids = open ? (Array.isArray(st.children[entry.path]) ? st.children[entry.path].map(k => row(k, depth + 1)).join('') : `<div class="fs-row fs-loading" style="padding-left:${12 + (depth + 1) * 13}px"><span class="spinner"></span></div>`) : '';
+      const icon = isDir ? `<span class="fs-chevron${open ? ' open' : ''}">${i('chevron', '', 12)}</span>` : `<span class="fs-file-ic">${i('file', '', 13)}</span>`;
+      return `<button type="button" class="fs-row${open ? ' open' : ''}" style="padding-left:${6 + depth * 13}px" data-action="${isDir ? 'fs-dir' : 'fs-open'}" data-path="${e(entry.path)}" title="${e(entry.path)}${stx ? ' · git ' + stx : ''}">${icon}<span class="fs-name${stx ? ' st-' + stx.toLowerCase() : ''}">${e(entry.name)}</span>${badge}</button>${kids}`;
+    };
+    if (!Array.isArray(st.root)) return '<div class="fs-empty small muted">正在加载目录…</div>';
+    let treeHtml = st.error
+      ? `<div class="fs-empty small muted">${e(st.error)}</div>`
+      : '<div class="fs-empty small muted">目录为空，或项目尚未配置本地路径。</div>';
+    if (st.root.length) treeHtml = `<div class="fs-tree">${st.root.map(x => row(x, 0)).join('')}</div>`;
+    // 右键菜单: 定位在光标处, 动作经 data-action 走既有点击委托
+    if (CS.ui.fsCtx && typeof CS.ui.fsCtx.x === 'number') {
+      const f = CS.ui.fsCtx;
+      const isDir = f.type === 'dir';
+      const mi = (action, label) => `<button type="button" class="model-menu-item" data-action="${action}" data-path="${e(f.path)}" data-type="${e(f.type)}">${label}</button>`;
+      treeHtml += `<div class="fs-ctx-menu" style="left:${Math.min(f.x, window.innerWidth - 190)}px;top:${Math.min(f.y, window.innerHeight - 260)}px">`
+        + (isDir
+            ? mi('fs-menu-newfile', '新建文件') + mi('fs-menu-newfolder', '新建文件夹') + '<div class="menu-divider"></div>'
+            : '')
+        + mi('fs-menu-rename', '重命名')
+        + mi('fs-menu-move', '移动到…')
+        + mi('fs-menu-copy', isDir ? '复制到…' : '复制到…')
+        + mi('fs-menu-copy-path', '复制路径')
+        + '<div class="menu-divider"></div>'
+        + `<button type="button" class="model-menu-item danger" data-action="fs-menu-delete" data-path="${e(f.path)}" data-type="${e(f.type)}">删除</button>`
+        + `</div>`;
+    }
+    return treeHtml;
+  };
+  V.terminalDrawer = () => {
+    const t = CS.ui.terminal;
+    if (!t || !t.open) return '';
+    const project = CS.state.projects.find(p => p.id === CS.state.projectId);
+    const width = Math.max(320, Math.min(t.width || 480, window.innerWidth - 480));
+    return `<div class="term-wrap" style="width:${width}px"><span class="term-resizer" title="拖动调整宽度" aria-hidden="true"></span><aside class="term-panel" role="dialog" aria-label="项目终端"><header class="term-head"><div class="row grow" style="min-width:0">${i('terminal','',15)}<strong>${e(project ? project.name : '终端')}</strong><span class="tiny mono term-sub" style="overflow:hidden;text-overflow:ellipsis" title="${e(project?.dir || '')}">${e(project?.dir ? project.dir : '交互式 PTY 终端')}</span></div>${iconBtn('term-clear','trash','清屏')}${iconBtn('term-close','x','关闭终端')}</header>${project ? '<div class="term-xhost" id="term-xhost"></div>' : '<div class="term-empty small muted">请先在输入框选择项目再打开终端。</div>'}</aside></div>`;
+  };
+  V.composer = (home = false) => {
+    const foldBtn = home ? '' : CS.state.settings.composerCollapsed ? `<button type="button" class="composer-expand" data-action="composer-fold" aria-label="展开输入框" title="展开输入框">${i('dna', '', 20)}</button>` : `<button type="button" class="composer-fold" data-action="composer-fold" aria-label="收起输入框" title="收起输入框，腾出空间浏览会话">${i('minimize2', '', 12)}</button>`;
+    const wrap = home ? 'composer-home' : 'chat-composer' + (CS.state.settings.composerCollapsed && !home ? ' composer-collapsed' : '');
+    return `<div class="${wrap}">${foldBtn}${!home ? `<button type="button" class="jump-latest" data-action="jump-latest" title="跳到最新消息"${CS.ui.canJumpLatest ? '' : ' hidden'}>${i('down', '', 14)}</button>` : ''}${home ? `<div class="composer-project"><button type="button" class="model-select-btn project-select-btn" data-action="toggle-project-menu" aria-haspopup="listbox" aria-expanded="${!!CS.ui.projectMenu}">${CS.state.projectId ? `<span class="project-icon" data-action="clear-project" title="取消项目关联">${i('folder','',13)}${i('x','',13)}</span>` : i('folder','',13)}<span>${e(CS.state.projects.find(p => p.id === CS.state.projectId)?.name || '选择项目')}</span>${i('down','',13)}</button>${CS.ui.projectMenu ? `<div class="model-menu dd-down" role="menu">${CS.state.projects.filter(p => !p.archived).map(p => `<button type="button" class="model-menu-item" role="menuitem" data-action="pick-project" data-id="${e(p.id)}"><span>${e(p.name)}</span>${CS.state.projectId === p.id ? i('check','',13) : ''}</button>`).join('')}<div class="menu-divider"></div><button type="button" class="model-menu-item" data-action="new-project">${i('plus','',14)}<span>新建项目</span></button><button type="button" class="model-menu-item" data-action="connect-project">${i('external','',14)}<span>连接远程项目</span></button></div>` : ''}</div>` : ''}<form class="composer" data-form="composer">
+    ${CS.ui.attachments.length ? `<div class="attachment-list">${CS.ui.attachments.map(id => { const d = CS.state.datasets.find(x => x.id === id); return d ? `<span class="attachment">${i('file')}<span>${e(d.name)}</span>${iconBtn('remove-attachment','x','移除附件',`data-id="${e(id)}"`)}</span>` : ''; }).join('')}</div>` : ''}
+    ${(CS.ui.pendingUploads || []).length ? `<div class="upload-strip">${CS.ui.pendingUploads.map(u => `<span class="upload-chip ${u.status}" title="${e(u.error ? u.name + '：' + u.error : u.path || u.name)}">${u.status === 'uploading' ? '<span class="upload-spin" aria-hidden="true"></span>' : u.thumb ? `<img class="upload-thumb" src="${e(u.thumb)}" alt="">` : i('file', '', 14)}<span class="upload-chip-name">${e(u.name)}</span>${u.status === 'error' ? '<span class="tiny danger-text">失败</span>' : ''}${u.status !== 'uploading' ? iconBtn('remove-upload','x','移除',`data-name="${e(u.name)}"`) : ''}</span>`).join('')}</div>` : ''}
+    <textarea id="composer-text" aria-label="研究问题" placeholder="${(() => { const cur = CS.currentRun(); return cur && cur.kind === 'chat' && cur.messages?.some(m => m.streaming) ? '回复生成中——发送将作为引导消息插入当前任务…' : home ? '描述你的科研问题…' : '继续提问，或调整分析计划…'; })()}" rows="3" maxlength="6000">${e(CS.ui.composer)}</textarea>
+    <div class="composer-toolbar"><div class="composer-tools${CS.ui.terminal?.open ? ' term-open' : ' '}">${btn('upload-local','','plus','', 'aria-label="上传本地文件" title="上传本地文件到项目目录，也可直接粘贴"')}${btn('add-attachment','文件','paperclip','', 'aria-label="引用项目文件" title="引用项目内已有文件（@）"')}${btn('choose-dataset','数据集','database','', 'aria-label="选择数据集" title="选择数据集"')}${btn('choose-tools','工具','grid','', 'aria-label="选择工具" title="选择工具"')}${btn('choose-skills','技能','book','', 'aria-label="选择技能" title="选择技能"')}${btn('toggle-plan','计划','workflow', CS.ui.planMode ? 'primary' : '', 'aria-label="计划模式" title="计划模式：开启后先出方案再动手"')}</div><div class="composer-submit">${V.ctxRing()}<div class="model-select"><button type="button" class="model-select-btn" data-action="toggle-model-menu" aria-haspopup="listbox" aria-expanded="${!!CS.ui.modelMenu}">${e(CS.state.settings.model || 'openrouter/free')}${i('down','',13)}</button>${CS.ui.modelMenu ? (() => { const list = CS.ui.models.length ? CS.ui.models : [{ id: '', model: CS.state.settings.model || 'openrouter/free' }]; const groups = []; const byKey = new Map(); for (const m of list) { const gname = m.providerName || '未分组'; if (!byKey.has(gname)) { byKey.set(gname, []); groups.push(gname); } byKey.get(gname).push(m); } return `<div class="model-menu" role="listbox">${groups.map(g => `<div class="model-menu-group" role="presentation">${e(g)}</div>${byKey.get(g).map(m => `<button type="button" class="model-menu-item" role="option" aria-selected="${CS.state.settings.modelId === m.id}" data-action="pick-model" data-id="${e(m.id)}"><span>${e(m.model)}</span>${CS.state.settings.modelId === m.id ? i('check','',13) : ''}</button>`).join('')}`).join('')}<div class="menu-divider"></div><button type="button" class="model-menu-item" data-action="configure-model">${i('settings','',14)}<span>配置模型…</span></button></div>`; })() : ''}</div>${(CS.currentRun()?.kind === 'chat' && (CS.currentRun()?.status === 'running' || CS.currentRun()?.messages?.some(m => m.streaming))) ? `<button type="button" class="send-button send-stop" data-action="stop-generation" aria-label="停止生成" title="停止生成">${i('stop', '', 15)}</button>${(CS.ui.composer.trim() || (CS.ui.pendingUploads || []).some(u => u.status === 'done')) ? `<button type="submit" class="send-button send-steer" aria-label="插入引导消息" title="作为引导消息插入当前任务 · Enter">${i('up', '', 19)}</button>` : ''}` : `<button type="submit" class="send-button" aria-label="发送研究问题" title="发送 · Enter" ${(!CS.ui.composer.trim() && !(CS.ui.pendingUploads || []).some(u => u.status === 'done')) ? 'disabled' : ''}>${i('up', '', 19)}</button>`}</div></div>
+    </form>${home ? '' : `<div class="sys-stats" id="sys-stats"><span class="sys-line"><span class="sys-skel" style="flex:5"></span><span class="sys-skel" style="flex:9"></span><span class="sys-skel" style="flex:7"></span><span class="sys-skel" style="flex:6"></span><span class="sys-skel" style="flex:8"></span></span><span class="sys-line"><span class="sys-skel" style="flex:4"></span><span class="sys-skel" style="flex:5"></span><span class="sys-skel" style="flex:5"></span><span class="sys-skel" style="flex:4"></span></span></div>`}</div>`;
+  };
+  V.home = () => `<section class="home-page">${CS.dnaArt()}<div class="home-content"><div class="home-brand"><div class="kicker">${i('dna','',26)}</div><h1>SigmaFlow <span>Science</span></h1></div>${V.composer(true)}<div class="home-shortcuts">
+    <button class="shortcut-card" data-action="demo-start">${i('cells')}<div><h3>单细胞分析</h3><p>体验一段科研工作流</p></div></button>
+    <button class="shortcut-card" data-nav="literature">${i('book')}<div><h3>文献研究</h3><p>让证据与思考相连</p></div></button>
+    <button class="shortcut-card" data-nav="data">${i('database')}<div><h3>数据探索</h3><p>从一份数据开始</p></div></button>
+    <button class="shortcut-card" data-nav="tools">${i('dna')}<div><h3>科研工具</h3><p>轻量、清晰、可追溯</p></div></button>
+  </div></div><div class="home-bottom"><span>FROM DATA TO DISCOVERY</span><span>·</span><button class="text-button" data-nav="help">使用指南 ${i('arrow','',12)}</button></div></section>`;
+
+  V.chat = () => {
+    const run = CS.currentRun();
+    if (!run) {
+      // 正在从服务端拉取会话内容: 先渲染页面壳(标题/输入区)与占位动画, 数据到达后重渲染替换, 不再闪现空态提示
+      if (CS.state.currentRunId && CS.ui.loadingRunId === CS.state.currentRunId) {
+        const meta = CS.ui.conversations.find(c => c.id === CS.state.currentRunId) || {};
+        // 骨架占位: 行宽分组固定(宽/中两套 + 右侧用户行窄两条), 节奏统一且填满对话栏宽度
+        const rows = Array.from({ length: 7 }, (_, i) => {
+          if (i % 3 === 1) return `<div class="skl-row right"><div class="skl-body"><div class="skl-line" style="width:44%"></div><div class="skl-line thin" style="width:30%"></div></div></div>`;
+          const widths = i % 3 === 0 ? [88, 74, 52] : [82, 64, 46];
+          return `<div class="skl-row"><div class="skl-avatar"></div><div class="skl-body"><div class="skl-line" style="width:${widths[0]}%"></div><div class="skl-line" style="width:${widths[1]}%"></div><div class="skl-line thin" style="width:${widths[2]}%"></div></div></div>`;
+        }).join('');
+        return `<section class="page chat-page"><div class="chat-layout no-inspector"><div class="chat-main chat-main-chat"><header class="chat-title chat-title-compact"><div><h1>${e(meta.title || '会话')}</h1></div></header><div class="conversation chat-skl">${rows}</div>${V.composer(false)}</div></div></section>`;
+      }
+      return `<section class="page">${empty('message','开始一个新的科研任务','先在首页描述研究问题，或选择一条演示工作流。')}<div class="center">${btn('go-home','开始对话','plus','primary')}</div></section>`;
+    }
+    if (run.kind === 'chat') {
+      // 压缩摘要卡(pi CompactionEntry): 点击头部折叠/展开
+      const V_COMPACT = (m, idxOf) => {
+        const c = String(m.content || '');
+        const header = c.split('\n')[0] || '上下文已压缩';
+        const body = c.split('\n').slice(1).join('\n').trim();
+        // 折叠键 = 会话id+消息序号(追加式列表里 idxOf 稳定): 默认折叠, 点击过的进"已展开集"
+        const ckey = `${run.id}|${idxOf}`;
+        const collapsed = !(CS.ui.compactExpandedSet || (CS.ui.compactExpandedSet = new Set())).has(ckey);
+        const head = `<button type="button" class="compact-head" data-action="toggle-compact" data-ckey="${e(ckey)}" aria-expanded="${collapsed ? 'false' : 'true'}" title="${collapsed ? '展开摘要' : '折叠摘要'}"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span></button>`;
+        return `<div class="compact-card${collapsed ? ' compact-folded' : ''}" data-mi="${idxOf}">${head}${body && !collapsed ? `<div class="compact-body md-body"><div class="compact-subline mono">${e(header)}</div>${CS.markdown(body)}</div>` : ''}</div>`;
+      };
+      // 压缩摘要作为特殊回复消息: agent 消息外壳(头像/名称) + 内嵌摘要卡;
+      // 进行中状态(compactPending)显示"上下文正在压缩中"等待动画
+      const isCompactMsg = m => !!(m.compactPending || m.compact || String(m.content || '').startsWith('[Conversation compressed'));
+      const V_COMPACT_REPLY = m => {
+        const idxOf = run.messages.indexOf(m);  // meta 行的操作按钮需要消息索引
+        const pending = !!m.compactPending;
+        // 名称行/计时/token 与正常回复一套结构; 进行中在 body 内显示压缩状态行(仿思考行)
+        const status = `<div class="compact-status" data-state="${pending ? 'running' : 'ok'}">${i('minimize2', '', 14)}<span class="compact-status-text">${pending ? '正在压缩会话' : '已完成上下文压缩'}</span>${pending ? '<span class="compact-dots"><span>.</span><span>.</span><span>.</span></span>' : ''}</div>`;
+        const streamBody = pending && m.summaryDelta ? `<div class="compact-card compact-streaming-card"><div class="compact-head"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span><span class="tiny muted compact-sub">摘要生成中…</span></div><div class="compact-body md-body compact-streaming">${CS.markdown(m.summaryDelta)}</div></div>` : '';
+        return `<div class="msg-block agent-block compact-reply-block" data-mi="${idxOf}"><div class="agent-message"><div class="agent-avatar${pending ? ' avatar-pulsing' : ''}">${i('dna', '', 21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span> <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${status}${streamBody}${pending ? '' : V_COMPACT(m, idxOf)}${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.tokens ? `<span class="message-meta">${CS.num(m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy', '', 13)}</span></span></div>`}</div></div></div>`;
+      };
+      const bubble = m => {
+        if (m.hidden) return '';  // 归位后的独立卡消息: 摘要已嵌入相邻回复的块时间线
+        // idxOf 上提到分支前: 压缩卡(meta 行/折叠键)与普通消息操作都按消息序号定位
+        const idxOf = run.messages.indexOf(m);
+        if (m.role === 'assistant' && isCompactMsg(m)) return V_COMPACT_REPLY(m, idxOf);
+        if (m.compact || String(m.content || '').startsWith('[Conversation compressed')) return V_COMPACT(m, idxOf);
+        return m.role === 'user'
+        ? `<div class="msg-block user-block" data-mi="${idxOf}">${V.refImages(m.content, run.projectId || CS.state.projectId)}${V.refChips(m.content, run.projectId || CS.state.projectId)}${m.datasetIds?.length ? `<div class="attachment-list ref-outside">${m.datasetIds.map(id => `<span class="attachment">${i('file')}${e(CS.state.datasets.find(d => d.id === id)?.name || id)}</span>`).join('')}</div>` : ''}<div class="user-message">${m.steering ? '<span class="steer-badge" title="引导消息：生成期间插入，当前回合结束后送达模型">引导</span>' : ''}${userTextHTML(m.content, run.id + '|' + idxOf)}</div><div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span><span class="message-actions"><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="edit-message" data-id="${idxOf}" title="修改">${i('edit','',13)}</span><span class="icon-btn danger-hover" role="button" data-action="delete-message" data-id="${idxOf}" title="删除消息">${i('trash','',13)}</span></span></div></div>`
+        : (() => {
+            // present 专属身份: 图标与名称"展示"(标题不再拼原始工具名, 展开详情保留)
+            const blockMeta = t => t.name === 'bash' ? {icon: 'terminal', label: '终端'} : t.name === 'present' ? {icon: 'present', label: '展示'} : t.name === 'webview' ? {icon: 'globe', label: '网页'} : t.name === 'create_skill' ? {icon: 'spark', label: '创建技能'} : {icon: 'code', label: '工具'};
+            // 块折叠键: 会话id+消息序号+块序号。不能用 m.at —— 完成时会重置 at,
+            // 展开状态会随键失效。idxOf 在追加式列表里稳定
+            const bkey = bi => `${run.id}|${idxOf}|${bi}`;
+            const blockOpen = bi => !!CS.ui.blockOpen[bkey(bi)];
+            const blocks = Array.isArray(m.blocks) ? m.blocks : null;
+            const lastIdx = blocks ? blocks.length - 1 : -1;
+            // 新格式: 按时间线逐块渲染(think/text/tool 各占一块, 按到达顺序排列);
+            // 旧格式(压平的 reasoning/tools/content)走原有渲染, 兼容服务端历史会话
+            let segments;
+            if (!blocks) {
+              segments = `${(m.streaming ? (CS.ui.thinkingText || m.reasoning) && CS.ui.thinkingText !== undefined : m.reasoning) ? `
+          <div class="think-root${m.streaming && !m.content ? ' think-live' : ''}" data-state="${m.streaming && !m.content ? 'running' : 'ok'}"${CS.ui.thinkingOpen ? ' data-expanded="true"' : ''}>
+            <button type="button" class="think-row" data-action="toggle-thinking" aria-expanded="${!!CS.ui.thinkingOpen}">
+              <span class="think-leading">${i('spark', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span>
+              <span class="think-title">${m.streaming && !m.content ? '思考中' : '已深度思考'}</span>
+              <span class="think-separator" aria-hidden="true"></span>
+              <span class="think-summary" data-follow-end="${m.streaming && !m.content ? '' : undefined}"><span class="think-summary-text">${e((m.streaming && !m.content ? (CS.ui.thinkingText || '') : (m.reasoning || '').split('\n').filter(Boolean)[0]) || '')}</span></span>
+            </button>
+            ${CS.ui.thinkingOpen ? `<div class="think-body">${e(m.streaming ? (CS.ui.thinkingText || m.reasoning || '') : (m.reasoning || ''))}</div>` : ''}
+          </div>` : ''}
+          ${(m.tools || []).length ? (() => { const meta = blockMeta(m.tools[m.tools.length - 1]); const running = m.tools.some(t => t.running); const last = m.tools[m.tools.length - 1]; const firstBash = m.tools.find(t => t.name === 'bash'); const bashCmdText = firstBash ? bashCmd(firstBash.args) : ''; return `<div class="think-root tool-root${running ? ' think-live' : ''}" data-state="${running ? 'running' : (m.tools.some(t => V.toolIsErr(t.result)) ? 'err' : 'ok')}"${CS.ui.toolsOpen ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-tools" aria-expanded="${!!CS.ui.toolsOpen}"><span class="think-leading">${i(bashCmdText ? 'terminal' : meta.icon, '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${bashCmdText ? '终端' : meta.label}${last.name === 'present' || last.name === 'webview' ? '' : ' ' + e(last.name)} · ${m.tools.length} 次调用${running ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(bashCmdText || m.tools.map(t => t.name === 'present' ? '展示' : t.name === 'webview' ? '网页' : t.name).join(', '))}</span></span></button>${CS.ui.toolsOpen ? `<div class="tool-list">${m.tools.map(t => t.name === 'bash' ? `<div class="tool-item${t.running ? ' tool-running' : (V.toolIsErr(t.result) ? ' tool-err' : '')}">${V.toolTerminal(t.name, t.args, t.result, !!t.running)}</div>` : `<div class="tool-item${t.running ? ' tool-running' : (V.toolIsErr(t.result) ? ' tool-err' : '')}"><div class="tool-head"><code>${e(t.name)}</code><span class="tool-args">${e(JSON.stringify(t.args || {}).slice(0, 160))}</span>${t.running ? '<span class="tool-status">运行中…</span>' : ''}</div>${t.result != null ? `<pre class="tool-result">${e(String(t.result).slice(0, 600))}${String(t.result).length > 600 ? '\n…' : ''}</pre>` : ''}</div>`).join('')}</div>` : ''}</div>`; })() : ''}          <div class="agent-intro md-body"${m.streaming ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(m.content)}</div>`;
+            } else {
+              // 单块渲染: 思考/工具块可折叠(状态存 CS.ui.blockOpen), 正文块渲染 markdown
+              const seg = (b, bi) => {
+                // 过程折叠态: 中间块整段隐藏, 只留折叠条摘要
+                if (_procHidden && _isProcPart(b, bi)) return '';
+                // 已返回结果的工具块视为完成; 否则等多轮循环的下一批事件时,
+                // 尾部工具块会一直显示「运行中」
+                const live = m.streaming && bi === lastIdx && b.result == null && b.type !== 'ask';
+                if (b.type === 'text') {
+                  // 计划卡: <plan>...</plan> 段渲染成可批准的审核卡(dsh plan-mode 思路);
+                  // 服务端 content 保留原始 <plan> 标记, 回放时同样渲染这里
+                  const t = b.text || '';
+                  const pm = t.match(/^([\s\S]*?)<plan>([\s\S]*?)<\/plan>([\s\S]*)$/);
+                  if (pm && pm[2].trim()) {
+                    // 只有最后一条消息上的计划卡显示操作按钮, 历史 plan 只读
+                    const canApprove = !m.streaming && idxOf === run.messages.length - 1;
+                    return `${pm[1].trim() ? `<div class="agent-intro md-body">${CS.markdown(pm[1])}</div>` : ''}<div class="plan-card" data-bi="${bi}"><div class="plan-head">${i('workflow', '', 15)}<span>计划方案</span><span class="plan-tag">等待你的确认</span></div><div class="plan-body md-body">${CS.markdown(pm[2])}</div>${canApprove ? `<div class="plan-actions"><button type="button" class="btn primary" data-action="approve-plan" data-id="${idxOf}">批准并执行</button><button type="button" class="btn flat" data-action="refine-plan">继续讨论</button></div>` : '<div class="small muted plan-foot-hint">该计划已生成，可继续对话调整或直接下指令。</div>'}</div>${pm[3].trim() ? `<div class="agent-intro md-body">${CS.markdown(pm[3])}</div>` : ''}`;
+                  }
+                  return `<div class="agent-intro md-body" data-bi="${bi}"${live ? ` data-stream-at="${e(m.at)}"` : ''}>${CS.markdown(b.text)}</div>`;
+                }
+                if (b.type === 'compact') {
+                  // 压缩块: 空文本=等待态(agent 自动压缩中), 有文本=摘要卡;
+                  // 嵌在回复块时间线里, 显示位置与压缩实际发生的时刻一致
+                  if (!String(b.text || '').trim()) {
+                    if (!live) return '';
+                    return `<div class="compact-card" data-bi="${bi}"><div class="compact-head"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">正在压缩会话</span><span class="compact-dots"><span>.</span><span>.</span><span>.</span></span></div></div>`;
+                  }
+                  const _cc = String(b.text || '');
+                  const _chead = (_cc.split('\n')[0] || '').slice(0, 60);
+                  // 默认折叠, 点开过的进"已展开集"; 键 = 会话id|mi|bi(追加稳定)
+                  const _eck = `${run.id}|${idxOf}|${bi}`;
+                  const _ecol = !(CS.ui.embedCompactExpanded || (CS.ui.embedCompactExpanded = new Set())).has(_eck);
+                  return `<div class="compact-card${_ecol ? ' compact-folded' : ''}" data-bi="${bi}"><button type="button" class="compact-head" data-action="toggle-embed-compact" data-id="${e(_eck)}" aria-expanded="${_ecol ? 'false' : 'true'}" title="${_ecol ? '展开摘要' : '折叠摘要'}"><span class="compact-ico">${i('layers', '', 14)}</span><span class="compact-title">上下文已压缩</span></button>${_ecol ? '' : `<div class="compact-body md-body"><div class="compact-subline mono">${e(_chead)}</div>${CS.markdown(_cc.split('\n').slice(1).join('\n'))}</div>`}</div>`;
+                }
+                if (b.type === 'steer') {
+                  // 内嵌引导气泡: 显示在插入时刻, 把一轮回复分成两段;
+                  // 右对齐 user 气泡样式 + 引导徽章
+                  return `<div class="steer-insert"><span class="steer-badge" title="引导消息：生成期间插入，当前回合结束后送达模型">引导</span>${e(String(b.text || ''))}</div>`;
+                }
+                if (b.type === 'ask') return renderAsk(b, bi);
+                if (b.type === 'sysnote') {
+                  const _raw = String(b.text || '');
+                  // 压缩宣告不再以 chip 呈现: "压缩会话"等待卡承担全部流程;
+                  // 历史归档里已有的宣告块同样滤除
+                  if (/Conversation history was just compacted/.test(_raw)) return '';
+                  const _sn = String(b.text || '').replace(/^\[System\]\s*/i, '').replace(/^\[Goal still active\]\s*/i, '');
+                  const _tag = /background-results/.test(_sn) ? '后台结果' : '注入提示';
+                  // 压缩宣告的 chip 可点击: 摘要卡插入在当时的消息位置, 长会话里
+                  // 离这条提示可能隔着几百格, 点击直达
+                  const _isCmp = /Conversation history was just compacted/.test(_sn);
+                  return `<div class="sysnote-chip${_isCmp ? ' jumpable' : ''}"${_isCmp ? ' data-action="jump-compact" role="button" tabindex="0"' : ''} data-bi="${bi}" title="${e(String(b.text || ''))}${_isCmp ? ' · 点击跳转到摘要卡' : ''}"><span class="sysnote-tag">${i(_isCmp ? 'layers' : 'info', '', 12)}${_tag}</span><span class="sysnote-txt">${e(_isCmp ? _sn.slice(0, 90) : _sn.slice(0, 160))}${_sn.length > (_isCmp ? 90 : 160) ? '…' : ''}</span>${_isCmp ? '<span class="sysnote-go">查看摘要 ›</span>' : ''}</div>`;
+                }
+                if (b.type === 'present') {
+                  // 模型主动呈现的富媒介文件卡片: 图标按类别, 点击进预览
+                  const k = b.klass || 'other';
+                  const kicon = 'present';  // present 卡专属图标: 显示器+折线(类型由名称/扩展名表达)
+                  const kb = { image: '图片', '3d': '3D 模型', video: '视频', audio: '音频', pdf: 'PDF', html: 'HTML', text: '文本', archive: '压缩包', other: '文件' }[k] || '文件';
+                  return V.presentBlock(b, bi);
+                }
+                if (b.type === 'webview') {
+                  // 模型展示的可交互网页卡片(反爬人机验证 / 前端预览)
+                  return V.webviewBlock(b, bi);
+                }
+                if (b.type === 'deliverables') {
+                  // 本轮修改文件行(dsh deliverables 思路): 来源只信 edit/write 参数
+                  const files = Array.isArray(b.files) ? b.files : [];
+                  if (!files.length) return '';
+                  return `<div class="deliverables-row"><span class="deliverables-title">${i('file', '', 13)}本轮修改文件</span><div class="deliverables-chips">${files.map(f => `<button type="button" class="deliverable-chip" data-action="open-deliverable" data-path="${e(f.path)}" title="${e(f.path)}"><span class="deliverable-op">${e(f.op === 'write' ? '新建' : '修改')}</span>${e(String(f.path).split('/').pop())}</button>`).join('')}</div></div>`;
+                }
+                if (b.type === 'think') {
+                  const open = blockOpen(bi);
+                  return `<div class="think-root${live ? ' think-live' : ''}" data-state="${live ? 'running' : 'ok'}" data-bi="${bi}"${live ? ' data-live="1"' : ''}${open ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-block" data-id="${e(bkey(bi))}" aria-expanded="${open}"><span class="think-leading">${i('spark', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${live ? '思考中' : '已深度思考'}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"${live ? ' data-follow-end=""' : ''}><span class="think-summary-text">${e(live ? b.text : ((b.text || '').split('\n').filter(Boolean)[0] || ''))}</span></span></button>${open ? `<div class="think-body"${live ? ' data-live-think="1"' : ''}>${e(b.text)}</div>` : ''}</div>`;
+                }
+                const meta = blockMeta(b);
+                const open = blockOpen(bi);
+                const isBash = b.name === 'bash';
+                const bcmd = isBash ? bashCmd(b.args) : '';
+                if (isBash) {
+                  const summary = bcmd || '（无命令）';
+                  return `<div class="think-root tool-root${live ? ' think-live' : ''}" data-state="${live ? 'running' : (V.toolIsErr(b.result) ? 'err' : 'ok')}" data-bi="${bi}"${open ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-block" data-id="${e(bkey(bi))}" aria-expanded="${open}"><span class="think-leading">${i('terminal', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${meta.label}${b.name === 'present' || b.name === 'webview' ? '' : ' ' + e(b.name)}${live ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(summary.length > 120 ? summary.slice(0, 120) + '…' : summary)}</span></span></button>${open ? V.toolTerminal(b.name, b.args, b.result, live) : ''}</div>`;
+                }
+                return `<div class="think-root tool-root${live ? ' think-live' : ''}" data-state="${live ? 'running' : (V.toolIsErr(b.result) ? 'err' : 'ok')}" data-bi="${bi}"${open ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-block" data-id="${e(bkey(bi))}" aria-expanded="${open}"><span class="think-leading">${i(meta.icon, '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">${meta.label}${b.name === 'present' || b.name === 'webview' ? '' : ' ' + e(b.name)}${live ? '（运行中）' : ''}</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${b.name === 'webview' ? e([b.args && b.args.title, b.args && (b.args.url || b.args.path)].filter(Boolean).join(' · ')) : e(JSON.stringify(b.args || {}).slice(0, 160))}</span></span></button>${open ? `<div class="tool-list"><div class="tool-item${live ? ' tool-running' : (V.toolIsErr(b.result) ? ' tool-err' : '')}"><div class="tool-head"><code>${e(b.name)}</code><span class="tool-args">${e(JSON.stringify(b.args || {}).slice(0, 160))}</span>${live ? '<span class="tool-status">运行中…</span>' : ''}</div>${b.result != null ? (V.isUnifiedDiff(String(b.result)) ? V.renderUnifiedDiff(String(b.result).slice(0, 20000)) : `<pre class="tool-result">${e(String(b.result).slice(0, 600))}${String(b.result).length > 600 ? '\n…' : ''}</pre>`) : ''}</div></div>` : ''}</div>`;
+              };
+              // ask 问题卡: 未回答时可选项+自由输入; 已回答后默认折叠成一行摘要,
+              // 点标题行可重新展开查看原问题与所选答案; 失效后回放提示
+              const renderAsk = (b, bi) => {
+                const key = bkey(bi);
+                const qs = b.questions || [];
+                const state = b.answered ? 'answered' : (b.stale ? 'stale' : 'pending');
+                const title = qs.length > 1 ? `模型向你提出了 ${qs.length} 个问题` : '模型向你提问';
+                const sel = (CS.ui.askSel || {})[key] || {};
+                // 用户答复按问题 id 索引, 供展开态回放选中项/自定义文本
+                const answeredBody = (() => {
+                  const ansById = {};
+                  for (const a of (b.answers || [])) ansById[String(a.id || '')] = a;
+                  return qs.map((q, qi) => {
+                    const ans = ansById[String(q.id || '')] || ansById[`q${qi + 1}`] || {};
+                    const selectedLabels = (ans.selected || []);
+                    const opts = (q.options || []).map(o => `<span class="ask-option${selectedLabels.includes(o.label) ? ' selected' : ''}"${o.description ? ` title="${e(o.description)}"` : ''}><span class="ask-option-label">${e(o.label)}</span>${o.description ? `<span class="ask-option-desc">${e(o.description)}</span>` : ''}</span>`).join('');
+                    const custom = String(ans.custom || '').trim();
+                    const yourText = selectedLabels.length ? `你的选择：${e(selectedLabels.join('、'))}` : '';
+                    return `<div class="ask-q"><div class="ask-q-head">${q.header ? `<span class="ask-q-chip">${e(q.header)}</span>` : ''}<span class="ask-q-text">${e(q.question)}</span></div>${opts ? `<div class="ask-options">${opts}</div>` : ''}${yourText || custom ? `<div class="ask-your-answer">${yourText}${yourText && custom ? ' · ' : ''}${custom ? `补充：<span>${e(custom)}</span>` : ''}</div>` : ''}</div>`;
+                  }).join('');
+                })();
+                if (state === 'answered') {
+                  const open = !!(CS.ui.askOpen || {})[key];
+                  return `<div class="ask-card ask-answered" data-bi="${bi}" data-ask-state="answered"${open ? ' data-expanded="1"' : ''}><button type="button" class="ask-answered-row" data-action="toggle-ask" data-id="${e(key)}" aria-expanded="${open}"><span class="ask-head-icon">${i('help', '', 14)}</span><span class="ask-chevron">${i('chevron', '', 12)}</span><span class="ask-title">${e(title)}</span><span class="ask-answered-text">${e(String(b.result || '').slice(0, 300))}</span></button>${open ? `<div class="ask-answered-body">${answeredBody}</div>` : ''}</div>`;
+                }
+                const body = qs.map((q, qi) => {
+                  const picked = sel[qi] || new Set();
+                  const opts = (q.options || []).map((o, oi) => `<button type="button" class="ask-option${picked.has(oi) ? ' selected' : ''}" data-action="ask-pick-option" data-id="${e(key)}" data-qi="${qi}" data-oi="${oi}"${o.description ? ` title="${e(o.description)}"` : ''}><span class="ask-option-label">${e(o.label)}</span>${o.description ? `<span class="ask-option-desc">${e(o.description)}</span>` : ''}</button>`).join('');
+                  const draft = ((CS.ui.askDraft || {})[`${key}|${qi}`] || '');
+                  return `<div class="ask-q"><div class="ask-q-head">${q.header ? `<span class="ask-q-chip">${e(q.header)}</span>` : ''}<span class="ask-q-text">${e(q.question)}</span></div>${opts ? `<div class="ask-options">${opts}</div>` : ''}${state === 'pending' ? `<input class="ask-custom-input" data-key="${e(key + '|' + qi)}" placeholder="${e(q.multi_select ? '补充说明（可选）' : '自由输入答案（可选）')}" value="${e(draft)}" autocomplete="off">` : ''}</div>`;
+                }).join('');
+                const footer = state === 'pending' ? `<button type="button" class="btn primary small-btn ask-submit-btn" data-action="ask-submit" data-id="${e(key)}"${b.submitting ? ' disabled' : ''}>${b.submitting ? '发送中…' : '发送回答'}</button>` : `<p class="hint">该问题因页面刷新或停止已失效，无法再回答。</p>`;
+                return `<div class="ask-card" data-bi="${bi}" data-ask-state="${state}"><div class="ask-head">${i('help', '', 14)}<span class="ask-title">${e(title)}</span><span class="tool-status">${state === 'pending' ? '等待你的回答…' : '已失效'}</span></div>${body}<div class="ask-foot">${footer}</div></div>`;
+              };
+              // 中间过程折叠(完成即自动收拢): think/tool/已答ask/sysnote/压缩摘要
+              // 以及中间解说正文段(非最后一段 text)都属过程 —— 每轮只露出最后的
+              // 总结正文与成品卡(present/webview/deliverables/计划)。
+              // 流式中强制展开; 有待回答 ask 的消息不折(问题卡必须可见)。
+              // 用户点开过则记住(显式展开), 收起回到默认折叠态。
+              const _procKey = `${run.id}|${idxOf}`;
+              const _lastTextIdx = (() => { let li = -1; blocks.forEach((b, k) => { if (b && b.type === 'text' && String(b.text || '').trim()) li = k; }); return li; })();
+              const _isProcPart = (b, bi) => !!(
+                b && (
+                  b.type === 'think' || b.type === 'tool' || b.type === 'sysnote' || b.type === 'compact'
+                  || (b.type === 'ask' && (b.answered || b.stale))
+                  || (b.type === 'text' && bi !== _lastTextIdx)
+                )
+              );
+              const _pendingAsk = blocks.some(b => b && b.type === 'ask' && !b.answered && !b.stale);
+              const _procFoldable = !m.streaming && blocks.some((b, k) => _isProcPart(b, k)) && !_pendingAsk;
+              const _procHidden = false;  // 组渲染函数内部按组决定
+              // 组折叠条 HTML 工厂
+              const _foldBar = (gKey, count, tools, open) => `<button type="button" class="proc-fold-row" data-action="toggle-proc" data-id="${e(gKey)}" aria-expanded="${open}" title="${open ? '收起中间过程' : '展开中间过程'}"><span class="proc-chev${open ? ' proc-chev-open' : ''}" aria-hidden="true"></span><span class="proc-fold-title">处理详情</span><span class="proc-fold-meta">${count} 条过程 · ${tools} 次工具调用</span></button>`;
+              // 分组折叠渲染: steer 块把时间线切成多组, 每组过程块独立一条"处理详情",
+              // 引导气泡(右对齐用户样式)夹在组间 —— 引导前的过程折一条、引导后的过程
+              // 折一条, 只有全轮最后一段正文与成品卡露出。展开记忆按组(组键带组号)
+              const _renderGrouped = () => {
+                let out = '', g = 0, pend = [], pendTools = 0;
+                const flush = () => {
+                  if (!pend.length) return;
+                  const gKey = `${_procKey}|g${g}`;
+                  const open = !!(CS.ui.procOpen && CS.ui.procOpen.has(gKey));
+                  // 条常驻: 展开态也显示(chev 朝下), 过程块跟在条后, 再点收起
+                  out += _foldBar(gKey, pend.length, pendTools, open);
+                  if (open) out += pend.map(([b, bi]) => seg(b, bi)).join('');
+                  pend = []; pendTools = 0;
+                };
+                _units.forEach(u => {
+                  const b = u.grid ? null : u.b;
+                  const bi = u.bi;
+                  if (!u.grid && b.type === 'steer') { flush(); out += seg(b, bi); g++; return; }
+                  if (!u.grid && _isProcPart(b, bi)) { pend.push([b, bi]); if (b.type === 'tool') pendTools++; return; }
+                  flush();
+                  out += u.grid ? segUnit(u) : seg(b, bi);
+                });
+                flush();
+                return out;
+              };
+              // 连续图片 present 合并: 相邻 ≥2 张图片类成品卡缩略网格展示,
+              // 避免逐张整卡占满页面; 点击格子仍走 open-present 完整弹窗
+              const _imgLike = b => !!(b && b.type === 'present' && (b.klass === 'image' || /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(String(b.path || b.name || ''))));
+              const _units = [];
+              { let ui2 = 0;
+                while (ui2 < blocks.length) {
+                  if (_imgLike(blocks[ui2])) {
+                    let uj = ui2; while (uj < blocks.length && _imgLike(blocks[uj])) uj++;
+                    if (uj - ui2 >= 2) { _units.push({ grid: true, items: blocks.slice(ui2, uj).map((b, k) => ({ b, bi: ui2 + k })) }); ui2 = uj; continue; }
+                  }
+                  _units.push({ grid: false, b: blocks[ui2], bi: ui2 }); ui2++;
+                }
+              }
+              const _imgCell = ({ b, bi }) => `<button type="button" class="img-cell" data-action="open-present" data-path="${e(b.path || '')}" data-klass="${e(b.klass || 'other')}" data-name="${e(b.title || b.name || b.path)}" data-title="${e(b.title || '')}" data-size="${e(String(b.size || 0))}" data-note="${e(b.note || '')}" data-bpid="${e(b.pid || '')}" role="button" title="${e(b.title || b.name || b.path || '')} · 点击查看完整内容"><img class="ref-thumb" data-pid="${e(b.pid || '')}" data-path="${e(b.path || '')}" data-state="idle" alt=""><span class="img-cell-name">${e(b.title || b.name || '')}</span></button>`;
+              const segUnit = u => u.grid ? `<div class="img-grid" role="group" aria-label="连续图片 ${u.items.length} 张">${u.items.map(_imgCell).join('')}</div>` : seg(u.b, u.bi);
+              const tailText = blocks.length && blocks[lastIdx].type === 'text';
+              // 未回答的 ask 挂在尾部时, 等待指示改为「等待你的回答」
+              const tailAskPending = m.streaming && blocks.length && blocks[lastIdx].type === 'ask' && !blocks[lastIdx].answered && !blocks[lastIdx].stale;
+              // 等待模型响应: 流式中没有正在输出的正文; 典型场景是工具刚返回完,
+              // 模型下一轮首字尚未到达, 给出一个轻量等待指示
+              const waitingModel = m.streaming && !tailText && !tailAskPending && (!blocks.length || (blocks[lastIdx].type === 'tool' && blocks[lastIdx].result != null) || (blocks[lastIdx].type === 'ask' && (blocks[lastIdx].answered || blocks[lastIdx].stale)));
+              const waitHint = (waitingModel || tailAskPending) ? (() => { const rt = CS.ui.chatRetry; const active = rt && rt.runId === run.id; const left = active && rt.waitUntil ? Math.max(0, Math.ceil((rt.waitUntil - Date.now()) / 1000)) : 0; const label = tailAskPending ? '等待你的回答' : active ? `第 ${Math.min(rt.attempt + 1, rt.total)}/${rt.total} 次尝试中` : '等待模型响应'; const cd = active && !tailAskPending && rt.waitUntil ? ` <span class="retry-countdown" data-until="${rt.waitUntil}">${left > 0 ? left + 's 后重试' : '正在重试…'}</span>` : ''; const tip = active && rt.error ? ` title="${e(rt.error)}"` : ''; return `<div class="model-wait" role="status"${tip}><span class="wait-dots" aria-hidden="true"><span class="wait-dot"></span><span class="wait-dot"></span><span class="wait-dot"></span></span><span>${label}${cd}${active && !tailAskPending ? ' · 上次失败' : ''}</span></div>`; })() : '';
+              // 流式期间最后一块不是正文时补一个空正文占位, 供增量更新定位与底部跟随
+              segments = `${_procFoldable ? _renderGrouped() : _units.map(segUnit).join('')}${m.streaming && !tailText ? `<div class="agent-intro md-body" data-stream-at="${e(m.at)}"></div>${waitHint}` : ''}`;
+            }
+            const err = m.error ? (typeof m.error === 'string' ? { message: m.error } : m.error || {}) : null;
+            return `<div class="msg-block agent-block" data-mi="${idxOf}"><div class="agent-message"><div class="agent-avatar${m.streaming ? ' avatar-pulsing' : ' '}">${i('dna','',21)}</div><div class="agent-body"${blocks ? ` data-block-sig="${e(blocks.map(b => b.type).join(','))}"` : ''}><div class="agent-name">SigmaFlow Science${m.streaming && m.tokens ? ` <span class="tok-down" data-start="${m.at}">↓ ${CS.num(m.tokens)}</span>` : (m.streaming ? ` <span class="tok-down" data-start="${m.at}">↓ 0</span>` : '')}${m.streaming ? ` <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div>${segments}${err ?(() => { const errKey = (run.id || ['']) + '|' + idxOf; const errOpen = (CS.ui.errorOpenSet || []).has ? CS.ui.errorOpenSet.has(errKey) : false; return `<div class="think-root error-root"${errOpen ? ' data-expanded="true"' : ''}><button type="button" class="think-row" data-action="toggle-error" data-errkey="${e(errKey)}" aria-expanded="${errOpen}"><span class="think-leading">${i('alert', '', 14)}<span class="think-chevron">${i('chevron', '', 12)}</span></span><span class="think-title">请求出错</span><span class="think-separator" aria-hidden="true"></span><span class="think-summary"><span class="think-summary-text">${e(String(err.message || '未知错误').split('\n')[0])}</span></span></button>${errOpen ? `<div class="error-body"><pre class="error-detail">${e(err.detail || err.message || '')}</pre></div>` : ''}</div>`; })() : ''}${m.streaming ? '' : `<div class="message-meta-row"><span class="message-meta">${CS.datetime(m.at)}</span>${m.role === 'assistant' && m.tokens ? `<span class="message-meta">${CS.num(m.contextTokens || m.promptTokens || 0)} in · ${CS.num(m.tokens)} out</span>${CS.tokRateTag(m)}` : ''}<span class="message-actions"><span class="icon-btn${m.feedback && m.feedback.rating === 'up' ? ' rated rated-up' : ''}" role="button" data-action="rate-message" data-id="${idxOf}" data-rating="up" title="点赞">${i('thumbup','',13)}</span><span class="icon-btn${m.feedback && m.feedback.rating === 'down' ? ' rated rated-down' : ''}" role="button" data-action="rate-message" data-id="${idxOf}" data-rating="down" title="点踩">${i('thumbdown','',13)}</span><span class="icon-btn" role="button" data-action="copy-message" data-id="${idxOf}" title="复制">${i('copy','',13)}</span><span class="icon-btn" role="button" data-action="branch-chat" data-id="${idxOf}" title="分支到新聊天">${i('workflow','',13)}</span><span class="icon-btn danger-hover" role="button" data-action="delete-message" data-id="${idxOf}" title="删除消息">${i('trash','',13)}</span></span></div>`}</div></div></div>`;
+          })(); };
+      return `<section class="page chat-page"><div class="chat-layout no-inspector"><div class="chat-main chat-main-chat"><header class="chat-title chat-title-compact"><div><h1 title="${e(run.title)}">${e(run.title)}</h1><p class="small muted">${e(CS.state.projects.find(p => p.id === run.projectId)?.name || '未指定项目')} <span class="faint"> / </span> ${e(CS.state.settings.model || '默认模型')}</p></div>${V.runUsage()}</header>
+      <div class="conversation">${run.messages.map(bubble).join('')}</div>
+      ${V.composer(false)}</div></div></section>`;
+    }
+    const waiting = run.status === 'awaiting'; const completed = run.status === 'complete';
+    const approveLabel = run.status === 'paused' ? '继续执行' : run.status === 'error' ? '重试连接' : '确认并执行';
+    const controls = ['awaiting','paused','error'].includes(run.status) ? btn('approve-run',approveLabel,'play','primary') : run.status === 'running' ? btn('pause-run','暂停','pause','flat') : '';
+    const cancel = ['awaiting','running','paused','error'].includes(run.status) ? btn('cancel-run','取消任务','stop','flat') : '';
+    return `<section class="page chat-page"><div class="chat-layout ${!CS.state.settings.inspector ? 'no-inspector' : ''}"><div class="chat-main"><header class="chat-title"><div><h1 title="${e(run.title)}">${e(run.title)}</h1><p class="small muted">${e(CS.state.projects.find(p => p.id === run.projectId)?.name || '未指定项目')} <span class="faint"> / </span> 演示任务</p></div>${V.runUsage()}<div class="row">${status(run.status)}${iconBtn('toggle-inspector','panel','显示 / 隐藏任务详情')}</div></header>
+      <div class="conversation">${V.refImages(run.prompt, run.projectId)}${V.refChips(run.prompt, run.projectId)}${run.datasetIds.length ? `<div class="attachment-list ref-outside">${run.datasetIds.map(id => `<span class="attachment">${i('file')}${e(CS.state.datasets.find(d => d.id === id)?.name || '已删除的输入记录')}</span>`).join('')}</div>` : ''}<div class="user-message">${(() => { const vis = String(run.prompt || '').replace(/\u200B@\[\[[^\]]*\]\]/g, '').replace(/\u200B@\S+/g, '').trim(); return vis ? e(vis) : ''; })()}<div class="message-meta">${CS.time(run.createdAt)}</div></div>
+      <div class="agent-message"><div class="agent-avatar${run.streaming ? ' avatar-pulsing' : ' '}">${i('dna','',21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science <span class="pill small">演示 Agent</span></div><p class="agent-intro">${completed ? '演示流程已完成。下面保留了每一步的状态、输入记录与可导出的结果。' : waiting ? '我已将你的问题整理为以下演示计划。请先检查输入与步骤，确认后再执行。' : '正在按已确认的计划展示任务进度。你可以随时暂停、查看日志，或取消任务。'}所有分析图表均使用预设合成数据，不对上传文件进行生物学分析。</p>
+      <div class="run-card" data-phase="${run.status}"><div class="run-card-title"><div class="row">${run.status === 'running' ? '<span class="spinner"></span>' : i(completed ? 'checkcircle' : 'workflow','',17)}<strong>${waiting ? '执行前，确认你的分析计划' : completed ? '演示分析已完成' : 'Agent 任务进度'}</strong></div><span class="small muted">${run.progress}%</span></div><div class="run-progress"><span style="width:${run.progress}%"></span></div><ol class="step-list">
+      ${run.steps.map((s, index) => `<li class="step ${s.status}"><span class="step-bullet">${s.status === 'complete' ? i('check') : index + 1}</span><div class="step-title"><span>${e(s.title)}</span>${!waiting ? `<span class="step-progress-mini"><span class="track"><span style="width:${s.progress}%"></span></span>${s.progress}%</span>` : ''}</div><p class="step-description">${e(s.description)}</p>${!waiting ? `<button class="step-log-toggle" data-action="toggle-log" data-id="${index}">${i('chevron', CS.ui.expandedLogs.has(index) ? 'rotate' : '')} ${e(s.tool)} · ${s.status === 'complete' ? '查看日志' : s.status === 'running' ? '运行中' : '等待执行'}</button>${CS.ui.expandedLogs.has(index) ? `<pre class="step-log">${e(`[${s.tool}] ${s.status === 'complete' ? s.output : s.status === 'running' ? 'Simulating… 仅演示进度' : 'Waiting…'}\nSource: synthetic fixture · no uploaded file execution`)}</pre>` : ''}` : ''}</li>`).join('')}
+      </ol><div class="run-actions"><span class="run-note">${run.reloaded ? run.transport === 'remote' ? '页面已重载，请重连同步服务端状态。' : '页面曾重新加载，执行已暂停。' : completed ? '执行记录已保存在当前工作空间。' : '仅在确认后执行。演示模式不会产生模型费用。'}</span><div class="row gap-6">${controls}${cancel}${completed ? btn('open-results','查看结果','arrow','primary') : ''}${run.status === 'cancelled' ? btn('restart-run','重新规划','refresh','flat') : ''}</div></div></div>
+      ${run.status === 'error' ? `<div class="mt-12">${notice(run.error || '连接中断，请检查接口配置。')}</div>` : ''}
+      ${completed ? `<div class="result-file">${tile('file')}<div class="grow"><strong>analysis_record.md</strong><div class="sub">演示记录 · 包含输入、步骤、参数与限制</div></div>${iconBtn('export-report','download','导出报告')}</div>` : ''}
+      </div></div>${run.messages.map(m => m.role === 'user' ? `${V.refImages(m.content, run.projectId)}${V.refChips(m.content, run.projectId)}${m.datasetIds?.length ? `<div class="attachment-list ref-outside">${m.datasetIds.map(id => `<span class="attachment">${i('file')}${e(CS.state.datasets.find(d => d.id === id)?.name || id)}</span>`).join('')}</div>` : ''}<div class="user-message">${m.steering ? '<span class="steer-badge" title="引导消息：生成期间插入，当前回合结束后送达模型">引导</span>' : ''}${(() => { const vis = String(m.content || '').replace(/\u200B@\[\[[^\]]*\]\]/g, '').replace(/\u200B@\S+/g, '').trim(); return vis ? e(vis) : ''; })()}<div class="message-meta">${CS.time(m.at)}</div></div>` : `<div class="agent-message"><div class="agent-avatar${m.streaming ? ' avatar-pulsing' : ' '}">${i('dna','',21)}</div><div class="agent-body"><div class="agent-name">SigmaFlow Science${m.streaming && m.tokens ? ` <span class="tok-down" data-start="${m.at}">↓ ${CS.num(m.tokens)}</span>` : ''}${m.streaming ? ` <span class="elapsed-timer" data-start="${m.at}">${CS.elapsed(m.at)}</span>` : (m.elapsed != null ? ` <span class="elapsed-timer elapsed-done">${CS.elapsedMs(m.elapsed)}</span>` : '')}${CS.tokRateTag(m)}</div><p class="agent-intro">${e(m.content)}</p></div></div>`).join('')}</div>${V.composer(false)}</div>
+      ${V.inspector(run)}</div></section>`;
+  };
+  V.inspector = run => `<aside class="inspector" aria-label="任务详情"><div class="panel panel-pad"><div class="row-between"><h3>任务详情</h3>${i('panel','muted',15)}</div><div class="section-label">输入上下文</div>${run.datasetIds.length ? run.datasetIds.map(id => `<div class="inspector-file">${i('file')}<span>${e(CS.state.datasets.find(d => d.id === id)?.name || id)}</span></div>`).join('') : '<p class="small muted">无附件 · 使用合成示例</p>'}<hr class="divider"><div class="info-pairs"><span>工作流</span><span>${e(CS.workflow(run.workflowId).category)}</span><span>运行环境</span><span>${run.transport === 'local' ? '浏览器模拟' : (run.channel === 'ws' ? 'WebSocket' : 'HTTP / SSE')}</span><span>输入文件</span><span>${run.datasetIds.length} 份记录</span><span>流程步骤</span><span>${run.steps.length} 步</span><span>创建时间</span><span>${CS.time(run.createdAt)}</span></div><div class="section-label">执行边界</div><p class="small muted">不执行代码，不上传文件，不调用真实模型。结果用于演示交互与页面状态。</p></div><div class="panel panel-pad"><h3>相关资料</h3><a class="inspector-resource" href="https://scanpy.readthedocs.io/" target="_blank" rel="noopener noreferrer"><span>Scanpy 文档</span>${i('external','',12)}</a><a class="inspector-resource" href="https://www.ncbi.nlm.nih.gov/" target="_blank" rel="noopener noreferrer"><span>NCBI 公共资源</span>${i('external','',12)}</a><button class="inspector-resource full" style="background:none" data-nav="literature"><span>项目文献清单</span>${i('arrow','',12)}</button></div>${notice('人工确认 → 可查看的执行日志 → 可追溯的输出。')}</aside>`;
+
+  V.data = () => {
+    const f = CS.ui.filters; const rows = CS.state.datasets.filter(d => (f.dataTab === 'all' || d.source === f.dataTab) && (d.name + d.format + d.description).toLowerCase().includes(f.data.toLowerCase()));
+    const local = CS.state.datasets.filter(d => d.source === 'local');
+    return `<section class="page">${header('DATA LIBRARY','让数据井然有序','导入、预览并组织研究数据。原始文件不会由本地演示上传。',btn('import-data','导入数据','plus','primary'))}
+      <div class="data-overview"><div class="panel stat-card">${tile('database')}<div><div class="stat-number">${CS.state.datasets.length}</div><div class="stat-label">数据记录</div></div></div><div class="panel stat-card">${tile('file','blue')}<div><div class="stat-number">${local.length}</div><div class="stat-label">本地导入文件</div></div></div><div class="panel stat-card">${tile('shield','green')}<div><div class="stat-number">本地</div><div class="stat-label">演示模式 · 不上传</div></div></div></div>
+      <div class="toolbar"><div class="tabs">${tab('data-tab','all','全部数据',f.dataTab === 'all',CS.state.datasets.length)}${tab('data-tab','local','我的文件',f.dataTab === 'local',local.length)}${tab('data-tab','demo','示例数据',f.dataTab === 'demo',CS.state.datasets.length - local.length)}</div>${search('data-search','搜索名称或文件格式',f.data)}</div>
+      ${CS.ui.datasetSelection.size ? `<div class="selection-bar"><span>已选 ${CS.ui.datasetSelection.size} 份记录</span>${btn('export-dataset-metadata','导出元数据','download','small-btn flat')}${btn('delete-datasets','移除记录','trash','small-btn flat danger')}</div>` : ''}
+      <div class="panel">${rows.length ? `<div class="table-wrap"><table><thead><tr><th><input type="checkbox" id="select-all-data" aria-label="选择当前列表所有文件" ${rows.every(d => CS.ui.datasetSelection.has(d.id)) ? 'checked' : ''}></th><th>名称</th><th>格式</th><th>大小</th><th>来源</th><th>添加时间</th><th class="right">操作</th></tr></thead><tbody>${rows.map(d => `<tr class="row-hover"><td><input type="checkbox" data-check-dataset="${e(d.id)}" aria-label="选择 ${e(d.name)}" ${CS.ui.datasetSelection.has(d.id) ? 'checked' : ''}></td><td><div class="name-cell">${tile(d.format === 'FASTA' ? 'dna' : d.format === 'H5AD' ? 'cells' : 'file',d.source === 'local' ? 'green' : '')}<div><button class="text-button" data-action="preview-data" data-id="${e(d.id)}">${e(d.name)}</button><span class="sub">${e(d.source === 'local' ? CS.files.has(d.id) ? '当前会话可预览' : '仅元信息 · 重新选择可恢复内容' : '示例记录 · 非真实分析数据')}</span></div></div></td><td>${pill(d.format)}</td><td class="muted">${CS.formatBytes(d.size)}</td><td>${pill(d.source === 'local' ? '本地导入' : '演示',d.source === 'local' ? 'green' : '')}</td><td class="muted">${e(d.added)}</td><td class="right">${iconBtn('preview-data','eye','查看文件',`data-id="${e(d.id)}"`)}${iconBtn('attach-dataset','plus','附加到新对话',`data-id="${e(d.id)}"`)}</td></tr>`).join('')}</tbody></table></div>` : empty('database','没有匹配的数据','更换筛选条件，或导入新的研究文件。')}
+      <div class="panel-foot row-between"><span>${rows.length} 份记录 · 示例文件大小仅用于界面展示</span>${btn('download-sample','下载示例 CSV','download','small-btn flat')}</div></div><div class="mt-20">${notice('刷新后只保留文件元信息，不保留原始文件内容。CSV / TSV 可在本地预览前 100 行；H5AD 等二进制文件仅登记。')}</div></section>`;
+  };
+  V.projects = () => {
+    const f = CS.ui.filters; const projects = CS.state.projects.filter(p => (!!p.archived === (f.projectTab === 'archived')) && (p.name + p.description).toLowerCase().includes(f.project.toLowerCase()));
+    return `<section class="page">${header('PROJECTS','每一个问题，都有自己的空间','把数据、对话与执行记录组织到同一个研究项目。',btn('new-project','新建项目','plus','primary'))}<div class="toolbar"><div class="tabs">${tab('project-tab','active','我的项目',f.projectTab === 'active')}${tab('project-tab','archived','已归档',f.projectTab === 'archived')}</div>${search('project-search','搜索项目',f.project)}</div>
+      ${projects.length ? `<div class="project-grid">${projects.map(p => `<article class="panel project-card"><div class="row-between">${tile(p.icon || 'folder')}${iconBtn('edit-project','edit','编辑项目',`data-id="${e(p.id)}"`)}</div><button class="text-button" data-action="open-project" data-id="${e(p.id)}"><h3>${e(p.name)}</h3></button><p>${e(p.description)}</p><div class="row gap-6 wrap">${(p.tags || []).map(t => pill(t)).join('')}</div><div class="project-meta"><span>${CS.state.runs.filter(r => r.projectId === p.id).length} 次任务 · ${CS.state.datasets.filter(d => d.projectId === p.id).length} 份数据</span><button class="text-button" data-action="open-project" data-id="${e(p.id)}">打开 ${i('arrow','',13)}</button></div></article>`).join('')}</div>` : empty('folder','这里还没有项目','创建一个项目，为新的研究留出空间。')}<div class="page-footer">${i('lock','',12)} 项目元信息仅保存在本机浏览器</div></section>`;
+  };
+
+  V.flow = () => {
+    const wid = CS.ui.flowWorkflowId || '';
+    // 部署前缀自适应: science 挂在 <prefix>/science/ 下时, /workspace/ 是
+    // <prefix>/workspace/ — 根绝对路径会绕过前缀代理命中空响应(黑屏根因),
+    // 从当前路径提取前缀拼入(<prefix>/workspace/); 根部署时前缀为空
+    const m = location.pathname.match(/^(.*)\/science\//);
+    const deployPrefix = m ? m[1] : '';
+    const src = deployPrefix + '/workspace/' + (wid ? `?embed=1&workflow=${encodeURIComponent(wid)}` : '?embed=1');
+    const denied = CS.ui.flowDenied;
+    const body = denied
+      ? `<div class="flow-denied"><div class="panel"><h3>无法打开流程编辑器</h3><p class="muted">${e(denied === 'auth' ? '登录会话已过期或未登录。' : '编辑器加载失败, 请确认 Workspace 服务正常后重试。')}</p><div class="row gap-6 mt-20">${denied === 'auth' ? btn('flow-relogin','去登录','arrow','primary') : btn('flow-retry','重试','refresh','primary')}${btn('flow-back','返回工作流','back','flat')}</div></div></div>`
+      : `<iframe class="flow-frame" src="${e(src)}" title="流程编辑器" allow="clipboard-read; clipboard-write"></iframe>`;
+    return `<section class="page flow-shell"><div class="flow-topbar"><button type="button" class="text-button" data-nav="workflows">${i('arrowleft','',14)}<span>返回工作流</span></button><span class="flow-title">${e(wid ? `编辑: ${wid}` : '节点画布')}</span></div>${body}</section>`;
+  };
+  // ---- 执行追踪(移植自 admin traces 页; API: /admin/api/traces) ----
+  const TRACE_TYPE_COLOR = { agent: '#3b82f6', llm: '#3b82f6', LLM: '#3b82f6', generation: '#94a3b8', function: '#22d3ee', tool: '#22d3ee', code: '#22d3ee', Code: '#22d3ee', branch: '#f59e0b', Branch: '#f59e0b', handoff: '#fb923c', loop: '#3b82f6', Loop: '#3b82f6', config: '#64748b', Config: '#64748b' };
+  // 原版 admin 详情页的 span 徽标: 类型 → [图标 path 组, 色调]
+  const TRACE_ICON_PATH = {
+    braces: '<path d="M8 3H7a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2 2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-4a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/>',
+    bot: '<path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+    bubble: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+    split: '<path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.828L3 3"/><path d="m15 9 6-6"/>'
+  };
+  const traceIconCls = t => (t === 'code' || t === 'Code' || t === 'function' || t === 'tool') ? ['braces', 'teal'] : (t === 'branch' || t === 'Branch' || t === 'handoff') ? ['split', 'amber'] : t === 'generation' ? ['bubble', 'slate'] : ['bot', 'blue'];
+  const traceTypeColor = t => TRACE_TYPE_COLOR[t] || '#8f8dc6';
+  const fmtDur = sec => { const s = Number(sec) || 0; return s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${s >= 10 ? Math.round(s) : s.toFixed(2)}s`; };
+  const fmtWhen = iso => { try { return new Date(iso).toLocaleString(); } catch { return iso || '—'; } };
+  const jsonBlock = (title, val, wrap) => {
+    if (val === undefined || val === null || val === '') return '';
+    let text;
+    try {
+      const obj = typeof val === 'string' ? JSON.parse(val) : val;
+      // 结构始终 pretty-print(缩进 2); 换行开关只控制长字段值的软换行
+      text = JSON.stringify(obj, null, 2);
+    } catch { text = String(val); }
+    return `<div class="trace-json"><div class="trace-json-h">${e(title)}</div><pre class="${wrap ? 'wrap' : 'nowrap'}">${e(text)}</pre></div>`;
+  };
+  V.tracing = () => {
+    // 详情模式: #/tracing/<id>
+    if (CS.ui.tracingId) {
+      const st = CS.state.tracingDetail || {};
+      const t = st.data;
+      if (st.loading) return `<section class="page">${header('TRACING', '执行追踪', '加载追踪详情…')}</section>`;
+      if (st.error) return `<section class="page">${header('TRACING', '执行追踪', '')}${empty('alert', '无法加载 Trace', st.error)}</section>`;
+      if (!t) return `<section class="page">${header('TRACING', '执行追踪', '')}${empty('clock', '没有数据', 'Trace 不存在或已被删除。', btn('tracing-back', '返回列表', 'back'))}</section>`;
+      const spans = t.spans || [];
+      // span 树 + 时间线: 兄弟按开始时间排序, 条形按 (start-t0)/(t1-t0) 定位
+      const byId = new Map(spans.map(s => [s.id, { s, children: [] }]));
+      const roots = [];
+      byId.forEach(n => { const p = n.s.parent_id && byId.get(n.s.parent_id); (p ? p.children : roots).push(n); });
+      [roots, ...[...byId.values()].map(n => n.children)].forEach(list => list.sort((a, b) => String(a.s.started_at || '').localeCompare(String(b.s.started_at || ''))));
+      const times = spans.flatMap(s => [s.started_at, s.ended_at].filter(Boolean)).map(x => Date.parse(x)).filter(x => !Number.isNaN(x));
+      const t0 = times.length ? Math.min(...times) : 0, t1 = times.length ? Math.max(...times) : 1, span = Math.max(t1 - t0, 1);
+      const exp = CS.ui.tracingExpanded || {};
+      const sel = CS.ui.tracingSel;
+      const durMs = n => { const a = Date.parse(n.s.started_at || ''), b = Date.parse(n.s.ended_at || ''); return (!Number.isNaN(a) && !Number.isNaN(b)) ? Math.round(b - a) : null; };
+      const fmtMs = ms => ms === null ? '—' : ms.toLocaleString('en-US') + ' ms';
+      const barInfo = n => {
+        const st = Date.parse(n.s.started_at || '') , en = Date.parse(n.s.ended_at || '');
+        const l = Number.isNaN(st) ? 0 : Math.min(((st - t0) / span) * 100, 99.4);
+        const w = (Number.isNaN(st) || Number.isNaN(en)) ? 0.6 : Math.min(Math.max(((en - st) / span) * 100, 0.6), 100 - l);
+        return `left:${l}%;width:${w}%`;
+      };
+      const label = n => { const d = n.s.span_data || {}; if (d.type === 'handoff') return `${d.from_agent || '?'} → ${d.to_agent || '?'}`; return d.name || d.to_agent || d.type || 'span'; };
+      const row = (n, depth) => {
+        const kids = n.children.length ? `<div class="span-kids" style="display:${exp[n.s.id] === false ? 'none' : 'block'}">${n.children.map(c => row(c, depth + 1)).join('')}</div>` : '';
+        const has = n.children.length > 0;
+        const [ik, ic] = traceIconCls(n.s.span_data?.type);
+        return `<div class="span-row ${sel === n.s.id ? 'sel' : ''} ${n.s.error ? 'err' : ''}" data-action="tracing-span" data-id="${e(n.s.id)}">
+                    <button type="button" class="span-caret ${has ? '' : 'leaf'} ${exp[n.s.id] !== false ? 'open' : ''}" data-action="tracing-toggle" data-id="${e(n.s.id)}" aria-label="展开/折叠">${i('chevron', '', 13)}</button>
+          <span class="span-badge-icon ${ic}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TRACE_ICON_PATH[ik]}</svg></span>
+          <span class="span-name">${e(label(n))}</span>
+          <span class="span-dur">${fmtMs(durMs(n))}</span>
+          <div class="span-track"><span class="span-fill" style="${barInfo(n)};background:${traceTypeColor(n.s.span_data?.type)}"></span></div>
+        </div>${kids}`;
+      };
+      const selNode = sel ? byId.get(sel) : null;
+      const sd = selNode?.s?.span_data || {};
+      // mermaid 流程图数据源与展示用元数据(剔除 mermaid 键, 与旧 admin 页一致)
+      const mermaidSrc = t.metadata && typeof t.metadata.mermaid === 'string' && t.metadata.mermaid.trim() ? t.metadata.mermaid : '';
+      const metaNoM = (() => { const m = { ...(t.metadata || {}) }; delete m.mermaid; return Object.keys(m).length ? m : null; })();
+      const selInfo = !selNode ? '' : `<div class="panel trace-detail-panel">
+        <div class="row-between"><h3>${e(sd.name || sd.type || 'Span')}</h3><span class="row gap-6">${pill(sd.type || 'span')}<button type="button" class="text-button" data-action="tracing-wrap">${e(CS.ui.tracingWrap !== false ? '不换行' : '换行')}</button></span></div>
+        ${sd.from_agent || sd.to_agent ? `<div class="kv"><span>Agent</span><b>${e(sd.from_agent || '—')} → ${e(sd.to_agent || '—')}</b></div>` : ''}
+        <div class="kv"><span>开始</span><b>${e(fmtWhen(selNode.s.started_at))}</b></div>
+        <div class="kv"><span>结束</span><b>${e(fmtWhen(selNode.s.ended_at))}</b></div>
+        <div class="kv"><span>耗时</span><b>${fmtMs(durMs(selNode))}</b></div>
+        ${selNode.s.error ? `<div class="trace-error">${i('alert', '', 13)}<span>${e(selNode.s.error.message || '执行出错')}</span></div>` : ''}
+        ${jsonBlock('输入', sd.input, CS.ui.tracingWrap !== false)}${jsonBlock('输出', sd.output, CS.ui.tracingWrap !== false)}${jsonBlock('元数据', sd.metadata, CS.ui.tracingWrap !== false)}
+      </div>`;
+      // 折叠分区(原版 Properties/Metadata 样式)
+      const sec = CS.ui.tracingSec || {};
+      const secHead = (key, title) => `<div class="trace-sec-head" data-action="tracing-sec" data-id="${key}"><h3>${e(title)}</h3>${i('chevron', sec[key] === false ? '' : 'rotate', 15)}</div>`;
+      const kvRow = (k, v, title) => `<div class="kv"><span>${e(k)}</span><b ${title ? `title="${e(title)}"` : ''}>${e(v)}</b></div>`;
+      const metaRows = metaNoM ? Object.entries(metaNoM).map(([k, v]) => { const s = typeof v === 'string' ? v : JSON.stringify(v); return kvRow(k, s.length > 44 ? s.slice(0, 44) + '…' : s, s); }).join('') : '';
+      const tid = String(t.id);
+      return `<section class="page trace-page">
+        <div class="trace-topbar">
+          <button type="button" class="icon-btn" data-action="tracing-back" aria-label="返回追踪列表" title="返回追踪列表">${i('arrowleft', '', 16)}</button>
+          <h2 class="trace-crumb">Traces<span class="crumb-sep">/</span><b>${e(t.workflowName || '执行追踪')}</b></h2>
+          <button type="button" class="icon-btn" data-action="tracing-copy" aria-label="复制 Trace ID" title="复制 Trace ID">${i('copy', '', 15)}</button>
+          <span class="trace-id mono" title="${e(tid)}">${e(tid)}</span>
+          <span class="grow"></span>
+          ${btn('tracing-reload', '刷新', 'refresh')}
+          <button type="button" class="icon-btn" data-action="tracing-del" aria-label="删除" title="删除">${i('trash', '', 15)}</button>
+        </div>
+        <div class="trace-body">
+          <div class="panel trace-tree-panel">${spans.length ? roots.map(n => row(n, 0)).join('') : empty('clock', '无 Span', '该 Trace 没有记录任何 span。')}
+          </div>
+          <div class="trace-side">
+            <div class="panel trace-detail-panel">
+              ${secHead('props', 'Properties')}
+              ${sec.props !== false ? `<div class="trace-sec-body">
+                <div class="kv"><span>ID</span><b class="mono full-id" title="${e(tid)}">${e(tid)}</b></div>
+                ${kvRow('Workflow name', t.workflowName || 'N/A')}
+                ${kvRow('Group ID', t.groupId || 'N/A')}
+                ${kvRow('创建时间', fmtWhen(t.createdAt))}
+                ${kvRow('Span 数', String(spans.length))}
+              </div>` : ''}
+              <div class="trace-sec-divider"></div>
+              ${secHead('meta', 'Metadata')}
+              ${sec.meta !== false ? `<div class="trace-sec-body">${metaRows || '<p class="tiny muted">无元数据。</p>'}${mermaidSrc && !selNode ? `<div id="trace-mermaid-box" class="trace-mermaid-box" data-src="${e(mermaidSrc)}"></div>` : ''}</div>` : ''}
+            </div>
+            ${selInfo}
+          </div>
+        </div></section>`;
+    }
+    // 列表模式
+    const st = CS.state.traces || {};
+    const f = CS.ui.tracingFilters || {};
+    const pg = st.pagination || {};
+    const metaRows = (f.meta || []).map((m, idx) => `<div class="row gap-6 trace-meta" data-idx="${idx}">
+      <input id="tracing-meta-k-${idx}" class="trace-input sm" placeholder="metadata 键" value="${e(m.k || '')}">
+      <input id="tracing-meta-v-${idx}" class="trace-input sm" placeholder="值" value="${e(m.v || '')}">
+      <button type="button" class="icon-btn" data-action="tracing-meta-del" data-id="${idx}" aria-label="删除该行">${i('trash', '', 13)}</button>
+    </div>`).join('');
+    const rows = (st.data || []).map(t => { const tid = String(t.id).replace(/^trace_/, ''); return `<tr class="tracing-tr" data-action="tracing-open" data-id="${e(t.id)}">
+      <td class="mono">${e(tid.slice(0, 12))}…</td>
+      <td><b>${e(t.workflowName || '—')}</b></td>
+      <td class="muted">${e((t.flow || []).slice(0, 3).join(' → ') || t.groupId || '—')}</td>
+      <td class="muted">${e(fmtWhen(t.createdAt))}</td>
+      <td class="right">${t.executionTime ? fmtDur(t.executionTime) : '—'}</td>
+      <td class="right"><button type="button" class="icon-btn" data-action="tracing-del" data-id="${e(t.id)}" aria-label="删除" title="删除">${i('trash', '', 13)}</button></td>
+    </tr>`; }).join('');
+    return `<section class="page">
+      <header class="page-header"><div><div class="eyebrow">${e('TRACING')}</div><div class="trace-title-row"><button type="button" class="icon-btn" data-action="tracing-exit" aria-label="返回工作流" title="返回工作流">${i('arrowleft', '', 16)}</button><h1>${e('执行追踪')}</h1></div><p>${e('Workspace 流水线与 Agent 的 Trace 记录')}</p></div><div class="row">${btn('tracing-refresh', '刷新', 'refresh')}</div></header>
+      <div class="panel trace-filters">
+        <div class="trace-filters-main">
+          <input id="tracing-wf" class="trace-input" placeholder="Workflow 名称" value="${e(f.workflow || '')}">
+          <input id="tracing-id" class="trace-input" placeholder="Trace ID 精确查询" value="${e(f.id || '')}">
+          <input id="tracing-start" class="trace-input" type="datetime-local" value="${e(f.start || '')}" title="开始时间">
+          <input id="tracing-end" class="trace-input" type="datetime-local" value="${e(f.end || '')}" title="结束时间">
+          <button type="button" class="text-button" data-action="tracing-meta-add">${i('plus', '', 13)}<span>metadata 条件</span></button>
+          <button type="button" class="text-button" data-action="tracing-clear">${i('x', '', 13)}<span>清空</span></button>
+        </div>
+        ${metaRows}
+      </div>
+      ${st.error ? `<div class="notice">${i('alert', '', 14)}<span>${e(st.error)}</span></div>` : ''}
+      <div class="panel">${st.loading ? `<p class="muted">加载中…</p>` : rows ? `<div class="table-scroll"><table class="tracing-table"><thead><tr><th>Trace</th><th>Workflow</th><th>Flow / Group</th><th>创建时间</th><th class="right">耗时</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : empty('clock', '没有 Trace', '尚无执行追踪记录。运行 Workspace 流水线后这里会出现记录。')}
+        <div class="row-between trace-pager">
+          <span class="tiny muted">共 ${pg.total ?? 0} 条 · 第 ${pg.page ?? 1}/${Math.max(pg.totalPages ?? 1, 1)} 页</span>
+          <div class="row gap-6">${pg.hasPrev ? btn('tracing-prev', '上一页', 'arrowleft') : ''}${pg.hasNext ? btn('tracing-next', '下一页', 'arrow') : ''}</div>
+        </div>
+      </div></section>`;
+  };
+  V.workflows = () => {
+    const current = CS.workflow(CS.ui.workflowId);
+    const list = CS.data.workflows.filter(w => CS.ui.workflowCategory === 'all' || w.category === CS.ui.workflowCategory);
+    const myFlows = (CS.ui.flows || []).map(f => `<button class="workflow-option" data-action="edit-flow-file" data-id="${e(f.id)}">${tile('workflow')}<div><h3>${e(f.name)}</h3><p>已保存的节点流程图 · Workspace 产物</p><div class="sub">${new Date(f.modified).toLocaleString()}</div></div><span class="icon-btn" role="button" data-action="edit-workflow" data-id="${e(f.id)}" title="在节点画布中编辑">${i('edit','',14)}</span></button>`).join('');
+    const flowsBlock = myFlows ? `<div class="sidebar-section-label" style="padding:10px 2px 4px"><span class="small muted">我的流程(Workspace)</span></div>${myFlows}` : '';
+    return `<section class="page">${header('WORKFLOWS','研究目标，变成清晰的步骤','先选择流程与输入，再由你确认执行。', btn('open-tracing','Tracing','clock'))}<div class="workflow-layout"><div><div class="tabs">${['all','单细胞','转录组','文献','通用'].map(id => tab('workflow-category',id,id === 'all' ? '全部' : id,CS.ui.workflowCategory === id)).join('')}</div><div class="workflow-list">${flowsBlock}${list.map(w => `<button class="workflow-option ${w.id === current.id ? 'selected' : ''}" data-action="select-workflow" data-id="${w.id}">${tile(w.icon)}<div><h3>${e(w.title)}</h3><p>${e(w.sub)}</p><div class="sub">${w.steps.length} 个步骤 <span class="faint"> / </span> ${e(w.time)}</div></div><span class="icon-btn" role="button" data-action="edit-workflow" data-id="${e(w.id)}" title="在节点画布中编辑" aria-label="编辑 ${e(w.title)}">${i('edit','',14)}</span><span class="radio"></span></button>`).join('')}</div><div class="flow-summary"><span>选择输入</span>${i('chevron')}<span>确认计划</span>${i('chevron')}<span>执行与检查</span>${i('chevron')}<span>结果与记录</span></div></div>
+      <aside class="panel workflow-config"><h3>配置这次分析</h3><div class="config-inputs"><div class="field"><label for="workflow-dataset">输入数据</label><select id="workflow-dataset">${CS.state.datasets.map(d => `<option value="${e(d.id)}" ${CS.ui.datasetId === d.id ? 'selected' : ''}>${e(d.name)}${d.source === 'demo' ? ' · 演示' : ''}</option>`).join('')}</select><span class="hint">原始文件不会随演示任务上传。</span></div><div class="field"><label for="workflow-organism">物种上下文</label><select id="workflow-organism">${['Homo sapiens','Mus musculus','Arabidopsis thaliana','未指定'].map(s => `<option ${s === CS.ui.organism ? 'selected' : ''}>${s}</option>`).join('')}</select></div><div class="field full-span"><label>运行方式</label><div class="notice">${i('shield','',14)}<span>${CS.state.settings.mode === 'local' ? '浏览器本地演示' : 'WebSocket 优先 · HTTP/SSE 兼容'} · 人工确认后执行</span></div></div><div class="full-span"><button class="text-button" data-action="toggle-advanced">${i('chevron',CS.ui.advanced ? 'rotate' : '',13)}高级参数 ${pill('仅记录')}</button>${CS.ui.advanced ? `<div class="field-row mt-20"><div class="field"><label for="min-genes">min_genes</label><input id="min-genes" type="number" min="1" max="10000" value="${CS.ui.minGenes}"></div><div class="field"><label for="max-mito">max_mito (%)</label><input id="max-mito" type="number" min="0" max="100" value="${CS.ui.maxMito}"></div></div><p class="tiny muted">这些是可编辑的配置示例，不构成实验或分析参数建议。</p>` : ''}</div></div><div class="config-footer"><div class="row-between small muted mb-20"><span>${e(current.title)}</span><span>${current.steps.length} 步</span></div>${btn('start-workflow','生成分析计划','arrow','primary full')}</div></aside></div></section>`;
+  };
+
+  V.results = () => {
+    const run = CS.currentRun();
+    if (run && run.workflowId !== 'singlecell') return `<section class="page">${header('RUN RECORD',run.title,'此工作流只生成演示执行记录，不生成真实科研结论。',btn('export-report','导出记录','download','primary'))}${notice('此演示仅记录输入和步骤。打开单细胞示例可体验合成点云与表达图表。')}<article class="panel report-document"><h2>任务执行记录</h2><p class="mt-8">${e(run.prompt)}</p><h3>执行状态</h3>${status(run.status)}<h3>已配置的步骤</h3><ol>${run.steps.map(s => `<li>${e(s.title)} — ${s.progress}%</li>`).join('')}</ol><h3>配置</h3><pre>${e(JSON.stringify(run.config,null,2))}</pre><div class="mt-20">${btn('open-current-chat','返回对话','back','flat')}${btn('show-sample-results','查看单细胞界面示例','chart','flat')}</div></article></section>`;
+    const active = CS.ui.resultTab;
+    return `<section class="page">${header('ANALYSIS RESULTS','PBMC 单细胞图谱','让数据可见，让每一个结论都有上下文。',btn('export-chart','导出图表','download','flat') + btn('export-report','导出记录','file','primary'))}
+      <div class="result-banner"><div class="row">${i('info','',16)}<span>合成演示数据 · 图表与上传文件无关，不代表实际生物学结果。</span></div>${pill(run ? CS.statusLabel(run.status) : '示例预览')}</div><div class="tabs underline">${tab('result-tab','overview','概览',active === 'overview')}${tab('result-tab','atlas','细胞图谱',active === 'atlas')}${tab('result-tab','markers','表达特征',active === 'markers')}${tab('result-tab','report','分析记录',active === 'report')}</div>
+      ${active === 'overview' ? `<div class="result-stats">${[['细胞数','2,680','合成数据集规模'],['基因数','13,714','示例元信息'],['细胞分组','5','人为设定的分组标签'],['图中点数',CS.points.length.toLocaleString(),'约 1/4 的合成细胞']].map(([label,value,detail]) => `<div class="panel result-stat"><div class="label">${label}</div><div class="value">${value}</div><div class="detail">${detail}</div></div>`).join('')}</div><div class="result-grid">${V.scatterPanel()}<div class="stack result-side-stack"><section class="panel"><div class="panel-head"><h3>细胞组成</h3>${pill('合成')}</div>${CS.bars()}</section><section class="panel result-note"><h3 class="row">${i('spark','',16)} 怎样阅读这张图</h3><p>每个点代表一个合成细胞，颜色对应预设分组。点击图例或右侧分组可高亮；点击数据点查看它的示例信息。</p><div class="mt-12">${btn('explain-result','在对话中继续','arrow','small-btn flat')}</div></section></div></div>` : ''}
+      ${active === 'atlas' ? `<div class="mt-28">${V.scatterPanel()}</div>` : ''}
+      ${active === 'markers' ? `<div class="result-grid mt-28"><section class="panel"><div class="panel-head"><h3>示例表达矩阵</h3>${pill('合成值')}</div><div class="panel-pad">${CS.heatmap()}</div><div class="panel-foot">色深用于示意表达量变化；不是上传数据的分析结果。</div></section><section class="panel result-note"><h3>查看表达特征</h3><p>这里演示分组、特征表与图表联动。所有数值是用于界面开发的固定示例。</p><div class="mt-20">${btn('export-markers','导出示例 CSV','download','small-btn flat')}</div></section></div><div class="panel mt-28"><div class="panel-head"><h3>表达特征表 · 合成</h3>${search('marker-search','筛选基因或分组',CS.ui.markerSearch)}</div>${renderTable(['基因','分组标签','示例表达量','示例检出比例'],CS.data.markers.filter(m => (m.gene+m.group).toLowerCase().includes(CS.ui.markerSearch.toLowerCase())).map(m => `<tr><td class="mono">${m.gene}</td><td>${e(m.group)}</td><td><div class="expression-value"><span style="width:${m.value * 24}px"></span>${m.value.toFixed(2)}</div></td><td>${m.fraction}</td></tr>`).join(''))}</div>` : ''}
+      ${active === 'report' ? V.reportDocument(run) : ''}<div class="page-footer">${i('shield','',12)} 所有示例均标注来源与限制 · 固定随机种子 3724</div></section>`;
+  };
+  V.scatterPanel = () => `<section class="panel chart-panel"><div class="panel-head"><div><h3>细胞嵌入图</h3><span class="tiny muted">合成点云 · UMAP 界面示意</span></div><div class="chart-tools">${iconBtn('zoom-out','minus','缩小')}${iconBtn('zoom-reset','refresh','重置视图')}${iconBtn('zoom-in','plus','放大')}${iconBtn('export-chart','download','导出 SVG')}</div></div><div class="chart-area">${CS.scatter()}</div><div class="chart-legend">${CS.data.groups.map((g, index) => `<button class="legend-item ${CS.ui.group !== 'all' && CS.ui.group !== String(index) ? 'muted-item' : ''}" data-action="filter-group" data-id="${index}" aria-pressed="${CS.ui.group === String(index)}"><i style="background:${g.color}"></i>${e(g.name)}</button>`).join('')}</div><div class="panel-foot row-between"><span>${CS.ui.selectedCell ? e(CS.ui.selectedCell + ' · 合成示例') : '点击分组高亮 · 点击数据点查看'}</span><button class="text-button small" data-action="filter-group" data-id="all">显示全部</button></div></section>`;
+  V.reportDocument = run => `<article class="panel report-document"><div class="row-between"><span class="divider-label">RESEARCH RECORD</span>${pill('演示记录')}</div><h2 class="mt-20">PBMC 单细胞图谱 · 分析记录</h2><p>由 SigmaFlow Science 整理 · ${CS.today()}</p><hr class="divider">${notice('以下是界面演示说明，不是真实分析结果。不可用于论文结论、临床决策或实验决策。')}<h3>01 / 研究问题</h3><p>${e(run?.prompt || '体验单细胞数据检查、任务执行与结果交互的完整过程。')}</p><h3>02 / 输入与分析流程</h3><p>界面加载固定种子的合成点云与表达示例。输入的文件名及配置用于演示上下文管理，不代表已处理这些文件。</p><ol>${CS.workflow('singlecell').steps.map(s => `<li>${e(s[0])}</li>`).join('')}</ol><h3>03 / 可复现记录</h3><pre>${e(JSON.stringify({ source: 'synthetic-ui-fixture', seed: 3724, syntheticCells: 2680, displayedPoints: CS.points.length, groups: 5, config: run?.config || {} },null,2))}</pre><h3>04 / 局限与下一步</h3><p>生产部署需接入真实模型、数据解析、计算任务调度与权限控制。此演示不包含这些服务，也不会将模拟输出包装为科学结论。</p><div class="row mt-28">${btn('export-report','导出 Markdown','download','primary')}${btn('export-run-json','导出任务 JSON','code','flat')}</div></article>`;
+
+  V.literature = () => {
+    const f = CS.ui.filters; const papers = CS.data.papers.filter(p => (f.paperTab !== 'saved' || CS.state.bookmarks.includes(p.id)) && (p.title+p.authors+p.tags.join(' ')).toLowerCase().includes(f.literature.toLowerCase()));
+    return `<section class="page">${header('LITERATURE','研究，不止于一份答案','将文献、阅读笔记与研究上下文放在一起。',btn('export-bibliography','导出文献清单','download','flat'))}<div class="panel query-panel"><label for="pubmed-query">到 PubMed 检索文献</label><div class="row"><input id="pubmed-query" placeholder="例如 single-cell RNA-seq quality control" value="${e(CS.ui.pubmedQuery || '')}" aria-label="PubMed 检索关键词">${btn('search-pubmed','在 PubMed 打开','external','flat')}</div><p class="tiny faint mt-8">点击后打开官方检索页面；下方是预置阅读资料，不是实时搜索结果。</p></div><div class="toolbar"><div class="tabs">${tab('paper-tab','all','文献库',f.paperTab === 'all',CS.data.papers.length)}${tab('paper-tab','saved','已收藏',f.paperTab === 'saved',CS.state.bookmarks.length)}</div>${search('paper-search','筛选本地文献',f.literature)}</div><div class="literature-layout"><div class="stack">${papers.length ? papers.map((p, index) => `<article class="panel paper-card"><span class="paper-index">${String(index + 1).padStart(2,'0')} / ${e(p.journal)} · ${p.year}</span><button class="icon-btn save-paper ${CS.state.bookmarks.includes(p.id) ? 'active' : ''}" data-action="bookmark-paper" data-id="${p.id}" aria-label="${CS.state.bookmarks.includes(p.id) ? '取消收藏' : '收藏文献'}" title="收藏文献">${i('bookmark')}</button><h3>${e(p.title)}</h3><div class="paper-authors">${e(p.authors)}</div><p>${e(p.note)}</p><div class="row gap-6">${p.tags.map(t => pill(t)).join('')}</div><div class="paper-actions"><a href="https://doi.org/${encodeURI(p.doi)}" target="_blank" rel="noopener noreferrer" class="text-button">打开原文 ${i('external','',13)}</a><div class="row gap-16"><button class="text-button" data-action="copy-citation" data-id="${p.id}">${i('copy','',13)} 引用</button><button class="text-button" data-action="paper-note" data-id="${p.id}">${i('edit','',13)} ${CS.state.notes[p.id] ? '查看笔记' : '添加笔记'}</button></div></div></article>`).join('') : empty('book','没有匹配的文献','尝试其他关键词，或打开全部文献。')}</div><aside class="panel reading-panel"><div class="row-between"><h3>我的阅读清单</h3>${pill(String(CS.state.bookmarks.length))}</div>${CS.state.bookmarks.length ? CS.data.papers.filter(p => CS.state.bookmarks.includes(p.id)).map(p => `<div class="reading-item">${e(p.title)}<p>${e(p.journal)} · ${p.year}</p></div>`).join('') : `<div class="empty" style="padding:32px 2px">${i('bookmark')}<p>收藏一篇文献，<br>让值得保留的证据留在这里。</p></div>`}<hr class="divider"><p class="small muted">每条文献保留原文入口。笔记保存在当前浏览器，不自动生成证据结论。</p><div class="mt-20">${btn('literature-plan','创建文献整理任务','arrow','small-btn flat full')}</div></aside></div></section>`;
+  };
+
+  V.tools = () => {
+    const f = CS.ui.filters; const tools = CS.data.tools.filter(t => (f.toolTab === 'all' || f.toolTab === 'local' && t.local || f.toolTab === 'external' && !t.local) && (t.name + t.description).toLowerCase().includes(f.tools.toLowerCase()));
+    return `<section class="page">${header('RESEARCH TOOLS','合适的工具，恰好在手边','轻量本地计算与公共科研资源。不伪装连接状态，不隐藏数据去向。')}<div class="toolbar"><div class="tabs">${tab('tool-tab','all','全部工具',f.toolTab === 'all')}${tab('tool-tab','local','本地计算',f.toolTab === 'local')}${tab('tool-tab','external','公共资源',f.toolTab === 'external')}</div>${search('tool-search','搜索工具或数据库',f.tools)}</div><div class="tools-grid">${tools.map(t => `<button class="tool-card ${CS.ui.activeTool === t.id ? 'selected' : ''}" data-action="open-tool" data-id="${t.id}">${tile(t.icon,t.local ? '' : 'plain')}<h3>${e(t.name)}</h3><p>${e(t.description)}</p><div class="tool-bottom"><span>${t.local ? '浏览器内运行' : '打开官方站点'}</span>${i(t.local ? 'arrow' : 'external','',13)}</div></button>`).join('')}</div>
+      ${CS.ui.activeTool === 'sequence' ? V.sequenceTool() : `<section class="panel panel-pad"><div class="row-between"><h3>CSV / TSV 表格预览</h3>${pill('本地')}</div><p class="small muted mt-8">选择文件后，可查看前 100 行。不会上传文件，也不会运行统计推断。</p><div class="mt-20">${btn('preview-csv-import','选择表格文件','upload','primary')}${btn('go-data','打开数据集','database','flat')}</div></section>`}</section>`;
+  };
+  V.sequenceTool = () => {
+    const result = CS.ui.sequenceResult; const total = result?.reduce((n,r) => n+r.length,0) || 0;
+    const gcCount = result?.reduce((n,r) => n+r.counts.G+r.counts.C,0) || 0; const acgt = result?.reduce((n,r) => n+r.counts.A+r.counts.G+r.counts.C+r.counts.T,0) || 0;
+    return `<section class="panel"><div class="panel-head"><div><h3>序列基础统计</h3><span class="tiny muted">真实本地计算 · DNA / FASTA · 最多 1 MB 文本</span></div>${pill('无需模型','green')}</div><div class="panel-pad tool-workspace"><div><div class="row-between mb-20"><label for="sequence-input">序列输入</label><button class="text-button" data-action="load-sequence-example">加载人工示例</button></div><textarea id="sequence-input" class="tool-editor" aria-label="DNA 序列输入" maxlength="1000000" spellcheck="false">${e(CS.ui.sequence)}</textarea><div class="row-between mt-20"><span class="tiny faint">仅计算长度与碱基组成，不预测生物功能。</span>${btn('compute-sequence','开始计算','play','primary')}</div></div><div><div class="row-between"><h3>计算结果</h3>${result ? btn('export-sequence','导出 JSON','download','small-btn flat') : ''}</div>${result ? `<div class="sequence-summary"><div><strong>${result.length}</strong><span>序列条数</span></div><div><strong>${total.toLocaleString()}</strong><span>总长度 / bp</span></div><div><strong>${acgt ? (gcCount/acgt*100).toFixed(1)+'%' : '—'}</strong><span>GC / ACGT</span></div></div>${renderTable(['序列','长度','GC (%)','N / 模糊碱基'],result.map(r => `<tr><td title="${e(r.name)}">${e(r.name.length > 24 ? r.name.slice(0,24)+'…' : r.name)}</td><td>${r.length}</td><td>${r.gc === null ? '—' : r.gc}</td><td>${r.counts.N} / ${r.ambiguous}</td></tr>`).join(''))}<p class="tiny muted mt-20">GC 分母仅包括 A/C/G/T；N 与其他 IUPAC 模糊碱基单独统计。没有确定碱基时不计算 GC 比例。</p>` : empty('chart','结果将在这里显示','点击“开始计算”，查看这份序列的基本组成。')}</div></div></section>`;
+  };
+
+  V.tasks = () => `<section class="page">${header('TASK QUEUE','研究任务，一目了然','任务不会因为切换页面而丢失。本地演示刷新后暂停；接口任务由服务端管理。',btn('go-workflows','创建任务','plus','primary'))}<div class="panel">${CS.state.runs.length ? CS.state.runs.slice().reverse().map(run => `<div class="task-row">${tile(run.status === 'complete' ? 'checkcircle' : 'workflow',run.status === 'complete' ? 'green' : '')}<div class="grow"><button class="text-button" data-action="open-run" data-id="${e(run.id)}"><h3>${e(run.title)}</h3></button><p>${e(CS.state.projects.find(p => p.id === run.projectId)?.name || '未指定')} · ${CS.relative(run.createdAt)} · 演示</p></div><div class="task-progress"><span style="width:${run.progress}%"></span></div>${status(run.status)}<div class="row gap-6">${btn('open-run','查看任务','arrow','small-btn flat',`data-id="${e(run.id)}"`)}</div></div>`).join('') : `<div>${empty('queue','还没有任务在这里等候','从一个研究问题或预设工作流开始。')}<div class="center" style="padding-bottom:35px">${btn('demo-start','体验示例任务','play','primary')}</div></div>`}</div></section>`;
+
+  V.settings = () => {
+    const s = CS.state.settings;
+    const toggle = (id, label, sub) => `<div class="setting-row"><div><h3>${e(label)}</h3><p>${e(sub)}</p></div><button type="button" role="switch" aria-checked="${!!s[id]}" aria-label="${e(label)}" class="switch" data-action="setting-toggle" data-id="${id}"></button></div>`;
+    const tab = CS.ui.settingsTab;
+    const nav = [['general','settings','通用'], ...(CS.state.me?.mode === 'multi' ? [['account','lock','账户与密码']] : []), ['appearance','sun','外观与交互'],['usage','chart','Token 用量'],['privacy','shield','数据与隐私'],['agent','bolt','模型配置'],['tools','grid','Agent 工具'],['skills','book','Agent 技能'],['mcp','network','MCP 服务'],['mods','grid','Mod 管理'],['keys','lock','第三方 API Key'],['sysprompt','code','系统提示词'],['context','layers','上下文压缩']];
+    const edit = CS.ui.edit;
+    const editProvider = edit?.type === 'provider' ? (CS.ui.providers.find(x => x.id === edit.id) || null) : null;
+    const editModel = edit?.type === 'model' ? (CS.ui.models.find(x => x.id === edit.id) || null) : null;
+    const providerRows = CS.ui.providers.length ? CS.ui.providers.map(p => `<div class="setting-row no-divider compact"><div><h3>${e(p.name)}</h3><p>${e(p.baseUrl)} · 密钥：${p.keyHint ? e(p.keyHint) : '未配置'}</p></div><span class="row gap-6">${iconBtn('test-provider','bolt','测试连接',`data-id="${e(p.id)}"`)}${iconBtn('edit-provider','edit','编辑服务商',`data-id="${e(p.id)}"`)}${iconBtn('delete-provider','trash','删除服务商',`data-id="${e(p.id)}"`)}</span></div>`).join('') : `<div class="setting-row"><div><h3>尚未添加服务商</h3><p>服务商保存接口地址与密钥，可挂多个模型。</p></div>${iconBtn('add-provider','plus','添加服务商')}</div>`;
+    const modelMeta = m => {
+      const bits = [];
+      if (m.priceInUsdPerM != null) bits.push(`输入 $${m.priceInUsdPerM}/M`); else if (m.catalogMatched) bits.push('输入价未公布');
+      if (m.priceOutUsdPerM != null) bits.push(`输出 $${m.priceOutUsdPerM}/M`); else if (m.catalogMatched) bits.push('输出价未公布');
+      if (m.contextWindow) bits.push(`上下文 ${CS.usageNum(m.contextWindow)}`);
+      if (m.maxOutputTokens) bits.push(`最大输出 ${CS.usageNum(m.maxOutputTokens)}`);
+      return bits.length ? bits.join(' · ') + (m.catalogMatched ? '' : ' · 上下文按默认') : 'LiteLLM 价格库未收录此模型';
+    };
+    const modelGroups = CS.ui.models.length ? CS.ui.providers.filter(p => CS.ui.models.some(m => m.providerId === p.id)).map(p => `<div>${CS.ui.models.filter(m => m.providerId === p.id).map(m => `<div class="setting-row compact"><div><h3>${e(m.model)}${m.isDefault ? ' <span class="tiny muted">默认</span>' : ''}</h3><p>${e(m.providerName || p.name)}</p><p class="tiny muted">${modelMeta(m)}</p></div><span class="row gap-6">${m.isDefault ? '' : iconBtn('pick-model','check','设为默认',`data-id="${e(m.id)}"`)}${iconBtn('edit-model','edit','编辑模型',`data-id="${e(m.id)}"`)}${iconBtn('delete-model','trash','删除模型',`data-id="${e(m.id)}"`)}${iconBtn('add-model','plus','在此服务商下添加模型',`data-id="${e(p.id)}"`)}</span></div>`).join('')}</div>`).join('') : `<div class="setting-row"><div><h3>尚未添加模型</h3><p>在服务商下添加模型后，可在此管理。</p></div></div>`;
+    const ddProvider = CS.ui.providers.find(x => x.id === (CS.ui.draftProviderId || editModel?.providerId)) || CS.ui.providers[0] || null;
+    const ddPickItems = CS.ui.providerModels?.list || [];
+    const sections = {
+      tools: (() => {
+        // Agent 工具设置: 列表懒加载; 未保存的修改存 toolDraft, 重渲染不丢;
+        // 按 origin 归组(内置 / 各 MCP 服务器), 组间两栏排布, 组内保持原顺序
+        const list = CS.ui.toolDraft || CS.ui.agentTools;
+        if (!list) return `<div class="panel settings-section"><h2>Agent 工具</h2><p class="small muted mb-20">正在加载工具列表…</p></div>`;
+        if (!list.length) return `<div class="panel settings-section"><h2>Agent 工具</h2><p class="small muted mb-20">当前环境没有可配置的内置工具。</p></div>`;
+        // origin 分组: builtin_basic(基础)/builtin(高级) / sciverse / arxiv / MCP 服务器; 内置固定顺序, MCP 按配置顺序
+        const GROUP_LABELS = { builtin_basic: '内置工具 · 基础', builtin: '内置工具 · 高级', sciverse: '内置工具 · Sciverse', arxiv: '内置工具 · arXiv' };
+        const GROUP_ORDER = { builtin_basic: 0, builtin: 1, sciverse: 2, arxiv: 3 };
+        const groups = [];
+        for (const t of list) {
+          const key = CS.toolGroupKey(t);
+          let g = groups.find(x => x.origin === key);
+          if (!g) groups.push(g = { origin: key, label: GROUP_LABELS[key] || `MCP · ${key}`, rank: GROUP_ORDER[key] ?? 4, tools: [] });
+          g.tools.push(t);
+        }
+        groups.sort((a, b) => a.rank - b.rank);  // 同 rank 时保持插入顺序(稳定排序)
+        // 未配置 Sciverse API Key 时, Sciverse 组开关与行开关锁定(服务端也强制关闭并隔离 payload)
+        const sciLocked = Array.isArray(CS.ui.tokens) && !CS.ui.tokens.some(t => t.id === 'sciverse' && t.configured);
+        const row = t => {
+          const orig = (CS.ui.agentTools || []).find(x => x.id === t.id);
+          const dirty = !orig || orig.name !== t.name || orig.description !== t.description || schemaDirty(orig.schema, t.schema) || !!orig.enabled !== !!t.enabled;
+          const custom = (t.modified || dirty) ? pill('自定义') : '';
+          return `<div class="tool-setting-row" data-idx="${e(t.id)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">名称</span><input class="tool-name-input" data-tool-id="${e(t.id)}" data-field="name" value="${e(t.name)}" maxlength="64" spellcheck="false"></div><div class="tool-field"><span class="tool-field-label">描述</span><input class="tool-desc-input" data-tool-id="${e(t.id)}" data-field="description" value="${e(t.description)}" maxlength="2000" spellcheck="false"></div><div class="tool-field tool-field-top"><span class="tool-field-label">参数</span><div class="schema-editor"><pre class="schema-highlight" aria-hidden="true">${V.hlJSON(V.prettyJSON(t.schema))}\n</pre><textarea class="tool-schema-input mono" data-tool-id="${e(t.id)}" data-field="schema" rows="6" spellcheck="false">${e(V.prettyJSON(t.schema))}</textarea></div></div></div><div class="tool-setting-side">${custom}<button type="button" role="switch" aria-checked="${!!t.enabled}" class="switch" data-action="tool-toggle" data-id="${e(t.id)}" aria-label="启用 ${e(t.id)}" ${sciLocked && t.origin === 'sciverse' ? 'disabled title="需先在第三方 API Key 中配置 Sciverse API"' : ''}></button></div></div>`;
+        };
+        const groupBlocks = groups.map(g => {
+          // 语义反转: 记录被展开的组, 缺省(未展开过)一律折叠; 偏好落 settings 随 CS.save 持久化
+          const collapsed = !((CS.state.settings || {}).toolGroupsOpen || {})[g.origin];
+          const allOn = g.tools.every(t => !!t.enabled);
+          return `<div class="tool-group"><div class="tool-group-header"><button type="button" class="tool-group-toggle" data-action="tool-group-toggle" data-id="${e(g.origin)}" aria-expanded="${!collapsed}" aria-label="展开或折叠 ${e(g.label)}"><span class="tool-group-title">${e(g.label)}</span><span class="row gap-6"><span class="tiny muted">${g.tools.length} 个工具</span>${g.origin === 'sciverse' && sciLocked ? pill('未配置 API Key') : ''}${i('down','tool-group-chevron',15)}</span></button><button type="button" role="switch" aria-checked="${allOn}" class="switch tool-group-switch" data-action="tool-group-switch" data-id="${e(g.origin)}" aria-label="整组启用或禁用 ${e(g.label)}" ${g.origin === 'sciverse' && sciLocked ? 'disabled title="需先在第三方 API Key 中配置 Sciverse API"' : 'title="整组启用/禁用"'}></button></div><div class="tool-group-rows ${collapsed ? 'collapsed' : ''}">${g.tools.map(row).join('')}</div></div>`;
+        }).join('');
+        return `<div class="panel settings-section"><div class="row-between"><h2>Agent 工具</h2>${pill('服务端存储')}</div><p class="small muted mb-20">按来源分组展示 Agent 会话可用的工具(基础/高级/Sciverse/arXiv 与各 MCP 服务器, 点击组标题可折叠): 同一行内两列卡片等高; 启用开关、名称、描述与参数 schema 随下一次请求生效; 禁用的工具不再发给模型, 也不再占用上下文。参数 schema 需为合法 JSON 对象。Sciverse 分组需先在第三方 API Key 中配置密钥, 未配置时整组保持关闭。</p><div class="tool-groups">${groupBlocks}</div><div class="settings-actions row wrap">${btn('save-tools','保存','check','primary')}${btn('reset-tools','恢复默认','refresh','flat')}</div></div>`;
+      })(),
+      skills: (() => {
+        // Agent 技能设置: 与工具设定同构, 未保存的修改存 skillDraft, 重渲染不丢
+        const list = CS.ui.skillDraft || CS.ui.agentSkills;
+        if (!list) return `<div class="panel settings-section"><h2>Agent 技能</h2><p class="small muted mb-20">正在加载技能列表…</p></div>`;
+        if (!list.length) return `<div class="panel settings-section"><h2>Agent 技能</h2><p class="small muted mb-20">当前环境没有可配置的技能。</p></div>`;
+        const rows = list.map(s => {
+          const orig = (CS.ui.agentSkills || []).find(x => x.id === s.id);
+          const dirty = !orig || orig.name !== s.name || orig.description !== s.description || !!orig.enabled !== !!s.enabled;
+          const custom = (s.modified || dirty) ? pill('自定义') : '';
+          const builtin = s.builtin ? pill('内置', 'green') : '';
+          const proj = s.source === 'project';
+          const projPill = proj ? pill('项目', 'green') : '';
+          const ro = proj ? 'readonly title="项目技能存放在项目 skills 目录，直接编辑该目录下的 SKILL.md 即可（实时生效）"' : '';
+          return `<div class="tool-setting-row" data-idx="${e(s.id)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">名称</span><input class="skill-name-input" data-skill-id="${e(s.id)}" data-field="name" value="${e(s.name)}" maxlength="64" spellcheck="false" ${ro}></div><div class="tool-field"><span class="tool-field-label">描述</span><input class="skill-desc-input" data-skill-id="${e(s.id)}" data-field="description" value="${e(s.description)}" maxlength="2000" spellcheck="false" ${ro}></div></div><div class="tool-setting-side">${projPill}${custom}${builtin}<button type="button" role="switch" aria-checked="${!!s.enabled}" class="switch" data-action="skill-toggle" data-id="${e(s.id)}" aria-label="启用 ${e(s.id)}"${proj ? ' disabled title="项目技能始终启用"' : ''}></button></div></div>`;
+        }).join('');
+        return `<div class="panel settings-section"><div class="row-between"><h2>Agent 技能</h2>${pill('服务端存储')}</div><p class="small muted mb-20">设置 Agent 会话可用的技能: 启用开关、名称与描述随下一次会话生效; 技能清单作为系统提示的一部分发给模型, 禁用的技能不占用上下文。技能正文存放在服务端 skills 目录。</p>${rows}<div class="settings-actions row wrap">${btn('save-skills','保存','check','primary')}${btn('reset-skills','恢复默认','refresh','flat')}</div></div>`;
+      })(),
+      mods: (() => {
+        // Mod 管理面板(P1): 已装 mod 的状态/启停/重载; 状态色与语义见 server/mods.py
+        const list = CS.ui.modsList;
+        if (!list) return `<div class="panel settings-section"><h2>Mod 管理</h2><p class="small muted mb-20">正在加载 mod 清单…</p></div>`;
+        if (!list.length) return `<div class="panel settings-section"><h2>Mod 管理</h2><p class="small muted mb-20">当前没有已安装的 mod。将含 mod.toml 的目录放入 ~/.sigmaflow/mods/ 后重启, 或等安装接口上线。</p></div>`;
+        const stateChip = st => {
+          const map = { enabled: ['启用', 'ok'], disabled: ['停用', ''], error: ['错误', 'danger'], blocked: ['依赖受阻', 'danger'], skipped: ['本进程跳过', ''], installed: ['已安装', ''] };
+          const [label, cls] = map[st] || [st, ''];
+          return `<span class="pill ${cls}">${e(label)}</span>`;
+        };
+        const rows = list.map(m => {
+          const caps = m.capabilities || {};
+          const capBits = Object.entries(caps).filter(([k, v]) => Array.isArray(v) ? v.length : v).map(([k, v]) => e(k)).join(' · ');
+          const eff = m.effectiveState || m.state;
+          const scopeTag = m.locked ? '<span class="pill">核心</span>' : (m.scope === 'shared' ? '<span class="pill">共享</span>' : (m.scope === 'user' ? '<span class="pill ok">我的</span>' : ''));
+          return `<div class="setting-row compact"><div><h3>${e(m.name)} <span class="tiny muted">v${e(m.version)} · ${e(m.id)}</span> ${scopeTag}</h3><p>${e(m.description || '')}</p><p class="tiny muted">${e(m.origin)} · 热更新: ${e(m.reload)}${capBits ? ' · 能力: ' + capBits : ''}${m.stateReason ? ' · ' + e(m.stateReason) : ''}${m.effectiveState && m.state === 'enabled' && m.effectiveState !== m.state ? ' · 已为你停用' : ''}</p></div><span class="row gap-6">${m.locked ? '' : `${m.state === 'error' || m.state === 'enabled' ? iconBtn('mod-reload','refresh','重载', `data-id="${e(m.id)}"`) : ''}${iconBtn('mod-toggle', eff === 'enabled' ? 'stop' : 'play', eff === 'enabled' ? '停用' : '启用', `data-id="${e(m.id)}" data-on="${eff === 'enabled' ? 1 : 0}"`)}`}</span></div>`;
+        }).join('');
+        return `<div class="panel settings-section"><div class="row-between"><h2>Mod 管理</h2>${pill('epoch ' + (CS.ui.modsEpoch || '?'))}</div><p class="small muted mb-20">mod 是系统的功能单元: 工具、提示词、技能、虚拟环境、路由乃至 agent loop 都以 mod 形态挂载。停用立即生效于下一次请求; 标注 restart 的 mod(如环境类)启停需重启服务。UI mod 还可在此贡献设置区块:</p>${rows}${(CS.sfm ? CS.sfm.settingsSections() : []).map(s => `<div class="setting-row no-divider compact"><div id="sfm-setting-${s.id}"></div></div>`).join('')}<div class="settings-actions row wrap">${btn('mods-refresh','刷新','refresh','flat')}</div></div>`;
+      })(),
+      mcp: (() => {
+        // MCP 服务设置: 草稿存 mcpDraft, 每行 key 稳定 (已有行用 id, 新增行用临时 key)
+        const list = CS.ui.mcpDraft || CS.ui.mcpServers;
+        if (!list) return `<div class="panel settings-section"><h2>MCP 服务</h2><p class="small muted mb-20">正在加载 MCP 配置…</p></div>`;
+        const rows = list.map(s => {
+          const orig = (CS.ui.mcpServers || []).find(x => x.id === s.id);
+          const dirty = !orig || orig.name !== s.name || orig.url !== s.url || !!orig.enabled !== !!s.enabled;
+          const custom = (s.modified || dirty || !s.id) ? pill('自定义') : '';
+          const builtin = s.builtin ? pill('内置', 'green') : '';
+          const locked = !!s.locked;
+          const lockPill = locked ? pill('未配置 API Key') : '';
+          const swDisabled = locked ? 'disabled title="需先在第三方 API Key 中配置 Anysearch API"' : '';
+          return `<div class="tool-setting-row" data-idx="${e(s.key)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">名称</span><div class="row gap-6"><input class="mcp-name-input" data-mcp-id="${e(s.key)}" data-field="name" value="${e(s.name)}" maxlength="64" spellcheck="false">${lockPill}</div></div><div class="tool-field"><span class="tool-field-label">地址</span><input class="mcp-url-input" data-mcp-id="${e(s.key)}" data-field="url" value="${e(s.url)}" maxlength="500" spellcheck="false" ${locked ? 'readonly title="配置 Anysearch API 后可用"' : ''}></div></div><div class="tool-setting-side">${custom}${builtin}<div class="row gap-6"><button type="button" class="icon-btn" data-action="mcp-remove" data-id="${e(s.key)}" aria-label="移除 ${e(s.name) || '新服务器'}" title="移除">${i('trash')}</button><button type="button" role="switch" aria-checked="${!!s.enabled}" class="switch" data-action="mcp-toggle" data-id="${e(s.key)}" aria-label="启用 ${e(s.name) || '新服务器'}" ${swDisabled}></button></div></div></div>`;
+        }).join('');
+        return `<div class="panel settings-section"><div class="row-between"><h2>MCP 服务</h2>${pill('服务端存储')}</div><p class="small muted mb-20">配置 Agent 会话可用的 MCP 服务器: 保存后服务端连接各服务器拉取工具清单, 启用的服务器工具并入“Agent 工具”并占用上下文; 禁用或移除的服务器不参与会话。内置 medical-apis 提供基因、疾病、药物等医学数据查询; 内置 anysearch 的认证头使用 ANYSEARCH_API_KEY 模板, 未在第三方 API Key 中配置密钥时整服保持关闭。</p>${rows}<div class="settings-actions row wrap">${btn('add-mcp','新增服务器','plus','primary')}${btn('save-mcp','保存','check','primary')}${btn('reset-mcp','恢复默认','refresh','flat')}</div></div>`;
+      })(),
+      keys: (() => {
+        // 第三方 API Key 设置: 懒加载; 密钥不回显, 仅保存/清除; 保存后同步 Sciverse 工具与 anysearch MCP 的启用状态
+        if (!CS.ui.tokens) return `<div class="panel settings-section"><h2>第三方 API Key</h2><p class="small muted mb-20">正在加载 Token 配置…</p></div>`;
+        const rows = CS.ui.tokens.map(t => {
+          const draft = (CS.ui.tokensDraft || {})[t.id] ?? '';
+          const status = t.configured ? pill('已配置', 'green') : pill('未配置');
+          const placeholder = t.saved ? '留空保持不变' : t.fromEnv ? '来自环境变量，输入后覆盖' : '输入 API Key…';
+          return `<div class="tool-setting-row" data-idx="token-${e(t.id)}"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">服务</span><div class="row gap-6"><span class="small">${e(t.label)}</span>${status}${t.fromEnv ? '<span class="tiny muted">来自环境变量</span>' : ''}${t.keyHint ? `<span class="tiny muted mono">密钥：${e(t.keyHint)}</span>` : ''}</div></div><div class="tool-field"><span class="tool-field-label">API Key</span><input id="token-${e(t.id)}" class="token-input" type="password" value="${e(draft)}" placeholder="${placeholder}" spellcheck="false" autocomplete="off"></div>${t.saved ? `<span class="tiny muted">已保存的密钥仅显示掩码，输入后保存可覆盖。</span>` : ''}</div><div class="tool-setting-side">${t.saved ? `<button type="button" class="icon-btn" data-action="token-clear" data-id="${e(t.id)}" aria-label="清除 ${e(t.label)}" title="清除已保存密钥">${i('trash')}</button>` : ''}</div></div>`;
+        }).join('');
+        const missingHints = (CS.ui.tokens || []).filter(t => !t.configured).map(t => `<p class="small muted">${e(t.label)} 未配置: ${t.id === 'sciverse' ? 'Sciverse 工具' : t.id === 'anysearch' ? 'anysearch MCP 服务' : '相关功能'}保持关闭, 配置并保存后自动启用。</p>`).join('');
+        return `<div class="panel settings-section"><div class="row-between"><h2>第三方 API Key</h2>${pill('服务端存储')}</div><p class="small muted mb-20">配置第三方服务的访问密钥: Sciverse 工具与 anysearch MCP 服务依赖对应密钥, 未配置时保持关闭, 配置后自动启用; 也可在各自设置页单独控制。页面仅显示掩码, 不回传完整密钥。</p>${rows}${missingHints}<div class="settings-actions row wrap">${btn('save-tokens','保存','check','primary')}</div></div>`;
+      })(),
+      usage: (() => {
+        // Token 用量卡: 服务端聚合 SigmaFlow 自身会话记录, 统计卡 + 每日/每周/累计活动图 + 两张明细表
+        const u = CS.ui.usage;
+        if (u?.error) return `<div class="panel settings-section"><div class="row-between"><h2>Token 用量</h2>${pill('本地统计')}</div><p class="small muted mb-20">统计 SigmaFlow 对话的 token 消耗（服务端聚合本机会话记录）。</p>${H.notice('无法聚合用量数据：' + u.error)}</div>`;
+        if (!u?.totalTokens && !u?.days) return `<div class="panel settings-section"><h2>Token 用量</h2><p class="small muted mb-20">${u?.loading !== false ? '正在加载用量数据…' : '暂无用量数据。'}</p></div>`;
+        const peakTitle = u.peakDay?.date ? `峰值日 ${u.peakDay.date}` : '';
+        const stats = [[CS.usageNum(u.totalTokens), '累计 Token 数', `输入 ${CS.usageNum(u.totalInputTokens)} · 输出 ${CS.usageNum(u.totalOutputTokens)}`], [CS.usageNum(u.peakDay?.totalTokens || 0), '峰值 Token 数', peakTitle], [usageDur(u.longestSessionMs), '最长聊天时长', `${CS.num(u.totalSessions)} 个会话`], [`${u.currentStreakDays || 0} 天`, '当前连续天数', `数据截至 ${u.generatedAt ? e(u.generatedAt.slice(0, 10)) : '—'}`], [`${u.longestStreakDays || 0} 天`, '最长连续天数', `共 ${(u.days || []).length} 天有用量`], [CS.fmtCost(u.totalCostUsd), '总成本（估算）', '基于 LiteLLM 价格库 · 未收录模型不计成本']];
+        const gran = CS.ui.usageGran || 'daily';
+        const models = [...(u.models || [])].sort((x, y2) => (y2.totalTokens || 0) - (x.totalTokens || 0));
+        const sessions = [...(u.sessions || [])].sort((x, y2) => (y2.endMs || 0) - (x.endMs || 0)).slice(0, 30);
+        return `<div class="panel settings-section"><div class="row-between"><h2>Token 用量</h2><span class="row gap-6">${pill('本地统计')}${iconBtn('reload-usage','refresh','重新拉取')}</span></div><p class="small muted mb-20">统计 SigmaFlow 对话的 token 消耗与聊天时长，由服务端实时聚合本机会话记录；模型明细与模型名从新会话开始记录。</p><div class="usage-stats">${stats.map(([v, l, t]) => `<div class="usage-stat" ${t ? `title="${e(t)}"` : ''}><div class="usage-stat-value">${v}</div><div class="usage-stat-label">${e(l)}</div></div>`).join('')}</div><div class="panel-head" style="margin-top:20px"><h3 style="margin:0">Token 活动</h3><div class="row gap-6">${['daily','weekly','total'].map(g => `<button type="button" class="tab-label ${gran === g ? 'usage-gran-active' : ''}" data-action="usage-gran" data-id="${g}">${{ daily: '每日', weekly: '每周', total: '累计' }[g]}</button>`).join('')}</div></div>${usageChart(u.days || [], gran)}<div class="panel-head" style="margin-top:20px"><h3 style="margin:0">模型明细</h3><span class="tiny muted">${models.length} 个模型 · 成本按 LiteLLM 价格库估算，未收录模型不计</span></div>${models.length ? `<div class="table-wrap"><table><thead><tr><th>模型</th><th class="num">输入</th><th class="num">输出</th><th class="num">合计 ↓</th><th class="num">成本</th><th class="num">会话</th></tr></thead><tbody>${models.map(m => `<tr><td title="${e(m.model)}">${e(m.model)}</td><td class="num">${CS.num(m.inputTokens)}</td><td class="num">${CS.num(m.outputTokens)}</td><td class="num"><strong>${CS.num(m.totalTokens)}</strong></td><td class="num">${CS.fmtCost(m.costUsd)}</td><td class="num">${CS.num(m.sessions)}</td></tr>`).join('')}</tbody></table></div>` : H.notice('暂无模型用量记录。')}
+        <div class="panel-head" style="margin-top:20px"><h3 style="margin:0">最近会话</h3><span class="tiny muted">最近 30 个</span></div>${sessions.length ? `<div class="table-wrap"><table><thead><tr><th>会话</th><th>开始时间</th><th>时长</th><th class="num">合计</th><th>模型</th></tr></thead><tbody>${sessions.map(sm2 => `<tr><td title="${e(sm2.sessionId || '')}">${e(sm2.title || sm2.sessionId || '—').slice(0, 22)}${(sm2.title || '').length > 22 ? '…' : ''}</td><td>${e(sm2.startMs ? new Date(sm2.startMs).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—')}</td><td>${usageDur(sm2.durationMs)}</td><td class="num"><strong>${CS.num(sm2.totalTokens)}</strong></td><td title="${e((sm2.models || []).join(', '))}">${e((sm2.models || []).slice(0, 2).join(', ')) || '—'}${(sm2.models || []).length > 2 ? ' …' : ''}</td></tr>`).join('')}</tbody></table></div>` : H.notice('暂无会话记录。')}</div>`;
+      })(),
+      sysprompt: (() => {
+        // 系统提示词设置: draft 含 prompt/enabled; 内置默认供参考, 内联折叠展示
+        const sp = CS.ui.syspromptDraft || CS.ui.systemPrompt;
+        if (!sp) return `<div class="panel settings-section"><h2>系统提示词</h2><p class="small muted mb-20">正在加载系统提示词配置…</p></div>`;
+        const on = !!sp.enabled;
+        const builtin = sp.builtin || CS.ui.systemPrompt?.builtin || '';
+        const builtinTokens = sp.builtinTokens || CS.ui.systemPrompt?.builtinTokens;
+        const chars = (sp.prompt || '').length;
+        return `<div class="panel settings-section"><div class="row-between"><h2>系统提示词</h2>${pill('服务端存储')}</div><p class="small muted mb-20">自定义提示词会替换 Agent 内置默认(会改变内置任务/团队等指令, 请谨慎); 技能清单自动附加在末尾, 工具调用说明由 Agent 自动追加。子代理仍使用内置提示词。</p><div class="tool-setting-row"><div class="tool-setting-main"><div class="tool-field"><span class="tool-field-label">开关</span><div class="row gap-6"><button type="button" role="switch" aria-checked="${on}" class="switch" data-action="sysprompt-toggle" aria-label="启用自定义系统提示词"></button><span class="small muted">${on ? '已启用自定义' : '使用内置默认'}</span></div></div><div class="tool-field tool-field-top"><span class="tool-field-label">内容</span><textarea id="sysprompt-textarea" class="sysprompt-textarea mono" rows="12" maxlength="32000" spellcheck="false" placeholder="留空并用内置默认; 触发后这里的内容将作为 Agent 的系统提示词…">${e(sp.prompt || '')}</textarea></div><span class="tiny muted">自定义 ${chars} 字符${builtinTokens ? ` · 内置默认约 ${builtinTokens} tokens` : ''} · 保存后上下文圆环自动重新测量</span></div></div>${builtin ? `<details class="sysprompt-builtin"><summary class="small muted">查看内置默认系统提示词</summary><pre class="sysprompt-builtin-pre mono">${e(builtin)}</pre></details>` : ''}<div class="tool-setting-row" style="margin-top:10px"><div class="tool-field"><span class="tool-field-label">跨会话记忆</span><div class="row gap-6"><button type="button" role="switch" aria-checked="${CS.ui.memSettings?.recall ? 'true' : 'false'}" class="switch" data-action="memory-recall-toggle" aria-label="开关跨会话记忆注入"></button><span class="small muted" style="white-space:nowrap">${CS.ui.memSettings?.recall ? '已开启' : '已关闭'}</span></div><span class="tiny muted" style="display:block;margin-top:4px">开启后每次对话会把记忆库中与当前请求相关的条目注入系统提示词(# Memory 段), 关闭即停止注入(已保存的记录保留)。立即生效于下一轮。</span></div></div><div class="settings-actions row wrap">${btn('save-sysprompt','保存','check','primary')}${btn('reset-sysprompt','恢复默认','refresh','flat')}</div></div>`;
+      })(),
+      context: (() => {
+        // 上下文压缩设置: draft 含全部压缩参数; 数字输入不触发重渲染避免输入中断
+        const cfg = CS.ui.compactionDraft || CS.ui.agentCompaction;
+        if (!cfg) return `<div class="panel settings-section"><h2>上下文压缩</h2><p class="small muted mb-20">正在加载压缩参数配置…</p></div>`;
+        const on = cfg.enabled !== false;
+        const num = (id, label, sub, field, min, max, step) => `<div class="setting-row compact"><div><h3>${e(label)}</h3><p>${e(sub)}</p></div><span class="row gap-6"><input type="number" id="compact-${id}" class="compact-num" min="${min}" max="${max}" step="${step}" value="${e(String(cfg[field] != null ? cfg[field] : ''))}" data-field="${field}" aria-label="${e(label)}"></span></div>`;
+        return `<section class="panel settings-section"><div class="row-between"><h2>上下文压缩</h2>${pill('服务端存储')}</div><p class="small muted mb-20">上下文即将占满时, Agent 自动把较早的对话压缩成结构化摘要并保留最近消息原文(pi compaction 思路)。保存后即时对下一次会话生效; 自动压缩关闭时, 手动 /compact 命令仍然可用。</p><div class="setting-row compact"><div><h3>自动压缩</h3><p>仅在上下文占用超过触发阈值时执行摘要压缩。</p></div><button type="button" role="switch" aria-checked="${on}" class="switch" data-action="compaction-toggle" aria-label="自动压缩"></button></div>`
+          + num('ratio', '触发阈值', '上下文占用达到该比例时压缩, 例如 0.85 表示 85%。', 'ratio', 0.3, 0.98, 0.01)
+          + num('keep', '保留窗口', '最近这一段 token 数的原文保持原样不参与摘要, 以保住近期工作细节(单位 tokens)。', 'keepRecentTokens', 2000, 200000, 1000)
+          + num('mindrops', '最少压缩消息数', '被摘要的消息少于此数时跳过本次压缩, 避免频繁摘要小会话(按条计)。', 'minDrops', 2, 50, 1)
+          + num('summary', '摘要长度上限', '单次摘要生成允许的最大 token 数。', 'summaryTokens', 512, 16384, 256)
+          + num('result', '单条工具结果截断', '喂给摘要模型的工具结果每条最多保留的字符数。', 'resultChars', 200, 20000, 100)
+          + num('arg', '单个工具参数截断', '摘要中工具调用参数最多保留的字符数。', 'argChars', 40, 4000, 20)
+          + `<div class="settings-actions row wrap">${btn('save-compaction', '保存', 'check', 'primary')}${btn('reset-compaction', '恢复默认', 'refresh', 'flat')}</div></section>`;
+      })(),
+      general: (() => {
+        // 通用卡片: 与具体功能无关的整体偏好; 提示音 / 键位 / 滚动 / 缩放
+        const raw = Number(CS.state.settings.soundVolume);
+        const pct = Math.round((Number.isFinite(raw) ? raw : 1) * 100);
+        const scaleRaw = Number(CS.state.settings.uiScale);
+        const scale = Number.isFinite(scaleRaw) ? Math.min(125, Math.max(85, Math.round(scaleRaw))) : 100;
+        return `<div class="panel settings-section"><h2>通用</h2><p class="small muted mb-20">影响整体体验的通用偏好, 只保存在本机浏览器。</p>${toggle('notifySound','消息回复提示音','模型回复完成或被停止时播放一声短提示音。')}<div class="setting-row"><div><h3>提示音音量</h3><p>拖动后点「试听」确认效果；拖到 0 等效静音。</p></div><div class="row gap-6 sound-volume-row"><input type="range" class="sound-volume-input" min="0" max="100" step="5" value="${pct}" aria-label="提示音音量"><span class="small muted mono sound-volume-label">${pct}%</span>${btn('sound-preview','试听','play','small-btn flat')}</div></div>${toggle('enterSend','按 Enter 直接发送','开启时 Enter 发送、Shift+Enter 换行；关闭后 Enter 换行，需按 Ctrl/Cmd+Enter 发送。')}${toggle('autoScroll','回复时自动滚动','流式输出与回复完成时自动滚到最新内容；关闭后不再自动拽动滚动位置，可点「回到底部」一键跳转。')}<div class="setting-row"><div><h3>界面缩放</h3><p>整体放大或缩小界面（85%–125%），拖动即时生效。</p></div><div class="row gap-6 ui-scale-row"><input type="range" class="ui-scale-input" min="85" max="125" step="5" value="${scale}" aria-label="界面缩放"><span class="small muted mono ui-scale-label">${scale}%</span></div></div><div class="setting-row"><div><h3>终端主题</h3><p>终端工具消息展开内容采用的颜色主题，默认 Monokai Dark。</p></div><select class="terminal-theme-select" aria-label="终端主题">${TE_THEMES.map(([v, label]) => `<option value="${v}" ${(CS.state.settings.terminalTheme || 'monokai') === v ? 'selected' : ''}>${label}</option>`).join('')}</select></div></div>`;
+      })(),
+      account: (() => {
+        // 账户与密码(仅多用户模式出现在导航): 旧密码验证 + 新密码两次输入; 密码只提交服务端
+        const me = CS.state.me || {};
+        const uname = me.user?.name || '';
+        const hasPw = me.user?.hasPassword !== false;
+        const pwField = (id, label, ph, ac) => `<div class="tool-field"><span class="tool-field-label">${e(label)}</span><input id="${id}" class="token-input" type="password" placeholder="${e(ph)}" autocomplete="${ac}" spellcheck="false"></div>`;
+        return `<div class="panel settings-section"><div class="row-between"><h2>账户与密码</h2>${pill('多用户模式')}</div><p class="small muted mb-20">当前登录账户：<strong>${e(uname)}</strong>。修改密码需验证当前密码；保存后本机登录保持有效，其他设备在其会话到期前不受影响。</p><div class="tool-setting-row"><div class="tool-setting-main">${pwField('pw-old', '当前密码', hasPw ? '输入当前密码' : '微信扫码账户尚未设置密码，可留空', 'current-password')}${pwField('pw-new', '新密码', '至少 6 位', 'new-password')}${pwField('pw-new2', '确认新密码', '再输入一次新密码', 'new-password')}<span class="tiny muted">密码仅在服务端保存加盐哈希，不会回传浏览器。</span></div></div><div class="settings-actions row wrap">${btn('save-password','保存新密码','lock','primary')}</div></div>`;
+      })(),
+      appearance: `<div class="panel settings-section"><h2>外观与交互</h2>${toggle('contrast','增强文字与边界对比','保持浅灰色主题，提高说明文字与控件边界的可读性。')}${toggle('reducedMotion','减少动态效果','关闭过渡与旋转动画，不影响任务状态更新。')}<div class="setting-row"><div><h3>消息轨迹配色</h3><p>标题栏 usage 行上方热力条的配色方案；马卡龙为柔和粉彩色系。</p></div><select class="track-palette-select" aria-label="消息轨迹配色"><option value="macaron" ${(CS.state.settings.trackPalette || 'macaron') === 'macaron' ? 'selected' : ''}>马卡龙</option><option value="classic" ${CS.state.settings.trackPalette === 'classic' ? 'selected' : ''}>经典</option><option value="mono" ${CS.state.settings.trackPalette === 'mono' ? 'selected' : ''}>素雅</option></select></div>${toggle('inspector','显示任务详情侧栏','在宽屏的 Agent 对话中显示输入上下文与执行边界。')}</div>`,
+      privacy: `<div class="panel settings-section"><h2>数据与隐私</h2>${toggle('persist','在本机保存工作空间','保存项目、文件名、对话与任务记录；不保存原始文件。共享电脑建议关闭。关闭后删除已有本地保存，当前会话仍保留。')}<div class="setting-row"><div><h3>单次回复轮次预算</h3><p>模型在一次回复内可连续调用工具的最大轮数，默认 100；分析型任务(如多步生信流程)建议保持较高值，耗尽时会保留工具轨迹并提示『继续』。</p></div><div class="row gap-6"><input id="turn-budget-input" class="setting-input-inline" inputmode="numeric" placeholder="100" value="${CS.ui.turnBudget ?? ''}" style="width:96px;text-align:right"><span class="small muted">轮</span>${btn('save-turn-budget','保存','check','small-btn flat')}<button type="button" class="text-button tiny" data-action="reset-turn-budget">恢复默认</button></div></div><div class="setting-row"><div><h3>静默工具提醒阈值</h3><p>模型连续调用多少个工具而没有文字说明进展时，注入一条提示要求穿插进度叙述，默认 10；设为 0 表示关闭提醒。</p></div><div class="row gap-6"><input id="nudge-threshold-input" class="setting-input-inline" inputmode="numeric" placeholder="10" value="${CS.ui.nudgeThreshold ?? ''}" style="width:96px;text-align:right"><span class="small muted">个</span>${btn('save-nudge-threshold','保存','check','small-btn flat')}<button type="button" class="text-button tiny" data-action="reset-nudge-threshold">恢复默认</button></div></div><div class="setting-row"><div><h3>工具结果入库上限</h3><p>单条工具输出 / 思考 / 回复块随会话存档的字数上限，默认 30000；影响 Trace 展开详情的完整度。</p></div><div class="row gap-6"><input id="tool-limit-input" class="setting-input-inline" inputmode="numeric" placeholder="30000" value="${CS.ui.toolLimit ?? ''}" ${'style="width:96px;text-align:right"'}><span class="small muted">字</span>${btn('save-tool-limit','保存','check','small-btn flat')}<button type="button" class="text-button tiny" data-action="reset-tool-limit">恢复默认</button></div></div><div class="setting-row"><div><h3>导出工作空间</h3><p>导出元信息与任务记录。包含对话内容，分享前请检查隐私。</p></div>${btn('export-workspace','导出 JSON','download','flat')}</div><div class="setting-row"><div><h3>清空并恢复示例</h3><p>移除本机保存的项目、导入记录与对话，恢复初始演示。</p></div>${btn('reset-workspace','重置','trash','flat danger')}</div></div>`,
+      agent: `${edit?.type === 'provider' ? `<div class="panel settings-section"><div class="row-between"><h2>${editProvider ? '编辑服务商' : '添加服务商'}</h2>${pill('编辑')}</div><p class="small muted mb-20">服务商保存接口地址与密钥，可挂多个模型。配置保存在服务端，密钥不会回传浏览器。</p><div class="field"><label for="provider-name">服务商名称</label><input id="provider-name" value="${e(editProvider?.name || '')}" placeholder="OpenRouter" spellcheck="false"><span class="hint">仅用于显示，留空则取地址主机名。</span></div><div class="field"><label for="provider-base-url">接口地址（Base URL）</label><input id="provider-base-url" value="${e(editProvider?.baseUrl || '')}" placeholder="https://openrouter.ai/api/v1" spellcheck="false"></div><div class="field"><label for="provider-api-key">API 密钥</label><input id="provider-api-key" type="password" value="" placeholder="${editProvider?.keyHint ? `当前 ${e(editProvider.keyHint)}，留空保持不变` : '保存在服务端，浏览器不保存'}" spellcheck="false" autocomplete="off"><span class="hint">仅保存在服务端；接口只返回掩码，不回传完整密钥。</span></div><div class="row wrap">${btn('save-provider','保存','check','primary')}${btn('cancel-edit','取消','','flat')}</div></div>` : edit?.type === 'model' ? `<div class="panel settings-section"><div class="row-between"><h2>${editModel ? '编辑模型' : '添加模型'}</h2>${pill('编辑')}</div><p class="small muted mb-20">选择模型所属的服务商；模型名称可手填，或从服务商拉取列表后选择。</p><div class="field"><label for="model-provider">所属服务商</label><div class="model-select dd-wrap"><button type="button" class="model-select-btn" data-action="dd-toggle" data-id="provider" aria-haspopup="listbox" aria-expanded="${CS.ui.dropdown === 'provider'}"><span style="flex:1;overflow:hidden;text-overflow:ellipsis">${e(ddProvider ? ddProvider.name + ' · ' + ddProvider.baseUrl : '— 选择服务商 —')}${i('down','',13)}</button>${CS.ui.dropdown === 'provider' ? `<div class="model-menu dd-down" role="listbox">${CS.ui.providers.length ? CS.ui.providers.map(p => `<button type="button" class="model-menu-item" role="option" data-action="dd-pick-provider" data-id="${e(p.id)}"><span>${e(p.name)} · ${e(p.baseUrl)}</span>${ddProvider && p.id === ddProvider.id ? i('check','',13) : ''} </button>`).join('') : '<span class="model-menu-item">请先添加服务商</span>'}</div>` : ''}</div></div><div class="field"><label for="model-name">模型名称</label><input id="model-name" value="${e(CS.ui.draftModelName ?? editModel?.model ?? '')}" placeholder="openrouter/free" spellcheck="false"><span class="hint">${btn('fetch-provider-models','从服务商获取模型列表','refresh','flat')}</span></div><div class="field"><label for="model-ctx-window">上下文窗口（可选，默认自动）</label><input id="model-ctx-window" inputmode="numeric" value="${e(editModel?.contextWindow || '')}" placeholder="自动读取 LiteLLM 模型库" spellcheck="false"><span class="hint">用于上下文用量圆环与用量成本估算；留空时自动按 LiteLLM 模型库查询。 <span id="model-meta-hint" class="tiny muted">${CS.ui.modelMeta?.matched ? `目录键 ${e(CS.ui.modelMeta.litellmKey ?? String())}` : ''}</span></span></div>${CS.ui.providerModels?.loading ? '<p class="small muted">正在获取模型列表…</p>' : CS.ui.providerModels?.error ? `<p class="small muted">获取失败：${e(CS.ui.providerModels.error)}</p>` : (CS.ui.providerModels?.list?.length ? `<div class="field"><label for="model-pick">从列表选择</label><div class="model-select dd-wrap"><button type="button" class="model-select-btn" data-action="dd-toggle" data-id="pick" aria-haspopup="listbox" aria-expanded="${CS.ui.dropdown === 'pick'}"><span style="flex:1;overflow:hidden;text-overflow:ellipsis">${e(CS.ui.draftModelName || '— 选择模型 —')}${i('down','',13)}</button>${CS.ui.dropdown === 'pick' ? `<div class="model-menu dd-down" role="listbox">${ddPickItems.map(x => `<button type="button" class="model-menu-item" role="option" data-action="dd-pick-model" data-id="${e(x)}"><span>${e(x)}</span>${CS.ui.draftModelName === x ? i('check','',13) : ''} </button>`).join('')}</div>` : ''}</div></div>` : '')}<div class="row wrap">${btn('save-model','保存','check','primary')}${btn('cancel-edit','取消','','flat')}</div></div>` : `<div class="panel settings-section"><div class="row-between"><h2>模型服务商</h2>${pill('服务端存储')}</div><p class="small muted mb-20">每个服务商保存接口地址与密钥，可挂多个模型。服务地址由页面自动探测。</p>${providerRows}<div class="settings-actions row wrap">${btn('add-provider','添加服务商','plus','primary')}</div></div><div class="panel settings-section"><div class="row-between"><h2>模型</h2></div><p class="small muted mb-20">模型挂在服务商下，名称可手动填写，或从服务商接口拉取后选择。</p>${modelGroups}<div class="settings-actions row wrap">${btn('add-model','添加模型','plus','primary')}${btn('test-api','测试连接','bolt','flat')}</div></div>${CS.ui.apiHealth ? `<div class="panel settings-section"><div class="row-between"><h2>连接状态</h2>${pill(CS.ui.apiHealth.split(' ')[0])}</div><p class="small muted">${e(CS.ui.apiHealth)}</p></div>` : ''}`}`
+    };
+    return `<section class="page fullscreen-page"><div class="settings-layout"><aside class="panel settings-nav" aria-label="设置导航">${nav.map(([id, icon, label]) => `<button type="button" class="settings-nav-item ${tab === id ? 'active' : ''}" data-action="settings-tab" data-id="${id}" ${tab === id ? 'aria-current="page"' : ''}>${i(icon,'',16)}<span>${label}</span></button>`).join('')}</aside><div class="settings-content">${sections[tab]}</div></div><div class="page-footer">SigmaFlow Science / Interface edition 1.0</div></section>`;
+  };
+  V.logs = () => {
+    // 日志与反馈页: 运行日志尾部查看(行数/过滤/自动刷新/下载) + 反馈表单(可附最近日志)
+    const lv = CS.ui.logView || (CS.ui.logView = { tail: 500, q: '', auto: false, data: null });
+    const hl = ln => {
+      const cls = / - ERROR - |Traceback|CRITICAL/.test(ln) ? ' class="log-err"' : / - WARNING - /.test(ln) ? ' class="log-warn"' : '';
+      return `<span${cls}>${e(ln)}</span>`;
+    };
+    const body = lv.data
+      ? (lv.data.lines.length
+        ? `<pre class="logs-pre mono">${lv.data.lines.map(hl).join('\n')}</pre>`
+        : empty('search', '没有匹配的日志行', '调整关键字或清空过滤条件后重试。'))
+      : empty('file', '尚未加载日志', '点击「刷新日志」拉取服务端运行日志尾部。');
+    const meta = lv.data
+      ? (lv.data.hint
+        ? `<span class="tiny muted">${e(lv.data.hint)}</span>`
+        : `<span class="tiny muted mono" title="${e(lv.data.file || '')}">${e(lv.data.file || '')} · 显示最近 ${lv.data.lines.length} / 共 ${lv.data.total} 行</span>`)
+      : '';
+    return `<section class="page fullscreen-page">${header('DIAGNOSTICS','日志与反馈','查看服务端运行日志；遇到问题时提交反馈，可附带最近日志帮助开发者定位。')}
+<div class="panel settings-section"><div class="row-between"><h2>运行日志</h2><span class="row gap-6">${lv.data && !lv.data.hint ? pill('服务端日志', 'green') : ''}${lv.auto ? pill('自动刷新中', 'purple') : ''}</span></div>
+<div class="row wrap gap-6 mb-20"><label class="tiny muted" for="logs-tail">行数</label><select id="logs-tail" class="terminal-theme-select" aria-label="日志尾部行数">${[200, 500, 2000, 5000].map(n => `<option value="${n}" ${lv.tail === n ? 'selected' : ''}>${n} 行</option>`).join('')}</select><input id="logs-q" class="setting-input-inline" style="width:220px;text-align:left" placeholder="关键字过滤（如 ERROR、用户名）" value="${e(lv.q || '')}" spellcheck="false" aria-label="日志关键字过滤">${btn('logs-refresh','刷新日志','refresh','primary')}${btn('logs-download','下载 .txt','download','flat')}<div class="row gap-6"><button type="button" role="switch" aria-checked="${lv.auto}" class="switch" data-action="logs-auto" aria-label="每 15 秒自动刷新"></button><span class="small muted">自动刷新</span></div></div>
+${meta}
+<div class="logs-wrap">${body}</div>
+</div>
+<div class="panel settings-section"><h2>问题反馈</h2><p class="small muted mb-20">描述遇到的问题（做了什么、期望什么、实际发生了什么）；勾选附带日志会把服务端最近 300 行运行日志一并保存给开发者。</p>
+<textarea id="fb-content" class="sysprompt-textarea" rows="5" maxlength="20000" spellcheck="false" placeholder="例如：打开某会话时 Trace 页一直空白，控制台报 …"></textarea>
+<div class="row wrap gap-16 mt-12"><label class="small muted row gap-6" style="cursor:pointer"><input type="checkbox" id="fb-logs">附带最近 300 行运行日志</label>${btn('submit-feedback','提交反馈','check','primary')}</div>
+<p class="tiny muted mt-12">反馈保存在服务端数据目录的 feedback/ 下（markdown 文本），不会自动发送到任何外部服务。</p></div>
+</section>`;
+  };
+
+  V.help = () => `<section class="page">${header('GUIDE','从问题，到可追溯的过程','这个工作空间怎么用，哪些是真实功能，哪些是演示。')}<div class="help-grid"><article class="panel"><h3>体验一个完整任务</h3><ol><li>首页点击“单细胞分析”，或输入研究问题。</li><li>查看 Agent 计划，点击“确认并执行”。</li><li>观察每一步的状态，尝试暂停、继续与展开日志。</li><li>完成后查看合成图表，导出 SVG 或分析记录。</li></ol><div class="mt-20">${btn('demo-start','开始示例','play','primary')}</div></article><article class="panel"><h3>快捷键</h3><div class="shortcut-list"><div><span>发送问题</span><kbd>Enter</kbd></div><div><span>在问题中换行</span><kbd>Shift + Enter</kbd></div><div><span>开始新对话</span><kbd>Alt + N</kbd></div><div><span>关闭对话框 / 菜单</span><kbd>Esc</kbd></div></div></article><article class="panel"><h3>这些功能可以真实使用</h3><p>本地文件导入和文本预览；DNA 长度与 GC 比例统计；项目增改和归档；文献收藏与笔记；本地搜索、图表交互和文件导出。</p><p class="mt-12">文件始终由你选择后才读取，且不会由演示任务自动上传。</p></article><article class="panel"><h3>这些内容是明确的演示</h3><p>Agent 对话、分析进度、单细胞数据图表、表达量与分析记录均为预设演示。当前版本没有执行真实模型、Scanpy、差异分析或实验操作。</p><p class="mt-12">生产集成说明与接口协议见源码包 README.md 和 API.md。</p></article></div><div class="mt-28">${notice('本工具不提供临床结论。科研分析必须使用经过验证的数据、方法与真实执行环境，并进行人工复核。')}</div></section>`;
+})();
