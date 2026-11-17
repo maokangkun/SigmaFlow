@@ -1106,3 +1106,15 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .span-dur { font-size: 11px; }
 /* 标题头向左贴近侧栏(抵消页面横向内边距的大部分) */
 .trace-topbar { margin-left: -36px; }
+
+/* tracing 详情微调: 更紧凑的行文字/条形, 返回钮贴标题, 标题去粗体 */
+.span-row { grid-template-columns: auto 20px 26px minmax(96px, 1fr) 78px minmax(120px, 28%); padding: 7px 8px; }
+.span-badge-icon { height: 26px; width: 26px; border-radius: 8px; }
+.span-badge-icon svg { width: 14px; height: 14px; }
+.span-name { font-size: 11px; }
+.span-dur { font-size: 10px; }
+.span-track { height: 10px; }
+.span-fill { min-width: 4px; }
+.trace-topbar { gap: 8px; }
+.trace-topbar [data-action="tracing-back"] { width: 26px; margin-right: -6px; }
+.trace-crumb, .trace-crumb b { font-weight: 400; }

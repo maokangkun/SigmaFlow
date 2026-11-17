@@ -1468,7 +1468,8 @@ V.ctxRing = () => {
         const kids = n.children.length ? `<div class="span-kids" style="display:${exp[n.s.id] === false ? 'none' : 'block'}">${n.children.map(c => row(c, depth + 1)).join('')}</div>` : '';
         const has = n.children.length > 0;
         const [ik, ic] = traceIconCls(n.s.span_data?.type);
-        return `<div class="span-row ${sel === n.s.id ? 'sel' : ''} ${n.s.error ? 'err' : ''}" style="--ind:${depth * 16}px" data-action="tracing-span" data-id="${e(n.s.id)}">
+        return `<div class="span-row ${sel === n.s.id ? 'sel' : ''} ${n.s.error ? 'err' : ''}" data-action="tracing-span" data-id="${e(n.s.id)}">
+          <span class="span-indent" style="width:min(${depth * 16}px, 48px)"></span>
           <button type="button" class="span-caret ${has ? '' : 'leaf'} ${exp[n.s.id] !== false ? 'open' : ''}" data-action="tracing-toggle" data-id="${e(n.s.id)}" aria-label="展开/折叠">${i('chevron', '', 13)}</button>
           <span class="span-badge-icon ${ic}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TRACE_ICON_PATH[ik]}</svg></span>
           <span class="span-name">${e(label(n))}</span>
@@ -1521,7 +1522,7 @@ V.ctxRing = () => {
               </div>` : ''}
               <div class="trace-sec-divider"></div>
               ${secHead('meta', 'Metadata')}
-              ${sec.meta !== false ? `<div class="trace-sec-body">${metaRows || '<p class="tiny muted">无元数据。</p>'}${mermaidSrc ? `<div id="trace-mermaid-box" class="trace-mermaid-box" data-src="${e(mermaidSrc)}"></div>` : ''}</div>` : ''}
+              ${sec.meta !== false ? `<div class="trace-sec-body">${metaRows || '<p class="tiny muted">无元数据。</p>'}${mermaidSrc && !selNode ? `<div id="trace-mermaid-box" class="trace-mermaid-box" data-src="${e(mermaidSrc)}"></div>` : ''}</div>` : ''}
             </div>
             ${selInfo}
           </div>
