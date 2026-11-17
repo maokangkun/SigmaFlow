@@ -112,17 +112,27 @@
       if (!box || !src) return;
       try {
         if (!await CS.ensureLazy('mermaid.min') || !window.mermaid) throw new Error('mermaid 库加载失败');
-        const body = String(src).replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, '').trim();
-        if (!body) throw new Error('图为空');
         if (!window.mermaid._sfInit) { window.mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'strict' }); window.mermaid._sfInit = true; }
-        // v9 render 直接返回 svg 字符串; v10+ 返回 { svg } — 两种形态兼容
-        const out = await window.mermaid.render('sfm-' + Math.random().toString(36).slice(2), body);
+        // vendor 为最新版 mermaid(v12): frontmatter/@{shape} 原生支持, 先按
+        // 原样渲染(保留 elk 等布局配置); 失败再剥 frontmatter 降级重试
+        const raw = String(src).trim();
+        if (!raw) throw new Error('图为空');
+        const tryRender = text => window.mermaid.render('sfm-' + Math.random().toString(36).slice(2), text);
+        let out;
+        try {
+          out = await tryRender(raw);
+        } catch (err) {
+          const stripped = raw.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, '').trim();
+          if (!stripped || stripped === raw) throw err;
+          out = await tryRender(stripped);
+        }
+        // 旧版 render 返回 svg 字符串; 新版返回 { svg } — 两种形态兼容
         const svg = typeof out === 'string' ? out : out && out.svg;
         if (!svg) throw new Error('渲染结果为空');
         box.innerHTML = svg;
         // 清理 mermaid 渲染时落在 body 上的临时/错误节点(旧页同款清扫)
         document.querySelectorAll('[id^="dmermaid-"], [id^="mermaid-"]').forEach(el => { if (!box.contains(el) && el.closest('.trace-mermaid-box') !== box) el.remove(); });
-      } catch (err) { box.innerHTML = `<span class="tiny muted">流程图渲染失败: ${e(String(err && err.message || err))}</span>`; }
+      } catch (err) { box.innerHTML = `<span class="tiny muted">流程图渲染失败: ${e(String(err && err.message || err)).slice(0, 200)}</span>`; }
     }
   };
   // 生成中状态: 标签页 icon 旋转提示。
