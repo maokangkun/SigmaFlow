@@ -1548,16 +1548,17 @@ V.ctxRing = () => {
       <td class="right"><button type="button" class="icon-btn" data-action="tracing-del" data-id="${e(t.id)}" aria-label="删除" title="删除">${i('trash', '', 13)}</button></td>
     </tr>`; }).join('');
     return `<section class="page">
-      <div class="trace-backbar"><button type="button" class="text-button" data-action="tracing-exit">${i('arrowleft', '', 14)}<span>返回工作流</span></button></div>
-      ${header('TRACING', '执行追踪', 'Workspace 流水线与 Agent 的 Trace 记录', `${btn('tracing-refresh', '刷新', 'refresh')}${btn('tracing-query', '查询', 'search', 'primary')}`)}
+      <header class="page-header"><div><div class="eyebrow">${e('TRACING')}</div><div class="trace-title-row"><button type="button" class="icon-btn" data-action="tracing-exit" aria-label="返回工作流" title="返回工作流">${i('arrowleft', '', 16)}</button><h1>${e('执行追踪')}</h1></div><p>${e('Workspace 流水线与 Agent 的 Trace 记录')}</p></div><div class="row">${btn('tracing-refresh', '刷新', 'refresh')}${btn('tracing-query', '查询', 'search', 'primary')}</div></header>
       <div class="panel trace-filters">
-        <input id="tracing-wf" class="trace-input" placeholder="Workflow 名称" value="${e(f.workflow || '')}">
-        <input id="tracing-group" class="trace-input" placeholder="Group ID" value="${e(f.group || '')}">
-        <input id="tracing-id" class="trace-input" placeholder="Trace ID 精确查询" value="${e(f.id || '')}">
-        <input id="tracing-start" class="trace-input" type="datetime-local" value="${e(f.start || '')}" title="开始时间">
-        <input id="tracing-end" class="trace-input" type="datetime-local" value="${e(f.end || '')}" title="结束时间">
+        <div class="trace-filters-main">
+          <input id="tracing-wf" class="trace-input" placeholder="Workflow 名称" value="${e(f.workflow || '')}">
+          <input id="tracing-id" class="trace-input" placeholder="Trace ID 精确查询" value="${e(f.id || '')}">
+          <input id="tracing-start" class="trace-input" type="datetime-local" value="${e(f.start || '')}" title="开始时间">
+          <input id="tracing-end" class="trace-input" type="datetime-local" value="${e(f.end || '')}" title="结束时间">
+          <button type="button" class="text-button" data-action="tracing-meta-add">${i('plus', '', 13)}<span>metadata 条件</span></button>
+          <button type="button" class="text-button" data-action="tracing-clear">${i('x', '', 13)}<span>清空</span></button>
+        </div>
         ${metaRows}
-        <div class="row gap-6">${(f.meta || []).length ? '' : `<button type="button" class="text-button" data-action="tracing-meta-add">${i('plus', '', 13)}<span>metadata 条件</span></button>`}<button type="button" class="text-button" data-action="tracing-clear">${i('x', '', 13)}<span>清空</span></button></div>
       </div>
       ${st.error ? `<div class="notice">${i('alert', '', 14)}<span>${e(st.error)}</span></div>` : ''}
       <div class="panel">${st.loading ? `<p class="muted">加载中…</p>` : rows ? `<div class="table-scroll"><table class="tracing-table"><thead><tr><th>Trace</th><th>Workflow</th><th>Flow / Group</th><th>创建时间</th><th class="right">耗时</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : empty('clock', '没有 Trace', '尚无执行追踪记录。运行 Workspace 流水线后这里会出现记录。')}

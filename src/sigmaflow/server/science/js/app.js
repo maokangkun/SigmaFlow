@@ -65,7 +65,6 @@
       const f = CS.ui.tracingFilters || {};
       const p = new URLSearchParams();
       if (f.workflow) p.set('workflow_name', f.workflow);
-      if (f.group) p.set('group_id', f.group);
       if (f.id) p.set('trace_id', f.id);
       if (f.start) p.set('start_date', new Date(f.start).toISOString());
       if (f.end) p.set('end_date', new Date(f.end).toISOString());

@@ -1129,3 +1129,13 @@ html[data-motion="reduced"] #anchor-tip{display:none}
 .trace-json pre.nowrap { white-space: pre; overflow-wrap: normal; overflow-x: auto; }
 .trace-json pre.wrap { white-space: pre-wrap; }
 .trace-json pre.nowrap { white-space: pre; overflow-wrap: normal; overflow-x: auto; }
+
+/* 追踪列表: 返回 icon 并入标题行; 筛选条单行弹性收缩 */
+.trace-title-row { display: flex; align-items: center; gap: 10px; }
+.trace-title-row .icon-btn { color: var(--muted); }
+.trace-title-row h1 { margin: 0; }
+.trace-filters { flex-wrap: nowrap; overflow-x: auto; padding: 12px 16px; }
+.trace-filters-main { display: flex; flex: 1 1 auto; gap: 10px; align-items: center; min-width: 0; }
+.trace-filters-main .trace-input { flex: 1 1 150px; min-width: 84px; width: auto; max-width: none; }
+.trace-filters-main .text-button { white-space: nowrap; flex-shrink: 0; }
+.trace-meta { flex-shrink: 0; }
