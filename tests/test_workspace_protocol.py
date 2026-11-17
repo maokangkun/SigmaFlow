@@ -6,7 +6,6 @@ system_stats/主题桥)。上游同步 SOP(SIGMAFLOW_SYNC.md)要求: 替换 dist
 """
 
 import json
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient

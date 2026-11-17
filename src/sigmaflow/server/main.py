@@ -147,8 +147,6 @@ class PipelineServer:
         # 单用户放行; 多用户要求会话并把用户注入 userdata 上下文。
         # 必须经构造参数注入: 路由在 WorkspaceAPI.__init__ 内注册,
         # 事后改 router.dependencies 不追溯(曾因此留下无鉴权洞)。
-        from .science_common import _multi_user as _sf_multi
-        from .workspace import _CURRENT_SF_USER as _SF_USER_CTX
 
         async def _workspace_guard(request: Request):
             """HTTP 依赖(WS 在端点内调 science_session_guard): 校验 science
