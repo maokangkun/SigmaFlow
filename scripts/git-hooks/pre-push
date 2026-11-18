@@ -1,21 +1,29 @@
 #!/bin/sh
 # push 前门禁: 格式/静态检查 + 包级测试 + science 回归(含 dist 一致性)。
-# 由 `make hooks` 安装(core.hooksPath 指向跟踪的 scripts/git-hooks)。
-# 沙箱/CI 等代理环境下 httpx 系测试需剥掉代理变量, 钩子里统一处理。
-echo "[pre-push] running gates: make pre-push"
-unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY 2>/dev/null || true
+# 由 make hooks 启用(core.hooksPath)。急事绕过: git push --no-verify(不推荐)。
 
 # dist 一致性检查依赖压缩构建与提交产物逐字节一致: 没有 esbuild 的环境
 # 会静默产出未压缩 dist, 然后以一墙 diff 失败 —— 直接快速失败并说明原因。
-if [ -z "$ESBUILD_BIN" ] && [ ! -x node_modules/.bin/esbuild ] \
-   && [ ! -x /data/mkk/github/ComfyUI_frontend/node_modules/.bin/esbuild ]; then
+# 候选顺序与 science/scripts/build.mjs 的 findEsbuild 完全一致, 并把命中的
+# 候选导出为 ESBUILD_BIN —— 保证本检查与随后的构建用同一个二进制。
+SF_ESB_CANDIDATES="
+$ESBUILD_BIN
+node_modules/.bin/esbuild
+/data/mkk/pi-web-deploy/node_modules/.bin/esbuild
+/data/mkk/github/ComfyUI_frontend/node_modules/.bin/esbuild
+"
+SF_ESB_FOUND=""
+for c in $SF_ESB_CANDIDATES; do
+    [ -n "$c" ] && [ -x "$c" ] && { SF_ESB_FOUND="$c"; break; }
+done
+if [ -z "$SF_ESB_FOUND" ]; then
     echo "[pre-push] 缺少 esbuild: dist 门禁需要压缩构建与提交产物一致。" >&2
-    echo "[pre-push] 设置 ESBUILD_BIN=/data/mkk/github/ComfyUI_frontend/node_modules/.bin/esbuild 后重试。" >&2
+    echo "[pre-push] 设置 ESBUILD_BIN 指向任一可用 esbuild 后重试。" >&2
     exit 1
 fi
+export ESBUILD_BIN="$SF_ESB_FOUND"
 
 make pre-push || {
     echo "[pre-push] 门禁未过, push 已拦截。修完(或 make pre-push 全绿)再推。" >&2
     exit 1
 }
-echo "[pre-push] all green"
