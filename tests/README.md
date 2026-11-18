@@ -4,7 +4,7 @@
 
 | 层 | 命令 | 内容 |
 |---|---|---|
-| 包级单元/集成 | `make tests`（pytest） | agent 循环、管线引擎、压缩器、webview 工具、science 存储耐久、steering 注入与互斥等 |
+| 包级单元/集成 | `make tests`（pytest） | agent 循环、管线引擎、压缩器、webview 工具、science 存储耐久、steering 注入与互斥、pyproject↔uv.lock extras 防脱节等 |
 | Science 回归 | `make science-regression` | 后端契约（HTTP+SSE+WS）+ 前端语法与纯函数检查（check.mjs）+ 几何助手单测（unittest.mjs）+ science dist 一致性校验 + **website dist 一致性**（`web-dist-check`：vite 重建须与提交一致，连建两次取第二次；无 npm 时 SKIP；admin 前端已下线不再校验） |
 | E2E 冒烟 | `make e2e-smoke` | 自起一次性本地服务（空模型库），纯前端套件照跑、需模型套件自跳过 —— 已纳入 `make test-all`（pre-push 门禁） |
 | 浏览器 E2E 全套 | `make e2e` | 对常驻服务跑全部套件（见下文） |
