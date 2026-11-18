@@ -6707,14 +6707,23 @@ def _sigma_usage(conversations: Dict[str, dict]) -> Dict[str, object]:
         return prompt_tokens * pin + completion_tokens * pout
 
     def _ms(conv_msg_at) -> int:
-        """ISO 字符串转 epoch 毫秒; 非法值回退 0。"""
-        if not conv_msg_at or not isinstance(conv_msg_at, str):
-            return 0
-        try:
-            dt = datetime.fromisoformat(conv_msg_at.replace("Z", "+00:00"))
-            return int(dt.timestamp() * 1000)
-        except Exception:
-            return 0
+        """时间戳归一为 epoch 毫秒; 非法值回退 0。
+
+        历史数据里 at 的形态不一: ISO 字符串(主流)、epoch 毫秒的数字或
+        字符串(旧写入方/测试数据)、甚至 None。统一归一, 聚合才不会炸。"""
+        if isinstance(conv_msg_at, (int, float)) and conv_msg_at > 0:
+            # 秒级时间戳转毫秒
+            return int(conv_msg_at) if conv_msg_at > 1e11 else int(conv_msg_at * 1000)
+        if isinstance(conv_msg_at, str) and conv_msg_at:
+            if conv_msg_at.isdigit():
+                iv = int(conv_msg_at)
+                return iv if iv > 1e11 else iv * 1000
+            try:
+                dt = datetime.fromisoformat(conv_msg_at.replace("Z", "+00:00"))
+                return int(dt.timestamp() * 1000)
+            except Exception:
+                return 0
+        return 0
 
     for conv in conversations.values():
         content = conv.get("content") or []
@@ -6742,7 +6751,20 @@ def _sigma_usage(conversations: Dict[str, dict]) -> Dict[str, object]:
             model = (msg.get("model") or "").strip() or "未记录"
             conv_models.add(model)
             cost = _msg_cost(model, prompt, tokens)
-            day_key = (msg.get("at") or "")[:10]
+            # 日期键: ISO 字符串取前缀; epoch 毫秒(数字/数字串)转日期;
+            # 其余形态回退今天, 保证任何历史数据都不会让聚合 500
+            raw_at = msg.get("at")
+            if isinstance(raw_at, str) and re.fullmatch(
+                r"\d{4}-\d{2}-\d{2}", raw_at[:10]
+            ):
+                day_key = raw_at[:10]
+            else:
+                _dk_ms = _ms(raw_at)
+                day_key = (
+                    datetime.fromtimestamp(_dk_ms / 1000).strftime("%Y-%m-%d")
+                    if _dk_ms
+                    else ""
+                )
             if not day_key:
                 day_key = str(date.today())
             day = day_stats.setdefault(
@@ -6815,7 +6837,14 @@ def _sigma_usage(conversations: Dict[str, dict]) -> Dict[str, object]:
 
     def _longest_streak(day_keys: list) -> int:
         """历史最长连续有用量天数: 相邻日期逐段累计。"""
-        ds = sorted(set(day_keys))
+        valid = []
+        for k in day_keys:
+            try:
+                date.fromisoformat(k)
+                valid.append(k)
+            except ValueError:
+                continue  # 脏日期键不参与连续天数统计
+        ds = sorted(set(valid))
         if not ds:
             return 0
         best = run = 1
