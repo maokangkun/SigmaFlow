@@ -72,6 +72,55 @@ def _retry_after_seconds(err_text, cap=120):
     return min(int(mo.group(1)), cap) if mo else 0
 
 
+# 流中断类错误标记: 网关/LB 掐断已开始的 chunked 响应(httpx.RemoteProtocolError /
+# httpcore.ReadError 等)。这类故障瞬态居多, 与限流/配额类不同, 重试策略更激进。
+_STREAM_DROP_MARKERS = (
+    "peer closed connection",
+    "incomplete chunked read",
+    "server disconnected",
+    "connection reset",
+    "remotedisconnect",
+    "connection aborted",
+)
+
+
+def _is_stream_drop(err_text: str) -> bool:
+    """判定错误是否属于流中断类(用于快速重试与请求瘦身)。"""
+    low = str(err_text).lower()
+    return any(m in low for m in _STREAM_DROP_MARKERS)
+
+
+# 请求瘦身的截断尾标记: 判幂等用(已截断的结果不再二次截断)
+_SLIMMED_TAIL = "[... result elided to shrink request after repeated stream drops]"
+
+
+def _slim_tool_results(messages: list, keep_last: int = 12, cap: int = 800) -> int:
+    """收紧历史工具结果以缩小上行请求体, 返回被截断的条数。
+
+    场景: 超长会话(百余轮工具调用)的大请求被网关反复掐流, 全量重传只会同样
+    失败。最近 keep_last 条工具结果保持原样(当前回合正在消费), 更早的截到
+    cap 字。工具结果只截文本、不动 tool_call_id 配对, 对 API 形态合法;
+    anthropic 格式的消息(content 为块列表)不受影响。原地修改, 同一列表重试
+    时重复调用幂等(带尾标记的跳过)。"""
+    tool_idx = [
+        i
+        for i, m in enumerate(messages)
+        if isinstance(m, dict)
+        and m.get("role") == "tool"
+        and isinstance(m.get("content"), str)
+    ]
+    n = 0
+    for i in tool_idx[: max(0, len(tool_idx) - keep_last)]:
+        text = messages[i]["content"]
+        if len(text) <= cap or text.endswith(_SLIMMED_TAIL):
+            continue
+        messages[i]["content"] = (
+            text[:cap] + f"\n[... {len(text) - cap} chars omitted]" + _SLIMMED_TAIL
+        )
+        n += 1
+    return n
+
+
 def _inject_sysnote(on_tool, messages, info, msg_dict, text=None):
     """把注入的 [System] 提示消息同时同步给前端时间线(sysnote 块)。"""
     messages.append(msg_dict)
@@ -960,11 +1009,30 @@ class Agent:
                 else:
                     lc.tried += 1
                     if lc.tried < self.retry:
-                        # 重试间隔指数递增(约 5s/15s/45s/135s/300s, 封顶 300s)加随机抖动;
+                        # 流中断类错误(网关/LB 掐断已开始的 chunked 响应,
+                        # 如 pjlab 的 peer closed): 多为瞬时故障,
+                        # 前两次 1.5s/4s 快速重试命中率最高;
+                        # 之后回落到指数退避(约 5s/15s/45s/135s/300s, 封顶 300s)加随机抖动。
                         # 网关明确给了 retry_after(如集群 RPM 限流 429, 常见 40~60s)时
                         # 尊重之: 按自己的短退避只会连吃 429 烧光重试次数。
-                        _backoff = min(300, 5 * 3 ** (lc.tried - 1))
+                        _dropped = _is_stream_drop(str(e))
+                        if _dropped and lc.tried <= 2:
+                            _backoff = 1.5 if lc.tried == 1 else 4.0
+                        else:
+                            _backoff = min(300, 5 * 3 ** (lc.tried - 1))
                         _backoff = max(_backoff, _retry_after_seconds(str(e)))
+                        # 同一大请求反复被掐流(第 3 次起): 上行体积过大是慢性诱因
+                        # (长会话+多轮工具结果, 每次重试全量重传只会同样被掐),
+                        # 收紧历史工具结果(最近 12 条保持原样, 更早的截到 800 字)
+                        # 缩小请求体再试; 新连接重传小请求往往就能活。
+                        if _dropped and lc.tried >= 3:
+                            _slimmed = _slim_tool_results(lc.messages, 12, 800)
+                            if _slimmed > 0:
+                                console.print(
+                                    f"{Prompt.Warning}stream dropped repeatedly; "
+                                    f"trimmed {_slimmed} old tool results "
+                                    f"to shrink the request"
+                                )
                         # 只对还会重试的失败发通知; UI 显示第 N 次失败、原因与
                         # 等待倒计时(wait 为本次退避秒数)
                         if self.on_retry is not None:
