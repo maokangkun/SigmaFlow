@@ -52,7 +52,8 @@
     el: null, engine: null, data: null, scenario: null,
     speedIdx: 1, tickAcc: 0, lastFrame: 0, running: false, raf: 0,
     selPlague: 'bacteria', selDifficulty: 1, selScenario: null, selGenes: {},
-    selected: null, lastNewsLen: 0, treeOpen: false, treeTab: 'symptom', _tmax: null
+    selected: null, lastNewsLen: 0, treeOpen: false, treeTab: 'symptom', _tmax: null,
+    particles: [], centers: {}, canvas: null, ctx: null, dpr: 1, viewW: 0, viewH: 0, particleCount: 0
   };
 
   /* ---------- 引擎脚本与数据装载 ---------- */
@@ -261,6 +262,7 @@
       var guard = 0;
       while (App.tickAcc >= 1 && guard < 12) { App.engine.tick(); App.tickAcc -= 1; guard++; if (App.engine.gameOver) break; }
       refresh();
+      stepParticles(Math.min(dt, 0.1), tps > 0);
     };
     App.raf = requestAnimationFrame(frame);
   }
@@ -292,7 +294,16 @@
         g.appendChild(el); mapParts.push(el);
       }
       svg.appendChild(g);
-      host.innerHTML = ''; host.appendChild(svg);
+      var cv = document.createElement('canvas');
+      cv.className = 'pl-route-canvas';
+      host.innerHTML = ''; host.appendChild(svg); host.appendChild(cv);
+      App.canvas = cv; App.ctx = cv.getContext('2d');
+      var resize = function () {
+        var r = host.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+        cv.width = Math.max(2, Math.round(r.width * dpr)); cv.height = Math.max(2, Math.round(r.height * dpr));
+        App.dpr = dpr; App.viewW = r.width; App.viewH = r.height;
+      };
+      window.addEventListener('resize', resize); resize();
       mapBuilt = true; refresh();
     }).catch(() => { host.innerHTML = '<div class="pl-map-loading">地图加载失败</div>'; });
   }
@@ -320,6 +331,118 @@
       el.style.fill = fill;
       el.classList.toggle('det', !!(st && st.detected));
       el.classList.toggle('sel', App.selected === el.dataset.c);
+    }
+  }
+
+  /* ---------- 航线流动轨迹(升级版: 彗尾 + 流量感知 + 选中国高亮) ----------
+   * 独立版仅为孤立小点; 这里: ①贝塞尔彗尾(渐隐渐细, 8 段采样) ②头部
+   * 发光大点 ③生成率随源国疫情强度缩放(疫区越猛轨迹越密) ④边境关闭
+   * 立即断流(engine 状态驱动) ⑤选中国家时静态高亮其全部航线。 */
+  var KIND_STYLE = { air: { color: '#d97706', speed: 0.35, base: 0.10 }, sea: { color: '#2563eb', speed: 0.16, base: 0.05 }, land: { color: '#64748b', speed: 0.09, base: 0.035 } };
+  function centerOf(key) {
+    if (App.centers[key]) return App.centers[key];
+    var raw = (App.data.countries[key] || {}).country_center;
+    if (!raw) return null;
+    var xy = raw.split(',').map(Number);
+    App.centers[key] = { x: xy[0], y: xy[1] };
+    return App.centers[key];
+  }
+  function toCanvas(pt) {
+    var s = Math.min(App.viewW / 960, App.viewH / 632);
+    var ox = (App.viewW - 960 * s) / 2, oy = (App.viewH - 632 * s) / 2;
+    return { x: (pt.x * s + ox) * App.dpr, y: (pt.y * s + oy) * App.dpr, s: s * App.dpr };
+  }
+  function bezier(a, b, t, lift) {
+    var cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2 - Math.abs(b.x - a.x) * 0.12 - lift;
+    return { x: (1 - t) * (1 - t) * a.x + 2 * (1 - t) * t * cx + t * t * b.x,
+             y: (1 - t) * (1 - t) * a.y + 2 * (1 - t) * t * cy + t * t * b.y };
+  }
+  function routeOpen(A, B, kind) {
+    if (kind === 'air') return A.airOpen && B.airOpen;
+    if (kind === 'sea') return A.seaOpen && B.seaOpen;
+    return A.landOpen && B.landOpen;
+  }
+  function stepParticles(dt, active) {
+    var e = App.engine, ctx = App.ctx, cv = App.canvas;
+    if (!ctx || !cv || !e) return;
+    // 生成: 活跃对局才生成; 速率随源国感染比例缩放(弱疫区也有底流)
+    if (active && !e.gameOver) {
+      [['airRoutes', 'air'], ['seaRoutes', 'sea'], ['landRoutes', 'land']].forEach(function (pair) {
+        var list = e[pair[0]] || [], kind = pair[1], st = KIND_STYLE[kind];
+        for (var i = 0; i < list.length; i++) {
+          var r = list[i];
+          var A = e.countries[r.a], B = e.countries[r.b];
+          if (!A || !B || A.infected <= 0 || B.healthy <= 0) continue;
+          var fwd = routeOpen(A, B, kind), rev = routeOpen(B, A, kind);
+          if (!fwd && !rev) continue;
+          var from = fwd ? r.a : r.b;
+          var src = e.countries[from];
+          var flow = Math.min(1, (src.infected / (src.pop0 || 1)) * 5 + 0.15);
+          if (Math.random() < st.base * (0.3 + 0.7 * flow) * (dt * 60)) {
+            App.particles.push({ from: from, to: fwd ? r.b : r.a, t: 0, kind: kind, v: st.speed * (0.8 + Math.random() * 0.4) });
+          }
+        }
+      });
+    }
+    // 推进 + 上限
+    for (var i = App.particles.length - 1; i >= 0; i--) {
+      var p = App.particles[i];
+      p.t += dt * p.v;
+      if (p.t >= 1) App.particles.splice(i, 1);
+    }
+    if (App.particles.length > 350) App.particles.splice(0, App.particles.length - 350);
+    App.particleCount = App.particles.length;
+    // 绘制
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    // 选中国: 静态高亮其航线(细线)
+    if (App.selected) {
+      ctx.lineWidth = Math.max(1, 1.1 * App.dpr);
+      [['airRoutes', 'air'], ['seaRoutes', 'sea'], ['landRoutes', 'land']].forEach(function (pair) {
+        var list = e[pair[0]] || [];
+        ctx.strokeStyle = KIND_STYLE[pair[1]].color;
+        ctx.globalAlpha = 0.28;
+        for (var i = 0; i < list.length; i++) {
+          var r = list[i];
+          if (r.a !== App.selected && r.b !== App.selected) continue;
+          var A = centerOf(r.a), B = centerOf(r.b);
+          if (!A || !B) continue;
+          var a = toCanvas(A), b = toCanvas(B);
+          ctx.beginPath(); ctx.moveTo(a.x, a.y);
+          var lift = 2 * a.s;
+          for (var t = 0.1; t < 1; t += 0.2) { var q = bezier(a, b, t, lift); ctx.lineTo(q.x, q.y); }
+          ctx.lineTo(b.x, b.y); ctx.stroke();
+        }
+      });
+      ctx.globalAlpha = 1;
+    }
+    // 彗尾粒子: 8 段采样渐隐渐细 + 发光头部
+    for (var k = 0; k < App.particles.length; k++) {
+      var pt = App.particles[k];
+      var A2 = centerOf(pt.from), B2 = centerOf(pt.to);
+      if (!A2 || !B2) continue;
+      var a2 = toCanvas(A2), b2 = toCanvas(B2), lift2 = 2 * a2.s;
+      var col = KIND_STYLE[pt.kind].color;
+      var TAIL = 0.30, SEG = 8;
+      var t0 = Math.max(0, pt.t - TAIL);
+      var prev = bezier(a2, b2, t0, lift2);
+      for (var seg = 1; seg <= SEG; seg++) {
+        var tt = t0 + (pt.t - t0) * seg / SEG;
+        var cur = bezier(a2, b2, tt, lift2);
+        ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(cur.x, cur.y);
+        ctx.strokeStyle = col;
+        ctx.globalAlpha = 0.06 + 0.62 * (seg / SEG);
+        ctx.lineWidth = Math.max(0.6, (0.5 + 1.6 * seg / SEG) * App.dpr);
+        ctx.lineCap = 'round';
+        ctx.stroke();
+        prev = cur;
+      }
+      ctx.globalAlpha = 1;
+      var head = bezier(a2, b2, pt.t, lift2);
+      ctx.save();
+      ctx.shadowColor = col; ctx.shadowBlur = 6 * App.dpr;
+      ctx.beginPath(); ctx.arc(head.x, head.y, 2.1 * App.dpr, 0, Math.PI * 2);
+      ctx.fillStyle = col; ctx.fill();
+      ctx.restore();
     }
   }
 

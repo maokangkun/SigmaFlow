@@ -1,0 +1,161 @@
+/* =============================================================================
+ * 虚拟疫情页 —— 与虚拟患者页同一套轻新拟态语言(见 patient.css 设计约定):
+ * 页面底 var(--bg) / 面板 var(--surface)+--shadow-small / 控件内凹 --shadow-inset。
+ * 结构: .pl-topbar(状态长条卡) / .pl-main(地图+右侧栏) / .pl-log-card(新闻流)
+ *       .pl-overlay(进化树/终局覆盖层) / .pl-start(开局配置)
+ * ============================================================================= */
+.page.plague-page { max-width: none; margin: 0; padding: 0; }
+#plague-root {
+  display: flex; flex-direction: column; gap: 10px;
+  height: 100vh; min-height: 560px;
+  padding: 10px 12px 12px; background: var(--bg); color: var(--ink);
+  font: 13px/1.5 -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  position: relative;
+}
+#plague-root * { box-sizing: border-box; margin: 0; padding: 0; }
+#plague-root button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
+#plague-root h3 { font: 600 11px/1 -apple-system, 'PingFang SC', sans-serif; letter-spacing: 1.6px; color: var(--muted); }
+#plague-root .panel { background: var(--surface); border-radius: 14px; box-shadow: var(--shadow-small); }
+
+/* ===== 顶栏 ===== */
+.pl-topbar { display: flex; align-items: center; gap: 10px; flex: none; flex-wrap: wrap;
+  background: var(--surface); border-radius: 14px; padding: 8px 12px; box-shadow: var(--shadow-small); }
+.pl-id #plName { font-size: 13.5px; font-weight: 650; color: var(--ink-strong); }
+.pl-id #plTag { font-size: 10px; color: var(--faint); }
+.pl-banner { flex: 1 1 auto; min-width: 120px; text-align: center; font-size: 11.5px; font-weight: 550;
+  padding: 5px 12px; border-radius: 999px; background: var(--green-bg); color: var(--green); box-shadow: var(--shadow-inset); }
+.pl-banner.warn { background: var(--amber-bg); color: var(--amber); }
+.pl-banner.crit { background: var(--red-bg); color: var(--red); animation: plBlink 1s infinite; }
+@keyframes plBlink { 50% { opacity: .55; } }
+.pl-clock, .pl-dna { flex: none; font-family: var(--mono); font-size: 13px; color: var(--ink);
+  background: var(--inset); border-radius: 8px; padding: 4px 10px; box-shadow: var(--shadow-inset); }
+.pl-dna { color: var(--accent-dark); }
+.pl-topbtns { display: flex; gap: 6px; flex-wrap: wrap; }
+.pl-topbtns button { background: var(--surface); border-radius: 9px; padding: 5px 10px; font-size: 11.5px; color: var(--ink);
+  box-shadow: var(--shadow-small); white-space: nowrap; transition: box-shadow .15s, transform .15s; }
+.pl-topbtns button:hover { transform: translateY(-1px); }
+.pl-topbtns button:active { box-shadow: var(--shadow-inset); transform: none; }
+.pl-topbtns button.on { background: var(--accent); color: #fff; box-shadow: 3px 3px 8px #7775b62a; }
+
+/* ===== 主区: 地图 + 右栏 ===== */
+.pl-main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 10px; min-height: 0; }
+.pl-map-card { position: relative; overflow: hidden; display: flex; }
+.pl-map { flex: 1; min-width: 0; background: var(--inset); border-radius: 12px; box-shadow: var(--shadow-inset);
+  display: flex; align-items: center; justify-content: center; overflow: hidden; margin: 10px; }
+.pl-map-loading { color: var(--faint); font-size: 12px; }
+.pl-worldmap { width: 100%; height: 100%; display: block; }
+.pl-country { stroke: var(--surface); stroke-width: .6; cursor: pointer; transition: fill .5s; }
+.pl-country:hover { stroke: var(--ink); stroke-width: 1.1; }
+.pl-country.det { stroke: var(--amber); stroke-width: .8; }
+.pl-country.sel { stroke: var(--accent); stroke-width: 1.4; }
+.pl-map-tip { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: none;
+  background: var(--surface); border-radius: 10px; box-shadow: var(--shadow); padding: 6px 12px; font-size: 12px; pointer-events: none; }
+.pl-map-tip b { color: var(--ink-strong); }
+.pl-map-tip span { color: var(--red); margin-left: 8px; }
+
+/* ===== 右栏卡片 ===== */
+.pl-aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: auto; }
+.pl-card { padding: 12px 14px; flex: none; }
+.pl-stat { display: flex; justify-content: space-between; align-items: baseline; padding: 3px 0; font-size: 12px; }
+.pl-stat span { color: var(--muted); }
+.pl-stat b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.pl-stat.ok b { color: var(--green); }
+.pl-stat.bad b { color: var(--red); }
+.pl-stat.dead b { color: var(--faint); }
+.pl-trait { display: grid; grid-template-columns: 52px 1fr 46px; gap: 8px; align-items: center; padding: 3px 0; font-size: 11.5px; }
+.pl-trait span { color: var(--muted); }
+.pl-trait b { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pl-track { height: 9px; border-radius: 999px; background: var(--inset); box-shadow: var(--shadow-inset); overflow: hidden; }
+.pl-track i { display: block; height: 100%; border-radius: 999px; background: #c62828; min-width: 0; transition: width .5s; }
+.pl-track i.ok { background: var(--green); }
+.pl-track i.sev { background: var(--amber); }
+.pl-track i.let { background: #8e44ad; }
+.pl-track i.cure { background: #4fc3ff; }
+.pl-track i.dead { background: #6b7280; }
+.pl-kv { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; font-size: 12px; border-bottom: 1px dashed var(--line-soft); }
+.pl-kv:last-of-type { border-bottom: 0; }
+.pl-kv span { color: var(--muted); flex: none; }
+.pl-kv b { font-weight: 500; text-align: right; word-break: break-all; }
+.pl-tags { display: flex; flex-wrap: wrap; gap: 5px; padding: 6px 0; }
+.pl-tag { font-size: 10px; padding: 2px 8px; border-radius: 999px; background: var(--inset); color: var(--faint); box-shadow: var(--shadow-inset); }
+.pl-tag.on { background: var(--accent-bg); color: var(--accent-dark); }
+.pl-spbtn { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left;
+  background: var(--surface); border-radius: 10px; padding: 8px 11px; margin-top: 8px; box-shadow: var(--shadow-small); }
+.pl-spbtn:hover:not(:disabled) { transform: translateY(-1px); }
+.pl-spbtn:disabled { opacity: .45; cursor: not-allowed; }
+.pl-spbtn b { font-size: 12px; color: var(--ink-strong); }
+.pl-spbtn span { font-size: 10.5px; color: var(--muted); }
+
+/* ===== 新闻流 ===== */
+.pl-log-card { flex: none; height: 150px; display: flex; flex-direction: column; padding: 10px 14px; }
+.pl-news { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+.pl-news-item { font-size: 11.5px; color: var(--muted); padding: 2px 0; border-bottom: 1px dashed var(--line-soft); }
+.pl-news-item .pl-news-day { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-right: 8px; }
+.pl-news-item.k-gov { color: var(--ink); }
+.pl-news-item.k-evolve { color: var(--accent-dark); }
+.pl-news-item.k-mutation { color: var(--amber); }
+.pl-news-item.k-cure { color: #1f7fb8; }
+
+/* ===== 覆盖层(进化树/终局) ===== */
+.pl-overlay { position: absolute; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
+  background: #22283855; backdrop-filter: blur(3px); border-radius: 0; }
+.pl-tree-card { width: min(860px, 94%); max-height: 88%; display: flex; flex-direction: column; padding: 16px 18px; }
+.pl-tree-head { display: flex; align-items: center; gap: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--line-soft); }
+.pl-tree-head h2 { font-size: 15px; flex: 1; }
+.pl-tabs { display: flex; gap: 4px; padding: 3px; background: var(--bg); border-radius: 10px; box-shadow: var(--shadow-inset); }
+.pl-tabs button { padding: 4px 12px; border-radius: 8px; font-size: 12px; color: var(--muted); }
+.pl-tabs button.on { background: var(--surface); color: var(--ink-strong); font-weight: 600; box-shadow: var(--shadow-small); }
+.pl-tree-list { flex: 1; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px; padding: 10px 2px; }
+.pl-node { display: flex; gap: 9px; align-items: center; background: var(--surface); border-radius: 11px; padding: 8px 10px;
+  box-shadow: var(--shadow-small); border: 1px solid transparent; }
+.pl-node img { width: 26px; height: 26px; flex: none; }
+.pl-node-dot { width: 26px; height: 26px; border-radius: 8px; background: var(--inset); flex: none; }
+.pl-node-body { flex: 1; min-width: 0; }
+.pl-node-body b { display: block; font-size: 12px; color: var(--ink-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-node-eff { font-size: 10px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-node-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
+.pl-node-cost { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pl-node.owned { border-color: var(--accent); background: var(--accent-bg); }
+.pl-node.lock { opacity: .5; }
+.pl-node.can { cursor: default; }
+.pl-evolve { background: var(--accent); color: #fff; border-radius: 7px; padding: 3px 10px; font-size: 11px; box-shadow: 3px 3px 8px #7775b62a; }
+.pl-evolve.dev { background: var(--surface); color: var(--muted); box-shadow: var(--shadow-inset); }
+.pl-evolve:disabled { opacity: .4; cursor: not-allowed; }
+.pl-end-card { max-width: 460px; padding: 30px; text-align: center; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+.pl-end-card h2 { font-size: 22px; }
+.pl-end-card h2.ok { color: var(--green); }
+.pl-end-card h2.bad { color: var(--red); }
+
+/* ===== 开局配置 ===== */
+.pl-start { position: absolute; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 16px; }
+.pl-start-card { width: min(760px, 96%); max-height: 92%; overflow: auto; padding: 22px 26px; display: flex; flex-direction: column; gap: 8px; }
+.pl-start-card h2 { font-size: 19px; }
+.pl-start-card .pl-sub { font-size: 11px; color: var(--faint); font-weight: 400; margin-left: 8px; }
+.pl-lab { font: 600 11px/1 -apple-system, 'PingFang SC', sans-serif; letter-spacing: 1.2px; color: var(--muted); margin-top: 10px; }
+.pl-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.pl-card-btn, .pl-card { text-align: left; background: var(--surface); border-radius: 11px; padding: 9px 12px;
+  box-shadow: var(--shadow-small); border: 1.5px solid transparent; display: flex; flex-direction: column; gap: 2px; }
+.pl-card b { font-size: 12.5px; color: var(--ink-strong); }
+.pl-card span { font-size: 10.5px; color: var(--muted); }
+.pl-card.on { border-color: var(--accent); background: var(--accent-bg); }
+.pl-card:hover { transform: translateY(-1px); }
+.pl-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.pl-chip { background: var(--surface); border-radius: 999px; padding: 5px 14px; font-size: 12px; color: var(--muted); box-shadow: var(--shadow-small); }
+.pl-chip.on { background: var(--accent); color: #fff; }
+.pl-gene-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.pl-gene { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); }
+.pl-gene select { background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 7px 9px; font-size: 12px; color: var(--ink); }
+.pl-p0 { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; font-size: 13px; color: var(--ink); max-width: 340px; }
+.pl-startbtns { display: flex; gap: 10px; margin-top: 16px; }
+.pl-loading, .pl-error { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 12px; color: var(--muted); background: var(--bg); z-index: 20; font-size: 13px; }
+
+@media (max-width: 980px) {
+  .pl-main { grid-template-columns: 1fr; }
+  #plague-root { height: auto; min-height: 100vh; }
+  .pl-map { min-height: 300px; }
+}
+
+/* 航线流动轨迹画布(覆盖在地图上, 不挡交互) */
+.pl-map { position: relative; }
+.pl-route-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
