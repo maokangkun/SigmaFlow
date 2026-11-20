@@ -131,7 +131,7 @@
     var p0opts = keys.map(k => '<option value="' + k + '">' + esc(L.country(d.countries[k].name)) + '</option>').join('');
     el.innerHTML =
       '<div class="pl-start"><div class="panel pl-start-card">' +
-      '<h2>虚拟疫情 <span class="pl-sub">瘟疫公司机制 · 引擎原版</span></h2>' +
+      '<h2>虚拟疫情</h2>' +
       '<label class="pl-lab">模式</label><div class="pl-cards">' + scenCards + '</div>' +
       '<label class="pl-lab">瘟疫类型</label><div class="pl-cards">' + plagueCards + '</div>' +
       '<label class="pl-lab">难度</label><div class="pl-chips">' + diffChips + '</div>' +
